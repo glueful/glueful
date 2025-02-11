@@ -245,6 +245,9 @@ class APIEngine
         $expiration = $remember ? config('services.jwt.remember_expiration') : config('services.jwt.default_expiration');
         $token = JWTService::generate($sessionData, $expiration);
         
+        // Store session data in Redis
+        SessionManager::start($sessionData);
+        
         return [...$sessionData, 'token' => $token];
     }
 

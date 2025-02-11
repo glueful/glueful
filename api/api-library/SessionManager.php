@@ -7,9 +7,16 @@ class SessionManager {
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour
+    private const REDIS_HASH_KEY = 'mapi_sessions';
+    
+    public static function initialize(): void
+    {
+        CacheEngine::initialize('mapi:', 'redis');
+    }
 
     public static function start(array $userData): string 
     {
+        self::initialize();
         $sessionId = self::generateSessionId();
         $token = self::generateToken();
         
@@ -21,24 +28,68 @@ class SessionManager {
             'last_activity' => time()
         ];
 
-        // Store session data in cache
-        CacheEngine::set(
-            self::SESSION_PREFIX . $sessionId, 
-            $sessionData, 
-            self::DEFAULT_TTL
-        );
-
-        // Store token reference
-        CacheEngine::set(
-            self::TOKEN_PREFIX . $token, 
-            $sessionId, 
-            self::DEFAULT_TTL
-        );
+        $redis = CacheEngine::getInstance();
+        if ($redis instanceof \Redis) {
+            // Use Redis Hash to store all sessions
+            $redis->hSet(
+                self::REDIS_HASH_KEY, 
+                $sessionId, 
+                serialize($sessionData)
+            );
+            // Set expiry on the hash key if not exists
+            $redis->expire(self::REDIS_HASH_KEY, self::DEFAULT_TTL);
+            
+            // Store token mapping
+            $redis->setEx(
+                self::TOKEN_PREFIX . $token,
+                self::DEFAULT_TTL,
+                $sessionId
+            );
+        } else {
+            // Fallback to regular CacheEngine methods
+            CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::DEFAULT_TTL);
+            CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::DEFAULT_TTL);
+        }
 
         return $token;
     }
 
     public static function get(string $token): ?array 
+    {
+        self::initialize();
+        $redis = CacheEngine::getInstance();
+        
+        if ($redis instanceof \Redis) {
+            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
+            if (!$sessionId) {
+                return null;
+            }
+
+            $sessionData = $redis->hGet(self::REDIS_HASH_KEY, $sessionId);
+            if (!$sessionData) {
+                return null;
+            }
+
+            $session = unserialize($sessionData);
+            if ($session) {
+                // Update last activity
+                $session['last_activity'] = time();
+                $redis->hSet(
+                    self::REDIS_HASH_KEY,
+                    $sessionId,
+                    serialize($session)
+                );
+                // Refresh token expiry
+                $redis->expire(self::TOKEN_PREFIX . $token, self::DEFAULT_TTL);
+                return $session;
+            }
+        }
+
+        // Fallback to regular CacheEngine get
+        return self::getFallback($token);
+    }
+
+    private static function getFallback(string $token): ?array
     {
         $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
         if (!$sessionId) {
@@ -63,15 +114,20 @@ class SessionManager {
 
     public static function destroy(string $token): bool 
     {
-        $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
-        if (!$sessionId) {
+        self::initialize();
+        $redis = CacheEngine::getInstance();
+        
+        if ($redis instanceof \Redis) {
+            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
+            if ($sessionId) {
+                $redis->hDel(self::REDIS_HASH_KEY, $sessionId);
+                $redis->del(self::TOKEN_PREFIX . $token);
+                return true;
+            }
             return false;
         }
 
-        CacheEngine::delete(self::TOKEN_PREFIX . $token);
-        CacheEngine::delete(self::SESSION_PREFIX . $sessionId);
-        
-        return true;
+        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
     }
 
     public static function update(string $oldToken, array $newData, string $newToken): bool

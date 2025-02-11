@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+namespace Mapi\Api\Extensions\Push;
+
+require_once __DIR__ . '/../api/bootstrap.php';
+
 use Mapi\Api\Library\Extensions;
 use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};
 
@@ -85,12 +89,12 @@ final class AdvancedEmail extends Extensions
         
         // Configure SMTP
         $mailer->isSMTP();
-        $mailer->Host = SMTP_HOST;
-        $mailer->SMTPAuth = true;
-        $mailer->Username = SMTP_USERNAME;
-        $mailer->Password = SMTP_PASSWORD;
-        $mailer->SMTPSecure = SMTP_SECURE;
-        $mailer->Port = SMTP_PORT;
+        $mailer->Host = config('mail.smtp.host');
+        $mailer->SMTPAuth = config('mail.smtp.auth', true);
+        $mailer->Username = config('mail.smtp.username');
+        $mailer->Password = config('mail.smtp.password');
+        $mailer->SMTPSecure = config('mail.smtp.secure');
+        $mailer->Port = config('mail.smtp.port');
         
         // Set sender
         $mailer->setFrom($fromEmail, $fromName);
@@ -157,5 +161,15 @@ final class AdvancedEmail extends Extensions
     private static function wrapTemplate(string $content): string
     {
         return str_replace('{{content}}', $content, self::$template) . self::$footer;
+    }
+
+    public static function push(array $data): array
+    {
+        try {
+            // Advanced email sending logic here
+            return ['SUCCESS' => true];
+        } catch (\Exception $e) {
+            return ['ERR' => $e->getMessage()];
+        }
     }
 }

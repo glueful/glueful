@@ -50,9 +50,9 @@ class API
     private static function initializeRoutes(): void 
     {
         // Replace direct boolean with string constant name
-        if (!defined('REST_MODE')) {
-            define('REST_MODE', true);
-        }
+        // if (!defined('REST_MODE')) {
+        //     define('REST_MODE', true);
+        // }
 
         // Initialize logger
         $logFile = config('app.api_log_file');
@@ -84,27 +84,6 @@ class API
             self::prepareDatabaseResource(null);
             $response = self::handleLogin('sessions', $postData);
             Logger::log('REST Response - Login', ['response' => $response]);
-            return $response;
-        }, true);
-        
-        $router->addRoute('POST', 'auth/login/pin', function($params) {
-            Logger::log('REST Request - PIN Login', [
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/login/pin',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]);
-
-            $input = file_get_contents('php://input');
-            if (!empty($input) && $_SERVER['CONTENT_TYPE'] === 'application/json') {
-                $postData = json_decode($input, true) ?? [];
-            } else {
-                $postData = $_POST;
-            }
-            
-            self::prepareDatabaseResource(null);
-            $response = self::handleLogin('sessions_pin', $postData);
-            Logger::log('REST Response - PIN Login', ['response' => $response]);
             return $response;
         }, true); // Mark as public
 
@@ -244,7 +223,7 @@ class API
         array $getParams, 
         array $postParams = []
     ): array {
-        if ($resource === 'sessions' || $resource === 'sessions_pin') {
+        if ($resource === 'sessions') {
             return self::handleSession($resource, $action, $getParams, $postParams);
         }
         
@@ -333,7 +312,7 @@ class API
         $model = "api.{$GLOBALS['databaseResource']}.$function";
 
         return match($function) {
-            'sessions', 'sessions_pin' => self::handleSession($function, $action, $getParams, $postParams),
+            'sessions' => self::handleSession($function, $action, $getParams, $postParams),
             'blobs' => self::handleBlob($function, $action, $getParams, $postParams, $fileParams),
             default => self::handleStandardRequest($function, $action, $model, $getParams, $postParams)
         };
@@ -369,7 +348,6 @@ class API
     {
         return match($function) {
             'sessions' => (isset($params['username']) || isset($params['email'])) && isset($params['password']),
-            'sessions_pin' => isset($params['phone_number'], $params['pin']),
             default => false
         };
     }
