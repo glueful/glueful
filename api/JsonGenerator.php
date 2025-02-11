@@ -23,7 +23,7 @@ class JsonGenerator {
         
         // Use global namespace for config function
         $dir = config('paths.json_definitions');
-        error_log("JsonGenerator path: $dir");
+        // error_log("JsonGenerator path: $dir");
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -166,26 +166,27 @@ class JsonGenerator {
             throw new \RuntimeException("No database configuration found");
         }
 
-        foreach ($databaseServer as $dbResource => $settings) {
-            if ($targetDb && $targetDb !== $dbResource) {
+        foreach ($databaseServer as $dbIndex => $settings) {
+            if ($targetDb && $targetDb !== $dbIndex) {
                 continue;
             }
 
-            Utils::createMySQLResource($dbResource);
-            $this->log("--- Generating JSON: dbres=$dbResource ---");
+            try {
+                // Pass the database index (string) instead of settings array
+                Utils::createMySQLResource($dbIndex);
+                $this->log("--- Generating JSON: dbres=$dbIndex ---");
 
-            $resource = Utils::getMySQLResource($dbResource);
-            
-            if ($resource instanceof \mysqli) {
-                $tables = mysqli_query($resource, "SHOW TABLES");
-                while ($table = mysqli_fetch_array($tables, MYSQLI_NUM)) {
-                    $this->generateTableDefinition($dbResource, $table[0]);
+                $resource = Utils::getMySQLResource($dbIndex);
+                
+                if ($resource instanceof \mysqli) {
+                    $tables = mysqli_query($resource, "SHOW TABLES");
+                    while ($table = mysqli_fetch_array($tables, MYSQLI_NUM)) {
+                        $this->generateTableDefinition($dbIndex, $table[0]);
+                    }
                 }
-            } else if ($resource instanceof \PDO) {
-                $tables = $resource->query("SHOW TABLES");
-                while ($table = $tables->fetch(\PDO::FETCH_NUM)) {
-                    $this->generateTableDefinition($dbResource, $table[0]);
-                }
+            } catch (\Exception $e) {
+                $this->log("Error processing database $dbIndex: " . $e->getMessage());
+                continue;
             }
         }
     }
@@ -198,53 +199,45 @@ class JsonGenerator {
     }
 
     private function getOrCreateAdminRole(): string|int {
-        global $databaseResource, $databaseServer;
+        global $databaseServer, $databaseResource;
         
-        // Store current database resource
-        $currentResource = $databaseResource ?? 'primary';
+        // Determine which database to use
+        $dbIndex = isset($databaseServer['users']) ? 'users' : 'primary';
+        $databaseResource = $dbIndex;  // Set the global database resource
         
-        // Ensure 'users' database is configured
-        if (!isset($databaseServer['users'])) {
-            // Use current database if 'users' is not configured
-            $dbResource = $currentResource;
-        } else {
-            $dbResource = 'users';
+        try {
+            // Create database connection using string index
+            Utils::createMySQLResource($dbIndex);
+            
+            $param = ['name' => 'Administrator'];
+            $rolesFile = config('paths.json_definitions') . "$dbIndex.roles.json";
+            
+            // Create roles config if it doesn't exist
+            if (!file_exists($rolesFile)) {
+                $this->createRolesConfig($dbIndex);
+            }
+            
+            $roles = json_decode(file_get_contents($rolesFile), true);
+            
+            // Prepare and execute the query
+            $query = "SELECT * FROM roles WHERE name = 'Administrator' LIMIT 1";
+            $adminRole = MySQLQueryBuilder::query($query);
+
+            $roleId = $adminRole[0]['id'] ?? null;
+            
+            if (!$roleId) {
+                $roleId = $this->createAdminRole();
+                $this->log("--- Administrator role created ---");
+            } else {
+                $this->log("--- Administrator role already exists ---");
+            }
+            
+            return $roleId;
+            
+        } catch (\Exception $e) {
+            $this->log("Error in getOrCreateAdminRole: " . $e->getMessage());
+            throw $e;
         }
-        
-        $databaseResource = $dbResource;
-        Utils::createMySQLResource($dbResource);
-
-        $param = ['name' => 'Administrator'];
-
-        $rolesFile = config('paths.json_definitions') . $databaseResource . '.roles.json';
-        
-        // Create roles config if it doesn't exist
-        if (!file_exists($rolesFile)) {
-            $this->createRolesConfig($databaseResource);
-        }
-        
-        $roles = json_decode(file_get_contents($rolesFile), true);
-        
-        $adminRole = MySQLQueryBuilder::query(
-            MySQLQueryBuilder::prepare(QueryAction::SELECT, $roles, $param, null)
-        );
-
-        $roleId = $adminRole[0]['id'] ?? null;
-
-        if (!$roleId) {
-            $roleId = $this->createAdminRole();
-            $this->log("--- Administrator role created ---");
-        } else {
-            $this->log("--- Administrator role already exists ---");
-        }
-
-        // Restore original database resource
-        if ($currentResource !== $dbResource) {
-            $databaseResource = $currentResource;
-            Utils::createMySQLResource($currentResource);
-        }
-        
-        return $roleId;
     }
 
     private function createRolesConfig(string $dbResource): void {
