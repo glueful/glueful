@@ -132,35 +132,30 @@ class MySQLQueryBuilder
         return "'" . addslashes($value) . "'";
     }
 
-    public static function query(string $query): array {
+    public static function query(string $query): mixed {
         global $databaseResource;
-        $resource = Utils::getMySQLResource($databaseResource);
+        
+        // Use current database resource or fall back to primary
+        $dbIndex = $databaseResource ?? 'primary';
         
         try {
-            if (!$resource) {
-                throw new \RuntimeException("No valid database connection");
-            }
-            
-            $result = mysqli_query($resource, $query);
+            $resource = Utils::getMySQLResource($dbIndex);
+            $result = $resource->query($query);
             
             if ($result === false) {
-                throw new \RuntimeException(mysqli_error($resource));
+                throw new \RuntimeException("Query failed: " . $resource->error);
             }
             
             if ($result === true) {
-                return ['affected' => mysqli_affected_rows($resource)];
+                // For INSERT queries, return last insert ID
+                return ['id' => $resource->insert_id];
             }
-
-            $rows = [];
-            while ($row = mysqli_fetch_assoc($result)) {
-                $rows[] = $row;
-            }
-            mysqli_free_result($result);
             
-            return $rows;
+            // For SELECT queries, fetch all results
+            return $result->fetch_all(MYSQLI_ASSOC);
+            
         } catch (\Exception $e) {
-            error_log("Query error: " . $e->getMessage() . "\nQuery: $query");
-            throw $e;
+            throw new \RuntimeException("Database query failed: " . $e->getMessage());
         }
     }
 }
