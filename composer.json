@@ -1,0 +1,16 @@
+{
+    "autoload": {
+        "psr-4": {
+            "Mapi\\Api\\": "api/",
+            "Mapi\\Api\\Library\\": "api/api-library/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    },
+    "require": {
+        "vlucas/phpdotenv": "^5.6"
+    }
+}

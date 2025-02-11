@@ -1,0 +1,58 @@
+{
+    "table": {
+        "name": "notifications",
+        "fields": [
+            {
+                "name": "id",
+                "api_field": "id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "user_id",
+                "api_field": "user_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "sender_id",
+                "api_field": "sender_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "parp_id",
+                "api_field": "parp_id",
+                "type": "bigint(20)",
+                "nullable": true
+            },
+            {
+                "name": "comment_id",
+                "api_field": "comment_id",
+                "type": "bigint(20)",
+                "nullable": true
+            },
+            {
+                "name": "notification_type",
+                "api_field": "notification_type",
+                "type": "enum('clap','dislike','comment','parp','follow','unfollow','mention','bookmark','unbookmark','other')",
+                "nullable": false
+            },
+            {
+                "name": "is_read",
+                "api_field": "is_read",
+                "type": "enum('0','1')",
+                "nullable": true
+            },
+            {
+                "name": "created_at",
+                "api_field": "created_at",
+                "type": "datetime",
+                "nullable": true
+            }
+        ]
+    },
+    "access": {
+        "mode": "rw"
+    }
+}

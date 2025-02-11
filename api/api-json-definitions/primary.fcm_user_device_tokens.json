@@ -1,0 +1,52 @@
+{
+    "table": {
+        "name": "fcm_user_device_tokens",
+        "fields": [
+            {
+                "name": "id",
+                "api_field": "id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "user_id",
+                "api_field": "user_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "device_token",
+                "api_field": "device_token",
+                "type": "varchar(255)",
+                "nullable": false
+            },
+            {
+                "name": "device_uuid",
+                "api_field": "device_uuid",
+                "type": "varchar(225)",
+                "nullable": false
+            },
+            {
+                "name": "status",
+                "api_field": "status",
+                "type": "enum('active','inactive','deleted')",
+                "nullable": false
+            },
+            {
+                "name": "created_date",
+                "api_field": "created_date",
+                "type": "datetime",
+                "nullable": false
+            },
+            {
+                "name": "updated_at",
+                "api_field": "updated_at",
+                "type": "datetime",
+                "nullable": true
+            }
+        ]
+    },
+    "access": {
+        "mode": "rw"
+    }
+}

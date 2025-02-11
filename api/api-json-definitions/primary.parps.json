@@ -1,0 +1,106 @@
+{
+    "table": {
+        "name": "parps",
+        "fields": [
+            {
+                "name": "id",
+                "api_field": "id",
+                "type": "bigint(20) unsigned",
+                "nullable": false
+            },
+            {
+                "name": "parp_ref",
+                "api_field": "parp_ref",
+                "type": "varchar(50)",
+                "nullable": false
+            },
+            {
+                "name": "title",
+                "api_field": "title",
+                "type": "varchar(255)",
+                "nullable": false
+            },
+            {
+                "name": "provider",
+                "api_field": "provider",
+                "type": "varchar(255)",
+                "nullable": false
+            },
+            {
+                "name": "type",
+                "api_field": "type",
+                "type": "enum('praise','shame')",
+                "nullable": true
+            },
+            {
+                "name": "user_id",
+                "api_field": "user_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "review",
+                "api_field": "review",
+                "type": "text",
+                "nullable": false
+            },
+            {
+                "name": "longitude",
+                "api_field": "longitude",
+                "type": "varchar(20)",
+                "nullable": true
+            },
+            {
+                "name": "latitude",
+                "api_field": "latitude",
+                "type": "varchar(20)",
+                "nullable": true
+            },
+            {
+                "name": "where",
+                "api_field": "where",
+                "type": "varchar(150)",
+                "nullable": true
+            },
+            {
+                "name": "location",
+                "api_field": "location",
+                "type": "varchar(255)",
+                "nullable": true
+            },
+            {
+                "name": "status",
+                "api_field": "status",
+                "type": "enum('active','inactive','deleted')",
+                "nullable": true
+            },
+            {
+                "name": "additional_info",
+                "api_field": "additional_info",
+                "type": "text",
+                "nullable": true
+            },
+            {
+                "name": "blob_id",
+                "api_field": "blob_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "created_at",
+                "api_field": "created_at",
+                "type": "datetime",
+                "nullable": true
+            },
+            {
+                "name": "deleted_at",
+                "api_field": "deleted_at",
+                "type": "datetime",
+                "nullable": true
+            }
+        ]
+    },
+    "access": {
+        "mode": "rw"
+    }
+}

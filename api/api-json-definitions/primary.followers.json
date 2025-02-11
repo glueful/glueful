@@ -1,0 +1,52 @@
+{
+    "table": {
+        "name": "followers",
+        "fields": [
+            {
+                "name": "id",
+                "api_field": "id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "user_id",
+                "api_field": "user_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "follower_id",
+                "api_field": "follower_id",
+                "type": "bigint(20)",
+                "nullable": false
+            },
+            {
+                "name": "created_at",
+                "api_field": "created_at",
+                "type": "datetime",
+                "nullable": false
+            },
+            {
+                "name": "status",
+                "api_field": "status",
+                "type": "enum('active','deleted')",
+                "nullable": true
+            },
+            {
+                "name": "deleted_at",
+                "api_field": "deleted_at",
+                "type": "datetime",
+                "nullable": true
+            },
+            {
+                "name": "updated_at",
+                "api_field": "updated_at",
+                "type": "datetime",
+                "nullable": true
+            }
+        ]
+    },
+    "access": {
+        "mode": "rw"
+    }
+}
