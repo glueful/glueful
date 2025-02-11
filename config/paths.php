@@ -1,17 +1,17 @@
 <?php
 return [
-    'base' => env('../'),
-    'api_base_directory' => '../api/',
+    'base' => dirname(__DIR__),
+    'api_base_directory' => dirname(__DIR__) . '/api/',
     'api_base_url' => env('API_BASE_URL', 'http://localhost/mapi/api/'),
     'cdn' => env('CDN_BASE_URL', 'http://localhost/cdn/'),
     'domain' => env('WEBSITE_DOMAIN', 'http://localhost/mapi/'),
-    'uploads' => '../cdn/',
-    'logs' =>'../logs/',
-    'cache' => '../cache/',
-    'json_definitions' => '../api/api-json-definitions/',
-    'api_library' => '../api/api-library/',
-    'api_extensions' => '../api/api-extensions/',
-    'project_extensions' => '../extensions/',
-    'api_docs' => '../docs/',
+    'uploads' => dirname(__DIR__) . '/cdn/',
+    'logs' => dirname(__DIR__) . '/logs/',
+    'cache' => dirname(__DIR__) . '/cache/',
+    'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
+    'api_library' => dirname(__DIR__) . '/api/api-library/',
+    'api_extensions' => dirname(__DIR__) . '/api/api-extensions/',
+    'project_extensions' => dirname(__DIR__) . '/extensions/',
+    'api_docs' => dirname(__DIR__) . '/docs/',
 
 ];
