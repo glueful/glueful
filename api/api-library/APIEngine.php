@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
 
 use Mapi\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
 use Mapi\Api\Http\Response;
@@ -243,10 +243,12 @@ class APIEngine
         ];
 
         $expiration = $remember ? config('services.jwt.remember_expiration') : config('services.jwt.default_expiration');
+        
+        // Generate JWT token first
         $token = JWTService::generate($sessionData, $expiration);
         
-        // Store session data in Redis
-        SessionManager::start($sessionData);
+        // Store session with the same token
+        SessionManager::start($sessionData, $token);
         
         return [...$sessionData, 'token' => $token];
     }

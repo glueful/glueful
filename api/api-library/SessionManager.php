@@ -3,26 +3,28 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
+
 class SessionManager {
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
-    private const DEFAULT_TTL = 3600; // 1 hour
+    private const DEFAULT_TTL = 3600; // 1 hour - default value
     private const REDIS_HASH_KEY = 'mapi_sessions';
-    
+    private static $ttl; // Variable to hold configurable TTL
     public static function initialize(): void
     {
         CacheEngine::initialize('mapi:', 'redis');
+        self::$ttl = config('services.jwt.default_expiration', self::DEFAULT_TTL);
     }
 
-    public static function start(array $userData): string 
+    public static function start(array $userData, string $token): void 
     {
         self::initialize();
         $sessionId = self::generateSessionId();
-        $token = self::generateToken();
         
         $sessionData = [
             'id' => $sessionId,
-            'token' => $token,
+            'token' => $token, // Use the provided JWT token
             'user' => $userData,
             'created_at' => time(),
             'last_activity' => time()
@@ -30,28 +32,25 @@ class SessionManager {
 
         $redis = CacheEngine::getInstance();
         if ($redis instanceof \Redis) {
-            // Use Redis Hash to store all sessions
+            // Store session data with JWT token
             $redis->hSet(
                 self::REDIS_HASH_KEY, 
                 $sessionId, 
                 serialize($sessionData)
             );
-            // Set expiry on the hash key if not exists
-            $redis->expire(self::REDIS_HASH_KEY, self::DEFAULT_TTL);
+            $redis->expire(self::REDIS_HASH_KEY, self::$ttl);
             
-            // Store token mapping
+            // Map JWT token to session ID
             $redis->setEx(
                 self::TOKEN_PREFIX . $token,
-                self::DEFAULT_TTL,
+                self::$ttl,
                 $sessionId
             );
         } else {
             // Fallback to regular CacheEngine methods
-            CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::DEFAULT_TTL);
-            CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::DEFAULT_TTL);
+            CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::$ttl);
+            CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::$ttl);
         }
-
-        return $token;
     }
 
     public static function get(string $token): ?array 
