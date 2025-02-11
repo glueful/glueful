@@ -17,6 +17,7 @@ use Mapi\Api\Http\{
     Response,
     Router
 };
+use Mapi\Api\Extensions\Uploader\FileUploader;
 
 /**
  * @author Xose & Edem Ahlijah
@@ -513,33 +514,53 @@ class API
 
     private static function handleBase64Upload(array $getParams, array $postParams): array 
     {
-        include_once "api-extensions/uploader/index.php";
-        
-        $tmpFile = base64ToImage($postParams['base64']);
-        $fileParams = [
-            'name' => $getParams['name'] ?? 'b64conv.jpg',
-            'type' => $getParams['mime_type'] ?? 'image/jpeg',
-            'tmp_name' => $tmpFile,
-            'error' => 0,
-            'size' => filesize($tmpFile)
-        ];
+        try {
+            $uploader = new FileUploader();
+            
+            // Convert base64 to temp file
+            $tmpFile = $uploader->handleBase64Upload($postParams['base64']);
+            
+            $fileParams = [
+                'name' => $getParams['name'] ?? 'upload.jpg',
+                'type' => $getParams['mime_type'] ?? 'image/jpeg',
+                'tmp_name' => $tmpFile,
+                'error' => 0,
+                'size' => filesize($tmpFile)
+            ];
 
-        unset($getParams['type']);
-        return uploadBlob($getParams['token'], $getParams, $fileParams);
+            return $uploader->handleUpload(
+                $getParams['token'],
+                $getParams,
+                ['file' => $fileParams]
+            );
+
+        } catch (\Exception $e) {
+            return Response::error('Base64 upload failed: ' . $e->getMessage())->send();
+        }
     }
 
     private static function handleFileUpload(array $getParams, array $fileParams): array 
     {
-        include_once "api-extensions/uploader/index.php";
-        return uploadBlob($getParams['token'], $getParams, $fileParams);
+        try {
+            $uploader = new FileUploader();
+            return $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
+        } catch (\Exception $e) {
+            return Response::error('File upload failed: ' . $e->getMessage())->send();
+        }
     }
 
     private static function handleBlobUpload(array $getParams, array $postParams): array 
     {
-        include_once "api-extensions/uploader/index.php";
+        try {
+            if (!isset($postParams['base64'])) {
+                throw new \InvalidArgumentException('Invalid blob upload parameters');
+            }
 
-        if (isset($postParams['base64'])) {
-            $tmpFile = base64ToImage($postParams['base64']);
+            $uploader = new FileUploader();
+            
+            // Convert base64 to temp file
+            $tmpFile = $uploader->handleBase64Upload($postParams['base64']);
+            
             $fileParams = [
                 'name' => $getParams['name'] ?? 'b64conv.jpg',
                 'type' => $getParams['mime_type'] ?? 'image/jpeg',
@@ -547,11 +568,13 @@ class API
                 'error' => 0,
                 'size' => filesize($tmpFile)
             ];
-            unset($getParams['type']);
-            return uploadBlob($getParams['token'], $getParams, $fileParams);
-        }
 
-        throw new \InvalidArgumentException('Invalid blob upload parameters');
+            unset($getParams['type']);
+            return $uploader->handleUpload($getParams['token'], $getParams, ['file' => $fileParams]);
+
+        } catch (\Exception $e) {
+            return Response::error('Blob upload failed: ' . $e->getMessage())->send();
+        }
     }
 
     private static function auditChanges(

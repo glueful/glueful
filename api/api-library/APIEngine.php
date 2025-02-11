@@ -83,49 +83,103 @@ class APIEngine
 
     public static function getBlob(string $function, string $action, array $param): array 
     {
-        global $databaseResource;
+        try {
+            if (!isset($param['id'])) {
+                return Response::error('Blob ID is required', Response::HTTP_BAD_REQUEST)->send();
+            }
 
-        $isFile = (isset($param['type']) && $param['type'] === 'file');
-        $isImage = (isset($param['type']) && $param['type'] === 'image');
+            $blob = self::getBlobInfo($function, $param);
+            if (empty($blob)) {
+                return Response::notFound('Blob not found')->send();
+            }
+
+            $blobInfo = $blob[0];
+            $fullUrl = self::getBlobUrl($blobInfo['url']);
+            $requestType = $param['type'] ?? 'image';
+
+            return match($requestType) {
+                'file' => Response::ok(self::getBlobAsFile($blobInfo))->send(),
+                'image' => Response::ok(self::processImageBlob($fullUrl, $param))->send(),
+                default => Response::error('Invalid blob type requested')->send()
+            };
+
+        } catch (\Exception $e) {
+            error_log("Blob processing error: " . $e->getMessage());
+            return Response::error('Failed to process blob')->send();
+        }
+    }
+
+    private static function getBlobInfo(string $function, array $param): array 
+    {
+        $fields = ['fields' => 'id,url,mime_type'];
+        $queryParams = array_merge($param, $fields);
         
-        $thumbOptions = [
-            'width' => $param['w'] ?? null,
-            'height' => $param['h'] ?? null,
-            'zoom' => $param['z'] ?? null,
-            'quality' => $param['q'] ?? 100
-        ];
-
-        // Remove thumb parameters from query
-        unset($param['w'], $param['h'], $param['z'], $param['q'], $param['type']);
-
-        // Get blob info from database
-        $fields =['fields' => 'id,url,mime_type'];
-
-        if (!isset($param['id'])) {
-            return Response::error('Blob ID is required', Response::HTTP_BAD_REQUEST)->send();
-        }
-
-        $param = array_merge($param, $fields);
         $definition = self::loadDefinition($function);
-        $blob = self::executeQuery('list', $definition, $param);
+        return self::executeQuery('list', $definition, $queryParams);
+    }
 
-        if (empty($blob)) {
-            return Response::notFound('Blob not found')->send();
+    private static function getBlobUrl(string $url): string 
+    {
+        return file_exists($url) ? $url : config('paths.cdn') . $url;
+    }
+
+    private static function processImageBlob(string $src, array $params): array 
+    {
+        try {
+            $config = [
+                'maxWidth' => 1500,
+                'maxHeight' => 1500,
+                'quality' => (int)($params['q'] ?? 90),
+                'width' => isset($params['w']) ? (int)$params['w'] : null,
+                'height' => isset($params['h']) ? (int)$params['h'] : null,
+                'zoom' => isset($params['z']) ? (int)$params['z'] : null,
+                'memoryLimit' => '256M',
+                'allowExternal' => true,
+                'cacheDir' => config('paths.cache') . '/images'
+            ];
+
+            $thumbnailer = new \Mapi\ImageProcessing\TimThumb($config);
+            
+            if (!$thumbnailer->processImage($src)) {
+                throw new \RuntimeException("Failed to process image");
+            }
+
+            // Generate cache path and filename
+            $cacheKey = md5($src . serialize($config));
+            $cachedFilename = $cacheKey . '.jpg';
+            $cachePath = $config['cacheDir'] . '/' . $cachedFilename;
+
+            // Ensure cache directory exists and save image
+            if (!is_dir($config['cacheDir'])) {
+                mkdir($config['cacheDir'], 0755, true);
+            }
+
+            ob_start();
+            $thumbnailer->outputImage();
+            $imageData = ob_get_clean();
+
+            if (!file_put_contents($cachePath, $imageData)) {
+                throw new \RuntimeException("Failed to save processed image");
+            }
+
+            return [
+                'url' => config('paths.cdn') . 'cache/images/' . $cachedFilename,
+                'cached' => true,
+                'dimensions' => [
+                    'width' => $config['width'] ?? imagesx(imagecreatefromstring($imageData)),
+                    'height' => $config['height'] ?? imagesy(imagecreatefromstring($imageData))
+                ],
+                'size' => strlen($imageData)
+            ];
+
+        } catch (\Exception $e) {
+            error_log("Image processing error: " . $e->getMessage());
+            return [
+                'url' => $src,
+                'cached' => false,
+                'error' => 'Failed to process image'
+            ];
         }
-
-        $blobInfo = $blob[0];
-        $blobUrl = $blobInfo['url'];
-        $fullUrl = file_exists($blobUrl) ? $blobUrl : config('paths.cdn') . $blobUrl;
-
-        if ($isFile) {
-            return Response::ok(self::getBlobAsFile($blobInfo))->send();
-        }
-
-        if ($isImage) {
-            return Response::ok(self::getBlobAsCachedImage($thumbOptions, $fullUrl))->send();
-        }
-
-        return Response::ok(self::resizeBlob($thumbOptions, $fullUrl))->send();
     }
 
     public static function updateSessionData(string $token, array $updates): array 
@@ -309,38 +363,6 @@ class APIEngine
             'url' => $url,
             'type' => self::getMimeType($mimeType)
         ];
-    }
-
-    private static function getBlobAsCachedImage(array $options, string $src): array 
-    {
-        $params = [];
-        if ($options['width']) $params[] = "w={$options['width']}";
-        if ($options['height']) $params[] = "h={$options['height']}";
-        if ($options['quality']) $params[] = "q={$options['quality']}";
-        if ($options['zoom']) $params[] = "zc={$options['zoom']}";
-
-        $queryString = implode('&', $params);
-        $imageUrl = config('paths.cdn') . "images/?src=" . urlencode($src);
-        
-        if ($queryString) {
-            $imageUrl .= '&' . $queryString;
-        }
-
-        return ['url' => $imageUrl];
-    }
-
-    private static function resizeBlob(array $options, string $src): array 
-    {
-        $_GET['src'] = $src;
-        $_GET['w'] = $options['width'] ?? 'auto';
-        $_GET['h'] = $options['height'] ?? 'auto';
-        $_GET['q'] = $options['quality'] ?? 100;
-        $_GET['zc'] = $options['zoom'] ?? 1;
-
-        require_once(config('paths.api_library') . 'TimThumb.php');
-        // TimThumb::start();
-
-        return [];
     }
 
     private static function getMimeType(string $mime): string 

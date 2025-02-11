@@ -1,101 +1,161 @@
 <?php
-class AdvancedEmail extends Extensions
+
+declare(strict_types=1);
+
+use Mapi\Api\Library\Extensions;
+use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};
+
+final class AdvancedEmail extends Extensions
 {
-    public static $template = "{{content}}";
-    public static $footer   = "";
+    private const REQUIRED_FIELDS = ['message', 'from', 'to', 'subject'];
+    private static string $template = '{{content}}';
+    private static string $footer = '';
 
-    public static function process($getParams, $postParams)
+    public static function process(array $getParams, array $postParams): array
     {
-        if (!isset($postParams['message']) || !isset($postParams['from']) || !isset($postParams['to']) || !isset($postParams['subject']))
-        {
-            throw new Exception("Send failed, missing parameters", 404);
-        }
+        try {
+            self::validateParams($postParams);
+            $attachment = $postParams['attachment'] ?? null;
+            
+            $result = self::sendEmail($postParams, $attachment);
+            
+            return self::respond([
+                'success' => true,
+                'message' => 'Email sent successfully',
+                'details' => $result
+            ]);
 
-        $rd = self::send($postParams,$postParams["attachment"]);
-        if ($rd['status'])
-        {
-            return array("SUCCESS" => true);
-        }
-        else
-        {
-            return array("ERR" => "Could not send email | " . $rd['msg'] . ' | ' . SMTP_PORT . SMTP_HOST . SMTP_USERNAME);
+        } catch (PHPMailerException $e) {
+            return self::error("Email sending failed: {$e->getMessage()}", 500);
+        } catch (\InvalidArgumentException $e) {
+            return self::error($e->getMessage(), 400);
+        } catch (\Exception $e) {
+            error_log("Email error: " . $e->getMessage());
+            return self::error('Failed to send email', 500);
         }
     }
 
-    private static function send($data,$attachment)
+    private static function validateParams(array $params): void
+    {
+        $missing = array_diff(self::REQUIRED_FIELDS, array_keys($params));
+        if (!empty($missing)) {
+            throw new \InvalidArgumentException(
+                'Missing required fields: ' . implode(', ', $missing)
+            );
+        }
+    }
+
+    private static function sendEmail(array $data, ?array $attachment): array
     {
         require_once API_EXTENSIONS_DIRECTORY . 'push/phpmailer/PHPMailerAutoload.php';
-        $mail                         = new PHPMailer;
-        $matches                      = array();
-        $from_email                   = $from_name                   = '';
-        $from_email                   = $data["from"];
-        $file_type                    = 'application/pdf';
-        list($from_name, $from_email) = explode(' <', trim($data["from"], '> '));
-        $from_email                   = trim($from_email);
-        $from_name                   = trim($from_name);
-        $mail->isSMTP(); // Set mailer to use SMTP
-        $mail->Host       = SMTP_HOST; // Specify main and backup SMTP servers
-        $mail->SMTPAuth   = true; // Enable SMTP authentication
-        $mail->Username   = SMTP_USERNAME; // SMTP username
-        $mail->Password   = SMTP_PASSWORD; // SMTP password
-        $mail->SMTPSecure = SMTP_SECURE; // Enable TLS encryption, `ssl` also accepted
-        $mail->Port       = SMTP_PORT; // TCP port to connect to
+        
+        $mailer = self::configureMailer($data);
+        
+        // Set email content
+        $mailer->Subject = $data['subject'];
+        $mailer->Body = self::wrapTemplate($data['message']);
+        $mailer->isHTML(true);
 
-        $mail->setFrom($from_email, $from_name);
-        $mail->addAddress(trim($data['to'])); // Add a recipient
-        $mail->addReplyTo($from_email, $from_name);
-
-        $mail->isHTML(true); // Set email format to HTML
-
-        $mail->Subject = $data["subject"];
-        $mail->Body    = self::wrapTemplate($data["message"]);
-        //$mail->AltBody = 'This is the body in plain text for non-HTML mail clients';
-
-        if ($data["cc"])
-        {
-            $mail->addCC($data["cc"]);
-        }
-        if ($data["bcc"])
-        {
-            $mail->addBCC($data["bcc"]);
-        }
-        if (@$data["type"] == "attachment")
-        {
-            $binary_content = file_get_contents($attachment["location"]);
-
-            if ($binary_content === false)
-            {
-                throw new Exception("Could not fetch remote content from: '$url'");
-            }
-
-            $mail->addStringAttachment($binary_content, $attachment["name"], 'base64', $file_type);
+        // Add CC and BCC recipients
+        self::addRecipients($mailer, $data);
+        
+        // Handle attachments
+        if (isset($data['type']) && $data['type'] === 'attachment' && $attachment) {
+            self::addAttachment($mailer, $attachment);
         }
 
-        if (!$mail->send())
-        {
-            $rdata['status'] = false;
-            $rdata['msg']    = 'Mailer Error: ' . $mail->ErrorInfo;
+        // Send email
+        if (!$mailer->send()) {
+            throw new PHPMailerException($mailer->ErrorInfo);
         }
-        else
-        {
-            $rdata['status'] = true;
-            $rdata['msg']    = 'Message has been sent';
-        }
-        return $rdata;
+
+        return [
+            'recipients' => count($mailer->getAllRecipientAddresses()),
+            'has_attachments' => !empty($attachment),
+            'timestamp' => time()
+        ];
     }
 
-    public static function setTemplate($template)
+    private static function configureMailer(array $data): PHPMailer
+    {
+        $mailer = new PHPMailer(true);
+        
+        // Extract sender information
+        [$fromName, $fromEmail] = self::parseSenderInfo($data['from']);
+        
+        // Configure SMTP
+        $mailer->isSMTP();
+        $mailer->Host = SMTP_HOST;
+        $mailer->SMTPAuth = true;
+        $mailer->Username = SMTP_USERNAME;
+        $mailer->Password = SMTP_PASSWORD;
+        $mailer->SMTPSecure = SMTP_SECURE;
+        $mailer->Port = SMTP_PORT;
+        
+        // Set sender
+        $mailer->setFrom($fromEmail, $fromName);
+        $mailer->addReplyTo($fromEmail, $fromName);
+        
+        // Add primary recipient
+        $mailer->addAddress(trim($data['to']));
+        
+        return $mailer;
+    }
+
+    private static function parseSenderInfo(string $from): array
+    {
+        if (preg_match('/^(.+?)\s*<(.+?)>$/', trim($from), $matches)) {
+            return [trim($matches[1]), trim($matches[2])];
+        }
+        return ['', $from];
+    }
+
+    private static function addRecipients(PHPMailer $mailer, array $data): void
+    {
+        if (!empty($data['cc'])) {
+            foreach ((array)$data['cc'] as $cc) {
+                $mailer->addCC(trim($cc));
+            }
+        }
+
+        if (!empty($data['bcc'])) {
+            foreach ((array)$data['bcc'] as $bcc) {
+                $mailer->addBCC(trim($bcc));
+            }
+        }
+    }
+
+    private static function addAttachment(PHPMailer $mailer, array $attachment): void
+    {
+        if (empty($attachment['location']) || empty($attachment['name'])) {
+            throw new \InvalidArgumentException('Invalid attachment data');
+        }
+
+        $content = @file_get_contents($attachment['location']);
+        if ($content === false) {
+            throw new \RuntimeException("Could not read attachment: {$attachment['location']}");
+        }
+
+        $mailer->addStringAttachment(
+            $content,
+            $attachment['name'],
+            PHPMailer::ENCODING_BASE64,
+            $attachment['mime_type'] ?? 'application/pdf'
+        );
+    }
+
+    public static function setTemplate(string $template): void
     {
         self::$template = $template;
     }
 
-    private static function wrapTemplate($content)
-    {
-        return str_replace("{{content}}", $content, self::$template) . self::$footer;
-    }
-
-    public static function setFooter($footer)
+    public static function setFooter(string $footer): void
     {
         self::$footer = $footer;
+    }
+
+    private static function wrapTemplate(string $content): string
+    {
+        return str_replace('{{content}}', $content, self::$template) . self::$footer;
     }
 }
