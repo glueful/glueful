@@ -49,6 +49,29 @@ psql mapi_dev < database/init/init.sql
 </VirtualHost>
 ```
 
+## Environment Configuration
+
+Configure the following in your `.env` file:
+
+```bash
+# Database
+DB_CONNECTION=primary
+DB_HOST=localhost
+DB_PORT=5432
+DB_DATABASE=mapi_dev
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
+
+# Security
+DEFAULT_SECURITY_LEVEL=2
+ENABLE_PERMISSIONS=true
+
+# Cache
+CACHE_DRIVER=redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+```
+
 ## Database Schema
 
 The system includes the following core tables:
@@ -107,9 +130,60 @@ API endpoints are defined using JSON definition files in `api/api-json-definitio
 
 ## Security Levels
 
-1. **Flexible**: Token-only validation
-2. **Moderate**: Token + IP validation
-3. **Strict**: Token + IP + User Agent validation
+1. **Flexible (Level 1)**
+   - Basic JWT token validation
+   - Suitable for development
+
+2. **Moderate (Level 2)**
+   - JWT token validation
+   - IP address validation
+   - Rate limiting
+   - Recommended for production
+
+3. **Strict (Level 3)**
+   - All Moderate features
+   - User agent validation
+   - Request encryption
+   - Required for sensitive data
+
+## Storage Options
+
+The framework supports multiple storage drivers for handling file uploads and blob storage:
+
+1. **Local Storage**
+   - Files stored on local filesystem
+   - Configure path in `.env`: `STORAGE_PATH=/storage/app`
+   - Best for single-server deployments
+   - Default option
+
+2. **S3-Compatible Storage**
+   - Amazon S3 or compatible services
+   - Scalable cloud storage solution
+   - Configure with:
+     ```
+     STORAGE_DRIVER=s3
+     S3_KEY=your_key
+     S3_SECRET=your_secret
+     S3_BUCKET=your_bucket
+     S3_REGION=your_region
+     ```
+
+3. **FTP Storage**
+   - Remote FTP server storage
+   - Configure with:
+     ```
+     STORAGE_DRIVER=ftp
+     FTP_HOST=ftp.example.com
+     FTP_USERNAME=your_username
+     FTP_PASSWORD=your_password
+     FTP_ROOT=/path
+     ```
+
+File upload settings:
+- Maximum upload size: `MAX_UPLOAD_SIZE` in bytes
+- Allowed file types defined in `api/config/upload.php`
+- Automatic image resizing and thumbnail generation
+- File deduplication using content hashing
 
 ## Directory Structure
 
@@ -135,6 +209,42 @@ mapi/
 ## API Documentation
 - Auto-generated OpenAPI/Swagger documentation
 - Available at /docs/swagger.json
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Database Connection Failed**
+   - Verify database credentials in `.env`
+   - Ensure database service is running
+   - Check network connectivity
+
+2. **Invalid JWT Token**
+   - Token may be expired
+   - Verify token signing key
+   - Check clock sync between services
+
+3. **Permission Denied**
+   - Verify user roles
+   - Check permission configuration
+   - Ensure proper token scope
+
+## Development Guidelines
+
+1. **Code Style**
+   - Follow PSR-12 standards
+   - Use type hints
+   - Document all methods
+
+2. **API Endpoints**
+   - Use versioning (v1, v2)
+   - Follow REST principles
+   - Include validation rules
+
+3. **Security**
+   - Sanitize all inputs
+   - Use prepared statements
+   - Implement rate limiting
 
 ## Contributing
 
