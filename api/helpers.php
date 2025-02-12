@@ -38,15 +38,32 @@ if (!function_exists('config')) {
     function config(string $key, $default = null) {
         static $config = [];
         
-        // Split the key into filename and key parts
-        [$file, $setting] = explode('.', $key);
+        $segments = explode('.', $key);
+        $file = array_shift($segments);
         
         // Load config file if not cached
         if (!isset($config[$file])) {
             $path = dirname(__DIR__) . "/config/{$file}.php";
-            $config[$file] = file_exists($path) ? require $path : [];
+            if (!file_exists($path)) {
+                return $default;
+            }
+            $config[$file] = require $path;
         }
         
-        return $config[$file][$setting] ?? $default;
+        // Return entire config if no segments left
+        if (empty($segments)) {
+            return $config[$file];
+        }
+        
+        // Navigate through segments to get nested value
+        $current = $config[$file];
+        foreach ($segments as $segment) {
+            if (!isset($current[$segment])) {
+                return $default;
+            }
+            $current = $current[$segment];
+        }
+        
+        return $current;
     }
 }

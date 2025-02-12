@@ -16,14 +16,16 @@ class JsonGenerator {
     private bool $runFromConsole;
     private string $endOfLine;
     private array $generatedFiles = [];
+    private string $dbResource;
 
     public function __construct(bool $runFromConsole = false) {
         $this->runFromConsole = $runFromConsole;
         $this->endOfLine = $runFromConsole ? "\n" : "<br/>";
         
-        // Use global namespace for config function
+        $dbConfig = config('database');
+        $this->dbResource = array_key_first(array_filter($dbConfig, 'is_array'));
+        
         $dir = config('paths.json_definitions');
-        // error_log("JsonGenerator path: $dir");
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -45,12 +47,12 @@ class JsonGenerator {
     private function generateTableDefinition(string $dbResource, string $tableName): void {
         $filename = \config('paths.json_definitions') . "$dbResource.$tableName.json";
         
-        // Skip if we've already generated this file
         if (isset($this->generatedFiles[$filename])) {
             return;
         }
         
-        $db = Utils::getMySQLConnection($dbResource);
+        $settings = config("database.$dbResource");
+        $db = Utils::getMySQLConnection($settings);
         // Quote the table name properly to prevent SQL injection
         $quotedTableName = "`" . str_replace("`", "``", $tableName) . "`";
         $stmt = $db->query("DESCRIBE $quotedTableName");
@@ -163,29 +165,25 @@ class JsonGenerator {
     }
 
     private function generateDatabaseDefinitions(?string $targetDb): void {
-        global $databaseServer;
-
-        if (empty($databaseServer)) {
-            throw new \RuntimeException("No database configuration found");
+        $dbConfig = config('database');
+        $dbResource = $targetDb ?? $this->dbResource;
+        
+        if (empty($dbConfig) || !isset($dbConfig[$dbResource])) {
+            throw new \RuntimeException("No valid database configuration found for: $dbResource");
         }
 
-        foreach ($databaseServer as $dbIndex => $settings) {
-            if ($targetDb && $targetDb !== $dbIndex) {
-                continue;
-            }
+        $settings = $dbConfig[$dbResource];
+        
+        try {
+            $db = Utils::getMySQLConnection($settings);
+            $this->log("--- Generating JSON: dbres=$dbResource ---");
 
-            try {
-                $db = Utils::getMySQLConnection($dbIndex);
-                $this->log("--- Generating JSON: dbres=$dbIndex ---");
-
-                $tables = $db->query("SHOW TABLES");
-                while ($table = $tables->fetch(\PDO::FETCH_NUM)) {
-                    $this->generateTableDefinition($dbIndex, $table[0]);
-                }
-            } catch (\Exception $e) {
-                $this->log("Error processing database $dbIndex: " . $e->getMessage());
-                continue;
+            $tables = $db->query("SHOW TABLES");
+            while ($table = $tables->fetch(\PDO::FETCH_NUM)) {
+                $this->generateTableDefinition($dbResource, $table[0]);
             }
+        } catch (\Exception $e) {
+            $this->log("Error processing database: " . $e->getMessage());
         }
     }
 
@@ -197,21 +195,17 @@ class JsonGenerator {
     }
 
     private function getOrCreateAdminRole(): string|int {
-        global $databaseServer, $databaseResource;
-        
-        // Determine which database to use
-        $dbIndex = isset($databaseServer['users']) ? 'users' : 'primary';
-        $databaseResource = $dbIndex;  // Set the global database resource
+        $settings = config("database.{$this->dbResource}");
         
         try {
-            $db = Utils::getMySQLConnection($dbIndex);
+            $db = Utils::getMySQLConnection($settings);
             
             // Create both roles and permissions configurations if they don't exist
-            if (!file_exists(config('paths.json_definitions') . "$dbIndex.roles.json")) {
-                $this->createRolesConfig($dbIndex);
+            if (!file_exists(config('paths.json_definitions') . "{$this->dbResource}.roles.json")) {
+                $this->createRolesConfig($this->dbResource);
             }
-            if (!file_exists(config('paths.json_definitions') . "$dbIndex.permissions.json")) {
-                $this->createPermissionsConfig($dbIndex);
+            if (!file_exists(config('paths.json_definitions') . "{$this->dbResource}.permissions.json")) {
+                $this->createPermissionsConfig($this->dbResource);
             }
             
             $stmt = $db->prepare("SELECT * FROM roles WHERE name = :name LIMIT 1");
@@ -311,9 +305,10 @@ class JsonGenerator {
         }
         
         $permissions = implode('', Permission::getAll());
+        $settings = config("database.{$this->dbResource}");
         
         try {
-            $db = Utils::getMySQLConnection('users');
+            $db = Utils::getMySQLConnection($settings);
             $stmt = $db->prepare(
                 "INSERT INTO permissions (role_id, model, permissions) VALUES (:roleId, :model, :permissions)"
             );
@@ -353,7 +348,8 @@ class JsonGenerator {
     private function permissionExists(string|int $roleId, string $model): bool
     {
         try {
-            $db = Utils::getMySQLConnection('users');
+            $settings = config("database.{$this->dbResource}");
+            $db = Utils::getMySQLConnection($settings);
             $stmt = $db->prepare(
                 "SELECT 1 FROM permissions WHERE role_id = :roleId AND model = :model LIMIT 1"
             );

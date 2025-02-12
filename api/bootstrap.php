@@ -9,6 +9,3 @@ $dotenv->load();
 
 // Load helpers (must be loaded before any config files)
 require_once __DIR__ . '/helpers.php';
-
-// Load database configuration use env() and config() functions
-require_once dirname(__DIR__) . '/db.config.php';// Now config files can safely use env() and config() functions

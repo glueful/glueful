@@ -233,10 +233,10 @@ class API
 
     private static function prepareDatabaseResource(?string $dbres): void 
     {
-        global $databaseResource;
+
         
-        $databaseResource = $dbres ?? config('database.default');
-        Utils::createMySQLConnection($databaseResource);
+        $databaseResource = config('database.primary');
+        Utils::createPDOConnection($databaseResource);
     }
 
     public static function processRequest(array $getParams, array $postParams = [], array $fileParams = []): array 

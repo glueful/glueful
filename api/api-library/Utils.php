@@ -10,69 +10,33 @@ class Utils
     /** @var array<string, \PDO> */
     private static array $resources = [];
 
+    public static function init(): void
+    {
+        self::$resources = config('database.primary');
+    }
+
     /**
      * @return \PDO
      * @throws \RuntimeException
      */
-    public static function getMySQLConnection(string $dbIndex): \PDO 
+    public static function getMySQLConnection(array $settings = null): \PDO 
     {
-        global $databaseServer, $connections;
-
-        if (!isset($databaseServer[$dbIndex])) {
-            // Fallback to primary database if specified resource doesn't exist
-            $dbIndex = 'primary';
-            if (!isset($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
-            }
-        }
-
-        if (!isset(self::$resources[$dbIndex])) {
-            self::createMySQLConnection($dbIndex);
-        }
-        return self::$resources[$dbIndex];
-    }
-
-    /**
-     * @throws \RuntimeException
-     */
-    public static function createMySQLConnection(string $dbIndex): void 
-    {
-        global $databaseServer;
-
-        if (!isset($databaseServer[$dbIndex])) {
-            // Fallback to primary database if specified resource doesn't exist
-            $dbIndex = 'primary';
-            if (!isset($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
-            }
-        }
-
-        if (!isset($databaseServer[$dbIndex]) || !is_array($databaseServer[$dbIndex])) {
-            // Try to load database config if not already loaded
-            $configPath = config('paths.base') . 'db.config.php';
-            if (file_exists($configPath)) {
-                require_once($configPath);
-            }
+        $connectionKey = 'primary';
+        if (!isset(self::$resources[$connectionKey])) {
+            // Always use primary database settings
+            $dbSettings = $settings ?? config('database.primary');
             
-            if (!isset($databaseServer[$dbIndex]) || !is_array($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
+            if (!$dbSettings) {
+                throw new \RuntimeException("Invalid database configuration");
             }
-        }
 
-        $settings = $databaseServer[$dbIndex];
-        $required = ['host', 'user', 'pass', 'db'];
-        
-        foreach ($required as $field) {
-            if (!isset($settings[$field])) {
-                throw new \RuntimeException("Missing required database setting: $field");
+            try {
+                self::$resources[$connectionKey] = self::createPDOConnection($dbSettings);
+            } catch (\PDOException $e) {
+                throw new \RuntimeException("Database connection failed: " . $e->getMessage());
             }
         }
-        
-        try {
-            self::$resources[$dbIndex] = self::createPDOConnection($settings);
-        } catch (\PDOException $e) {
-            throw new \RuntimeException("Database connection failed: " . $e->getMessage());
-        }
+        return self::$resources[$connectionKey];
     }
 
     public static function createPDOConnection(array $settings): \PDO 
