@@ -319,7 +319,9 @@ class APIEngine
         global $databaseResource;
         $currentResource = $databaseResource;
         $databaseResource = 'users';
-        Utils::createMySQLResource($databaseResource);
+        
+        // Use PDO connection instead of mysqli
+        $db = Utils::getMySQLConnection($databaseResource);
 
         // Get user roles using JSON definition
         $param = ['fields' => 'user_id,role_id', 'user_id' => $userID];
@@ -349,7 +351,6 @@ class APIEngine
         }
 
         // Restore original database resource
-        Utils::createMySQLResource($currentResource);
         $databaseResource = $currentResource;
 
         return $formattedPermissions;
@@ -377,7 +378,36 @@ class APIEngine
         }
 
         $builder = self::$queryBuilderClass;
-        return $builder::query($builder::prepare(QueryAction::fromString($action), $definition, $params));
+        $query = $builder::prepare(QueryAction::fromString($action), $definition, $params);
+
+        // Get PDO connection
+        global $databaseResource;
+        $db = Utils::getMySQLConnection($databaseResource);
+
+        try {
+            // Prepare the statement
+            $stmt = $db->prepare($query['sql']);
+            
+            // Bind parameters
+            foreach ($query['params'] as $param => $value) {
+                $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+                $stmt->bindValue($param, $value, $type);
+            }
+
+            // Execute the query
+            $stmt->execute();
+
+            // Return results based on query type
+            return match($action) {
+                'list', 'view' => $stmt->fetchAll(),
+                'insert' => ['id' => $db->lastInsertId()],
+                'update', 'delete' => ['affected' => $stmt->rowCount()],
+                default => []
+            };
+
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Query execution failed: " . $e->getMessage());
+        }
     }
 
     private static function loadDefinition(string $function): array 

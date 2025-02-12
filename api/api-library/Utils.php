@@ -3,16 +3,18 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
+
 class Utils 
 {
-    /** @var array<string, \mysqli|\PDO> */
+    /** @var array<string, \PDO> */
     private static array $resources = [];
 
     /**
-     * @return \mysqli
+     * @return \PDO
      * @throws \RuntimeException
      */
-    public static function getMySQLResource(string $dbIndex): \mysqli 
+    public static function getMySQLConnection(string $dbIndex): \PDO 
     {
         global $databaseServer, $connections;
 
@@ -25,7 +27,7 @@ class Utils
         }
 
         if (!isset(self::$resources[$dbIndex])) {
-            self::createMySQLResource($dbIndex);
+            self::createMySQLConnection($dbIndex);
         }
         return self::$resources[$dbIndex];
     }
@@ -33,7 +35,7 @@ class Utils
     /**
      * @throws \RuntimeException
      */
-    public static function createMySQLResource(string $dbIndex): void 
+    public static function createMySQLConnection(string $dbIndex): void 
     {
         global $databaseServer;
 
@@ -47,7 +49,7 @@ class Utils
 
         if (!isset($databaseServer[$dbIndex]) || !is_array($databaseServer[$dbIndex])) {
             // Try to load database config if not already loaded
-            $configPath = WEBSITE_BASE_DIRECTORY . 'db.config.php';
+            $configPath = config('paths.base') . 'db.config.php';
             if (file_exists($configPath)) {
                 require_once($configPath);
             }
@@ -67,26 +69,13 @@ class Utils
         }
         
         try {
-            $mysqli = mysqli_connect(
-                $settings['host'],
-                $settings['user'],
-                $settings['pass'],
-                $settings['db'],
-                (int)$settings['port'] ?? 3306  // Cast port to integer
-            );
-
-            if (!$mysqli) {
-                throw new \RuntimeException('Failed to connect to MySQL: ' . mysqli_connect_error());
-            }
-
-            mysqli_set_charset($mysqli, 'utf8mb4');
-            self::$resources[$dbIndex] = $mysqli;
-        } catch (\Exception $e) {
+            self::$resources[$dbIndex] = self::createPDOConnection($settings);
+        } catch (\PDOException $e) {
             throw new \RuntimeException("Database connection failed: " . $e->getMessage());
         }
     }
 
-    private static function createMySQLPDO(array $settings): \PDO 
+    public static function createPDOConnection(array $settings): \PDO 
     {
         $dsn = sprintf(
             'mysql:host=%s;dbname=%s;port=%d;charset=utf8mb4',

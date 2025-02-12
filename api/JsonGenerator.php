@@ -50,8 +50,11 @@ class JsonGenerator {
             return;
         }
         
-        $resource = Utils::getMySQLResource($dbResource);
-        $fields = $resource->query("DESCRIBE $tableName");
+        $db = Utils::getMySQLConnection($dbResource);
+        // Quote the table name properly to prevent SQL injection
+        $quotedTableName = "`" . str_replace("`", "``", $tableName) . "`";
+        $stmt = $db->query("DESCRIBE $quotedTableName");
+        $fields = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         
         $config = [
             'table' => [
@@ -63,7 +66,7 @@ class JsonGenerator {
             ]
         ];
 
-        while ($field = $fields->fetch_assoc()) {
+        foreach ($fields as $field) {
             $config['table']['fields'][] = [
                 'name' => $field['Field'],
                 'api_field' => $this->generateApiFieldName($field['Field']),
@@ -172,17 +175,12 @@ class JsonGenerator {
             }
 
             try {
-                // Pass the database index (string) instead of settings array
-                Utils::createMySQLResource($dbIndex);
+                $db = Utils::getMySQLConnection($dbIndex);
                 $this->log("--- Generating JSON: dbres=$dbIndex ---");
 
-                $resource = Utils::getMySQLResource($dbIndex);
-                
-                if ($resource instanceof \mysqli) {
-                    $tables = mysqli_query($resource, "SHOW TABLES");
-                    while ($table = mysqli_fetch_array($tables, MYSQLI_NUM)) {
-                        $this->generateTableDefinition($dbIndex, $table[0]);
-                    }
+                $tables = $db->query("SHOW TABLES");
+                while ($table = $tables->fetch(\PDO::FETCH_NUM)) {
+                    $this->generateTableDefinition($dbIndex, $table[0]);
                 }
             } catch (\Exception $e) {
                 $this->log("Error processing database $dbIndex: " . $e->getMessage());
@@ -206,24 +204,21 @@ class JsonGenerator {
         $databaseResource = $dbIndex;  // Set the global database resource
         
         try {
-            // Create database connection using string index
-            Utils::createMySQLResource($dbIndex);
+            $db = Utils::getMySQLConnection($dbIndex);
             
-            $param = ['name' => 'Administrator'];
-            $rolesFile = config('paths.json_definitions') . "$dbIndex.roles.json";
-            
-            // Create roles config if it doesn't exist
-            if (!file_exists($rolesFile)) {
+            // Create both roles and permissions configurations if they don't exist
+            if (!file_exists(config('paths.json_definitions') . "$dbIndex.roles.json")) {
                 $this->createRolesConfig($dbIndex);
             }
+            if (!file_exists(config('paths.json_definitions') . "$dbIndex.permissions.json")) {
+                $this->createPermissionsConfig($dbIndex);
+            }
             
-            $roles = json_decode(file_get_contents($rolesFile), true);
-            
-            // Prepare and execute the query
-            $query = "SELECT * FROM roles WHERE name = 'Administrator' LIMIT 1";
-            $adminRole = MySQLQueryBuilder::query($query);
+            $stmt = $db->prepare("SELECT * FROM roles WHERE name = :name LIMIT 1");
+            $stmt->execute(['name' => 'Administrator']);
+            $adminRole = $stmt->fetch();
 
-            $roleId = $adminRole[0]['id'] ?? null;
+            $roleId = $adminRole['id'] ?? null;
             
             if (!$roleId) {
                 $roleId = $this->createAdminRole();
@@ -309,18 +304,27 @@ class JsonGenerator {
         }
     }
 
-    private function assignPermissions(string $roleId, string $model): void 
+    private function assignPermissions(string|int $roleId, string $model): void 
     {
         if ($this->permissionExists($roleId, $model)) {
             return;
         }
         
         $permissions = implode('', Permission::getAll());
-        $query = "INSERT INTO permissions (role_id, model, permissions) VALUES ('$roleId', '$model', '$permissions')";
         
         try {
-            $result = MySQLQueryBuilder::query($query);
-            $this->log("Query result: " . print_r($result, true));
+            $db = Utils::getMySQLConnection('users');
+            $stmt = $db->prepare(
+                "INSERT INTO permissions (role_id, model, permissions) VALUES (:roleId, :model, :permissions)"
+            );
+            
+            $result = $stmt->execute([
+                ':roleId' => $roleId,
+                ':model' => $model,
+                ':permissions' => $permissions
+            ]);
+            
+            $this->log("Permissions assigned: " . ($result ? "success" : "failed"));
         } catch (\Exception $e) {
             $this->log("Error assigning permissions: " . $e->getMessage());
             throw $e;
@@ -346,13 +350,20 @@ class JsonGenerator {
         }
     }
 
-    private function permissionExists(string $roleId, string $model): bool
+    private function permissionExists(string|int $roleId, string $model): bool
     {
-        $query = "SELECT 1 FROM permissions WHERE role_id = '$roleId' AND model = '$model' LIMIT 1";
-        
         try {
-            $result = MySQLQueryBuilder::query($query);
-            return !empty($result);
+            $db = Utils::getMySQLConnection('users');
+            $stmt = $db->prepare(
+                "SELECT 1 FROM permissions WHERE role_id = :roleId AND model = :model LIMIT 1"
+            );
+            
+            $stmt->execute([
+                ':roleId' => $roleId,
+                ':model' => $model
+            ]);
+            
+            return (bool)$stmt->fetch();
         } catch (\Exception $e) {
             $this->log("Error checking permissions: " . $e->getMessage());
             throw $e;

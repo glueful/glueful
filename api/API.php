@@ -236,7 +236,7 @@ class API
         global $databaseResource;
         
         $databaseResource = $dbres ?? config('database.default');
-        Utils::createMySQLResource($databaseResource);
+        Utils::createMySQLConnection($databaseResource);
     }
 
     public static function processRequest(array $getParams, array $postParams = [], array $fileParams = []): array 
@@ -325,13 +325,12 @@ class API
             return [null, null];
         }
 
-        $resource = Utils::getMySQLResource($GLOBALS['databaseResource']);
-        return match(config('database.engine')) {
-            default => [
-                mysqli_real_escape_string($resource, $parts[0]),
-                strtolower(mysqli_real_escape_string($resource, $parts[1]))
-            ]
-        };
+        $db = Utils::getMySQLConnection($GLOBALS['databaseResource']);
+        return [
+            // Use PDO quote instead of mysqli_real_escape_string
+            trim($db->quote($parts[0]), "'"),
+            strtolower(trim($db->quote($parts[1]), "'"))
+        ];
     }
 
     private static function handleSession(string $function, string $action, array $getParams, array $postParams): array 
