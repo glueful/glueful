@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../bootstrap.php';
 use Mapi\Api\Library\APIEngine;
 use RuntimeException;
 use InvalidArgumentException;
+use Mapi\Api\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
 
 class UploadException extends RuntimeException {}
 class ValidationException extends InvalidArgumentException {}
@@ -26,13 +27,20 @@ final class FileUploader
 
     private const MAX_FILE_SIZE = 10485760; // 10MB
 
+    private StorageInterface $storage;
+
     public function __construct(
         private readonly string $uploadsDirectory = '',
-        private readonly string $cdnBaseUrl = ''
+        private readonly string $cdnBaseUrl = '',
+        private readonly ?string $storageDriver = null
     ) {
-        $this->uploadsDirectory = $this->uploadsDirectory ?: config('paths.uploads');
-        $this->cdnBaseUrl = $this->cdnBaseUrl ?: config('paths.cdn');
-        $this->validateDirectory();
+        $this->storage = match($storageDriver ?: config('storage.driver')) {
+            's3' => new S3Storage(),
+            default => new LocalStorage(
+                $this->uploadsDirectory ?: config('paths.uploads'),
+                $this->cdnBaseUrl ?: config('paths.cdn')
+            )
+        };
     }
 
     private function validateDirectory(): void 
@@ -112,18 +120,7 @@ final class FileUploader
 
     private function moveFile(string $tempPath, string $filename): string 
     {
-        $destination = rtrim($this->uploadsDirectory, '/') . '/' . $filename;
-        
-        if (file_exists($destination)) {
-            throw new UploadException('File already exists');
-        }
-
-        if (!move_uploaded_file($tempPath, $destination)) {
-            throw new UploadException('Failed to move uploaded file');
-        }
-
-        chmod($destination, 0644);
-        return $destination;
+        return $this->storage->store($tempPath, $filename);
     }
 
     private function generateSecureFilename(string $originalName): string 
@@ -141,7 +138,7 @@ final class FileUploader
     {
         $params = [
             'name' => $file['name'],
-            'mime_type' => mime_content_type($this->uploadsDirectory . '/' . $filename),
+            'mime_type' => $file['type'],
             'url' => $filename,
             'user_id' => $getParams['user_id'],
             'size' => $file['size'],
@@ -151,7 +148,7 @@ final class FileUploader
         ];
 
         $response = APIEngine::saveData('blobs', 'save', $params);
-        $response['url'] = $this->cdnBaseUrl . $filename;
+        $response['url'] = $this->storage->getUrl($filename);
         
         return $response;
     }
@@ -184,8 +181,4 @@ final class FileUploader
         }
     }
 }
-
-// Usage example:
-// $uploader = new FileUploader();
-// $result = $uploader->handleUpload($_POST['token'], $_GET, $_FILES);
 ?>
