@@ -3,10 +3,11 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
 
 use Mapi\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
 use Mapi\Api\Http\Response;
+use Mapi\Api\Extensions\Uploader\Storage\StorageInterface;
 
 class APIEngine 
 {
@@ -94,12 +95,15 @@ class APIEngine
             }
 
             $blobInfo = $blob[0];
-            $fullUrl = self::getBlobUrl($blobInfo['url']);
+            $storage = self::getStorageDriver();
+            $fullUrl = $storage->getUrl($blobInfo['url']);
+            
             $requestType = $param['type'] ?? 'image';
 
             return match($requestType) {
-                'file' => Response::ok(self::getBlobAsFile($blobInfo))->send(),
+                'file' => Response::ok(self::getBlobAsFile($storage, $blobInfo))->send(),
                 'image' => Response::ok(self::processImageBlob($fullUrl, $param))->send(),
+                'download' => self::downloadBlob($storage, $blobInfo),
                 default => Response::error('Invalid blob type requested')->send()
             };
 
@@ -109,6 +113,55 @@ class APIEngine
         }
     }
 
+    private static function getBlobAsFile(StorageInterface $storage, array $blob): array 
+    {
+        return [
+            'url' => $storage->getUrl($blob['url']),
+            'name' => $blob['name'] ?? basename($blob['url']),
+            'mime_type' => $blob['mime_type'],
+            'size' => $blob['size'] ?? 0,
+            'type' => self::getMimeType($blob['mime_type'])
+        ];
+    }
+
+    private static function downloadBlob(StorageInterface $storage, array $blob): array 
+    {
+        $filename = $blob['name'] ?? basename($blob['url']);
+        $mime = $blob['mime_type'] ?? 'application/octet-stream';
+        
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-cache, must-revalidate');
+        
+        // For S3/remote storage, redirect to presigned URL
+        if ($storage instanceof \Mapi\Api\Extensions\Uploader\Storage\S3Storage) {
+            $url = $storage->getSignedUrl($blob['url'], 300); // 5 minutes expiry
+            header('Location: ' . $url);
+            exit;
+        }
+        
+        // For local storage, read and output file
+        $path = config('paths.uploads') . '/' . $blob['url'];
+        if (file_exists($path)) {
+            readfile($path);
+            exit;
+        }
+
+        return Response::error('File not found', Response::HTTP_NOT_FOUND)->send();
+    }
+
+    private static function getStorageDriver(): StorageInterface 
+    {
+        $storageDriver = config('storage.driver');
+        return match($storageDriver) {
+            's3' => new \Mapi\Api\Extensions\Uploader\Storage\S3Storage(),
+            default => new \Mapi\Api\Extensions\Uploader\Storage\LocalStorage(
+                config('paths.uploads'),
+                config('paths.cdn')
+            )
+        };
+    }
+
     private static function getBlobInfo(string $function, array $param): array 
     {
         $fields = ['fields' => 'id,url,mime_type'];
@@ -116,11 +169,6 @@ class APIEngine
         
         $definition = self::loadDefinition($function);
         return self::executeQuery('list', $definition, $queryParams);
-    }
-
-    private static function getBlobUrl(string $url): string 
-    {
-        return file_exists($url) ? $url : config('paths.cdn') . $url;
     }
 
     private static function processImageBlob(string $src, array $params): array 
@@ -162,14 +210,27 @@ class APIEngine
                 throw new \RuntimeException("Failed to save processed image");
             }
 
+            // Use storage driver for caching
+            $storage = self::getStorageDriver();
+            $cachedPath = 'cache/images/' . $cachedFilename;
+            
+            if ($storage->store($cachePath, $cachedPath)) {
+                return [
+                    'url' => $storage->getUrl($cachedPath),
+                    'cached' => true,
+                    'dimensions' => [
+                        'width' => $config['width'] ?? imagesx(imagecreatefromstring($imageData)),
+                        'height' => $config['height'] ?? imagesy(imagecreatefromstring($imageData))
+                    ],
+                    'size' => strlen($imageData)
+                ];
+            }
+
+            // Fallback to original URL if caching fails
             return [
-                'url' => config('paths.cdn') . 'cache/images/' . $cachedFilename,
-                'cached' => true,
-                'dimensions' => [
-                    'width' => $config['width'] ?? imagesx(imagecreatefromstring($imageData)),
-                    'height' => $config['height'] ?? imagesy(imagecreatefromstring($imageData))
-                ],
-                'size' => strlen($imageData)
+                'url' => $src,
+                'cached' => false,
+                'error' => null
             ];
 
         } catch (\Exception $e) {
@@ -243,7 +304,12 @@ class APIEngine
         ];
 
         $expiration = $remember ? config('services.jwt.remember_expiration') : config('services.jwt.default_expiration');
+        
+        // Generate JWT token first
         $token = JWTService::generate($sessionData, $expiration);
+        
+        // Store session with the same token
+        SessionManager::start($sessionData, $token);
         
         return [...$sessionData, 'token' => $token];
     }
@@ -352,17 +418,6 @@ class APIEngine
                 && $sessionData['user_agent'] === ($_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified'),
             default => false
         };
-    }
-
-    private static function getBlobAsFile(array $blob): array 
-    {
-        $url = config('paths.cdn') . $blob['url'];
-        $mimeType = $blob['mime_type'];
-
-        return [
-            'url' => $url,
-            'type' => self::getMimeType($mimeType)
-        ];
     }
 
     private static function getMimeType(string $mime): string 

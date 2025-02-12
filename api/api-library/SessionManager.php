@@ -3,42 +3,92 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
+
 class SessionManager {
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
-    private const DEFAULT_TTL = 3600; // 1 hour
-
-    public static function start(array $userData): string 
+    private const DEFAULT_TTL = 3600; // 1 hour - default value
+    private const REDIS_HASH_KEY = 'mapi_sessions';
+    private static $ttl; // Variable to hold configurable TTL
+    public static function initialize(): void
     {
+        CacheEngine::initialize('mapi:', 'redis');
+        self::$ttl = config('services.jwt.default_expiration', self::DEFAULT_TTL);
+    }
+
+    public static function start(array $userData, string $token): void 
+    {
+        self::initialize();
         $sessionId = self::generateSessionId();
-        $token = self::generateToken();
         
         $sessionData = [
             'id' => $sessionId,
-            'token' => $token,
+            'token' => $token, // Use the provided JWT token
             'user' => $userData,
             'created_at' => time(),
             'last_activity' => time()
         ];
 
-        // Store session data in cache
-        CacheEngine::set(
-            self::SESSION_PREFIX . $sessionId, 
-            $sessionData, 
-            self::DEFAULT_TTL
-        );
-
-        // Store token reference
-        CacheEngine::set(
-            self::TOKEN_PREFIX . $token, 
-            $sessionId, 
-            self::DEFAULT_TTL
-        );
-
-        return $token;
+        $redis = CacheEngine::getInstance();
+        if ($redis instanceof \Redis) {
+            // Store session data with JWT token
+            $redis->hSet(
+                self::REDIS_HASH_KEY, 
+                $sessionId, 
+                serialize($sessionData)
+            );
+            $redis->expire(self::REDIS_HASH_KEY, self::$ttl);
+            
+            // Map JWT token to session ID
+            $redis->setEx(
+                self::TOKEN_PREFIX . $token,
+                self::$ttl,
+                $sessionId
+            );
+        } else {
+            // Fallback to regular CacheEngine methods
+            CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::$ttl);
+            CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::$ttl);
+        }
     }
 
     public static function get(string $token): ?array 
+    {
+        self::initialize();
+        $redis = CacheEngine::getInstance();
+        
+        if ($redis instanceof \Redis) {
+            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
+            if (!$sessionId) {
+                return null;
+            }
+
+            $sessionData = $redis->hGet(self::REDIS_HASH_KEY, $sessionId);
+            if (!$sessionData) {
+                return null;
+            }
+
+            $session = unserialize($sessionData);
+            if ($session) {
+                // Update last activity
+                $session['last_activity'] = time();
+                $redis->hSet(
+                    self::REDIS_HASH_KEY,
+                    $sessionId,
+                    serialize($session)
+                );
+                // Refresh token expiry
+                $redis->expire(self::TOKEN_PREFIX . $token, self::DEFAULT_TTL);
+                return $session;
+            }
+        }
+
+        // Fallback to regular CacheEngine get
+        return self::getFallback($token);
+    }
+
+    private static function getFallback(string $token): ?array
     {
         $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
         if (!$sessionId) {
@@ -63,15 +113,20 @@ class SessionManager {
 
     public static function destroy(string $token): bool 
     {
-        $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
-        if (!$sessionId) {
+        self::initialize();
+        $redis = CacheEngine::getInstance();
+        
+        if ($redis instanceof \Redis) {
+            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
+            if ($sessionId) {
+                $redis->hDel(self::REDIS_HASH_KEY, $sessionId);
+                $redis->del(self::TOKEN_PREFIX . $token);
+                return true;
+            }
             return false;
         }
 
-        CacheEngine::delete(self::TOKEN_PREFIX . $token);
-        CacheEngine::delete(self::SESSION_PREFIX . $sessionId);
-        
-        return true;
+        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
     }
 
     public static function update(string $oldToken, array $newData, string $newToken): bool

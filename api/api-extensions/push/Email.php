@@ -2,16 +2,26 @@
 
 declare(strict_types=1);
 
+namespace Mapi\Api\Extensions\Push;
+
+require_once __DIR__ . '../../../bootstrap.php';
+
 use Mapi\Api\Library\Extensions;
 use Mapi\Api\API;
+use Mapi\Api\Extensions\Push\AdvancedEmail;
 use PHPMailer\PHPMailer\{PHPMailer, Exception as PHPMailerException};
 
 class Email extends Extensions
 {
     public static string $template = "{{content}}";
     public static string $footer = "";
-    private static bool $useSmtp = false;
+    private static bool $useSmtp;
     private static array $smtpConfig = [];
+
+    public static function __constructStatic()
+    {
+        self::$useSmtp = config('mail.smtp.useSmtp', false);
+    }
 
     public static function process(array $getParams, array $postParams): array
     {
@@ -60,12 +70,12 @@ class Email extends Extensions
             $mailer->isSMTP();
             
             // Configure SMTP
-            $mailer->Host = self::$smtpConfig['host'] ?? 'localhost';
-            $mailer->SMTPAuth = self::$smtpConfig['auth'] ?? false;
-            $mailer->Username = self::$smtpConfig['username'] ?? '';
-            $mailer->Password = self::$smtpConfig['password'] ?? '';
-            $mailer->SMTPSecure = self::$smtpConfig['secure'] ?? '';
-            $mailer->Port = self::$smtpConfig['port'] ?? 25;
+            $mailer->Host = self::$smtpConfig['host'] ?? config('mail.smtp.host', 'localhost');
+            $mailer->SMTPAuth = self::$smtpConfig['auth'] ?? config('mail.smtp.auth', false);
+            $mailer->Username = self::$smtpConfig['username'] ??  config('mail.smtp.username', '');
+            $mailer->Password = self::$smtpConfig['password'] ??  config('mail.smtp.password', '');
+            $mailer->SMTPSecure = self::$smtpConfig['secure'] ?? config('mail.smtp.secure', 'tls');
+            $mailer->Port = self::$smtpConfig['port'] ?? (int) config('mail.smtp.port', 587);
 
             // Set email content
             $mailer->setFrom($data['from']);
@@ -95,7 +105,10 @@ class Email extends Extensions
 
     private static function handleAdvancedEmail(array $getParams, array $postParams): array
     {
-        @include_once("AdvancedEmail.php");
+        if (!class_exists(AdvancedEmail::class)) {
+            require_once __DIR__ . "/AdvancedEmail.php";
+        }
+        
         AdvancedEmail::setTemplate(self::$template);
         AdvancedEmail::setFooter(self::$footer);
 
