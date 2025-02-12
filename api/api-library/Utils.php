@@ -3,90 +3,43 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
+
 class Utils 
 {
-    /** @var array<string, \mysqli|\PDO> */
+    /** @var array<string, \PDO> */
     private static array $resources = [];
 
-    /**
-     * @return \mysqli
-     * @throws \RuntimeException
-     */
-    public static function getMySQLResource(string $dbIndex): \mysqli 
+    public static function init(): void
     {
-        global $databaseServer, $connections;
-
-        if (!isset($databaseServer[$dbIndex])) {
-            // Fallback to primary database if specified resource doesn't exist
-            $dbIndex = 'primary';
-            if (!isset($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
-            }
-        }
-
-        if (!isset(self::$resources[$dbIndex])) {
-            self::createMySQLResource($dbIndex);
-        }
-        return self::$resources[$dbIndex];
+        self::$resources = config('database.primary');
     }
 
     /**
+     * @return \PDO
      * @throws \RuntimeException
      */
-    public static function createMySQLResource(string $dbIndex): void 
+    public static function getMySQLConnection(array $settings = null): \PDO 
     {
-        global $databaseServer;
-
-        if (!isset($databaseServer[$dbIndex])) {
-            // Fallback to primary database if specified resource doesn't exist
-            $dbIndex = 'primary';
-            if (!isset($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
-            }
-        }
-
-        if (!isset($databaseServer[$dbIndex]) || !is_array($databaseServer[$dbIndex])) {
-            // Try to load database config if not already loaded
-            $configPath = WEBSITE_BASE_DIRECTORY . 'db.config.php';
-            if (file_exists($configPath)) {
-                require_once($configPath);
-            }
+        $connectionKey = 'primary';
+        if (!isset(self::$resources[$connectionKey])) {
+            // Always use primary database settings
+            $dbSettings = $settings ?? config('database.primary');
             
-            if (!isset($databaseServer[$dbIndex]) || !is_array($databaseServer[$dbIndex])) {
-                throw new \RuntimeException("Invalid database configuration for: $dbIndex");
-            }
-        }
-
-        $settings = $databaseServer[$dbIndex];
-        $required = ['host', 'user', 'pass', 'db'];
-        
-        foreach ($required as $field) {
-            if (!isset($settings[$field])) {
-                throw new \RuntimeException("Missing required database setting: $field");
-            }
-        }
-        
-        try {
-            $mysqli = mysqli_connect(
-                $settings['host'],
-                $settings['user'],
-                $settings['pass'],
-                $settings['db'],
-                (int)$settings['port'] ?? 3306  // Cast port to integer
-            );
-
-            if (!$mysqli) {
-                throw new \RuntimeException('Failed to connect to MySQL: ' . mysqli_connect_error());
+            if (!$dbSettings) {
+                throw new \RuntimeException("Invalid database configuration");
             }
 
-            mysqli_set_charset($mysqli, 'utf8mb4');
-            self::$resources[$dbIndex] = $mysqli;
-        } catch (\Exception $e) {
-            throw new \RuntimeException("Database connection failed: " . $e->getMessage());
+            try {
+                self::$resources[$connectionKey] = self::createPDOConnection($dbSettings);
+            } catch (\PDOException $e) {
+                throw new \RuntimeException("Database connection failed: " . $e->getMessage());
+            }
         }
+        return self::$resources[$connectionKey];
     }
 
-    private static function createMySQLPDO(array $settings): \PDO 
+    public static function createPDOConnection(array $settings): \PDO 
     {
         $dsn = sprintf(
             'mysql:host=%s;dbname=%s;port=%d;charset=utf8mb4',

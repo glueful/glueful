@@ -12,10 +12,19 @@ use Mapi\Api\Extensions\Uploader\Storage\StorageInterface;
 class APIEngine 
 {
     private static ?string $queryBuilderClass = null;
+    private static string $currentResource;
 
     public static function initialize(string $queryBuilderClass): void 
     {
         self::$queryBuilderClass = $queryBuilderClass;
+        // Initialize with first available database resource
+        $dbConfig = config('database');
+        self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
+    }
+
+    public static function setDatabaseResource(string $resource): void
+    {
+        self::$currentResource = $resource;
     }
 
     public static function getData(string $function, string $action, array $param, ?array $filter = null): array 
@@ -64,19 +73,31 @@ class APIEngine
         return Response::error('Session already invalidated', Response::HTTP_BAD_REQUEST)->send();
     }
 
-    public static function validateSession(?string $function, ?string $action, array $param): array 
+    public static function validateSession(?string $function, ?string $action, array $params): array 
     {
-        if (!isset($param['token'])) {
+        if (!isset($params['token'])) {
             return Response::unauthorized('No session token provided')->send();
         }
 
-        $session = SessionManager::get($param['token']);
+        $session = SessionManager::get($params['token']);
         if (!$session) {
             return Response::unauthorized('Invalid or expired session')->send();
         }
 
+        // Validate the session security level
         if (!self::validateSecurityLevel($session)) {
             return Response::error('Session security check failed', Response::HTTP_FORBIDDEN)->send();
+        }
+
+        // If function is provided, validate against the model
+        if ($function) {
+            // Determine the model prefix based on function type
+            $prefix = str_contains($function, '.') ? 'api.ext.' : 'api.' . self::$currentResource . '.';
+            $model = $prefix . $function;
+
+            if (!Permissions::hasPermission($model, Permission::VIEW, $params['token'])) {
+                return Response::error('Permission denied', Response::HTTP_FORBIDDEN)->send();
+            }
         }
 
         return Response::ok($session)->send();
@@ -316,10 +337,11 @@ class APIEngine
 
     private static function getUserPermissions(int $userID): array 
     {
-        global $databaseResource;
+        $databaseResource = config('database.primary');
         $currentResource = $databaseResource;
-        $databaseResource = 'users';
-        Utils::createMySQLResource($databaseResource);
+        
+        // Use PDO connection instead of mysqli
+        $db = Utils::getMySQLConnection($databaseResource);
 
         // Get user roles using JSON definition
         $param = ['fields' => 'user_id,role_id', 'user_id' => $userID];
@@ -349,7 +371,6 @@ class APIEngine
         }
 
         // Restore original database resource
-        Utils::createMySQLResource($currentResource);
         $databaseResource = $currentResource;
 
         return $formattedPermissions;
@@ -377,25 +398,53 @@ class APIEngine
         }
 
         $builder = self::$queryBuilderClass;
-        return $builder::query($builder::prepare(QueryAction::fromString($action), $definition, $params));
+        $query = $builder::prepare(QueryAction::fromString($action), $definition, $params);
+
+        // Get PDO connection
+        $databaseResource = config('database.primary');
+        $db = Utils::getMySQLConnection($databaseResource);
+
+        try {
+            // Prepare the statement
+            $stmt = $db->prepare($query['sql']);
+            
+            // Bind parameters
+            foreach ($query['params'] as $param => $value) {
+                $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+                $stmt->bindValue($param, $value, $type);
+            }
+
+            // Execute the query
+            $stmt->execute();
+
+            // Return results based on query type
+            return match($action) {
+                'list', 'view' => $stmt->fetchAll(),
+                'insert' => ['id' => $db->lastInsertId()],
+                'update', 'delete' => ['affected' => $stmt->rowCount()],
+                default => []
+            };
+
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Query execution failed: " . $e->getMessage());
+        }
     }
 
     private static function loadDefinition(string $function): array 
     {
-        global $databaseResource;
-        
-        $path = config('paths.json_definitions') . $databaseResource . '.' . $function . ".json";
+        $resource = self::$currentResource;
+        $path = config('paths.json_definitions') . $resource . '.' . $function . '.json';
         
         if (!file_exists($path)) {
             throw new \RuntimeException(
-                "The definition $databaseResource.$function.json does not exist",
+                "The definition $resource.$function.json does not exist",
                 Response::HTTP_NOT_FOUND
             );
         }
 
         $definition = json_decode(file_get_contents($path), true);
         if (!$definition) {
-            throw new \RuntimeException("Invalid JSON definition");
+            throw new \RuntimeException("Invalid JSON definition for $function");
         }
 
         return $definition;
@@ -454,13 +503,15 @@ class APIEngine
                 $param['password'] = password_hash($param['password'], PASSWORD_DEFAULT);
             }
 
-            $definition = self::loadDefinition('users');
+            // Load users definition and execute query
+            $definition = self::getDefinition('users');
             $result = self::executeQuery('list', $definition, self::sanitizeParams($param));
             
             if (count($result) !== 1) {
                 return null;
             }
             
+            // Rest of the method remains the same
             $userData = $result[0];
             
             // Verify password if provided
@@ -482,6 +533,11 @@ class APIEngine
             error_log("Failed to get user data: " . $e->getMessage());
             return null;
         }
+    }
+
+    protected static function getDefinition(string $function): ?array
+    {
+        return self::loadDefinition($function);
     }
 }
 
