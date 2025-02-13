@@ -3,25 +3,21 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-enum QueryAction {
-    case SELECT;
-    case INSERT;
-    case UPDATE;
-    case DELETE;
-    case REPLACE;
-    case COUNT;
-    case SUM;
+enum QueryAction: string {
+    case SELECT = 'select';
+    case INSERT = 'insert';
+    case UPDATE = 'update';
+    case DELETE = 'delete';
+    case CUSTOM = 'custom';
 
-    public static function fromString(string $action): self 
-    {
-        return match($action) {
-            'list' => self::SELECT,
-            'save' => self::INSERT,
-            'delete' => self::UPDATE,
-            'replace' => self::REPLACE,
-            'count' => self::COUNT,
-            'sum' => self::SUM,
-            default => throw new \InvalidArgumentException("Invalid query action: $action")
+    public static function fromString(string $value): self {
+        return match (strtolower($value)) {
+            'list', 'view', 'select' => self::SELECT,
+            'insert', 'create' => self::INSERT,
+            'update', 'edit' => self::UPDATE,
+            'delete', 'remove' => self::DELETE,
+            'custom' => self::CUSTOM,
+            default => throw new \ValueError("Invalid query action: {$value}")
         };
     }
 }

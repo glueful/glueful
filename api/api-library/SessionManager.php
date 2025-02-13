@@ -12,7 +12,7 @@ class SessionManager {
     public static function initialize(): void
     {
         CacheEngine::initialize('mapi:', 'redis');
-        self::$ttl = config('services.jwt.default_expiration', self::DEFAULT_TTL);
+        self::$ttl = config('session.access_token_lifetime', self::DEFAULT_TTL);
     }
 
     public static function start(array $userData, string $token): void 
@@ -49,13 +49,32 @@ class SessionManager {
             CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::$ttl);
             CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::$ttl);
         }
+
+        // Store session in database
+        if (isset($userData['refresh_token'])) {
+            TokenManager::storeSession(
+                $userData['user_uuid'],
+                [
+                    'access_token' => $token,
+                    'refresh_token' => $userData['refresh_token'],
+                    'token_fingerprint' => TokenManager::generateTokenFingerprint($token)
+                ]
+            );
+        }
     }
 
     public static function get(string $token): ?array 
     {
         self::initialize();
-        $redis = CacheEngine::getInstance();
         
+        // First validate token in database
+        $validToken = TokenManager::validateAccessToken($token);
+        if (!$validToken) {
+            return null;
+        }
+
+        // Then get session from cache
+        $redis = CacheEngine::getInstance();
         if ($redis instanceof \Redis) {
             $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
             if (!$sessionId) {
@@ -112,8 +131,12 @@ class SessionManager {
     public static function destroy(string $token): bool 
     {
         self::initialize();
-        $redis = CacheEngine::getInstance();
         
+        // Revoke session in database
+        TokenManager::revokeSession($token);
+        
+        // Remove from cache
+        $redis = CacheEngine::getInstance();
         if ($redis instanceof \Redis) {
             $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
             if ($sessionId) {

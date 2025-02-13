@@ -5,36 +5,44 @@ namespace Mapi\Api\Library;
 
 class JWTService 
 {
-    private const ALGORITHM = 'HS256';
-    private static string $secret;
+    private static string $key;
+    private static string $algorithm = 'HS256';
     private static array $invalidatedTokens = [];
     
-    public static function initialize(string $secret): void 
+    public static function initialize(): void 
     {
-        self::$secret = $secret;
+        self::$key = config('security.jwt_secret');
+        if (empty(self::$key)) {
+            throw new \RuntimeException('JWT secret key not configured');
+        }
     }
     
-    public static function generate(array $payload, int $expireInSeconds = 3600): string 
+    public static function generate(array $payload, int $expiration = 900): string 
     {
+        self::initialize();
+
         $header = [
             'typ' => 'JWT',
-            'alg' => self::ALGORITHM
+            'alg' => self::$algorithm
         ];
-        
-        $payload['iat'] = time();
-        $payload['exp'] = time() + $expireInSeconds;
-        
+
+        $payload['iat'] = time();  // Issued at
+        $payload['exp'] = time() + $expiration;  // Expiration
+        $payload['jti'] = bin2hex(random_bytes(16));  // JWT ID
+
         $headerEncoded = self::base64UrlEncode(json_encode($header));
         $payloadEncoded = self::base64UrlEncode(json_encode($payload));
-        
+
         $signature = hash_hmac(
             'sha256', 
-            "$headerEncoded.$payloadEncoded", 
-            self::$secret, 
+            $headerEncoded . '.' . $payloadEncoded, 
+            self::$key, 
             true
         );
-        
-        return "$headerEncoded.$payloadEncoded." . self::base64UrlEncode($signature);
+
+        $signatureEncoded = self::base64UrlEncode($signature);
+
+        return $headerEncoded . '.' . $payloadEncoded . '.' . $signatureEncoded;
     }
     
     public static function invalidate(string $token): bool 
@@ -47,38 +55,47 @@ class JWTService
         return true;
     }
     
-    public static function verify(string $token): ?array 
+    public static function decode(string $token): ?array 
     {
-        if (isset(self::$invalidatedTokens[$token])) {
-            return null;
-        }
-        
+        self::initialize();
+
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
             return null;
         }
-        
+
         [$headerEncoded, $payloadEncoded, $signatureEncoded] = $parts;
-        
-        $signature = self::base64UrlDecode($signatureEncoded);
-        $expectedSignature = hash_hmac(
+
+        // Verify signature
+        $signature = hash_hmac(
             'sha256', 
-            "$headerEncoded.$payloadEncoded", 
-            self::$secret, 
+            $headerEncoded . '.' . $payloadEncoded, 
+            self::$key, 
             true
         );
-        
-        if (!hash_equals($signature, $expectedSignature)) {
+
+        $signatureProvided = self::base64UrlDecode($signatureEncoded);
+        if (!hash_equals($signature, $signatureProvided)) {
             return null;
         }
-        
+
+        // Decode payload
         $payload = json_decode(self::base64UrlDecode($payloadEncoded), true);
-        
-        if ($payload['exp'] < time()) {
+        if (!$payload) {
             return null;
         }
-        
+
+        // Verify expiration
+        if (isset($payload['exp']) && $payload['exp'] < time()) {
+            return null;
+        }
+
         return $payload;
+    }
+    
+    public static function verify(string $token): bool 
+    {
+        return self::decode($token) !== null;
     }
     
     private static function base64UrlEncode(string $data): string 
@@ -89,5 +106,17 @@ class JWTService
     private static function base64UrlDecode(string $data): string 
     {
         return base64_decode(strtr($data, '-_', '+/') . str_repeat('=', 3 - (3 + strlen($data)) % 4));
+    }
+
+    public static function extractClaims(string $token): ?array 
+    {
+        $payload = self::decode($token);
+        return $payload ? array_diff_key($payload, array_flip(['iat', 'exp', 'jti'])) : null;
+    }
+
+    public static function isExpired(string $token): bool 
+    {
+        $payload = self::decode($token);
+        return !$payload || (isset($payload['exp']) && $payload['exp'] < time());
     }
 }
