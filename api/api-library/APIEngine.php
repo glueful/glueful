@@ -458,10 +458,12 @@ class APIEngine
     
     private static function validateSecurityLevel(array $sessionData): bool 
     {
+        $securityLevels = config('security.levels');
+        
         return match($sessionData['type']) {
-            FLEXIBLE_SECURITY => true,
-            MORDERATE_SECURITY => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'],
-            STRICT_SECURITY => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'] 
+            $securityLevels['flexible'] => true,
+            $securityLevels['moderate'] => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'],
+            $securityLevels['strict'] => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'] 
                 && $sessionData['user_agent'] === ($_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified'),
             default => false
         };

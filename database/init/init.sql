@@ -1,21 +1,27 @@
 -- Drop existing tables if needed (in reverse dependency order)
-DROP TABLE IF EXISTS user_roles_lookup CASCADE;
-DROP TABLE IF EXISTS permissions CASCADE;
-DROP TABLE IF EXISTS blobs CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS roles CASCADE;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS auth_sessions;
+DROP TABLE IF EXISTS user_roles_lookup;
+DROP TABLE IF EXISTS permissions;
+DROP TABLE IF EXISTS blobs;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS roles;
 
 -- Create primary tables (no foreign key dependencies)
-\i tables/users.sql
-\i tables/roles.sql
+SOURCE tables/users.sql;
+SOURCE tables/roles.sql;
+SOURCE tables/audit_logs.sql;
 
 -- Create secondary tables (depend on primary tables)
-\i tables/permissions.sql
-\i tables/blobs.sql
-\i tables/user_roles_lookup.sql
+SOURCE tables/permissions.sql;
+SOURCE tables/blobs.sql;
+SOURCE tables/user_roles_lookup.sql;
+SOURCE tables/auth_sessions.sql;
 
 -- Create functions for user management
-\i functions/triggers.sql
+SOURCE functions/nanoid.sql;
+SOURCE functions/triggers.sql;
+SOURCE functions/audit_triggers.sql;
 
 -- Add initial data
-\i seed/001_admin_user.sql
+SOURCE seed/001_admin_user.sql;

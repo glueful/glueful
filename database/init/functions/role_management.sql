@@ -1,23 +1,23 @@
-CREATE OR REPLACE FUNCTION assign_role_to_user(
-    p_user_id INTEGER,
-    p_role_name VARCHAR
-)
-RETURNS VOID AS $$
-BEGIN
-    INSERT INTO user_roles_lookup (user_id, role_id)
-    SELECT p_user_id, id FROM roles WHERE name = p_role_name
-    ON CONFLICT DO NOTHING;
-END;
-$$ LANGUAGE plpgsql;
+DELIMITER //
 
-CREATE OR REPLACE FUNCTION remove_role_from_user(
-    p_user_id INTEGER,
-    p_role_name VARCHAR
+CREATE PROCEDURE assign_role_to_user(
+    IN p_user_uuid CHAR(12),
+    IN p_role_name VARCHAR(255)
 )
-RETURNS VOID AS $$
 BEGIN
-    DELETE FROM user_roles_lookup
-    WHERE user_id = p_user_id
-    AND role_id = (SELECT id FROM roles WHERE name = p_role_name);
-END;
-$$ LANGUAGE plpgsql;
+    INSERT IGNORE INTO user_roles_lookup (user_uuid, role_id)
+    SELECT p_user_uuid, id FROM roles WHERE name = p_role_name;
+END//
+
+CREATE PROCEDURE remove_role_from_user(
+    IN p_user_uuid CHAR(12),
+    IN p_role_name VARCHAR(255)
+)
+BEGIN
+    DELETE url FROM user_roles_lookup url
+    INNER JOIN roles r ON url.role_id = r.id
+    WHERE url.user_uuid = p_user_uuid
+    AND r.name = p_role_name;
+END//
+
+DELIMITER ;
