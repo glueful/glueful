@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
-
 class CacheEngine {
     private static ?\Memcached $memcached = null;
     private static ?\Redis $redis = null;

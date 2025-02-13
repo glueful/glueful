@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api;
 
-require_once __DIR__ . '/../api/bootstrap.php';
-
 use Mapi\Api\Library\{
     Permissions,
     Permission,
@@ -436,7 +434,7 @@ class API
 
         $response = APIEngine::saveData($function, $action, $postParams);
         
-        if (defined('ENABLE_AUDIT') && ENABLE_AUDIT === TRUE) {
+        if (config('app.enable_audit') && config('app.enable_audit') === TRUE) {
             self::auditChanges($function, $getParams, $postParams, $response);
         }
 
@@ -665,8 +663,8 @@ class API
     private static function resolveExtensionPath(string $action, string $function): ?string 
     {
         $paths = [
-            PROJECT_EXTENSIONS_DIRECTORY . "$action/$function.php",
-            API_EXTENSIONS_DIRECTORY . "$action/$function.php"
+            config('paths.project_extensions') . "$action/$function.php", // Project extensions
+            config('paths.api_extensions') . "$action/$function.php" // Core extensions
         ];
 
         foreach ($paths as $path) {

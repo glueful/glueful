@@ -9,11 +9,6 @@ require_once __DIR__ . '/../api/bootstrap.php';
 
 use Mapi\Api\API;
 
-// Debug logging
-// error_log("Request received: " . $_SERVER['REQUEST_URI']);
-// error_log("Method: " . $_SERVER['REQUEST_METHOD']);
-// error_log("Content-Type: " . ($_SERVER['CONTENT_TYPE'] ?? 'none'));
-
 // CORS headers setup
 $corsHeaders = [
     'Access-Control-Allow-Origin' => '*',

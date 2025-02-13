@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+require_once __DIR__ . '/../bootstrap.php';
+
 class Logger {
     private static string $logFile = 'api_debug.log';
     private static bool $enabled = false;
@@ -15,10 +17,10 @@ class Logger {
         }
         
         // Use the configured logs directory
-        self::$logDirectory = defined('LOGS_DIRECTORY') ? LOGS_DIRECTORY : dirname(dirname(__FILE__)) . '/logs';
+        self::$logDirectory = config('paths.logs') ? config('paths.logs') : dirname(dirname(__FILE__)) . '/logs';
         
         // Debug output
-        error_log("Logger initialized with directory: " . self::$logDirectory);
+        // error_log("Logger initialized with directory: " . self::$logDirectory);
         
         // Create logs directory if it doesn't exist
         if (!is_dir(self::$logDirectory)) {

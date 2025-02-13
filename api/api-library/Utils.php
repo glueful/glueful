@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
-
 class Utils 
 {
     /** @var array<string, \PDO> */

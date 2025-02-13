@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once dirname(__DIR__, 2) . '/api/bootstrap.php';
-
 class SessionManager {
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
