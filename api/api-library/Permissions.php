@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
-require_once __DIR__ . '/../bootstrap.php';
-
 enum Permission: string {
     case VIEW = 'A';
     case SAVE = 'B';

@@ -1,8 +1,6 @@
 
 .DS_Store
-db.config.php
 vendor
 .env
-config/_config.php
 app
 docs/swagger.json

@@ -13,4 +13,5 @@ return [
     'rest_mode' => env('REST_MODE', true),
     'active_status' => env('ACTIVE_STATUS', 'active'),
     'deleted_status' => env('DELETED_STATUS', 'deleted'),
+    'enable_audit' => env('ENABLE_AUDIT', false),
 ];
