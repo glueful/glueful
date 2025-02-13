@@ -104,7 +104,7 @@ class APIEngine
     public static function getBlob(string $function, string $action, array $param): array 
     {
         try {
-            if (!isset($param['id'])) {
+            if (!isset($param['uuid'])) {
                 return Response::error('Blob ID is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
@@ -115,7 +115,7 @@ class APIEngine
 
             $blobInfo = $blob[0];
             $storage = self::getStorageDriver();
-            $fullUrl = $storage->getUrl($blobInfo['url']);
+            $fullUrl = $storage->getUrl($blobInfo['filepath']);
             
             $requestType = $param['type'] ?? 'image';
 
@@ -128,39 +128,47 @@ class APIEngine
 
         } catch (\Exception $e) {
             error_log("Blob processing error: " . $e->getMessage());
-            return Response::error('Failed to process blob')->send();
+            return Response::error('Failed to process blob: ' . $e->getMessage())->send();
         }
     }
 
     private static function getBlobAsFile(StorageInterface $storage, array $blob): array 
     {
         return [
-            'url' => $storage->getUrl($blob['url']),
-            'name' => $blob['name'] ?? basename($blob['url']),
+            'id' => $blob['uuid'],
+            'url' => $storage->getUrl($blob['filepath']),
+            'name' => $blob['filename'] ?? basename($blob['filepath']),
             'mime_type' => $blob['mime_type'],
-            'size' => $blob['size'] ?? 0,
-            'type' => self::getMimeType($blob['mime_type'])
+            'size' => $blob['file_size'] ?? 0,
+            'type' => self::getMimeType($blob['mime_type']),
+            'created_at' => $blob['created_at'],
+            'updated_at' => $blob['updated_at'],
+            'status' => $blob['status']
         ];
     }
 
     private static function downloadBlob(StorageInterface $storage, array $blob): array 
     {
-        $filename = $blob['name'] ?? basename($blob['url']);
+        $filename = $blob['filename'] ?? basename($blob['filepath']);
         $mime = $blob['mime_type'] ?? 'application/octet-stream';
         
+        if ($blob['status'] !== 'active') {
+            return Response::error('Blob is not active', Response::HTTP_FORBIDDEN)->send();
+        }
+
         header('Content-Type: ' . $mime);
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Cache-Control: no-cache, must-revalidate');
         
         // For S3/remote storage, redirect to presigned URL
         if ($storage instanceof \Mapi\Api\Extensions\Uploader\Storage\S3Storage) {
-            $url = $storage->getSignedUrl($blob['url'], 300); // 5 minutes expiry
+            $url = $storage->getSignedUrl($blob['filepath'], 300); // 5 minutes expiry
             header('Location: ' . $url);
             exit;
         }
         
         // For local storage, read and output file
-        $path = config('paths.uploads') . '/' . $blob['url'];
+        $path = config('paths.uploads') . '/' . $blob['filepath'];
         if (file_exists($path)) {
             readfile($path);
             exit;
@@ -183,7 +191,9 @@ class APIEngine
 
     private static function getBlobInfo(string $function, array $param): array 
     {
-        $fields = ['fields' => 'id,url,mime_type'];
+        $fields = [
+            'fields' => 'uuid,filepath,filename,mime_type,file_size,created_at,updated_at,status'
+        ];
         $queryParams = array_merge($param, $fields);
         
         $definition = self::loadDefinition($function);
@@ -314,11 +324,11 @@ class APIEngine
     private static function createSessionData(array $userInfo, bool $remember): array 
     {
         $sessionData = [
-            'uid' => $userInfo['id'],
+            'id' => $userInfo['uuid'], // Changed from id to uuid
             'info' => array_diff_key($userInfo, ['password' => '']),
             'ip' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',
-            'role' => self::getUserPermissions($userInfo['id']),
+            'role' => self::getUserPermissions($userInfo['uuid']), // Pass UUID instead of ID
             'login_timestamp' => gmdate('Y-m-d H:i:s')
         ];
 
@@ -333,7 +343,7 @@ class APIEngine
         return [...$sessionData, 'token' => $token];
     }
 
-    private static function getUserPermissions(int $userID): array 
+    private static function getUserPermissions(string $userUUID): array 
     {
         $databaseResource = config('database.primary');
         $currentResource = $databaseResource;
@@ -341,8 +351,11 @@ class APIEngine
         // Use PDO connection instead of mysqli
         $db = Utils::getMySQLConnection($databaseResource);
 
-        // Get user roles using JSON definition
-        $param = ['fields' => 'user_id,role_id', 'user_id' => $userID];
+        // Get user roles using JSON definition and UUID
+        $param = [
+            'fields' => 'user_uuid,role_id', // Changed from user_id to user_uuid
+            'user_uuid' => $userUUID 
+        ];
 
         $definition = self::loadDefinition('user_roles_lookup');
         $userRole = self::executeQuery('list', $definition, $param);
@@ -379,14 +392,53 @@ class APIEngine
         $definition = self::loadDefinition($function);
         
         if ($filter) {
-            $param['_filter'] = $filter;
+            // Convert filter array to new format
+            $formattedFilters = [];
+            foreach ($filter as $field => $conditions) {
+                // Handle simple equals conditions
+                if (!is_array($conditions)) {
+                    $formattedFilters[] = [
+                        'field' => $field,
+                        'operator' => 'eq',
+                        'value' => $conditions
+                    ];
+                    continue;
+                }
+                
+                // Handle complex conditions
+                foreach ($conditions as $operator => $value) {
+                    $formattedFilters[] = [
+                        'field' => $field,
+                        'operator' => $operator,
+                        'value' => $value
+                    ];
+                }
+            }
+            $param['_filter'] = $formattedFilters;
         }
 
-        return self::executeQuery(
+        $result = self::executeQuery(
             $action, 
             $definition, 
             self::sanitizeParams($param)
         );
+
+        // Audit changes for write operations
+        if (in_array($action, ['insert', 'update', 'delete']) && isset($definition['table'])) {
+            $recordUuid = match($action) {
+                'insert' => $result['uuid'] ?? null,
+                'update', 'delete' => $param['uuid'] ?? null
+            };
+
+            self::auditChanges(
+                $action, 
+                $definition['table']['name'],
+                $recordUuid,
+                ['params' => $param, 'result' => $result]
+            );
+        }
+
+        return $result;
     }
 
     private static function executeQuery(string $action, array $definition, array $params): array 
@@ -407,9 +459,11 @@ class APIEngine
             $stmt = $db->prepare($query['sql']);
             
             // Bind parameters
-            foreach ($query['params'] as $param => $value) {
-                $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
-                $stmt->bindValue($param, $value, $type);
+            if (isset($query['params'])) {
+                foreach ($query['params'] as $param => $value) {
+                    $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+                    $stmt->bindValue($param, $value, $type);
+                }
             }
 
             // Execute the query
@@ -417,14 +471,71 @@ class APIEngine
 
             // Return results based on query type
             return match($action) {
-                'list', 'view' => $stmt->fetchAll(),
-                'insert' => ['id' => $db->lastInsertId()],
+                'list', 'view' => $stmt->fetchAll(\PDO::FETCH_ASSOC),
+                'insert' => ['uuid' => self::getLastInsertedUUID($db, $definition['table']['name'])],
                 'update', 'delete' => ['affected' => $stmt->rowCount()],
                 default => []
             };
 
         } catch (\PDOException $e) {
             throw new \RuntimeException("Query execution failed: " . $e->getMessage());
+        }
+    }
+
+    private static function getLastInsertedUUID(?\PDO $db, string $table): string 
+    {
+        $stmt = $db->query("SELECT uuid FROM `$table` WHERE id = LAST_INSERT_ID()");
+        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$result || !isset($result['uuid'])) {
+            throw new \RuntimeException("Failed to retrieve UUID for new record");
+        }
+        return $result['uuid'];
+    }
+
+    private static function getUserData(string $function, array $param): ?array 
+    {
+        try {
+            // Add status check to parameters
+            $param['status'] = 'active';
+            
+            // Hash password if provided
+            if (isset($param['password'])) {
+                $param['password'] = password_hash($param['password'], PASSWORD_DEFAULT);
+            }
+
+            // Include uuid in fields if it exists
+            $fields = ['id', 'uuid', 'username', 'email', 'password', 'role', 'status', 'created_at'];
+            $param['fields'] = implode(',', $fields);
+
+            // Load users definition and execute query
+            $definition = self::getDefinition('users');
+            $result = self::executeQuery('list', $definition, self::sanitizeParams($param));
+            
+            if (count($result) !== 1) {
+                return null;
+            }
+            
+            $userData = $result[0];
+            
+            // Verify password if provided
+            if (isset($param['password']) && !password_verify($param['password'], $userData['password'])) {
+                return null;
+            }
+            
+            unset($userData['password']); // Remove sensitive data
+            
+            return [
+                'id' => $userData['id'],
+                'uuid' => $userData['uuid'] ?? null,
+                'username' => $userData['username'] ?? null,
+                'email' => $userData['email'] ?? null,
+                'role' => $userData['role'] ?? 'user',
+                'created_at' => $userData['created_at'] ?? null,
+                'last_login' => date('Y-m-d H:i:s')
+            ];
+        } catch (\Exception $e) {
+            error_log("Failed to get user data: " . $e->getMessage());
+            return null;
         }
     }
 
@@ -492,52 +603,51 @@ class APIEngine
         }
     }
 
-    private static function getUserData(string $function, array $param): ?array 
-    {
-        try {
-            // Add status check to parameters
-            $param['status'] = 'active';
-            
-            // Hash password if provided
-            if (isset($param['password'])) {
-                $param['password'] = password_hash($param['password'], PASSWORD_DEFAULT);
-            }
-
-            // Load users definition and execute query
-            $definition = self::getDefinition('users');
-            $result = self::executeQuery('list', $definition, self::sanitizeParams($param));
-            
-            if (count($result) !== 1) {
-                return null;
-            }
-            
-            // Rest of the method remains the same
-            $userData = $result[0];
-            
-            // Verify password if provided
-            if (isset($param['password']) && !password_verify($param['password'], $userData['password'])) {
-                return null;
-            }
-            
-            unset($userData['password']); // Remove sensitive data
-            
-            return [
-                'id' => $userData['id'],
-                'username' => $userData['username'] ?? null,
-                'email' => $userData['email'] ?? null,
-                'role' => $userData['role'] ?? 'user',
-                'created_at' => $userData['created_at'] ?? null,
-                'last_login' => date('Y-m-d H:i:s')
-            ];
-        } catch (\Exception $e) {
-            error_log("Failed to get user data: " . $e->getMessage());
-            return null;
-        }
-    }
-
     protected static function getDefinition(string $function): ?array
     {
         return self::loadDefinition($function);
+    }
+
+    public static function auditChanges(string $action, string $table, ?string $recordUuid, array $changes): bool 
+    {
+        if (!config('app.enable_audit', false)) {
+            return true; // Skip auditing if disabled
+        }
+        
+        $session = SessionManager::getCurrentSession();
+        return AuditLogger::log(
+            $action,
+            $table,
+            $recordUuid,
+            $changes,
+            $session['user_uuid'] ?? null,
+            $session['token'] ?? null
+        );
+    }
+
+    public static function getAuditTrail(string $function, string $action, array $param): array 
+    {
+        try {
+            if (!isset($param['uuid'])) {
+                return Response::error('UUID is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Check if this is a table audit or specific record audit
+            $tableAudit = $param['type'] ?? '' === 'table';
+            $audits = $tableAudit 
+                ? AuditLogger::getAuditTrail($param['table'], $param['uuid'])
+                : AuditLogger::getAuditTrail($param['uuid']);
+
+            if (empty($audits)) {
+                return Response::ok(['audits' => []])->send();
+            }
+
+            return Response::ok(['audits' => $audits])->send();
+
+        } catch (\Exception $e) {
+            error_log("Audit trail error: " . $e->getMessage());
+            return Response::error('Failed to retrieve audit trail')->send();
+        }
     }
 }
 
@@ -546,3 +656,8 @@ $queryBuilderClass = match(config('database.engine')) {
     default => MySQLQueryBuilder::class
 };
 APIEngine::initialize($queryBuilderClass);
+
+// Initialize AuditLogger if auditing is enabled
+if (config('app.enable_audit', false)) {
+    AuditLogger::initialize($queryBuilderClass);
+}

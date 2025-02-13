@@ -154,6 +154,18 @@ class SessionManager {
         return false;
     }
 
+    public static function getCurrentSession(): ?array 
+    {
+        $token = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+        $token = str_replace('Bearer ', '', $token);
+        
+        if (empty($token)) {
+            return null;
+        }
+
+        return self::get($token);
+    }
+
     private static function generateSessionId(): string 
     {
         return bin2hex(random_bytes(16));
