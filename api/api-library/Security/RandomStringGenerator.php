@@ -1,82 +1,70 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Mapi\Api\Library\Security;
 
-class RandomStringGenerator
-{
-    private const DEFAULT_RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    private const DEFAULT_LENGTH = 32;
+class RandomStringGenerator {
+    // Updated to match SQL function's charset exactly
+    public const CHARSET_NANOID = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+    public const CHARSET_ALPHANUMERIC = self::CHARSET_NANOID; // Alias for compatibility
+    
+    // Other charsets
+    public const CHARSET_NUMERIC = '0123456789';
+    public const CHARSET_ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    public const CHARSET_ALPHA_LOWER = 'abcdefghijklmnopqrstuvwxyz';
+    public const CHARSET_ALPHA_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    
+    private const MASK = 63; // Binary mask for 64 characters (2^6 - 1)
 
-    /**
-     * Generates a random string using a custom alphabet
-     */
-    public static function RandomStringWithAlphabet(int $length = self::DEFAULT_LENGTH, string $alphabet = self::DEFAULT_RANDOM_ALPHABET): string
-    {
-        $alphabetLength = strlen($alphabet);
-        $result = '';
-
-        try {
-            for ($i = 0; $i < $length; $i++) {
-                $result .= $alphabet[random_int(0, $alphabetLength - 1)];
-            }
-        } catch (\Exception $e) {
-            // Fallback to less secure method if random_int fails
-            for ($i = 0; $i < $length; $i++) {
-                $result .= $alphabet[mt_rand(0, $alphabetLength - 1)];
-            }
+    public static function generate(
+        int $length = 21,
+        string $charset = self::CHARSET_NANOID
+    ): string {
+        if ($length <= 0) {
+            throw new \InvalidArgumentException('Length must be greater than zero');
         }
 
-        return $result;
+        // For nanoid-style IDs, use optimized path
+        if ($charset === self::CHARSET_NANOID) {
+            return self::generateNanoStyle($length);
+        }
+
+        return self::generateWithCharset($length, $charset);
     }
 
-    /**
-     * Generates a random string using the default alphabet
-     */
-    public static function RandomString(int $length = self::DEFAULT_LENGTH): string
-    {
-        return self::RandomStringWithAlphabet($length);
-    }
-
-    /**
-     * Generates a pseudo-random string with custom alphabet (less secure, but faster)
-     */
-    public static function PseudorandomStringWithAlphabet(int $length = self::DEFAULT_LENGTH, string $alphabet = self::DEFAULT_RANDOM_ALPHABET): string
-    {
-        $alphabetLength = strlen($alphabet);
+    private static function generateNanoStyle(int $length): string {
         $result = '';
-
+        $bytes = random_bytes($length);
+        
+        // Optimized for 64-character alphabet (6 bits per character)
         for ($i = 0; $i < $length; $i++) {
-            $result .= $alphabet[mt_rand(0, $alphabetLength - 1)];
+            $result .= self::CHARSET_NANOID[ord($bytes[$i]) & self::MASK];
         }
-
+        
         return $result;
     }
 
-    /**
-     * Generates a URL-safe random string
-     */
-    public static function URLSafeString(int $length = self::DEFAULT_LENGTH): string
-    {
-        return self::RandomStringWithAlphabet($length, 
-            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_');
-    }
+    private static function generateWithCharset(int $length, string $charset): string {
+        $charsetLength = strlen($charset);
+        if ($charsetLength <= 1) {
+            throw new \InvalidArgumentException('Charset must contain at least 2 characters');
+        }
 
-    /**
-     * Generates a numeric-only random string
-     */
-    public static function NumericString(int $length = self::DEFAULT_LENGTH): string
-    {
-        return self::RandomStringWithAlphabet($length, '0123456789');
-    }
+        $mask = (2 << (int)floor(log($charsetLength - 1) / log(2))) - 1;
+        $step = (int)ceil(1.6 * $mask * $length / $charsetLength);
 
-    /**
-     * Validates if a string matches the given alphabet
-     */
-    public static function ValidateAlphabet(string $input, string $alphabet = self::DEFAULT_RANDOM_ALPHABET): bool
-    {
-        return strlen($input) === strspn($input, $alphabet);
+        $result = '';
+        while (true) {
+            $bytes = random_bytes($step);
+            for ($i = 0; $i < $step; $i++) {
+                $byte = ord($bytes[$i]) & $mask;
+                if ($byte < $charsetLength) {
+                    $result .= $charset[$byte];
+                    if (strlen($result) === $length) {
+                        return $result;
+                    }
+                }
+            }
+        }
     }
-
 }

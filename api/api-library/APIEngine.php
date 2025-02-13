@@ -73,27 +73,41 @@ class APIEngine
 
     public static function validateSession(?string $function, ?string $action, array $params): array 
     {
-        if (!isset($params['token'])) {
+        $token = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+        $token = str_replace('Bearer ', '', $token);
+        
+        if (empty($token)) {
             return Response::unauthorized('No session token provided')->send();
         }
 
-        $session = SessionManager::get($params['token']);
+        // Try to get session
+        $session = SessionManager::get($token);
+        
+        // If session not found, check if it's an expired access token
+        if (!$session && isset($params['refresh_token'])) {
+            $tokens = TokenManager::refreshTokens($params['refresh_token']);
+            if ($tokens) {
+                return Response::ok([
+                    'token' => $tokens['access_token'],
+                    'refresh_token' => $tokens['refresh_token']
+                ])->send();
+            }
+        }
+
         if (!$session) {
             return Response::unauthorized('Invalid or expired session')->send();
         }
 
-        // Validate the session security level
+        // Rest of validation logic
         if (!self::validateSecurityLevel($session)) {
             return Response::error('Session security check failed', Response::HTTP_FORBIDDEN)->send();
         }
 
-        // If function is provided, validate against the model
         if ($function) {
-            // Determine the model prefix based on function type
             $prefix = str_contains($function, '.') ? 'api.ext.' : 'api.' . self::$currentResource . '.';
             $model = $prefix . $function;
 
-            if (!Permissions::hasPermission($model, Permission::VIEW, $params['token'])) {
+            if (!Permissions::hasPermission($model, Permission::VIEW, $token)) {
                 return Response::error('Permission denied', Response::HTTP_FORBIDDEN)->send();
             }
         }
@@ -292,7 +306,7 @@ class APIEngine
         }
 
         // Generate new token with updated data
-        $newToken = JWTService::generate($session, config('services.jwt.default_expiration'));
+        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
         SessionManager::update($token, $session, $newToken);
 
         return Response::ok([
@@ -312,7 +326,7 @@ class APIEngine
         $session['role'] = self::getUserPermissions($session['uid']);
 
         // Generate new token with updated permissions
-        $newToken = JWTService::generate($session, config('services.jwt.default_expiration'));
+        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
         SessionManager::update($token, $session, $newToken);
 
         return Response::ok([
@@ -324,23 +338,28 @@ class APIEngine
     private static function createSessionData(array $userInfo, bool $remember): array 
     {
         $sessionData = [
-            'id' => $userInfo['uuid'], // Changed from id to uuid
+            'user_uuid' => $userInfo['uuid'],
             'info' => array_diff_key($userInfo, ['password' => '']),
             'ip' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',
-            'role' => self::getUserPermissions($userInfo['uuid']), // Pass UUID instead of ID
+            'role' => self::getUserPermissions($userInfo['uuid']),
             'login_timestamp' => gmdate('Y-m-d H:i:s')
         ];
 
-        $expiration = $remember ? config('services.jwt.remember_expiration') : config('services.jwt.default_expiration');
+        // Generate token pair
+        $tokens = TokenManager::generateTokenPair($sessionData);
         
-        // Generate JWT token first
-        $token = JWTService::generate($sessionData, $expiration);
+        // Add refresh token to session data for storage
+        $sessionData['refresh_token'] = $tokens['refresh_token'];
         
-        // Store session with the same token
-        SessionManager::start($sessionData, $token);
+        // Store session with access token
+        SessionManager::start($sessionData, $tokens['access_token']);
         
-        return [...$sessionData, 'token' => $token];
+        return [
+            ...$sessionData,
+            'token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token']
+        ];
     }
 
     private static function getUserPermissions(string $userUUID): array 

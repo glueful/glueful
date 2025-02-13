@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Library;
 
+use Mapi\Api\Library\Security\RandomStringGenerator;
+
 class Utils 
 {
     /** @var array<string, \PDO> */
@@ -172,6 +174,13 @@ class Utils
     {
         $session = self::getSession();
         return $session['user'] ?? null;
+    }
+
+    public static function generateNanoID(int $length = 12): string {
+        return RandomStringGenerator::generate(
+            length: $length,
+            charset: RandomStringGenerator::CHARSET_ALPHANUMERIC
+        );
     }
 }
 
