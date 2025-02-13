@@ -100,19 +100,20 @@ class API
             return $response;
         });
         
-        $router->addRoute('GET', '{resource}/{id}', function($params) {
-            Logger::log('REST Request - List by ID', [
+        $router->addRoute('GET', '{resource}/{uuid}', function($params) {
+            Logger::log('REST Request - List by UUID', [
                 'method' => 'GET',
                 'resource' => $params['resource'],
-                'id' => $params['id'],
+                'id' => $params['uuid'],
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
             self::validateToken();
-            $_GET['id'] = $params['id'];
+            // Map UUID to id parameter
+            $_GET['id'] = $params['uuid'];
             $response = self::handleRESTRequest('list', $params['resource'], $_GET);
-            Logger::log('REST Response - List by ID', ['response' => $response]);
+            Logger::log('REST Response - List by UUID', ['response' => $response]);
             return $response;
         });
         
@@ -130,33 +131,35 @@ class API
             return $response;
         });
         
-        $router->addRoute('PUT', '{resource}/{id}', function($params) {
+        $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
             Logger::log('REST Request - Replace', [
                 'method' => 'PUT',
                 'resource' => $params['resource'],
-                'id' => $params['id'],
+                'id' => $params['uuid'],
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
             self::validateToken();
-            $_GET['id'] = $params['id'];
+            // Map UUID to id parameter
+            $_GET['id'] = $params['uuid'];
             $response = self::handleRESTRequest('replace', $params['resource'], $_GET, $_POST);
             Logger::log('REST Response - Replace', ['response' => $response]);
             return $response;
         });
         
-        $router->addRoute('DELETE', '{resource}/{id}', function($params) {
+        $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
             Logger::log('REST Request - Delete', [
                 'method' => 'DELETE',
                 'resource' => $params['resource'],
-                'id' => $params['id'],
+                'id' => $params['uuid'],
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
             self::validateToken();
-            $_GET['id'] = $params['id'];
+            // Map UUID to id parameter
+            $_GET['id'] = $params['uuid'];
             $response = self::handleRESTRequest('delete', $params['resource'], $_GET);
             Logger::log('REST Response - Delete', ['response' => $response]);
             return $response;
@@ -450,6 +453,7 @@ class API
             )->send();
         }
 
+        // Use id parameter but pass the UUID value
         $deleteParams = ['id' => $getParams['id'], 'status' => 'D'];
 
         return APIEngine::saveData($function, 'delete', $deleteParams);
