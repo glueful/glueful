@@ -32,7 +32,6 @@ class JsonGenerator {
     }
 
     public function generate(?string $specificDatabase = null): void {
-        $this->checkSessionConfig();
         $this->generateDatabaseDefinitions($specificDatabase);
         
         if (\config('security.permissions_enabled') === TRUE) {
@@ -154,14 +153,6 @@ class JsonGenerator {
 
     private function log(string $message): void {
         echo $message . $this->endOfLine;
-    }
-
-    private function checkSessionConfig(): void {
-        if (!file_exists(config('paths.json_definitions') . "sessions.json")) {
-            $this->log("-------------------------------------------------");
-            $this->log("sessions.json not found in json definitions");
-            $this->log("-------------------------------------------------");
-        }
     }
 
     private function generateDatabaseDefinitions(?string $targetDb): void {
