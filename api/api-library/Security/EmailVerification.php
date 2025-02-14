@@ -6,11 +6,12 @@ namespace Mapi\Api\Library\Security;
 
 use Mapi\Api\Extensions\Push\Email;
 use Mapi\Api\Library\CacheEngine;
+use Mapi\Api\Library\{APIEngine};
 
 class EmailVerification
 {
-    private const OTP_LENGTH = 6;
-    private const OTP_EXPIRY_MINUTES = 15;
+    public const OTP_LENGTH = 6;
+    public const OTP_EXPIRY_MINUTES = 15;
     private const OTP_PREFIX = 'email_verification:';
     private const ATTEMPTS_PREFIX = 'email_verification_attempts:';
     private const MAX_ATTEMPTS = 3;
@@ -21,7 +22,7 @@ class EmailVerification
     public function __construct()
     {
         // Initialize CacheEngine with Redis driver
-        CacheEngine::initialize('mapi:', 'redis');
+        CacheEngine::initialize('mapi:', config('cache.default'));
     }
 
     public function generateOTP(): string
@@ -153,5 +154,79 @@ class EmailVerification
     public function isValidEmail(string $email): bool
     {
         return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public static function sendPasswordResetEmail(string $email): array 
+    {
+        try {
+            $verifier = new self();
+            
+            if (!$verifier->isValidEmail($email)) {
+                return [
+                    'success' => false,
+                    'message' => 'Invalid email format'
+                ];
+            }
+
+            // Check if email exists in users table
+            $userData = APIEngine::getData('users', 'list', ['email' => $email]);
+            if (empty($userData)) {
+                return [
+                    'success' => false,
+                    'message' => 'Email address not found'
+                ];
+            }
+
+            // Check rate limiting
+            if ($verifier->isRateLimited($email)) {
+                return [
+                    'success' => false,
+                    'message' => 'Too many attempts. Please try again later.'
+                ];
+            }
+
+            // Generate OTP
+            $otp = $verifier->generateOTP();
+
+            // Prepare email data
+            $emailData = [
+                'from' => config('mail.from.address'),
+                'to' => $email,
+                'subject' => 'Password Reset Code',
+                'message' => str_replace(
+                    ['{name}', '{otp}', '{expiry_minutes}'],
+                    [
+                        $userData[0]['first_name'], 
+                        $otp,
+                        self::OTP_EXPIRY_MINUTES
+                    ],
+                    $verifier->getEmailTemplate($otp)
+                )
+            ];
+
+            // Send email using Email::process
+            $emailResult = Email::process([], $emailData);
+            if (!isset($emailResult['SUCCESS'])) {
+                throw new \RuntimeException('Failed to send email');
+            }
+
+            // Store OTP only after email is sent successfully
+            if (!$verifier->sendVerificationEmail($email, $otp)) {
+                throw new \RuntimeException('Failed to initialize password reset');
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Password reset code sent to your email',
+                'email' => $email,
+                'expires_in' => self::OTP_EXPIRY_MINUTES * 60
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
+        }
     }
 }
