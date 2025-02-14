@@ -9,7 +9,9 @@ use Mapi\Api\Library\{
     Utils,
     APIEngine,
     IExtensions,
-    Logger
+    Logger,
+    TokenManager,
+    Security\EmailVerification
 };
 use Mapi\Api\Http\{
     Response,
@@ -17,40 +19,12 @@ use Mapi\Api\Http\{
 };
 use Mapi\Api\Extensions\Uploader\FileUploader;
 
-/**
- * @author Xose & Edem Ahlijah
- * @version 4.0
- **/
 session_start();
-
-// require_once("_config.php");
-
-// Load core library classes
-spl_autoload_register(function ($class) {
-    $prefix = 'Mapi\\Api\\Library\\';
-    $baseDir = config('paths.api_library');
-    
-    $len = strlen($prefix);
-    if (strncmp($prefix, $class, $len) !== 0) {
-        return;
-    }
-    
-    $relativeClass = substr($class, $len);
-    $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
-    
-    if (file_exists($file)) {
-        require $file;
-    }
-});
 
 class API 
 {
     private static function initializeRoutes(): void 
     {
-        // Replace direct boolean with string constant name
-        // if (!defined('REST_MODE')) {
-        //     define('REST_MODE', true);
-        // }
 
         // Initialize logger
         $logFile = config('app.api_log_file');
@@ -84,6 +58,281 @@ class API
             Logger::log('REST Response - Login', ['response' => $response]);
             return $response;
         }, true); // Mark as public
+
+        $router->addRoute('POST', 'auth/verify-email', function($params) {
+            Logger::log('REST Request - Verify Email', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/verify-email',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $postData = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $input = file_get_contents('php://input');
+                    $postData = json_decode($input, true) ?? [];
+                } else {
+                    $postData = $_POST;
+                }
+
+                if (!isset($postData['email'])) {
+                    return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                $verifier = new EmailVerification();
+                $otp = $verifier->generateOTP();
+                
+                // Send verification email
+                $result = $verifier->sendVerificationEmail($postData['email'], $otp);
+                
+                if (!$result) {
+                    return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                return Response::ok([
+                    'message' => 'Verification code has been sent to your email',
+                    'success' => true,
+                    'email' => $postData['email'],
+                    'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+                ])->send();
+
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Failed to send verification email: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        }, true);
+
+        $router->addRoute('POST', 'auth/verify-otp', function($params) {
+            Logger::log('REST Request - Validate OTP', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/verify-otp',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $postData = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $input = file_get_contents('php://input');
+                    $postData = json_decode($input, true) ?? [];
+                } else {
+                    $postData = $_POST;
+                }
+
+                if (!isset($postData['email']) || !isset($postData['otp'])) {
+                    return Response::error('Email and OTP are required', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                $verifier = new EmailVerification();
+                $isValid = $verifier->verifyOTP($postData['email'], $postData['otp']);
+                
+                if (!$isValid) {
+                    return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                return Response::ok([
+                    'success' => true,
+                    'message' => 'OTP verified successfully',
+                    'email' => $postData['email']
+                ])->send();
+
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Failed to verify OTP: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        }, true);
+
+        $router->addRoute('POST', 'auth/forgot-password', function($params) {
+            Logger::log('REST Request - Forgot Password', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/forgot-password',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $postData = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $input = file_get_contents('php://input');
+                    $postData = json_decode($input, true) ?? [];
+                } else {
+                    $postData = $_POST;
+                }
+
+                if (!isset($postData['email'])) {
+                    return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                $email = $postData['email'];
+                $result = EmailVerification::sendPasswordResetEmail($email);
+                
+                if (!$result['success']) {
+                    return Response::error($result['message'] ?? 'Failed to send reset email', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                return Response::ok([
+                    'message' => 'Password reset instructions have been sent to your email',
+                    'success' => true
+                ])->send();
+
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Failed to process password reset request: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        }, true);
+
+        $router->addRoute('POST', 'auth/reset-password', function($params) {
+            Logger::log('REST Request - Reset Password', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/reset-password',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $postData = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $input = file_get_contents('php://input');
+                    $postData = json_decode($input, true) ?? [];
+                } else {
+                    $postData = $_POST;
+                }
+
+                if (!isset($postData['email']) || !isset($postData['otp']) || !isset($postData['new_password'])) {
+                    return Response::error('Email, OTP and new password are required', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                // First verify the OTP
+                $verifier = new EmailVerification();
+                $isValid = $verifier->verifyOTP($postData['email'], $postData['otp']);
+                
+                if (!$isValid) {
+                    return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST)->send();
+                }
+
+                // Update password
+                $updateParams = [
+                    'password' => password_hash($postData['new_password'], PASSWORD_DEFAULT),
+                    'email' => $postData['email']
+                ];
+
+                $result = APIEngine::saveData('users', 'update', $updateParams);
+                
+                if (!isset($result['affected']) || $result['affected'] === 0) {
+                    throw new \RuntimeException('Failed to update password');
+                }
+
+                return Response::ok([
+                    'success' => true,
+                    'message' => 'Password has been reset successfully'
+                ])->send();
+
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Failed to reset password: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        }, true);
+
+        $router->addRoute('POST', 'auth/validate-token', function($params) {
+            Logger::log('REST Request - Validate Session', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/validate-token',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $headers = getallheaders();
+                $token = null;
+                
+                // Check Authorization header
+                if (isset($headers['Authorization'])) {
+                    $auth = $headers['Authorization'];
+                    if (strpos($auth, 'Bearer ') === 0) {
+                        $token = substr($auth, 7);
+                    }
+                }
+                
+                // Check query parameter if no header
+                if (!$token && isset($_GET['token'])) {
+                    $token = $_GET['token'];
+                }
+                
+                if (!$token) {
+                    return Response::unauthorized('Authentication required')->send();
+                }
+
+                $result = APIEngine::validateSession('sessions', 'validate', ['token' => $token]);
+                return Response::ok($result)->send();
+
+            } catch (\Exception $e) {
+                return Response::unauthorized('Invalid or expired token')->send();
+            }
+        }); // Not public, requires token
+
+        $router->addRoute('POST', 'auth/refresh-token', function($params) {
+            Logger::log('REST Request - Refresh Token', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'path' => 'auth/refresh-token',
+                'params' => $params,
+                'headers' => getallheaders()
+            ]);
+
+            try {
+                $headers = getallheaders();
+                $refreshToken = null;
+                
+                // Check Authorization header
+                if (isset($headers['Authorization'])) {
+                    $auth = $headers['Authorization'];
+                    if (strpos($auth, 'Bearer ') === 0) {
+                        $refreshToken = substr($auth, 7);
+                    }
+                }
+                
+                // Check request body for refresh token
+                $input = file_get_contents('php://input');
+                $postData = json_decode($input, true) ?? [];
+                if (!$refreshToken && isset($postData['refresh_token'])) {
+                    $refreshToken = $postData['refresh_token'];
+                }
+                
+                if (!$refreshToken) {
+                    return Response::unauthorized('Refresh token required')->send();
+                }
+
+                $result = TokenManager::refreshTokens($refreshToken);
+                
+                if (!$result || !isset($result['token'])) {
+                    return Response::unauthorized('Invalid or expired refresh token')->send();
+                }
+                
+                return Response::ok($result)->send();
+
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Token refresh failed: ' . $e->getMessage(), 
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        }, true); // Public route since token is expired
 
         // Protected routes (require token)
         $router->addRoute('GET', '{resource}', function($params) {
@@ -340,6 +589,7 @@ class API
             'validate' => APIEngine::validateSession($function, $action, $getParams),
             'login' => self::handleLogin($function, $postParams),
             'logout' => APIEngine::killSession($getParams),
+            'refresh' => TokenManager::refreshTokens($postParams['refresh_token']), // Update this line
             default => Response::error('Unknown API', Response::HTTP_NOT_FOUND)->send()
         };
     }
