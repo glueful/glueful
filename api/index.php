@@ -38,9 +38,7 @@ if (strpos($contentType, 'application/json') !== false) {
 }
 
 // Process request
-$response = isset($_FILES) ? 
-    API::processRequest($_GET, $_POST, $_FILES) : 
-    API::processRequest($_GET, $_POST);
+$response = API::processRequest();
 
 // Ensure JSON response
 header('Content-Type: application/json');
