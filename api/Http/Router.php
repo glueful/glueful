@@ -90,4 +90,49 @@ class Router
         
         return null;
     }
+
+    public function handleRequest(): array 
+    {
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $method = $_SERVER['REQUEST_METHOD'];
+        
+        // Strip base path and get clean route path
+        $path = preg_replace('#^.*/api/#', '', $requestUri);
+        $path = strtok($path, '?'); // Remove query parameters
+        
+        // Match route
+        $match = $this->match($method, $path);
+        
+        if (!$match) {
+            return [
+                'success' => false,
+                'message' => 'Route not found',
+                'code' => 404
+            ];
+        }
+        
+        try {
+            // Execute route handler with parameters
+            $result = ($match['handler'])($match['params']);
+            
+            // If result is already an array, return it
+            if (is_array($result)) {
+                return $result;
+            }
+            
+            // Otherwise wrap it in a success response
+            return [
+                'success' => true,
+                'data' => $result
+            ];
+            
+        } catch (\Exception $e) {
+            error_log($e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Internal server error: ' . $e->getMessage(),
+                'code' => 500
+            ];
+        }
+    }
 }

@@ -8,7 +8,6 @@ use Mapi\Api\Library\{
     Permission,
     Utils,
     APIEngine,
-    IExtensions,
     Logger,
     TokenManager,
     Security\EmailVerification
@@ -23,6 +22,16 @@ session_start();
 
 class API 
 {
+    private static bool $routesInitialized = false;
+
+    public static function init(): void
+    {
+        if (!self::$routesInitialized) {
+            self::initializeRoutes();
+            self::$routesInitialized = true;
+        }
+    }
+
     private static function initializeRoutes(): void 
     {
 
@@ -334,52 +343,229 @@ class API
             }
         }, true); // Public route since token is expired
 
-        // Protected routes (require token)
-        $router->addRoute('GET', '{resource}', function($params) {
-            Logger::log('REST Request - List', [
+        $router->addRoute('GET', 'blobs/{uuid}', function($params) {
+            Logger::log('REST Request - Get Blob', [
                 'method' => 'GET',
-                'resource' => $params['resource'],
-                'params' => $params,
+                'resource' => 'blobs',
+                'id' => $params['uuid'],
+                'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
             ]);
             
-            self::validateToken(); // Add token validation
-            $response = self::handleRESTRequest('list', $params['resource'], $_GET);
-            Logger::log('REST Response - List', ['response' => $response]);
-            return $response;
+            self::validateToken();
+            
+            try {
+                $result = APIEngine::getBlob('blobs', 'retrieve', $params);
+                
+                if (!isset($result['content'])) {
+                    return Response::error('Blob not found', Response::HTTP_NOT_FOUND)->send();
+                }
+                
+                if (isset($result['mime_type'])) {
+                    header('Content-Type: ' . $result['mime_type']);
+                }
+                if (isset($result['filename'])) {
+                    header('Content-Disposition: inline; filename="' . $result['filename'] . '"');
+                }
+                
+                echo base64_decode($result['content']);
+                exit;
+                
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Failed to retrieve blob: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
         });
-        
-        $router->addRoute('GET', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - List by UUID', [
-                'method' => 'GET',
-                'resource' => $params['resource'],
-                'id' => $params['uuid'],
+
+        $router->addRoute('POST', 'blobs-save', function($params) {
+            Logger::log('REST Request - Upload Blob', [
+                'method' => 'POST',
+                'resource' => 'blobs',
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
             self::validateToken();
-            // Map UUID to id parameter
-            $_GET['id'] = $params['uuid'];
-            $response = self::handleRESTRequest('list', $params['resource'], $_GET);
-            Logger::log('REST Response - List by UUID', ['response' => $response]);
-            return $response;
+            
+            try {
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                
+                // Handle multipart form data (regular file upload)
+                if (strpos($contentType, 'multipart/form-data') !== false) {
+                    if (empty($_FILES)) {
+                        return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST)->send();
+                    }
+                    $response = self::handleFileUpload($_GET, $_FILES);
+                } 
+                // Handle JSON/base64 upload
+                else {
+                    $input = file_get_contents('php://input');
+                    $postData = json_decode($input, true) ?? [];
+                    
+                    if (!isset($postData['base64'])) {
+                        return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();
+                    }
+                    
+                    $response = self::handleBase64Upload($_GET, $postData);
+                }
+                
+                Logger::log('REST Response - Upload Blob', ['response' => $response]);
+                return $response;
+                
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Upload failed: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        });
+
+        // Protected routes (require token)
+        // List all resources
+        $router->addRoute('GET', '{resource}', function($params) {
+            Logger::log('REST Request - List', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'resource' => $params['resource'],
+                'params' => array_merge($params, $_GET),
+                'headers' => getallheaders()
+            ]);
+            
+            self::validateToken();
+            
+            try {
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                // Verify permissions
+                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
+
+                // Handle query parameters
+                $queryParams = array_merge($_GET, [
+                    'fields' => $_GET['fields'] ?? '*',
+                    'sort' => $_GET['sort'] ?? null,
+                    'filter' => $_GET['filter'] ?? null,
+                    'page' => $_GET['page'] ?? 1,
+                    'limit' => $_GET['limit'] ?? 20
+                ]);
+                
+                // Direct call to getData without legacy conversion
+                $result = APIEngine::getData(
+                    $params['resource'],
+                    'list',
+                    $queryParams
+                );
+                
+                Logger::log('REST Response - List', ['response' => $result]);
+                return Response::ok($result)->send();
+                
+            } catch (\Exception $e) {
+                return Response::error('Failed to retrieve data: ' . $e->getMessage())->send();
+            }
+        });
+        
+        // Get single resource by UUID
+        $router->addRoute('GET', '{resource}/{uuid}', function($params) {
+            Logger::log('REST Request - Get Single', [
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'resource' => $params['resource'],
+                'id' => $params['uuid'],
+                'params' => array_merge($params, $_GET),
+                'headers' => getallheaders()
+            ]);
+            
+            self::validateToken();
+            
+            try {
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                // Verify permissions
+                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
+
+                // Set up parameters for single record retrieval
+                $queryParams = array_merge($_GET, [
+                    'fields' => $_GET['fields'] ?? '*',
+                    'id' => $params['uuid']
+                ]);
+                
+                // Direct call to getData without legacy conversion
+                $result = APIEngine::getData(
+                    $params['resource'],
+                    'list',
+                    $queryParams
+                );
+                
+                if (empty($result)) {
+                    return Response::error('Resource not found', Response::HTTP_NOT_FOUND)->send();
+                }
+                
+                Logger::log('REST Response - Get Single', ['response' => $result]);
+                return Response::ok($result[0])->send();
+                
+            } catch (\Exception $e) {
+                return Response::error('Failed to retrieve data: ' . $e->getMessage())->send();
+            }
         });
         
         $router->addRoute('POST', '{resource}', function($params) {
+            // Log request
             Logger::log('REST Request - Save', [
-                'method' => 'POST',
+                'method' => $_SERVER['REQUEST_METHOD'],
                 'resource' => $params['resource'],
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
+            // Validate authentication
             self::validateToken();
-            $response = self::handleRESTRequest('save', $params['resource'], $_GET, $_POST);
-            Logger::log('REST Response - Save', ['response' => $response]);
-            return $response;
+            
+            try {
+                // Get content type and parse body
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $data = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+                } else {
+                    $data = $_POST;
+                }
+
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                // Verify permissions
+                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
+        
+                // Direct API call without legacy conversion
+                $response = APIEngine::saveData(
+                    $params['resource'],  // resource name
+                    'save',              // action
+                    $data                // data to save
+                );
+                
+                // Handle auditing if enabled
+                if (config('app.enable_audit')) {
+                    self::auditChanges($params['resource'], $_GET, $data, $response);
+                }
+        
+                // Log and return response
+                Logger::log('REST Response - Save', ['response' => $response]);
+                return Response::ok($response)->send();
+                
+            } catch (\Exception $e) {
+                return Response::error('Save failed: ' . $e->getMessage())->send();
+            }
         });
         
+        // PUT Route (Update)
         $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
             Logger::log('REST Request - Replace', [
                 'method' => 'PUT',
@@ -390,13 +576,49 @@ class API
             ]);
             
             self::validateToken();
-            // Map UUID to id parameter
-            $_GET['id'] = $params['uuid'];
-            $response = self::handleRESTRequest('replace', $params['resource'], $_GET, $_POST);
-            Logger::log('REST Response - Replace', ['response' => $response]);
-            return $response;
+            
+            try {
+                // Get request body
+                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+                $putData = [];
+                
+                if (strpos($contentType, 'application/json') !== false) {
+                    $putData = json_decode(file_get_contents('php://input'), true) ?? [];
+                } else {
+                    parse_str(file_get_contents('php://input'), $putData);
+                }
+                
+                // Add UUID to data
+                $putData['id'] = $params['uuid'];
+                
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                // Verify permissions
+                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
+                
+                $response = APIEngine::saveData(
+                    $params['resource'],
+                    'update',
+                    $putData
+                );
+                
+                // Handle audit if enabled
+                if (config('app.enable_audit')) {
+                    self::auditChanges($params['resource'], [], $putData, $response);
+                }
+                
+                Logger::log('REST Response - Replace', ['response' => $response]);
+                return Response::ok($response)->send();
+                
+            } catch (\Exception $e) {
+                return Response::error('Update failed: ' . $e->getMessage())->send();
+            }
         });
         
+        // DELETE Route
         $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
             Logger::log('REST Request - Delete', [
                 'method' => 'DELETE',
@@ -407,45 +629,69 @@ class API
             ]);
             
             self::validateToken();
-            // Map UUID to id parameter
-            $_GET['id'] = $params['uuid'];
-            $response = self::handleRESTRequest('delete', $params['resource'], $_GET);
-            Logger::log('REST Response - Delete', ['response' => $response]);
-            return $response;
+            
+            try {
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                // Verify permissions
+                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
+                
+                // Direct delete without legacy conversion
+                $response = APIEngine::saveData(
+                    $params['resource'],
+                    'delete',
+                    ['id' => $params['uuid'], 'status' => 'D']
+                );
+                
+                Logger::log('REST Response - Delete', ['response' => $response]);
+                return Response::ok($response)->send();
+                
+            } catch (\Exception $e) {
+                return Response::error('Delete failed: ' . $e->getMessage())->send();
+            }
         });
         
         $router->addRoute('POST', 'auth/logout', function($params) {
+            // Log the request
             Logger::log('REST Request - Logout', [
-                'method' => 'POST',
+                'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/logout',
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
             
+            // Validate token
             self::validateToken();
-            $response = self::handleRESTRequest('logout', 'sessions', $_GET);
-            Logger::log('REST Response - Logout', ['response' => $response]);
-            return $response;
+            
+            try {
+                // Get token from request
+                $token = $_GET['token'] ?? null;
+                
+                if (!$token) {
+                    return Response::unauthorized('Token required')->send();
+                }
+                
+                // Direct call to kill session without legacy conversion
+                $result = APIEngine::killSession(['token' => $token]);
+                
+                Logger::log('REST Response - Logout', ['response' => $result]);
+                return Response::ok(['message' => 'Logged out successfully'])->send();
+                
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Logout failed: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
         });
     }
 
     private static function validateToken(): void 
     {
-        $headers = getallheaders();
-        $token = null;
-        
-        // Check Authorization header
-        if (isset($headers['Authorization'])) {
-            $auth = $headers['Authorization'];
-            if (strpos($auth, 'Bearer ') === 0) {
-                $token = substr($auth, 7);
-            }
-        }
-        
-        // Check query parameter if no header
-        if (!$token && isset($_GET['token'])) {
-            $token = $_GET['token'];
-        }
+        $token = self::getAuthAuthorization();
         
         if (!$token) {
             echo json_encode(Response::unauthorized('Authentication required')->send());
@@ -467,131 +713,13 @@ class API
         }
     }
 
-    private static function handleRESTRequest(
-        string $action, 
-        string $resource, 
-        array $getParams, 
-        array $postParams = []
-    ): array {
-        if ($resource === 'sessions') {
-            return self::handleSession($resource, $action, $getParams, $postParams);
-        }
-        
-        $getParams['f'] = "$resource:$action";
-        return self::processRequest($getParams, $postParams);
-    }
+    
 
-    private static function prepareDatabaseResource(?string $dbres): void 
+    private static function prepareDatabaseResource(): void 
     {
 
-        
         $databaseResource = config('database.primary');
         Utils::createPDOConnection($databaseResource);
-    }
-
-    public static function processRequest(array $getParams, array $postParams = [], array $fileParams = []): array 
-    {
-        // Set JSON response headers
-        header('Content-Type: application/json');
-        
-        // Initialize routes
-        self::initializeRoutes();
-
-        try {
-            // Check for legacy API pattern first (?f=resource:action)
-            if (isset($getParams['f'])) {
-                self::prepareDatabaseResource($getParams['dbres'] ?? null);
-                $response = self::handleLegacyRequest($getParams, $postParams, $fileParams);
-                // Keep legacy response logging since it doesn't have route handlers
-                Logger::log('API Response', ['response' => $response]);
-                return $response;
-            }
-
-            // If no legacy pattern found, try REST routes
-            $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-            if (strpos($requestUri, '/api/') !== false) {
-                $path = preg_replace('#^.*/api/#', '', $requestUri);
-                $path = strtok($path, '?'); // Remove query parameters
-                
-                $router = Router::getInstance();
-                $match = $router->match($_SERVER['REQUEST_METHOD'], $path);
-                
-                if ($match) {
-                    $match['params'] = array_merge($match['params'], $getParams);
-                    self::prepareDatabaseResource($getParams['dbres'] ?? null);
-                    $response = ($match['handler'])($match['params']);
-                    
-                    // Remove duplicate response logging here since routes handle it
-                    if (!headers_sent()) {
-                        echo json_encode($response);
-                        exit;
-                    }
-                    return $response;
-                }
-            }
-
-            // Neither legacy nor REST route found
-            $response = Response::error('Invalid request format. Use either ?f=resource:action or REST endpoint', Response::HTTP_BAD_REQUEST)->send();
-            Logger::log('API Error Response', ['response' => $response]);
-            return $response;
-            
-        } catch (\Exception $e) {
-            $response = Response::error('Internal server error: ' . $e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            Logger::log('API Error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'response' => $response
-            ]);
-            return $response;
-        }
-    }
-
-    private static function handleLegacyRequest(array $getParams, array $postParams, array $fileParams): array 
-    {
-        self::prepareDatabaseResource($getParams['dbres'] ?? null);
-
-        if (!isset($getParams['f'])) {
-            return Response::error('No function specified', Response::HTTP_BAD_REQUEST)->send();
-        }
-
-        [$function, $action] = self::parseFunction($getParams['f']);
-        if (!$function || !$action) {
-            return Response::error('Invalid API format', Response::HTTP_BAD_REQUEST)->send();
-        }
-
-        $model = "api.{$GLOBALS['databaseResource']}.$function";
-
-        return match($function) {
-            'sessions' => self::handleSession($function, $action, $getParams, $postParams),
-            'blobs' => self::handleBlob($function, $action, $getParams, $postParams, $fileParams),
-            default => self::handleStandardRequest($function, $action, $model, $getParams, $postParams)
-        };
-    }
-
-    private static function parseFunction(string $functionString): array 
-    {
-        $parts = explode(':', $functionString);
-        if (count($parts) !== 2) {
-            return [null, null];
-        }
-
-        $db = Utils::getMySQLConnection($GLOBALS['databaseResource']);
-        return [
-            // Use PDO quote instead of mysqli_real_escape_string
-            trim($db->quote($parts[0]), "'"),
-            strtolower(trim($db->quote($parts[1]), "'"))
-        ];
-    }
-
-    private static function handleSession(string $function, string $action, array $getParams, array $postParams): array 
-    {
-        return match($action) {
-            'validate' => APIEngine::validateSession($function, $action, $getParams),
-            'login' => self::handleLogin($function, $postParams),
-            'logout' => APIEngine::killSession($getParams),
-            'refresh' => TokenManager::refreshTokens($postParams['refresh_token']), // Update this line
-            default => Response::error('Unknown API', Response::HTTP_NOT_FOUND)->send()
-        };
     }
 
     private static function validateLoginCredentials(string $function, array $params): bool 
@@ -635,25 +763,6 @@ class API
         }
     }
 
-    private static function handleStandardRequest(
-        string $function, 
-        string $action, 
-        string $model, 
-        array $getParams, 
-        array $postParams
-    ): array {
-        if (!isset($getParams['token'])) {
-            return Response::unauthorized('Authentication required')->send();
-        }
-
-        return match($action) {
-            'count', 'list', 'sum' => self::handleReadOperation($function, $action, $model, $getParams),
-            'save', 'replace' => self::handleWriteOperation($function, $action, $model, $getParams, $postParams),
-            'delete' => self::handleDeleteOperation($function, $model, $getParams),
-            default => self::handleExtension($function, $action, $model, $getParams, $postParams)
-        };
-    }
-
     private static function handleReadOperation(string $function, string $action, string $model, array $params): array 
     {
         if (!Permissions::hasPermission($model, Permission::VIEW, $params['token'])) {
@@ -692,53 +801,6 @@ class API
         }
 
         return Response::ok($response)->send();
-    }
-
-    private static function handleDeleteOperation(string $function, string $model, array $getParams): array 
-    {
-        if (!Permissions::hasPermission($model, Permission::DELETE, $getParams['token'])) {
-            return Response::error(
-                "Permission denied for $function:delete", 
-                Response::HTTP_FORBIDDEN
-            )->send();
-        }
-
-        // Use id parameter but pass the UUID value
-        $deleteParams = ['id' => $getParams['id'], 'status' => 'D'];
-
-        return APIEngine::saveData($function, 'delete', $deleteParams);
-    }
-
-    private static function handleBlob(
-        string $function, 
-        string $action, 
-        array $getParams, 
-        array $postParams,
-        array $fileParams
-    ): array {
-        if (!isset($getParams['token'])) {
-            return Response::unauthorized('Authentication required')->send();
-        }
-
-        $model = "api.{$GLOBALS['databaseResource']}.$function";
-        if (!Permissions::hasPermission($model, Permission::SAVE, $getParams['token'])) {
-            return Response::error(
-                "Permission denied for $function:$action", 
-                Response::HTTP_FORBIDDEN
-            )->send();
-        }
-
-        if ($action === 'retrieve') {
-            return APIEngine::getBlob($function, $action, $getParams);
-        }
-
-        // Handle base64 image uploads
-        if (isset($getParams['type']) && $getParams['type'] === 'base64') {
-            return self::handleBase64Upload($getParams, $postParams);
-        }
-
-        // Handle regular file uploads
-        return self::handleFileUpload($getParams, $fileParams);
     }
 
     private static function handleBase64Upload(array $getParams, array $postParams): array 
@@ -875,59 +937,45 @@ class API
         self::prepareDatabaseResource($currentDb);
     }
 
-    private static function handleExtension(
-        string $function, 
-        string $action, 
-        string $model, 
-        array $getParams, 
-        array $postParams
-    ): array {
-        if (!Permissions::hasPermission($model, Permission::VIEW, $getParams['token'])) {
-            return Response::error(
-                "Permission denied for $function:$action", 
-                Response::HTTP_FORBIDDEN
-            )->send();
-        }
-
-        $extensionPath = self::resolveExtensionPath($action, $function);
-        if (!$extensionPath) {
-            return Response::error(
-                "Unknown extension $function:$action", 
-                Response::HTTP_BAD_REQUEST
-            )->send();
-        }
-
-        require_once $extensionPath;
-        if (!in_array(IExtensions::class, class_implements($function))) {
-            return Response::error(
-                "Extension must implement IExtensions", 
-                Response::HTTP_BAD_REQUEST
-            )->send();
-        }
-
-        $response = $function::process($getParams, $postParams);
-        return is_array($response) ? 
-            Response::ok($response)->send() : 
-            Response::error(
-                'Extension did not return a valid response', 
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-    }
-
-    private static function resolveExtensionPath(string $action, string $function): ?string 
+     /**
+     * Extract authorization token from request
+     *
+     * @return string|null The bearer token or null if not found
+     */
+    private static function getAuthAuthorization(): ?string 
     {
-        $paths = [
-            config('paths.project_extensions') . "$action/$function.php", // Project extensions
-            config('paths.api_extensions') . "$action/$function.php" // Core extensions
-        ];
-
-        foreach ($paths as $path) {
-            if (file_exists($path)) {
-                return $path;
+        $headers = getallheaders();
+        $token = null;
+        
+        // Check Authorization header
+        if (isset($headers['Authorization'])) {
+            $auth = $headers['Authorization'];
+            if (strpos($auth, 'Bearer ') === 0) {
+                $token = substr($auth, 7);
             }
         }
+        
+        // Check query parameter if no header
+        if (!$token && isset($_GET['token'])) {
+            $token = $_GET['token'];
+        }
 
-        return null;
+        return $token;
+    }
+
+    public static function processRequest(): array 
+    {
+        // Set JSON response headers
+        header('Content-Type: application/json');
+        
+        // Initialize API
+        self::init();
+        
+        // Get router instance
+        $router = Router::getInstance();
+        
+        // Let router handle the request
+        return $router->handleRequest();
     }
 }
 ?>
