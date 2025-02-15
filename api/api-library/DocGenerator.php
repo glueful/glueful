@@ -18,8 +18,10 @@ class DocGenerator
         if (!$definition) return;
 
         $tableName = $definition['table']['name'];
-        $resourceName = explode('.', basename($filename))[1] ?? $tableName;
-        $this->addPathsFromJson($resourceName, $tableName, $definition);
+        // Use table name directly instead of JSON filename
+        $resourcePath = strtolower($tableName);
+        
+        $this->addPathsFromJson($resourcePath, $tableName, $definition);
         $this->addSchemaFromJson($tableName, $definition);
     }
 
@@ -57,20 +59,13 @@ class DocGenerator
                         'scheme' => 'bearer',
                         'bearerFormat' => 'JWT',
                         'description' => 'JWT Authorization header using the Bearer scheme'
-                    ],
-                    'ApiKeyAuth' => [
-                        'type' => 'apiKey',
-                        'in' => 'query',
-                        'name' => 'token',
-                        'description' => 'API key for legacy authentication'
                     ]
                 ],
                 'schemas' => array_merge($this->getDefaultSchemas(), $this->schemas)
             ],
             'paths' => $this->paths,
             'security' => [
-                ['BearerAuth' => []],
-                ['ApiKeyAuth' => []]
+                ['BearerAuth' => []]
             ],
             'tags' => $this->generateTags()
         ];
@@ -237,6 +232,7 @@ class DocGenerator
         }
 
         if (str_contains($access, 'w')) {
+            // POST uses schema without ID
             $this->paths[$basePath]['post'] = [
                 'tags' => [$resource],
                 'summary' => "Create new {$tableName}",
@@ -255,7 +251,7 @@ class DocGenerator
                         'description' => 'Record created successfully',
                         'content' => [
                             'application/json' => [
-                                'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
+                                'schema' => ['$ref' => "#/components/schemas/{$tableName}Update"]
                             ]
                         ]
                     ],
@@ -263,6 +259,7 @@ class DocGenerator
                 ]
             ];
 
+            // PUT uses schema with ID
             $this->paths[$basePath . '/{id}']['put'] = [
                 'tags' => [$resource],
                 'summary' => "Update {$tableName}",
@@ -280,7 +277,7 @@ class DocGenerator
                     'required' => true,
                     'content' => [
                         'application/json' => [
-                            'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
+                            'schema' => ['$ref' => "#/components/schemas/{$tableName}Update"]
                         ]
                     ]
                 ],
@@ -329,6 +326,11 @@ class DocGenerator
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;
             
+            // Skip ID and UUID fields for POST schema
+            if (strtolower($fieldName) === 'id' || strtolower($fieldName) === 'uuid') {
+                continue;
+            }
+            
             $properties[$apiField] = [
                 'type' => $this->inferTypeFromJson($field['type']),
                 'description' => $field['description'] ?? $fieldName
@@ -347,6 +349,18 @@ class DocGenerator
         if (!empty($required)) {
             $this->schemas[$tableName]['required'] = $required;
         }
+
+        // Create separate schema for PUT/PATCH that includes ID
+        $this->schemas[$tableName . 'Update'] = [
+            'type' => 'object',
+            'properties' => array_merge(
+                [
+                    'id' => ['type' => 'string', 'format' => 'uuid'],
+                    'uuid' => ['type' => 'string', 'format' => 'uuid']
+                ],
+                $properties
+            )
+        ];
     }
 
     private function inferType(\SimpleXMLElement $field): string 
@@ -381,12 +395,6 @@ class DocGenerator
     private function getCommonParameters(): array 
     {
         return [
-            [
-                'name' => 'token',
-                'in' => 'query',
-                'required' => true,
-                'schema' => ['type' => 'string']
-            ],
             [
                 'name' => 'fields',
                 'in' => 'query',

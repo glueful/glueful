@@ -2,9 +2,18 @@
 declare(strict_types=1);
 
 namespace Mapi\Api\Library;
+use Mapi\Api\Http\{
+    Response,
+    Router
+};
 
 abstract class Extensions implements IExtensions 
 {
+
+    public static function initializeRoutes(Router $router): array {
+        return [];
+    }
+
     protected static function respond(array $data, int $code = 200): array 
     {
         return [
@@ -23,6 +32,9 @@ abstract class Extensions implements IExtensions
         ];
     }
 
-    abstract public static function process(array $getParams, array $postParams): array;
+    public static function process(array $getParams, array $postParams): array
+    {
+        return [];
+    }
 }
 ?>
