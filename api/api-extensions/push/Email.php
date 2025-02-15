@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Extensions\Push;
 
-require_once __DIR__ . '../../../bootstrap.php';
-
 use Mapi\Api\Library\Extensions;
 use Mapi\Api\API;
 use Mapi\Api\Extensions\Push\AdvancedEmail;
@@ -28,7 +26,7 @@ class Email extends Extensions
         try {
             self::validateParams($postParams);
 
-            if (defined('FORCE_ADVANCED_EMAIL') && FORCE_ADVANCED_EMAIL === TRUE) {
+            if (defined('FORCE_ADVANCED_EMAIL') && config('mail.force_advanced')=== TRUE) {
                 return self::handleAdvancedEmail($getParams, $postParams);
             }
 

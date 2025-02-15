@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Mapi\Api\Extensions\Push;
 
-require_once __DIR__ . '/../api/bootstrap.php';
-
 use Mapi\Api\Library\Extensions;
 use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};
 
@@ -51,7 +49,7 @@ final class AdvancedEmail extends Extensions
 
     private static function sendEmail(array $data, ?array $attachment): array
     {
-        require_once API_EXTENSIONS_DIRECTORY . 'push/phpmailer/PHPMailerAutoload.php';
+        require_once config('path.api_extensions') . 'push/phpmailer/PHPMailerAutoload.php';
         
         $mailer = self::configureMailer($data);
         

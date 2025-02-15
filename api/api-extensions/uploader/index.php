@@ -142,7 +142,7 @@ final class FileUploader
             'url' => $filename,
             'user_id' => $getParams['user_id'],
             'size' => $file['size'],
-            'status' => ACTIVE_STATUS,
+            'status' => 'active',
             'token' => $token,
             'created_at' => date('Y-m-d H:i:s')
         ];

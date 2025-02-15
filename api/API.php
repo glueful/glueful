@@ -27,6 +27,17 @@ class API
     public static function init(): void
     {
         if (!self::$routesInitialized) {
+             // Initialize logger first
+        $logFile = config('app.api_log_file');
+        $debugLogging = config('app.debug_logging');
+        Logger::init(
+            defined('API_DEBUG_LOGGING') ? $debugLogging : false, 
+            defined('API_LOG_FILE') ? $logFile : null
+        );
+        
+        // Load extensions before main routes
+        // This allows extensions to register their routes first
+        self::loadExtensions();
             self::initializeRoutes();
             self::$routesInitialized = true;
         }
@@ -763,45 +774,6 @@ class API
         }
     }
 
-    private static function handleReadOperation(string $function, string $action, string $model, array $params): array 
-    {
-        if (!Permissions::hasPermission($model, Permission::VIEW, $params['token'])) {
-            return Response::error(
-                "Permission denied for $function:$action", 
-                Response::HTTP_FORBIDDEN
-            )->send();
-        }
-
-        $filter = isset($params['filter']) ? explode(':', $params['filter']) : null;
-        return APIEngine::getData($function, $action, $params, $filter);
-    }
-
-    private static function handleWriteOperation(
-        string $function, 
-        string $action, 
-        string $model, 
-        array $getParams, 
-        array $postParams
-    ): array {
-        if (!Permissions::hasPermission($model, Permission::SAVE, $getParams['token'])) {
-            return Response::error(
-                "Permission denied for $function:$action", 
-                Response::HTTP_FORBIDDEN
-            )->send();
-        }
-
-        if ($function === 'blobs') {
-            return self::handleBlobUpload($getParams, $postParams);
-        }
-
-        $response = APIEngine::saveData($function, $action, $postParams);
-        
-        if (config('app.enable_audit') && config('app.enable_audit') === TRUE) {
-            self::auditChanges($function, $getParams, $postParams, $response);
-        }
-
-        return Response::ok($response)->send();
-    }
 
     private static function handleBase64Upload(array $getParams, array $postParams): array 
     {
@@ -837,34 +809,6 @@ class API
             return $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
         } catch (\Exception $e) {
             return Response::error('File upload failed: ' . $e->getMessage())->send();
-        }
-    }
-
-    private static function handleBlobUpload(array $getParams, array $postParams): array 
-    {
-        try {
-            if (!isset($postParams['base64'])) {
-                throw new \InvalidArgumentException('Invalid blob upload parameters');
-            }
-
-            $uploader = new FileUploader();
-            
-            // Convert base64 to temp file
-            $tmpFile = $uploader->handleBase64Upload($postParams['base64']);
-            
-            $fileParams = [
-                'name' => $getParams['name'] ?? 'b64conv.jpg',
-                'type' => $getParams['mime_type'] ?? 'image/jpeg',
-                'tmp_name' => $tmpFile,
-                'error' => 0,
-                'size' => filesize($tmpFile)
-            ];
-
-            unset($getParams['type']);
-            return $uploader->handleUpload($getParams['token'], $getParams, ['file' => $fileParams]);
-
-        } catch (\Exception $e) {
-            return Response::error('Blob upload failed: ' . $e->getMessage())->send();
         }
     }
 
@@ -962,6 +906,69 @@ class API
 
         return $token;
     }
+
+    private static function loadExtensions(): void 
+{
+    $extensionsMap = [
+        'api/api-extensions/' => 'Mapi\\Api\\Extensions\\',
+        'extensions/' => 'Mapi\\Extensions\\'
+    ];
+    
+    foreach ($extensionsMap as $directory => $namespace) {
+        self::scanExtensionsDirectory(
+            dirname(__DIR__) . '/' . $directory, 
+            $namespace, 
+            Router::getInstance()
+        );
+    }
+}
+
+private static function scanExtensionsDirectory(string $dir, string $namespace, Router $router): void 
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    $iterator = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $file) {
+        if ($file->isFile() && $file->getExtension() === 'php') {
+            $relativePath = substr($file->getPathname(), strlen($dir));
+            $className = str_replace(
+                ['/', '.php'],
+                ['\\', ''],
+                $relativePath
+            );
+            $fullClassName = $namespace . $className;
+
+            // Check if class exists and extends Extensions
+            if (class_exists($fullClassName)) {
+                $reflection = new \ReflectionClass($fullClassName);
+                if ($reflection->isSubclassOf(\Mapi\Api\Library\Extensions::class)) {
+                    try {
+                        // Check if class has initializeRoutes method
+                        if ($reflection->hasMethod('initializeRoutes')) {
+                            Logger::log('Loading Extension', [
+                                'class' => $fullClassName,
+                                'file' => $file->getPathname()
+                            ]);
+                            
+                            // Initialize routes for this extension
+                            $fullClassName::initializeRoutes($router);
+                        }
+                    } catch (\Exception $e) {
+                        Logger::log('Extension Load Error', [
+                            'class' => $fullClassName,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+}
 
     public static function processRequest(): array 
     {

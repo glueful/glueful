@@ -2,7 +2,9 @@
     "autoload": {
         "psr-4": {
             "Mapi\\Api\\": "api/",
-            "Mapi\\Api\\Library\\": "api/api-library/"
+            "Mapi\\Api\\Library\\": "api/api-library/",
+            "Mapi\\Api\\Extensions\\": "api/api-extensions/",
+            "Mapi\\Extensions\\": "extensions/"
         }
     },
     "config": {
