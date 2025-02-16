@@ -25,7 +25,6 @@ class Router
             'path' => $normalizedPath,
             'handler' => $handler
         ];
-        
         if ($public) {
             $this->publicRoutes[] = $normalizedPath;
         }
@@ -65,14 +64,19 @@ class Router
             $pattern = $route['path'];
             $paramNames = [];
             
-            // Extract parameter names and convert to regex pattern
+            // First extract parameter names
             if (preg_match_all('/\{([^}]+)\}/', $pattern, $matches)) {
                 $paramNames = $matches[1];
-                $pattern = preg_replace('/\{[^}]+\}/', '([^\/]+)', $pattern);
+                // Then convert to regex pattern without escaping
+                $pattern = preg_replace('/\{[^}]+\}/', '([^/]+)', $pattern);
             }
-            
+
+            // Now escape the pattern but preserve the capture groups
             $pattern = str_replace('/', '\/', $pattern);
-            if (preg_match("/^$pattern$/", $normalizedPath, $matches)) {
+            $pattern = '#^' . $pattern . '$#';
+            
+            
+            if (preg_match($pattern, $normalizedPath, $matches)) {
                 array_shift($matches); // Remove full match
                 
                 // Create params array from matched values
@@ -95,11 +99,11 @@ class Router
     {
         $requestUri = $_SERVER['REQUEST_URI'] ?? '';
         $method = $_SERVER['REQUEST_METHOD'];
-        
+
         // Strip base path and get clean route path
         $path = preg_replace('#^.*/api/#', '', $requestUri);
         $path = strtok($path, '?'); // Remove query parameters
-        
+
         // Match route
         $match = $this->match($method, $path);
         
@@ -110,6 +114,8 @@ class Router
                 'code' => 404
             ];
         }
+
+       
         
         try {
             // Execute route handler with parameters

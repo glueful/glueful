@@ -10,6 +10,40 @@
                 "type": "varchar(255)",
                 "nullable": false
             }
-        ]
+        ],
+        "response": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Verification code has been sent to your email"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "email": {
+                            "type": "string",
+                            "format": "email",
+                            "example": "user@example.com"
+                        },
+                        "expires_in": {
+                            "type": "integer",
+                            "description": "OTP expiration time in seconds",
+                            "example": 300
+                        }
+                    },
+                    "required": ["email", "expires_in"]
+                },
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                }
+            },
+            "required": ["success", "message", "data", "code"]
+        }
     }
 }

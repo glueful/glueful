@@ -213,6 +213,7 @@ class DocGenerator
         $docName = $definition['doc']['name'];
         $method = strtolower($definition['doc']['method']);
         $isPublic = $definition['doc']['is_public'] ?? false;
+        $consumes = $definition['doc']['consumes'] ?? ['application/json'];
         
         $basePath = "/{$docName}";
         $this->paths[$basePath] = [];
@@ -246,6 +247,42 @@ class DocGenerator
             $this->schemas[$schemaName]['required'] = $required;
         }
 
+        // Build content object based on consumes array
+        $content = [];
+        foreach ($consumes as $mediaType) {
+            if ($mediaType === 'multipart/form-data') {
+                $content[$mediaType] = [
+                    'schema' => [
+                        'type' => 'object',
+                        'properties' => $properties
+                    ]
+                ];
+            } else {
+                $content[$mediaType] = [
+                    'schema' => ['$ref' => "#/components/schemas/{$schemaName}"]
+                ];
+            }
+        }
+
+        // Add custom response schema if provided
+        if (isset($definition['doc']['response'])) {
+            $responseSchemaName = $schemaName . 'Response';
+            $this->schemas[$responseSchemaName] = $definition['doc']['response'];
+            $responses = [
+                '200' => [
+                    'description' => 'Successful operation',
+                    'content' => [
+                        'application/json' => [
+                            'schema' => ['$ref' => "#/components/schemas/{$responseSchemaName}"]
+                        ]
+                    ]
+                ],
+                ...$this->getErrorResponses()
+            ];
+        } else {
+            $responses = $this->getCommonResponses($schemaName);
+        }
+
         // Add path operation
         $this->paths[$basePath][$method] = [
             'tags' => [explode('/', $docName)[0]],
@@ -254,28 +291,9 @@ class DocGenerator
             'security' => $isPublic ? [] : [['BearerAuth' => []]],
             'requestBody' => [
                 'required' => true,
-                'content' => [
-                    'application/json' => [
-                        'schema' => ['$ref' => "#/components/schemas/{$schemaName}"]
-                    ]
-                ]
+                'content' => $content
             ],
-            'responses' => [
-                '200' => [
-                    'description' => 'Successful operation',
-                    'content' => [
-                        'application/json' => [
-                            'schema' => [
-                                'type' => 'object',
-                                'properties' => [
-                                    'message' => ['type' => 'string']
-                                ]
-                            ]
-                        ]
-                    ]
-                ],
-                ...$this->getErrorResponses()
-            ]
+            'responses' => $responses
         ];
     }
 
@@ -342,9 +360,13 @@ class DocGenerator
                 'description' => $field['description'] ?? $fieldName
             ];
 
-            // Add format for specific field types
-            if ($fieldName === 'password') {
-                $properties[$apiField]['format'] = 'password';
+            // Special handling for file type
+            if ($field['type'] === 'file') {
+                $properties[$apiField]['format'] = 'binary';
+            }
+            // Special handling for base64
+            if ($field['type'] === 'longtext' && str_contains($field['description'], 'base64')) {
+                $properties[$apiField]['format'] = 'base64';
             }
 
             if (!($field['nullable'] ?? true)) {
@@ -352,6 +374,7 @@ class DocGenerator
             }
         }
 
+        // Create request schema
         $this->schemas[$schemaName] = [
             'type' => 'object',
             'properties' => $properties
@@ -361,27 +384,28 @@ class DocGenerator
             $this->schemas[$schemaName]['required'] = $required;
         }
 
-        // Also create a response schema if needed
-        $this->schemas[$schemaName . 'Response'] = [
-            'type' => 'object',
-            'properties' => [
-                'access_token' => [
-                    'type' => 'string',
-                    'description' => 'JWT access token'
-                ],
-                'token_type' => [
-                    'type' => 'string',
-                    'description' => 'Token type (Bearer)',
-                    'example' => 'Bearer'
-                ],
-                'expires_in' => [
-                    'type' => 'integer',
-                    'description' => 'Token expiration time in seconds',
-                    'example' => 3600
-                ]
-            ],
-            'required' => ['access_token', 'token_type', 'expires_in']
-        ];
+        // Create response schema
+        if (isset($definition['doc']['response'])) {
+            $this->schemas[$schemaName . 'Response'] = $definition['doc']['response'];
+        }
+
+        // Create multipart schema if needed
+        if (isset($definition['doc']['consumes']) && in_array('multipart/form-data', $definition['doc']['consumes'])) {
+            $this->schemas[$schemaName . 'Multipart'] = [
+                'type' => 'object',
+                'properties' => array_map(function($prop) {
+                    // Convert file properties for multipart
+                    if (isset($prop['format']) && $prop['format'] === 'binary') {
+                        return [
+                            'type' => 'string',
+                            'format' => 'binary',
+                            'description' => $prop['description']
+                        ];
+                    }
+                    return $prop;
+                }, $properties)
+            ];
+        }
 
         return $schemaName;
     }

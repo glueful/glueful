@@ -9,11 +9,13 @@ class JWTService
     private static string $algorithm = 'HS256';
     private static array $invalidatedTokens = [];
     
-    public static function initialize(): void 
+    private static function initialize(): void 
     {
-        self::$key = config('security.jwt_secret');
-        if (empty(self::$key)) {
-            throw new \RuntimeException('JWT secret key not configured');
+        if (!isset(self::$key)) {
+            self::$key = config('session.jwt_key');
+            if (!self::$key) {
+                throw new \RuntimeException('JWT key not configured');
+            }
         }
     }
     
@@ -23,7 +25,7 @@ class JWTService
 
         $header = [
             'typ' => 'JWT',
-            'alg' => self::$algorithm
+            'alg' => config('session.jwt_algorithm') ?? self::$algorithm
         ];
 
         $payload['iat'] = time();  // Issued at
