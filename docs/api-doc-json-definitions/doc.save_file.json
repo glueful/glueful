@@ -1,0 +1,15 @@
+{
+    "doc": {
+        "name": "files",
+        "method": "POST",
+        "is_public": false,
+        "fields": [
+            {
+                "name": "base64",
+                "api_field": "base64",
+                "type": "longtext",
+                "nullable": true
+            }
+        ]
+    }
+}

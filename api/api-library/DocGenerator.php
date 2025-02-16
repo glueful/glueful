@@ -9,7 +9,7 @@ class DocGenerator
     private array $schemas = [];
 
 
-    public function generateFromJson(string $dbResource, string $filename): void 
+    public function generateFromJson(string $filename): void 
     {
         $jsonContent = file_get_contents($filename);
         if (!$jsonContent) return;
@@ -23,6 +23,19 @@ class DocGenerator
         
         $this->addPathsFromJson($resourcePath, $tableName, $definition);
         $this->addSchemaFromJson($tableName, $definition);
+    }
+
+    public function generateFromDocJson(string $filename): void 
+    {
+        $jsonContent = file_get_contents($filename);
+        if (!$jsonContent) return;
+
+        $definition = json_decode($jsonContent, true);
+        if (!$definition || !isset($definition['doc'])) return;
+
+        // Process the documentation definition
+        $this->addPathsFromDocJson($definition);
+        $this->addSchemaFromDocJson($definition);
     }
 
     public function getSwaggerJson(): string 
@@ -73,128 +86,6 @@ class DocGenerator
         return json_encode($swagger, JSON_PRETTY_PRINT);
     }
 
-    private function addPathsFromXml(string $resource, string $tableName, \SimpleXMLElement $xml): void 
-    {
-        $access = (string)$xml->access->attributes()->mode;
-        $basePath = "/{$resource}";
-        $this->paths[$basePath] = [];
-
-        // For views (starting with vw_), only add GET method
-        if (str_starts_with($tableName, 'vw_')) {
-            $this->paths[$basePath]['get'] = [
-                'tags' => [$resource],
-                'summary' => "List {$tableName}",
-                'description' => "View-only endpoint for {$tableName}",
-                'parameters' => [
-                    ...$this->getCommonParameters(),
-                    ...$this->getFilterParameters()
-                ],
-                'responses' => $this->getCommonResponses($tableName)
-            ];
-            return;
-        }
-
-        // For regular tables, add all CRUD methods
-        if (str_contains($access, 'r')) {
-            $this->paths[$basePath]['get'] = [
-                'tags' => [$resource],
-                'summary' => "List {$tableName}",
-                'description' => "Retrieve a list of {$tableName} records",
-                'parameters' => [
-                    ...$this->getCommonParameters(),
-                    ...$this->getFilterParameters()
-                ],
-                'responses' => $this->getCommonResponses($tableName)
-            ];
-        }
-
-        // Add write methods only for non-view tables
-        if (str_contains($access, 'w')) {
-            // Create endpoint (POST)
-            $this->paths[$basePath]['post'] = [
-                'tags' => [$resource],
-                'summary' => "Create new {$tableName}",
-                'description' => "Create a new {$tableName} record",
-                'security' => [['BearerAuth' => []]],
-                'requestBody' => [
-                    'required' => true,
-                    'content' => [
-                        'application/json' => [
-                            'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
-                        ]
-                    ]
-                ],
-                'responses' => [
-                    '201' => [
-                        'description' => 'Record created successfully',
-                        'content' => [
-                            'application/json' => [
-                                'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
-                            ]
-                        ]
-                    ],
-                    ...$this->getErrorResponses()
-                ]
-            ];
-
-            // Update endpoint (PUT)
-            $this->paths[$basePath . '/{id}']['put'] = [
-                'tags' => [$resource],
-                'summary' => "Update {$tableName}",
-                'description' => "Update an existing {$tableName} record",
-                'parameters' => [
-                    [
-                        'name' => 'id',
-                        'in' => 'path',
-                        'required' => true,
-                        'schema' => ['type' => 'integer']
-                    ],
-                    ...$this->getCommonParameters()
-                ],
-                'requestBody' => [
-                    'required' => true,
-                    'content' => [
-                        'application/json' => [
-                            'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
-                        ]
-                    ]
-                ],
-                'responses' => [
-                    '200' => [
-                        'description' => 'Record updated successfully',
-                        'content' => [
-                            'application/json' => [
-                                'schema' => ['$ref' => "#/components/schemas/{$tableName}"]
-                            ]
-                        ]
-                    ],
-                    ...$this->getErrorResponses()
-                ]
-            ];
-
-            // Delete endpoint (DELETE)
-            $this->paths[$basePath . '/{id}']['delete'] = [
-                'tags' => [$resource],
-                'summary' => "Delete {$tableName}",
-                'description' => "Delete a {$tableName} record",
-                'parameters' => [
-                    [
-                        'name' => 'id',
-                        'in' => 'path',
-                        'required' => true,
-                        'schema' => ['type' => 'integer']
-                    ],
-                    ...$this->getCommonParameters()
-                ],
-                'responses' => [
-                    '200' => [
-                        'description' => 'Record deleted successfully'
-                    ],
-                    ...$this->getErrorResponses()
-                ]
-            ];
-        }
-    }
 
     private function addPathsFromJson(string $resource, string $tableName, array $definition): void 
     {
@@ -317,6 +208,77 @@ class DocGenerator
         }
     }
 
+    private function addPathsFromDocJson(array $definition): void 
+    {
+        $docName = $definition['doc']['name'];
+        $method = strtolower($definition['doc']['method']);
+        $isPublic = $definition['doc']['is_public'] ?? false;
+        
+        $basePath = "/{$docName}";
+        $this->paths[$basePath] = [];
+
+        // Build request schema
+        $properties = [];
+        $required = [];
+        
+        foreach ($definition['doc']['fields'] as $field) {
+            $fieldName = $field['name'];
+            $apiField = $field['api_field'] ?? $fieldName;
+            
+            $properties[$apiField] = [
+                'type' => $this->inferTypeFromJson($field['type']),
+                'description' => $field['description'] ?? $fieldName
+            ];
+
+            if (!($field['nullable'] ?? true)) {
+                $required[] = $apiField;
+            }
+        }
+
+        // Create schema for this endpoint
+        $schemaName = str_replace(['/'], '', ucwords($docName, '/'));
+        $this->schemas[$schemaName] = [
+            'type' => 'object',
+            'properties' => $properties
+        ];
+
+        if (!empty($required)) {
+            $this->schemas[$schemaName]['required'] = $required;
+        }
+
+        // Add path operation
+        $this->paths[$basePath][$method] = [
+            'tags' => [explode('/', $docName)[0]],
+            'summary' => ucwords(str_replace('-', ' ', basename($docName))),
+            'description' => "Endpoint for " . str_replace('-', ' ', $docName),
+            'security' => $isPublic ? [] : [['BearerAuth' => []]],
+            'requestBody' => [
+                'required' => true,
+                'content' => [
+                    'application/json' => [
+                        'schema' => ['$ref' => "#/components/schemas/{$schemaName}"]
+                    ]
+                ]
+            ],
+            'responses' => [
+                '200' => [
+                    'description' => 'Successful operation',
+                    'content' => [
+                        'application/json' => [
+                            'schema' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'message' => ['type' => 'string']
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                ...$this->getErrorResponses()
+            ]
+        ];
+    }
+
     private function addSchemaFromJson(string $tableName, array $definition): void 
     {
         $properties = [];
@@ -363,16 +325,65 @@ class DocGenerator
         ];
     }
 
-    private function inferType(\SimpleXMLElement $field): string 
+    private function addSchemaFromDocJson(array $definition): string 
     {
-        $type = (string)($field->attributes()->type ?? '');
-        return match($type) {
-            'int', 'integer', 'bigint' => 'integer',
-            'float', 'decimal', 'double' => 'number',
-            'boolean', 'bool' => 'boolean',
-            'date', 'datetime' => 'string',
-            default => 'string'
-        };
+        $docName = $definition['doc']['name'];
+        $schemaName = str_replace(['/'], '', ucwords($docName, '/'));
+        
+        $properties = [];
+        $required = [];
+
+        foreach ($definition['doc']['fields'] as $field) {
+            $fieldName = $field['name'];
+            $apiField = $field['api_field'] ?? $fieldName;
+            
+            $properties[$apiField] = [
+                'type' => $this->inferTypeFromJson($field['type']),
+                'description' => $field['description'] ?? $fieldName
+            ];
+
+            // Add format for specific field types
+            if ($fieldName === 'password') {
+                $properties[$apiField]['format'] = 'password';
+            }
+
+            if (!($field['nullable'] ?? true)) {
+                $required[] = $apiField;
+            }
+        }
+
+        $this->schemas[$schemaName] = [
+            'type' => 'object',
+            'properties' => $properties
+        ];
+
+        if (!empty($required)) {
+            $this->schemas[$schemaName]['required'] = $required;
+        }
+
+        // Also create a response schema if needed
+        $this->schemas[$schemaName . 'Response'] = [
+            'type' => 'object',
+            'properties' => [
+                'access_token' => [
+                    'type' => 'string',
+                    'description' => 'JWT access token'
+                ],
+                'token_type' => [
+                    'type' => 'string',
+                    'description' => 'Token type (Bearer)',
+                    'example' => 'Bearer'
+                ],
+                'expires_in' => [
+                    'type' => 'integer',
+                    'description' => 'Token expiration time in seconds',
+                    'example' => 3600
+                ]
+            ],
+            'required' => ['access_token', 'token_type', 'expires_in']
+        ];
+
+        return $schemaName;
     }
 
     private function inferTypeFromJson(string $dbType): string 
@@ -442,13 +453,28 @@ class DocGenerator
                         'schema' => [
                             'type' => 'object',
                             'properties' => [
+                                'success' => [
+                                    'type' => 'boolean',
+                                    'default' => true,
+                                    'example' => true
+                                ],
+                                'message' => [
+                                    'type' => 'string'
+                                ],
                                 'data' => [
                                     'type' => 'array',
                                     'items' => ['$ref' => "#/components/schemas/{$tableName}"]
                                 ],
-                                'meta' => [
-                                    '$ref' => '#/components/schemas/PaginationMeta'
-                                ]
+                                'code' => [
+                                    'type' => 'integer',
+                                    'format' => 'int32',
+                                    'enum' => [200, 201],
+                                    'example' => 200,
+                                ],
+                                'required' => ['success', 'message', 'data', 'code']
+                                // 'meta' => [
+                                //     '$ref' => '#/components/schemas/PaginationMeta'
+                                // ]
                             ]
                         ]
                     ]
@@ -509,29 +535,36 @@ class DocGenerator
             'Error' => [
                 'type' => 'object',
                 'properties' => [
-                    'code' => [
-                        'type' => 'integer',
-                        'format' => 'int32'
+                   'success' => [
+                        'type' => 'boolean',
+                        'default' => false,
+                        'example' => false
                     ],
                     'message' => [
                         'type' => 'string'
                     ],
-                    'details' => [
+                    'data' => [
                         'type' => 'object',
                         'additionalProperties' => true
-                    ]
+                    ],
+                    'code' => [
+                        'type' => 'integer',
+                        'format' => 'int32',
+                        'enum' => [400, 401, 403, 404, 500],
+                        'example' => 400,
+                    ],
                 ],
-                'required' => ['code', 'message']
+                'required' => ['success', 'message', 'data', 'code']
             ],
-            'PaginationMeta' => [
-                'type' => 'object',
-                'properties' => [
-                    'total' => ['type' => 'integer'],
-                    'limit' => ['type' => 'integer'],
-                    'offset' => ['type' => 'integer'],
-                    'pages' => ['type' => 'integer']
-                ]
-            ]
+            // 'PaginationMeta' => [
+            //     'type' => 'object',
+            //     'properties' => [
+            //         'total' => ['type' => 'integer'],
+            //         'limit' => ['type' => 'integer'],
+            //         'offset' => ['type' => 'integer'],
+            //         'pages' => ['type' => 'integer']
+            //     ]
+            // ]
         ];
     }
 

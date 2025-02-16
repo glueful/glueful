@@ -6,10 +6,12 @@ namespace Mapi\Api\Extensions\Uploader;
 
 require_once __DIR__ . '/../../bootstrap.php';
 
-use Mapi\Api\Library\APIEngine;
+use Mapi\Api\Library\{ Utils, APIEngine,};
 use RuntimeException;
 use InvalidArgumentException;
 use Mapi\Api\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
+
+
 
 class UploadException extends RuntimeException {}
 class ValidationException extends InvalidArgumentException {}
@@ -136,14 +138,18 @@ final class FileUploader
 
     private function saveFileRecord(string $token, array $getParams, array $file, string $filename): array 
     {
+        $user = Utils::getUser();
+        if ($user) {
+            $uuid = $user['uuid'];
+        }
+        
         $params = [
             'name' => $file['name'],
             'mime_type' => $file['type'],
             'url' => $filename,
-            'user_id' => $getParams['user_id'],
+            'created_by' => $uuid,
             'size' => $file['size'],
             'status' => 'active',
-            'token' => $token,
             'created_at' => date('Y-m-d H:i:s')
         ];
 

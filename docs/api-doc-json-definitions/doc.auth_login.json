@@ -1,0 +1,21 @@
+{
+    "doc": {
+        "name": "auth/login",
+        "method": "POST",
+        "is_public": true,
+        "fields": [
+            {
+                "name": "username",
+                "api_field": "username",
+                "type": "varchar(255)",
+                "nullable": false
+            },
+            {
+                "name": "password",
+                "api_field": "password",
+                "type": "varchar(100)",
+                "nullable": false
+            }
+        ]
+    }
+}

@@ -1,0 +1,8 @@
+{
+    "doc": {
+        "name": "auth/validate-token",
+        "method": "POST",
+        "is_public": false,
+        "fields": []
+    }
+}

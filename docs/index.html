@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -23,9 +23,9 @@
         };
     </script>
 </body>
-</html>
+</html> -->
 
-<!-- <!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -34,13 +34,91 @@
   
     <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+  
+      elements-api {
+        display: flex;
+        height: 100vh;
+        flex-direction: column;
+        /* width: 100vw; */
+      }
+  
+      /* Force the sidebar to scroll internally */
+      elements-api::part(toc) {
+        height: 100vh;
+        overflow-y: auto;
+        padding: 10px;
+      }
+    </style>
   </head>
   <body>
 
     <elements-api
-      apiDescriptionUrl="swagger.json"
+      id="api-docs"
+      layout="responsive"
       router="hash"
     />
 
+    <script>
+      async function loadAndSortOpenAPISpec(url) {
+        try {
+          const response = await fetch(url);
+          const spec = await response.json();
+
+          // Function to capitalize first letter and replace underscores
+          function formatText(text) {
+            return text
+              .replace(/_/g, " ") // Replace underscores with spaces
+              .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize each word
+          }
+
+          // Sort paths alphabetically
+          if (spec.paths) {
+            const sortedPaths = Object.keys(spec.paths)
+              .sort()
+              .reduce((acc, key) => {
+                acc[key] = spec.paths[key];
+                return acc;
+              }, {});
+            spec.paths = sortedPaths;
+          }
+
+          // Sort tags alphabetically and format them
+          if (spec.tags && Array.isArray(spec.tags)) {
+            spec.tags.sort((a, b) => a.name.localeCompare(b.name));
+            spec.tags = spec.tags.map((tag) => ({
+              ...tag,
+              name: formatText(tag.name), // Capitalize & replace underscores
+            }));
+          }
+
+          // Ensure each path's operations (GET, POST, etc.) maintain correct tag order
+          Object.keys(spec.paths).forEach((path) => {
+            Object.keys(spec.paths[path]).forEach((method) => {
+              if (spec.paths[path][method].tags) {
+                spec.paths[path][method].tags = spec.paths[path][method].tags
+                  .map(formatText) // Format tag names
+                  .sort();
+              }
+            });
+          });
+
+          // Update Stoplight Elements with sorted spec
+          document.getElementById("api-docs").apiDescriptionDocument = spec;
+
+        } catch (error) {
+          console.error("Error loading OpenAPI spec:", error);
+        }
+      }
+
+      // Load and sort OpenAPI spec
+      const openApiUrl = "swagger.json";
+      loadAndSortOpenAPISpec(openApiUrl);
+    </script>
+  
   </body>
-</html> -->
+</html>

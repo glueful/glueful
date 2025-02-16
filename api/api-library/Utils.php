@@ -182,6 +182,45 @@ class Utils
             charset: RandomStringGenerator::CHARSET_ALPHANUMERIC
         );
     }
+
+    /**
+     * Get user information from JWT token
+     * 
+     * @param string|null $token JWT token
+     * @return array{uuid: string, role: string, info: array}|null User information or null if invalid
+     */
+    public static function getUser(?string $token = null): ?array
+    {
+        if (!$token) {
+            // Try to get token from Authorization header
+            $headers = getallheaders();
+            if (isset($headers['Authorization'])) {
+                $token = str_replace('Bearer ', '', $headers['Authorization']);
+            }
+        }
+
+        if (!$token) {
+            return null;
+        }
+
+        try {
+            // Decode token
+            $payload = JWTService::decode($token);
+            
+            if (!isset($payload['uuid'], $payload['role'], $payload['info'])) {
+                return null;
+            }
+
+            return [
+                'uuid' => $payload['uuid'],
+                'role' => $payload['role'],
+                'info' => $payload['info']
+            ];
+
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
 }
 
 // Initialize cache engine with optional prefix

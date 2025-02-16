@@ -149,7 +149,7 @@ class APIEngine
     private static function getBlobAsFile(StorageInterface $storage, array $blob): array 
     {
         return [
-            'id' => $blob['uuid'],
+            'uuid' => $blob['uuid'],
             'url' => $storage->getUrl($blob['filepath']),
             'name' => $blob['filename'] ?? basename($blob['filepath']),
             'mime_type' => $blob['mime_type'],
@@ -338,7 +338,7 @@ class APIEngine
     private static function createSessionData(array $userInfo, bool $remember): array 
     {
         $sessionData = [
-            'user_uuid' => $userInfo['uuid'],
+            'uuid' => $userInfo['uuid'],
             'info' => array_diff_key($userInfo, ['password' => '']),
             'ip' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',

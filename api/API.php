@@ -233,16 +233,8 @@ class API
                     $postData = $_POST;
                 }
 
-                if (!isset($postData['email']) || !isset($postData['otp']) || !isset($postData['new_password'])) {
-                    return Response::error('Email, OTP and new password are required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                // First verify the OTP
-                $verifier = new EmailVerification();
-                $isValid = $verifier->verifyOTP($postData['email'], $postData['otp']);
-                
-                if (!$isValid) {
-                    return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST)->send();
+                if (!isset($postData['email']) || !isset($postData['new_password'])) {
+                    return Response::error('Email, new password are required', Response::HTTP_BAD_REQUEST)->send();
                 }
 
                 // Update password
@@ -279,27 +271,7 @@ class API
             ]);
 
             try {
-                $headers = getallheaders();
-                $token = null;
-                
-                // Check Authorization header
-                if (isset($headers['Authorization'])) {
-                    $auth = $headers['Authorization'];
-                    if (strpos($auth, 'Bearer ') === 0) {
-                        $token = substr($auth, 7);
-                    }
-                }
-                
-                // Check query parameter if no header
-                if (!$token && isset($_GET['token'])) {
-                    $token = $_GET['token'];
-                }
-                
-                if (!$token) {
-                    return Response::unauthorized('Authentication required')->send();
-                }
-
-                $result = APIEngine::validateSession('sessions', 'validate', ['token' => $token]);
+                $result = self::validateToken();
                 return Response::ok($result)->send();
 
             } catch (\Exception $e) {
@@ -316,21 +288,10 @@ class API
             ]);
 
             try {
-                $headers = getallheaders();
-                $refreshToken = null;
-                
-                // Check Authorization header
-                if (isset($headers['Authorization'])) {
-                    $auth = $headers['Authorization'];
-                    if (strpos($auth, 'Bearer ') === 0) {
-                        $refreshToken = substr($auth, 7);
-                    }
-                }
-                
                 // Check request body for refresh token
                 $input = file_get_contents('php://input');
                 $postData = json_decode($input, true) ?? [];
-                if (!$refreshToken && isset($postData['refresh_token'])) {
+                if (isset($postData['refresh_token'])) {
                     $refreshToken = $postData['refresh_token'];
                 }
                 
@@ -354,11 +315,11 @@ class API
             }
         }, true); // Public route since token is expired
 
-        $router->addRoute('GET', 'blobs/{uuid}', function($params) {
+        $router->addRoute('GET', 'files/{uuid}', function($params) {
             Logger::log('REST Request - Get Blob', [
                 'method' => 'GET',
                 'resource' => 'blobs',
-                'id' => $params['uuid'],
+                'uuid' => $params['uuid'],
                 'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
             ]);
@@ -390,7 +351,7 @@ class API
             }
         });
 
-        $router->addRoute('POST', 'blobs-save', function($params) {
+        $router->addRoute('POST', 'files', function($params) {
             Logger::log('REST Request - Upload Blob', [
                 'method' => 'POST',
                 'resource' => 'blobs',
@@ -700,9 +661,9 @@ class API
         });
     }
 
-    private static function validateToken(): void 
+    private static function validateToken(): array 
     {
-        $token = self::getAuthAuthorization();
+        $token = self::getAuthAuthorizationToken();
         
         if (!$token) {
             echo json_encode(Response::unauthorized('Authentication required')->send());
@@ -718,6 +679,7 @@ class API
                 echo json_encode(Response::unauthorized('Invalid or expired token')->send());
                 exit;
             }
+            return $result;
         } catch (\Exception $e) {
             echo json_encode(Response::error('Token validation failed', Response::HTTP_INTERNAL_SERVER_ERROR)->send());
             exit;
@@ -736,7 +698,7 @@ class API
     private static function validateLoginCredentials(string $function, array $params): bool 
     {
         return match($function) {
-            'sessions' => (isset($params['username']) || isset($params['email'])) && isset($params['password']),
+            'sessions' => isset($params['username']) && isset($params['password']),
             default => false
         };
     }
@@ -748,10 +710,14 @@ class API
         }
 
         try {
-            // Handle email login by setting username if email is provided
-            if ($function === 'sessions' && !isset($postParams['username']) && isset($postParams['email'])) {
-                $postParams['username'] = $postParams['email'];
-            }
+            // Check if username value is an email address
+            if ($function === 'sessions' && isset($postParams['username'])) {
+                if (filter_var($postParams['username'], FILTER_VALIDATE_EMAIL)) {
+                    // If username is actually an email, move it to email parameter
+                    $postParams['email'] = $postParams['username'];
+                    unset($postParams['username']);
+                }
+}
 
             $postParams['status'] = config('app.active_status');
             $result = APIEngine::createSession($function, 'login', $postParams);
@@ -779,6 +745,14 @@ class API
     {
         try {
             $uploader = new FileUploader();
+
+            $token = self::getAuthAuthorizationToken();
+            if (!$token) {
+                echo json_encode(Response::unauthorized('Authentication required')->send());
+                exit;
+            }
+            
+            $_GET['token'] = $token; // Store token for downstream use
             
             // Convert base64 to temp file
             $tmpFile = $uploader->handleBase64Upload($postParams['base64']);
@@ -806,6 +780,16 @@ class API
     {
         try {
             $uploader = new FileUploader();
+
+            $token = self::getAuthAuthorizationToken();
+        
+            if (!$token) {
+                echo json_encode(Response::unauthorized('Authentication required')->send());
+                exit;
+            }
+            
+            $_GET['token'] = $token; // Store token for downstream use
+
             return $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
         } catch (\Exception $e) {
             return Response::error('File upload failed: ' . $e->getMessage())->send();
@@ -886,7 +870,7 @@ class API
      *
      * @return string|null The bearer token or null if not found
      */
-    private static function getAuthAuthorization(): ?string 
+    private static function getAuthAuthorizationToken(): ?string 
     {
         $headers = getallheaders();
         $token = null;

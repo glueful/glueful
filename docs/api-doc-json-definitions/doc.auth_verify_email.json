@@ -1,0 +1,15 @@
+{
+    "doc": {
+        "name": "auth/verify-email",
+        "method": "POST",
+        "is_public": true,
+        "fields": [
+            {
+                "name": "email",
+                "api_field": "email",
+                "type": "varchar(255)",
+                "nullable": false
+            }
+        ]
+    }
+}
