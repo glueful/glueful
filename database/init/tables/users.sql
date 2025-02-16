@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     ip_address VARCHAR(40),
     x_forwarded_for_ip_address VARCHAR(40),
     last_login_date TIMESTAMP,
-    created_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expiry_time BIGINT,
     UNIQUE(username),
     UNIQUE(email)

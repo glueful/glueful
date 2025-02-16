@@ -1,0 +1,8 @@
+{
+    "doc": {
+        "name": "files/{uuid}",
+        "method": "GET",
+        "is_public": false,
+        "fields": []
+    }
+}

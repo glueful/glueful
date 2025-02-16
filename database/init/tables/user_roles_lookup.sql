@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS user_roles_lookup (
     FOREIGN KEY (user_uuid) REFERENCES users(uuid) ON DELETE CASCADE,
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
     UNIQUE(user_uuid, role_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Create indexes for foreign keys
 CREATE INDEX idx_user_roles_user_uuid ON user_roles_lookup(user_uuid);
