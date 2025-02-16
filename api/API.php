@@ -113,11 +113,11 @@ class API
                 }
 
                 return Response::ok([
-                    'message' => 'Verification code has been sent to your email',
-                    'success' => true,
-                    'email' => $postData['email'],
-                    'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-                ])->send();
+                    'data' => [
+                        'email' => $postData['email'],
+                        'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+                    ]
+                ], 'Verification code has been sent to your email')->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -158,10 +158,12 @@ class API
                 }
 
                 return Response::ok([
-                    'success' => true,
-                    'message' => 'OTP verified successfully',
-                    'email' => $postData['email']
-                ])->send();
+                    'data' => [
+                        'email' => $postData['email'],
+                        'verified' => true,
+                        'verified_at' => date('Y-m-d\TH:i:s\Z')
+                    ]
+                ], 'OTP verified successfully')->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -202,9 +204,11 @@ class API
                 }
 
                 return Response::ok([
-                    'message' => 'Password reset instructions have been sent to your email',
-                    'success' => true
-                ])->send();
+                    'data' => [
+                        'email' => $postData['email'],
+                        'expires_in' =>  EmailVerification::OTP_EXPIRY_MINUTES * 60
+                    ]
+                ], 'Password reset instructions have been sent to your email')->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -250,9 +254,11 @@ class API
                 }
 
                 return Response::ok([
-                    'success' => true,
-                    'message' => 'Password has been reset successfully'
-                ])->send();
+                    'data' => [
+                        'email' => $postData['email'],
+                        'updated_at' => date('Y-m-d\TH:i:s\Z')
+                    ]
+                ], 'Password has been reset successfully')->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -286,7 +292,7 @@ class API
                 'params' => $params,
                 'headers' => getallheaders()
             ]);
-
+        
             try {
                 // Check request body for refresh token
                 $input = file_get_contents('php://input');
@@ -298,22 +304,29 @@ class API
                 if (!$refreshToken) {
                     return Response::unauthorized('Refresh token required')->send();
                 }
-
-                $result = TokenManager::refreshTokens($refreshToken);
+        
+                $tokens = TokenManager::refreshTokens($refreshToken);
                 
-                if (!$result || !isset($result['token'])) {
+                if (!$tokens || !isset($tokens['access_token'])) {
                     return Response::unauthorized('Invalid or expired refresh token')->send();
                 }
                 
-                return Response::ok($result)->send();
-
+                return Response::ok([
+                    'tokens' => [
+                        'access_token' => $tokens['access_token'],
+                        'refresh_token' => $tokens['refresh_token'],
+                        'token_type' => 'Bearer',
+                        'expires_in' => config('session.access_token_lifetime')
+                    ]
+                ], 'Token refreshed successfully')->send();
+        
             } catch (\Exception $e) {
                 return Response::error(
                     'Token refresh failed: ' . $e->getMessage(), 
                     Response::HTTP_INTERNAL_SERVER_ERROR
                 )->send();
             }
-        }, true); // Public route since token is expired
+        }, true);
 
         $router->addRoute('GET', 'files/{uuid}', function($params) {
             Logger::log('REST Request - Get Blob', [
@@ -403,7 +416,7 @@ class API
                 'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
             ]);
-            
+
             self::validateToken();
             
             try {

@@ -16,6 +16,114 @@
                 "type": "varchar(100)",
                 "nullable": false
             }
-        ]
+        ],
+        "response": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Login successful"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "tokens": {
+                            "type": "object",
+                            "properties": {
+                                "access_token": {
+                                    "type": "string",
+                                    "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+                                },
+                                "refresh_token": {
+                                    "type": "string",
+                                    "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+                                },
+                                "token_type": {
+                                    "type": "string",
+                                    "example": "Bearer"
+                                },
+                                "expires_in": {
+                                    "type": "integer",
+                                    "example": 900
+                                }
+                            }
+                        },
+                        "user": {
+                            "type": "object",
+                            "properties": {
+                                "uuid": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                                },
+                                "username": {
+                                    "type": "string",
+                                    "example": "john.doe"
+                                },
+                                "email": {
+                                    "type": "string",
+                                    "format": "email",
+                                    "example": "john@example.com"
+                                },
+                                "roles": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": ["user", "admin"]
+                                },
+                                "permissions": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": ["read", "write"]
+                                },
+                                "created_at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "example": "2020-01-01T00:00:00Z"
+                                },
+                                "last_login": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "example": "2020-01-01T00:00:00Z"
+                                },
+                                "profile": {
+                                    "type": "object",
+                                    "properties": {
+                                        "first_name": {
+                                            "type": "string",
+                                            "example": "John"
+                                        },
+                                        "last_name": {
+                                            "type": "string",
+                                            "example": "Doe"
+                                        },
+                                        "avatar_url": {
+                                            "type": "string",
+                                            "format": "uri",
+                                            "example": "https://example.com/avatars/john.jpg"
+                                        },
+                                        "full_name": {
+                                            "type": "string",
+                                            "example": "John Doe"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                }
+            }
+        }
     }
 }

@@ -45,13 +45,18 @@ class APIEngine
         if (!$userData) {
             return Response::error("Invalid Credentials")->send();
         }
-
+        unset($userData['id']);
         try {
             $remember = $param['remember'] ?? false;
             $sessionData = self::createSessionData($userData, $remember);
             return Response::ok([
-                'token' => $sessionData['token'],
-                'user' => $sessionData['info']
+                'tokens' => [
+                    'access_token' => $sessionData['token'],
+                    'refresh_token' => $sessionData['refresh_token'],
+                    'expires_in' => config('session.access_token_lifetime'),
+                    'token_type' => 'Bearer'
+                ],
+                'user' => $userData,
             ])->send();
         } catch (\Exception $e) {
             return Response::error('Failed to create session: ' . $e->getMessage())->send();
@@ -342,7 +347,8 @@ class APIEngine
             'info' => array_diff_key($userInfo, ['password' => '']),
             'ip' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',
-            'role' => self::getUserPermissions($userInfo['uuid']),
+            'role' => $userInfo['role'],
+            'permissions' => self::getUserPermissions($userInfo['uuid']),
             'login_timestamp' => gmdate('Y-m-d H:i:s')
         ];
 
@@ -542,6 +548,20 @@ class APIEngine
             }
             
             unset($userData['password']); // Remove sensitive data
+
+            // Get profile data
+            $profileResult = self::executeQuery(
+                'list',
+                self::getDefinition('profile'),
+                [
+                    'fields' => 'first_name,last_name,photo_url',
+                    'user_uuid' => $userData['uuid'],
+                    'status' => 'active'
+                ]
+            );
+
+            // Merge profile data if exists
+            $profile = !empty($profileResult) ? $profileResult[0] : null;
             
             return [
                 'id' => $userData['id'],
@@ -550,7 +570,13 @@ class APIEngine
                 'email' => $userData['email'] ?? null,
                 'role' => $userData['role'] ?? 'user',
                 'created_at' => $userData['created_at'] ?? null,
-                'last_login' => date('Y-m-d H:i:s')
+                'last_login' => date('Y-m-d H:i:s'),
+                'profile' => [
+                    'first_name' => $profile['first_name'] ?? null,
+                    'last_name' => $profile['last_name'] ?? null,
+                    'photo_url' => $profile['photo_url'] ?? null,
+                    'full_name' => trim(($profile['first_name'] ?? '') . ' ' . ($profile['last_name'] ?? '')) ?: null
+                ]
             ];
         } catch (\Exception $e) {
             error_log("Failed to get user data: " . $e->getMessage());
