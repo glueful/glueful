@@ -120,20 +120,34 @@ class JsonGenerator {
         
         $docGenerator = new DocGenerator();
         $definitionsPath = config('paths.json_definitions');
+        $definitionsDocPath = config('paths.api_docs') . '/api-doc-json-definitions/';
+
+
+        // Process API doc definition files
+        if (is_dir($definitionsDocPath)) {
+            foreach (glob($definitionsDocPath . "*.json") as $file) {
+                try {
+                    $docGenerator->generateFromDocJson($file);
+                    $this->log("Processed Custom API doc for: " . basename($file));
+                } catch (\Exception $e) {
+                    $this->log("Error processing doc definition {$file}: " . $e->getMessage());
+                }
+            }
+        }
         
-        // Process all JSON definition files
+        // Process table definition files
         foreach (glob($definitionsPath . "*.json") as $file) {
             $parts = explode('.', basename($file));
             if (count($parts) !== 3) continue; // Skip if not in format: dbname.tablename.json
             
-            $dbResource = $parts[0];
             try {
-                $docGenerator->generateFromJson($dbResource, $file);
-                $this->log("Processed API doc for: " . basename($file));
+                $docGenerator->generateFromJson($file);
+                $this->log("Processed Table API doc for: " . basename($file));
             } catch (\Exception $e) {
-                $this->log("Error processing {$file}: " . $e->getMessage());
+                $this->log("Error processing table definition {$file}: " . $e->getMessage());
             }
         }
+
 
         // Generate and save Swagger JSON
         $swaggerJson = $docGenerator->getSwaggerJson();

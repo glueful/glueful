@@ -1,0 +1,15 @@
+{
+    "doc": {
+        "name": "auth/refresh-token",
+        "method": "POST",
+        "is_public": true,
+        "fields": [
+            {
+                "name": "refresh_token",
+                "api_field": "refresh_token",
+                "type": "varchar(255)",
+                "nullable": false
+            }
+        ]
+    }
+}

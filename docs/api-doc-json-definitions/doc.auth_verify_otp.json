@@ -1,0 +1,21 @@
+{
+    "doc": {
+        "name": "auth/verify-otp",
+        "method": "POST",
+        "is_public": true,
+        "fields": [
+            {
+                "name": "email",
+                "api_field": "email",
+                "type": "varchar(255)",
+                "nullable": false
+            },
+            {
+                "name": "otp",
+                "api_field": "otp",
+                "type": "bigint(20)",
+                "nullable": false
+            }
+        ]
+    }
+}
