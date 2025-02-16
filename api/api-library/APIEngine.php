@@ -416,11 +416,23 @@ class APIEngine
     {
         $definition = self::loadDefinition($function);
         
+        // Get pagination configuration
+        $paginationEnabled = config('pagination.enabled', true);
+        $defaultSize = config('pagination.default_size', 25);
+        $maxSize = config('pagination.max_size', 100);
+        
+        // Extract pagination and sorting parameters
+        $usePagination = $param['paginate'] ?? $paginationEnabled;
+        $page = max(1, (int)($param['page'] ?? 1));
+        $perPage = $usePagination ? min($maxSize, max(1, (int)($param['per_page'] ?? $defaultSize))) : null;
+        $sort = $param['sort'] ?? 'created_at';
+        $order = strtolower($param['order'] ?? 'desc');
+        $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
+        
+        // Handle filters
         if ($filter) {
-            // Convert filter array to new format
             $formattedFilters = [];
             foreach ($filter as $field => $conditions) {
-                // Handle simple equals conditions
                 if (!is_array($conditions)) {
                     $formattedFilters[] = [
                         'field' => $field,
@@ -430,7 +442,6 @@ class APIEngine
                     continue;
                 }
                 
-                // Handle complex conditions
                 foreach ($conditions as $operator => $value) {
                     $formattedFilters[] = [
                         'field' => $field,
@@ -442,6 +453,48 @@ class APIEngine
             $param['_filter'] = $formattedFilters;
         }
 
+        // Handle list actions with pagination
+        if ($action === 'list' && $usePagination) {
+            // Get total count first
+            $countParams = array_merge($param, ['fields' => 'COUNT(*) as total']);
+            unset($countParams['page'], $countParams['per_page'], $countParams['sort'], $countParams['order']);
+            
+            $totalResult = self::executeQuery('count', $definition, self::sanitizeParams($countParams));
+            $totalRecords = (int)($totalResult[0]['total'] ?? 0);
+
+            // Add pagination and sorting to params
+            $param['_limit'] = $perPage;
+            $param['_offset'] = ($page - 1) * $perPage;
+            $param['_sort'] = $sort;
+            $param['_order'] = $order;
+
+            // Get paginated results
+            $results = self::executeQuery(
+                $action, 
+                $definition, 
+                self::sanitizeParams($param)
+            );
+
+            // Return with pagination metadata
+            return [
+                'data' => $results,
+                'pagination' => [
+                    'total' => $totalRecords,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'last_page' => ceil($totalRecords / $perPage),
+                    'from' => ($page - 1) * $perPage + 1,
+                    'to' => min($page * $perPage, $totalRecords),
+                    'has_more' => ($page * $perPage) < $totalRecords
+                ],
+                'sort' => [
+                    'field' => $sort,
+                    'order' => $order
+                ]
+            ];
+        }
+
+        // For non-paginated list actions or other actions
         $result = self::executeQuery(
             $action, 
             $definition, 
@@ -497,6 +550,7 @@ class APIEngine
             // Return results based on query type
             return match($action) {
                 'list', 'view' => $stmt->fetchAll(\PDO::FETCH_ASSOC),
+                'count' => $stmt->fetchAll(\PDO::FETCH_ASSOC), // Return count as array
                 'insert' => ['uuid' => self::getLastInsertedUUID($db, $definition['table']['name'])],
                 'update', 'delete' => ['affected' => $stmt->rowCount()],
                 default => []

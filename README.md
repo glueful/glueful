@@ -1,30 +1,31 @@
 # MAPI - Modern API Framework
 
-A modern PHP API framework with built-in support for REST endpoints, JWT authentication, and automatic API documentation generation.
+MAPI is a modern, secure, and scalable API framework designed for building robust applications.
 
 ## Features
 
-- REST API support
 - JWT-based authentication
 - Role-based access control
-- Automatic API documentation (Swagger/OpenAPI)
-- Database abstraction layer
-- File upload handling
+- Rate limiting
 - Caching support (Redis/Memcached)
-- Audit logging
-- Environment-based configuration
-- CORS support
+- Email integration with SMTP and Brevo
+- File storage with local and S3 support
+- Search functionality with Meillesearch
+- Comprehensive logging system
+- Queue management
+- Firebase Cloud Messaging support
 
 ## Requirements
 
-- PHP >= 8.0 (Strict typing and return type declarations are used)
-- MySQL/PostgreSQL
-- Redis or Memcached (optional)
+- PHP 8.1+
+- MySQL 5.7+ or PostgreSQL 12+
+- Redis (optional)
+- Memcached (optional)
 - Composer
 
-## Installation
+## Quick Start
 
-1. Clone the repository:
+1. Clone the repository
 ```bash
 git clone https://github.com/yourusername/mapi.git
 cd mapi
@@ -35,94 +36,52 @@ cd mapi
 composer install
 ```
 
-3. Create configuration:
+3. Copy the environment file:
 ```bash
 cp .env.example .env
 ```
 
-4. Update the .env file with your configuration
+4. Configure your environment variables in `.env`
+
+5. Initialize the database:
+```bash
+php artisan migrate
+php artisan db:seed
+```
 
 ## Configuration
 
-The framework uses environment-based configuration. Key configuration files:
+### Key Environment Variables
 
-- `.env` - Environment variables
-- `config/*.php` - Configuration files for different components
-- `api/api-json-definitions/` - API endpoint definitions
+- `APP_ENV`: Application environment (development/production)
+- `APP_URL`: Base URL of your application
+- `DB_CONNECTION`: Database connection type
+- `CACHE_DRIVER`: Cache driver (redis/memcached)
+- `STORAGE_DRIVER`: File storage driver (local/s3)
 
-## Directory Structure
+### Security Configuration
 
-```
-mapi/
-├── api/                    # API core files
-│   ├── api-library/       # Core library classes
-│   ├── api-extensions/    # API extensions
-│   ├── Http/             # HTTP related classes
-│   └── bootstrap.php     # Application bootstrap
-├── config/               # Configuration files
-├── docs/                 # API documentation
-├── vendor/              # Composer dependencies
-└── .env                 # Environment configuration
-```
+- `JWT_SECRET`: Secret key for JWT tokens
+- `API_RATE_LIMIT`: Rate limiting for API requests
+- `TOKEN_SALT`: Salt for token generation
+- `PUBLIC_TOKEN`: Public API token
 
-## API Usage
+## API Documentation
 
-### REST Endpoints
-
-The API supports standard REST endpoints:
-
-```
-GET    /{resource}          # List resources
-GET    /{resource}/{id}     # Get single resource
-POST   /{resource}          # Create resource
-PUT    /{resource}/{id}     # Update resource
-DELETE /{resource}/{id}     # Delete resource
-```
-
-### Authentication
-
-```http
-POST /auth/login
-Content-Type: application/json
-
-{
-    "username": "user@example.com",
-    "password": "password"
-}
-```
-
-Use the returned token in subsequent requests:
-
-```http
-GET /api/users
-Authorization: Bearer {token}
-```
+API documentation is available at `/api/docs` when `API_DOCS_ENABLED=true`
 
 ## Development
 
-### Generate API Documentation
-
-```bash
-php api/JsonGenerator.php
+Enable development features by setting:
 ```
-
-### Adding New Endpoints
-
-1. Create JSON definition in `api/api-json-definitions/`
-2. Run the JSON generator
-3. Access the endpoint via REST API
-
-## Testing
-
-Run PHPUnit tests:
-
-```bash
-vendor/bin/phpunit
+APP_ENV=development
+APP_DEBUG=true
+API_DEBUG_MODE=true
 ```
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+[MIT License](LICENSE)
 
 ## Support
 

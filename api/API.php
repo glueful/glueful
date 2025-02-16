@@ -431,10 +431,10 @@ class API
                 // Handle query parameters
                 $queryParams = array_merge($_GET, [
                     'fields' => $_GET['fields'] ?? '*',
-                    'sort' => $_GET['sort'] ?? null,
-                    'filter' => $_GET['filter'] ?? null,
+                    'sort' => $_GET['sort'] ?? 'created_at',
                     'page' => $_GET['page'] ?? 1,
-                    'limit' => $_GET['limit'] ?? 20
+                    'per_page' => $_GET['per_page'] ?? 25,
+                    'order' => $_GET['order'] ?? 'desc'
                 ]);
                 
                 // Direct call to getData without legacy conversion

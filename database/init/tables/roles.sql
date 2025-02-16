@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS roles (
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted')),
-    created_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for frequently queried fields
