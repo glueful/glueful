@@ -6,7 +6,7 @@ namespace Glueful\Api\Library\Validation;
 
 use ReflectionClass;
 use ReflectionProperty;
-use Glueful\Api\Library\Validation\Attributes\Rules;
+use Glueful\Api\Library\Validation\Attributes\{Rules, Sanitize};
 
 class Validator
 {
@@ -18,10 +18,31 @@ class Validator
 
         foreach ($reflection->getProperties() as $property) {
             $value = $property->getValue($dto);
+
+            // Apply Sanitization First
+            $value = $this->sanitize($property, $value);
+            $value = $property->getValue($dto);
             $this->applyRules($property, $value);
         }
 
         return empty($this->errors);
+    }
+
+    private function sanitize(ReflectionProperty $property, mixed $value): mixed
+    {
+        foreach ($property->getAttributes(Sanitize::class) as $attribute) {
+            $filters = $attribute->getArguments()[0] ?? [];
+            foreach ($filters as $filter) {
+                $value = match ($filter) {
+                    'trim' => trim($value),
+                    'strip_tags' => strip_tags($value),
+                    'intval' => intval($value),
+                    'sanitize_email' => filter_var($value, FILTER_SANITIZE_EMAIL),
+                    default => $value,
+                };
+            }
+        }
+        return $value;
     }
 
     private function applyRules(ReflectionProperty $property, mixed $value): void
