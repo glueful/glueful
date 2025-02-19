@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Mapi\Api\Library\Security;
+namespace Glueful\Api\Library\Security;
 
-use Mapi\Api\Extensions\Push\Email;
-use Mapi\Api\Library\CacheEngine;
-use Mapi\Api\Library\{APIEngine};
+use Glueful\Api\Extensions\Push\Email;
+use Glueful\Api\Library\CacheEngine;
+use Glueful\Api\Library\{APIEngine};
 
 class EmailVerification
 {
@@ -22,7 +22,7 @@ class EmailVerification
     public function __construct()
     {
         // Initialize CacheEngine with Redis driver
-        CacheEngine::initialize('mapi:', config('cache.default'));
+        CacheEngine::initialize('Glueful:', config('cache.default'));
     }
 
     public function generateOTP(): string

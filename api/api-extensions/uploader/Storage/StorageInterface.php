@@ -1,6 +1,6 @@
 <?php
 
-namespace Mapi\Api\Extensions\Uploader\Storage;
+namespace Glueful\Api\Extensions\Uploader\Storage;
 
 interface StorageInterface {
     public function store(string $sourcePath, string $destinationPath): string;

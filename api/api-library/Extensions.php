@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
-use Mapi\Api\Http\{
+namespace Glueful\Api\Library;
+use Glueful\Api\Http\{
     Response,
     Router
 };

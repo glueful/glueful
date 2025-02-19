@@ -1,6 +1,6 @@
-# MAPI - Modern API Framework
+# Glueful - Modern API Framework
 
-MAPI is a modern, secure, and scalable API framework designed for building robust applications.
+Glueful is a modern, secure, and scalable API framework designed for building robust applications.
 
 ## Features
 
@@ -27,8 +27,8 @@ MAPI is a modern, secure, and scalable API framework designed for building robus
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/mapi.git
-cd mapi
+git clone https://github.com/yourusername/glueful.git
+cd Glueful
 ```
 
 2. Install dependencies:

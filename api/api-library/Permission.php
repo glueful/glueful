@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
 class Permission {
     public const VIEW = 'A';

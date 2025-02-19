@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
-use Mapi\Api\Library\Security\RandomStringGenerator;
+use Glueful\Api\Library\Security\RandomStringGenerator;
 
 class Utils 
 {
@@ -224,5 +224,5 @@ class Utils
 }
 
 // Initialize cache engine with optional prefix
-CacheEngine::initialize('mapi:');
+CacheEngine::initialize('glueful:');
 ?>

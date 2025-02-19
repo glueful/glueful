@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
-use Mapi\Api\Library\QueryAction;
-use Mapi\Api\Http\Response;
+use Glueful\Api\Library\QueryAction;
+use Glueful\Api\Http\Response;
 
 class AuditLogger 
 {

@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api;
+namespace Glueful\Api;
 
-use Mapi\Api\Library\{
+use Glueful\Api\Library\{
     Permissions,
     Permission,
     Utils,
@@ -12,11 +12,11 @@ use Mapi\Api\Library\{
     TokenManager,
     Security\EmailVerification
 };
-use Mapi\Api\Http\{
+use Glueful\Api\Http\{
     Response,
     Router
 };
-use Mapi\Api\Extensions\Uploader\FileUploader;
+use Glueful\Api\Extensions\Uploader\FileUploader;
 
 session_start();
 
@@ -908,8 +908,8 @@ class API
     private static function loadExtensions(): void 
 {
     $extensionsMap = [
-        'api/api-extensions/' => 'Mapi\\Api\\Extensions\\',
-        'extensions/' => 'Mapi\\Extensions\\'
+        'api/api-extensions/' => 'Glueful\\Api\\Extensions\\',
+        'extensions/' => 'Glueful\\Extensions\\'
     ];
     
     foreach ($extensionsMap as $directory => $namespace) {
@@ -944,7 +944,7 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
             // Check if class exists and extends Extensions
             if (class_exists($fullClassName)) {
                 $reflection = new \ReflectionClass($fullClassName);
-                if ($reflection->isSubclassOf(\Mapi\Api\Library\Extensions::class)) {
+                if ($reflection->isSubclassOf(\Glueful\Api\Library\Extensions::class)) {
                     try {
                         // Check if class has initializeRoutes method
                         if ($reflection->hasMethod('initializeRoutes')) {

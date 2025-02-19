@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
 class ExceptionHandler
 {
@@ -47,7 +47,7 @@ class ExceptionHandler
         );
 
         $monthYear = gmdate('Ym');
-        $baseLogPath = LOGS_DIRECTORY;
+        $baseLogPath = config('paths.logs');
 
         // Write to general error log
         error_log($message . "\n", 3, "{$baseLogPath}errors.{$monthYear}.log");

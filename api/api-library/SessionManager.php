@@ -1,17 +1,17 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
 class SessionManager {
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour - default value
-    private const REDIS_HASH_KEY = 'mapi_sessions';
+    private const REDIS_HASH_KEY = 'glueful_sessions';
     private static $ttl; // Variable to hold configurable TTL
     public static function initialize(): void
     {
-        CacheEngine::initialize('mapi:', 'redis');
+        CacheEngine::initialize('glueful:', 'redis');
         self::$ttl = config('session.access_token_lifetime', self::DEFAULT_TTL);
     }
 

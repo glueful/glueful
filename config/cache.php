@@ -21,7 +21,7 @@ return [
     | to all our keys so we can avoid collisions.
     |
     */
-    'prefix' => env('CACHE_PREFIX', 'mapi_'),
+    'prefix' => env('CACHE_PREFIX', 'glueful_'),
 
     /*
     |--------------------------------------------------------------------------

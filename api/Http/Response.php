@@ -1,6 +1,6 @@
 <?php
 
-namespace Mapi\Api\Http;
+namespace Glueful\Api\Http;
 
 class Response
 {

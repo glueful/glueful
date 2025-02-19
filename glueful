@@ -1,0 +1,9 @@
+#!/usr/bin/env php
+<?php
+
+require 'vendor/autoload.php'; // Autoload classes if using Composer
+
+use App\Console\Application;
+
+$app = new Application();
+$app->run();

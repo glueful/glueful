@@ -1,8 +1,8 @@
 <?php
 
-namespace Mapi\Api\Extensions\Uploader\Storage;
+namespace Glueful\Api\Extensions\Uploader\Storage;
 
-use Mapi\Api\Extensions\Uploader\UploadException;
+use Glueful\Api\Extensions\Uploader\UploadException;
 
 class LocalStorage implements StorageInterface 
 {

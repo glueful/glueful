@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
 class DocGenerator 
 {
@@ -297,11 +297,53 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Process and validate table fields
+     */
+    // private function processFields(array $tableConfig): ?array 
+    // {
+    //     // Check if fields exist and is array
+    //     if (!isset($tableConfig['fields']) || !is_array($tableConfig['fields'])) {
+    //         error_log("Warning: No fields defined for table " . ($tableConfig['name'] ?? 'unknown'));
+    //         return null;
+    //     }
+
+    //     return $tableConfig['fields'];
+    // }
+
+    private function processFields(array $definition): array
+{
+    // Log the full definition for debugging
+    error_log("Processing definition: " . json_encode($definition, JSON_PRETTY_PRINT));
+
+    if (!isset($definition['table']) || !isset($definition['table']['fields'])) {
+        $tableName = $definition['table']['name'] ?? 'unknown';
+        error_log("Table structure missing for: $tableName");
+        return [];
+    }
+
+    // Verify fields is an array
+    if (!is_array($definition['table']['fields'])) {
+        $tableName = $definition['table']['name'] ?? 'unknown';
+        error_log("Fields is not an array for table: $tableName");
+        return [];
+    }
+
+    return $definition['table']['fields'];
+}
+
     private function addSchemaFromJson(string $tableName, array $definition): void 
     {
         $properties = [];
         $required = [];
 
+        // Replace the code around line 305 with:
+        $fields = $this->processFields($config['table'] ?? []);
+        if ($fields === null) {
+            // Handle missing fields gracefully
+            return;
+        }
+        
         foreach ($definition['table']['fields'] as $field) {
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;

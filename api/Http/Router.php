@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Http;
+namespace Glueful\Api\Http;
 
 class Router 
 {
