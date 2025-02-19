@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Mapi\Api\Extensions\Push;
+namespace Glueful\Api\Extensions\Push;
 
-use Mapi\Api\Library\Extensions;
+use Glueful\Api\Library\Extensions;
 use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};
 
 final class AdvancedEmail extends Extensions

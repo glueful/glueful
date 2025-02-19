@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mapi\Api\Library\Security;
+namespace Glueful\Api\Library\Security;
 
 class OTP
 {

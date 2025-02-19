@@ -1,10 +1,10 @@
 <?php
 
-namespace Mapi\Api\Extensions\Uploader\Storage;
+namespace Glueful\Api\Extensions\Uploader\Storage;
 
 use Aws\S3\S3Client;
 use Aws\Exception\AwsException;
-use Mapi\Api\Extensions\Uploader\UploadException;
+use Glueful\Api\Extensions\Uploader\UploadException;
 
 class S3Storage implements StorageInterface {
     private S3Client $client;

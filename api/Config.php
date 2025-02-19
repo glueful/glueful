@@ -1,6 +1,6 @@
 <?php
 
-namespace Mapi\Api;
+namespace Glueful\Api;
 
 class Config
 {

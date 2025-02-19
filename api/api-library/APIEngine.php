@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
-use Mapi\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
-use Mapi\Api\Http\Response;
-use Mapi\Api\Extensions\Uploader\Storage\StorageInterface;
+use Glueful\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
+use Glueful\Api\Http\Response;
+use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
 
 class APIEngine 
 {
@@ -180,7 +180,7 @@ class APIEngine
         header('Cache-Control: no-cache, must-revalidate');
         
         // For S3/remote storage, redirect to presigned URL
-        if ($storage instanceof \Mapi\Api\Extensions\Uploader\Storage\S3Storage) {
+        if ($storage instanceof \Glueful\Api\Extensions\Uploader\Storage\S3Storage) {
             $url = $storage->getSignedUrl($blob['filepath'], 300); // 5 minutes expiry
             header('Location: ' . $url);
             exit;
@@ -200,8 +200,8 @@ class APIEngine
     {
         $storageDriver = config('storage.driver');
         return match($storageDriver) {
-            's3' => new \Mapi\Api\Extensions\Uploader\Storage\S3Storage(),
-            default => new \Mapi\Api\Extensions\Uploader\Storage\LocalStorage(
+            's3' => new \Glueful\Api\Extensions\Uploader\Storage\S3Storage(),
+            default => new \Glueful\Api\Extensions\Uploader\Storage\LocalStorage(
                 config('paths.uploads'),
                 config('paths.cdn')
             )
@@ -234,7 +234,7 @@ class APIEngine
                 'cacheDir' => config('paths.cache') . '/images'
             ];
 
-            $thumbnailer = new \Mapi\ImageProcessing\TimThumb($config);
+            $thumbnailer = new \Glueful\ImageProcessing\TimThumb($config);
             
             if (!$thumbnailer->processImage($src)) {
                 throw new \RuntimeException("Failed to process image");

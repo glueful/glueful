@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
-
+namespace Glueful\Api;
 require_once __DIR__ . '/bootstrap.php';
 
-use Mapi\Api\Library\{
+use Glueful\Api\Library\{
     Utils, 
     Permission, 
     QueryAction, 
@@ -14,13 +14,13 @@ use Mapi\Api\Library\{
 
 class JsonGenerator {
     private bool $runFromConsole;
-    private string $endOfLine;
     private array $generatedFiles = [];
     private string $dbResource;
+    
 
     public function __construct(bool $runFromConsole = false) {
-        $this->runFromConsole = $runFromConsole;
-        $this->endOfLine = $runFromConsole ? "\n" : "<br/>";
+
+        $this->runFromConsole = $runFromConsole || $this->isConsole();
         
         $dbConfig = config('database');
         $this->dbResource = array_key_first(array_filter($dbConfig, 'is_array'));
@@ -31,14 +31,51 @@ class JsonGenerator {
         }
     }
 
-    public function generate(?string $specificDatabase = null): void {
+     /**
+     * Log messages with proper line endings
+     */
+    private function log(string $message): void 
+    {
+        if ($this->runFromConsole) {
+            // Start output buffering if not already started
+            if (!ob_get_level()) {
+                ob_start();
+            }
+            
+            // For CLI, write directly to STDOUT
+            echo $message . PHP_EOL;
+            
+            // Flush output buffer and send to browser
+            ob_flush();
+            flush();
+        } else {
+            // For web interface
+            echo $message . "<br/>";
+        }
+    }
+
+    /**
+     * Check if running in console mode
+     */
+    private function isConsole(): bool
+    {
+        return php_sapi_name() === 'cli';
+    }
+
+    public function generate(?string $specificDatabase = null,?string $tableName = null): void {
         $this->generateDatabaseDefinitions($specificDatabase);
+
+        if($tableName){
+            $this->generateTableDefinition($specificDatabase, $tableName);
+        }
+
         
         if (\config('security.permissions_enabled') === TRUE) {
             $this->setupAdministratorRole();
         }
 
         if (\config('app.docs_enabled')) {
+            $this->log("Step 3: Starting API docs generation...");
             $this->generateApiDocs();
         }
     }
@@ -114,13 +151,13 @@ class JsonGenerator {
         );
     }
 
-    private function generateApiDocs(): void 
+    public function generateApiDocs(): void 
     {
         $this->log("Generating API Documentation...");
         
         $docGenerator = new DocGenerator();
         $definitionsPath = config('paths.json_definitions');
-        $definitionsDocPath = config('paths.api_docs') . '/api-doc-json-definitions/';
+        $definitionsDocPath = config('paths.api_docs') . 'api-doc-json-definitions/';
 
 
         // Process API doc definition files
@@ -165,9 +202,13 @@ class JsonGenerator {
         }
     }
 
-    private function log(string $message): void {
-        echo $message . $this->endOfLine;
-    }
+    // private function log(string $message): void {
+    //     if ($this->runFromConsole) {
+    //         fwrite(STDOUT, $message . PHP_EOL);
+    //     } else {
+    //         echo $message . "<br/>";
+    //     }
+    // }
 
     private function generateDatabaseDefinitions(?string $targetDb): void {
         $dbConfig = config('database');

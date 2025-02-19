@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library;
+namespace Glueful\Api\Library;
 
-use Mapi\Api\Library\{QueryAction, FilterOperator};
+use Glueful\Api\Library\{QueryAction, FilterOperator};
 
 class MySQLQueryBuilder 
 {
@@ -17,7 +17,7 @@ class MySQLQueryBuilder
         array $definition, 
         ?array $params = null,
         ?array $config = null,
-        ?\Mapi\Api\Http\Pagination $pagination = null
+        ?\Glueful\Api\Http\Pagination $pagination = null
     ): array {
         $table = $definition['table']['name'];
         $fields = array_map(

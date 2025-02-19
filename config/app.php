@@ -4,7 +4,7 @@ return [
     'debug' => env('APP_DEBUG', true),
     'dev_mode' => env('DEV_MODE', false),
     'version' => env('API_VERSION', '1.0.0'),
-    'title' => env('API_TITLE', 'MAPI Documentation'),
+    'title' => env('API_TITLE', 'Glueful Documentation'),
     'docs_enabled' => env('API_DOCS_ENABLED', true),
     'list_limit' => env('LIST_LIMIT', 200),
     'debug_logging' => env('API_DEBUG_LOGGING', true),

@@ -7,7 +7,7 @@ return [
         'development' => [
             'driver' => 'pgsql',
             'host' => 'localhost',
-            'database' => 'mapi_dev',
+            'database' => 'glueful_dev',
             'username' => 'postgres',
             'password' => 'postgres',
             'charset' => 'utf8',
@@ -16,7 +16,7 @@ return [
         'testing' => [
             'driver' => 'pgsql',
             'host' => 'localhost',
-            'database' => 'mapi_test',
+            'database' => 'glueful_test',
             'username' => 'postgres',
             'password' => 'postgres',
             'charset' => 'utf8',

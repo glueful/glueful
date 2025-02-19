@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Mapi\Api\Extensions\Uploader;
+namespace Glueful\Api\Extensions\Uploader;
 
 require_once __DIR__ . '/../../bootstrap.php';
 
-use Mapi\Api\Library\{ Utils, APIEngine,};
+use Glueful\Api\Library\{ Utils, APIEngine,};
 use RuntimeException;
 use InvalidArgumentException;
-use Mapi\Api\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
+use Glueful\Api\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
 
 
 

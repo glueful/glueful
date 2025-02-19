@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Mapi\Api\Library\Security;
+namespace Glueful\Api\Library\Security;
 
 class RandomStringGenerator {
     // Updated to match SQL function's charset exactly

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../bootstrap.php';
 
-use Mapi\Api\Library\{MySQLQueryBuilder, QueryAction, Utils};
+use glueful\Api\Library\{MySQLQueryBuilder, QueryAction, Utils};
 
 class SessionCleaner
 {
@@ -124,13 +124,13 @@ class SessionCleaner
 $cleaner = new SessionCleaner();
 $cleaner->run();
 
-// chmod +x /Users/michaeltawiahsowah/Sites/localhost/mapi/cron/clean-sessions.php
+// chmod +x /Users/michaeltawiahsowah/Sites/localhost/glueful/cron/clean-sessions.php
 
 # Run every hour
-// 0 * * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/mapi/cron/clean-sessions.php
+// 0 * * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/glueful/cron/clean-sessions.php
 
 # OR run every 6 hours
-// 0 */6 * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/mapi/cron/clean-sessions.php
+// 0 */6 * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/glueful/cron/clean-sessions.php
 
 # OR run once daily at midnight
-// 0 0 * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/mapi/cron/clean-sessions.php
+// 0 0 * * * /usr/bin/php /Users/michaeltawiahsowah/Sites/localhost/glueful/cron/clean-sessions.php

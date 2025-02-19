@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Mapi\Api\Extensions\Push;
+namespace Glueful\Api\Extensions\Push;
 
-use Mapi\Api\Library\Extensions;
-use Mapi\Api\API;
-use Mapi\Api\Extensions\Push\AdvancedEmail;
+use Glueful\Api\Library\Extensions;
+use Glueful\Api\API;
+use Glueful\Api\Extensions\Push\AdvancedEmail;
 use PHPMailer\PHPMailer\{PHPMailer, Exception as PHPMailerException};
 
 class Email extends Extensions
