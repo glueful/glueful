@@ -1,4 +1,40 @@
 {
+    "name": "glueful/glueful",
+    "description": "A modern, secure, and scalable PHP framework for API generation and database management",
+    "version": "0.1.0",
+    "type": "library",
+    "keywords": [
+        "api",
+        "framework",
+        "php",
+        "rest",
+        "jwt",
+        "database",
+        "cache",
+        "queue"
+    ],
+    "homepage": "https://github.com/glueful/glueful",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Michael Tawiah Sowah",
+            "email": "michaeltawiahsowah@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/glueful/glueful/issues",
+        "source": "https://github.com/glueful/glueful",
+        "docs": "https://github.com/glueful/glueful/wiki"
+    },
+    "funding": [
+        {
+            "type": "github",
+            "url": "https://github.com/sponsors/glueful"
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true,
     "autoload": {
         "psr-4": {
             "Glueful\\Api\\": "api/",
