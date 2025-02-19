@@ -606,7 +606,7 @@ class APIEngine
             // Get profile data
             $profileResult = self::executeQuery(
                 'list',
-                self::getDefinition('profile'),
+                self::getDefinition('profiles'),
                 [
                     'fields' => 'first_name,last_name,photo_url',
                     'user_uuid' => $userData['uuid'],
