@@ -14,52 +14,118 @@ class GenerateJsonCommand extends Command
 
     public function getDescription(): string 
     {
-        return 'Generate JSON definitions and API documentation. Format: database [tablename]';
+        return 'Generate JSON definitions and API documentation';
     }
 
-    public function getArguments(): array
+    public function getHelp(): string
     {
-        return [
-            'type' => [
-                'description' => 'Type of generation (api-definitions|doc)',
-                'required' => true,
-                'values' => ['api-definitions', 'doc']
-            ],
-            'database' => [
-                'description' => 'Database name',
-                'required' => false
-            ],
-            'table' => [
-                'description' => 'Table name (optional)',
-                'required' => false
-            ]
-        ];
+        return <<<HELP
+Usage:
+  generate:json <type> [-d <database>] [-T <table>]
+  generate:json -t <type> [-d <database>] [-T <table>]
+  generate:json --type=<type> [--database=<name>] [--table=<name>]
+
+Options:
+  <type>                  Type of generation (api-definitions|doc)
+  -t, --type=<type>      Alternative way to specify type
+  -d, --database=<name>  Database name (optional)
+  -T, --table=<name>     Table name (optional)
+  -h, --help            Show this help message
+
+Examples:
+  php glueful generate:json api-definitions
+  php glueful generate:json api-definitions -d mydb -T users
+  php glueful generate:json -t api-definitions -d mydb
+  php glueful generate:json --type=doc
+HELP;
     }
 
-    public function execute()
+    public function execute(array $args = []): void
     {
+        // Show help if requested
+        if (in_array('-h', $args) || in_array('--help', $args)) {
+            $this->info($this->getHelp());
+            return;
+        }
+
+        // Parse arguments
+        $options = $this->parseOptions($args);
+        
+        // Check for type as first argument if not specified with -t or --type
+        if (!isset($options['type']) && isset($args[0]) && !str_starts_with($args[0], '-')) {
+            $options['type'] = $args[0];
+        }
+
+        if (!isset($options['type'])) {
+            $this->error("Missing type argument or option (-t, --type)");
+            $this->info($this->getHelp());
+            return;
+        }
+
         $generator = new JsonGenerator(true);
         
-        if ($this->getArgument('type') === 'api-definitions') {
-            $database = $this->getArgument('database');
-            $table = $this->getArgument('table');
+        if ($options['type'] === 'api-definitions') {
+            $database = $options['database'] ?? null;
+            $table = $options['table'] ?? null;
             
             if ($database && $table) {
-                // Generate for specific table
-                $generator->generate($database);
+                $generator->generate($database, $table);
+                $this->info("Generated JSON for table: $table");
             } else if ($database) {
-                // Generate for entire database
                 $generator->generate($database);
+                $this->info("Generated JSON for database: $database");
             } else {
-                // Generate for all databases
                 $generator->generate();
+                $this->info("Generated JSON for all databases");
             }
-        } else if ($this->getArgument('type') === 'doc') {
+        } else if ($options['type'] === 'doc') {
             if (\config('app.docs_enabled')) {
                 $generator->generateApiDocs();
+                $this->info("Generated API documentation");
             } else {
                 $this->error('API documentation generation is disabled in configuration');
             }
+        } else {
+            $this->error("Invalid type. Must be 'api-definitions' or 'doc'");
+            $this->info($this->getHelp());
         }
+    }
+
+    private function parseOptions(array $args): array
+    {
+        $options = [];
+        $map = [
+            't' => 'type',
+            'd' => 'database',
+            'T' => 'table'
+        ];
+        
+        for ($i = 0; $i < count($args); $i++) {
+            $arg = $args[$i];
+            
+            // Skip if it's the first argument and doesn't start with -
+            if ($i === 0 && !str_starts_with($arg, '-')) {
+                continue;
+            }
+            
+            // Handle long options (--option=value)
+            if (str_starts_with($arg, '--')) {
+                $parts = explode('=', $arg);
+                if (count($parts) === 2) {
+                    $key = ltrim($parts[0], '-');
+                    $options[$key] = $parts[1];
+                }
+            }
+            // Handle short options (-o value)
+            elseif (str_starts_with($arg, '-') && strlen($arg) === 2) {
+                $key = substr($arg, 1);
+                if (isset($map[$key]) && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
+                    $options[$map[$key]] = $args[$i + 1];
+                    $i++; // Skip next argument as it's the value
+                }
+            }
+        }
+        
+        return $options;
     }
 }

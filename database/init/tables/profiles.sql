@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS profile (
+CREATE TABLE IF NOT EXISTS profiles (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     uuid CHAR(12) NOT NULL UNIQUE,
     user_uuid CHAR(12) NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS profile (
 );
 
 -- Create indexes for frequently queried fields
-CREATE INDEX idx_profile_uuid ON profile(uuid);
-CREATE INDEX idx_profile_user_uuid ON profile(user_uuid);
-CREATE INDEX idx_profile_photo_uuid ON profile(photo_uuid);
+CREATE INDEX idx_profile_uuid ON profiles(uuid);
+CREATE INDEX idx_profile_user_uuid ON profiles(user_uuid);
+CREATE INDEX idx_profile_photo_uuid ON profiles(photo_uuid);
 
