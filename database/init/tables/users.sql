@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS users (
     x_forwarded_for_ip_address VARCHAR(40),
     last_login_date TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expiry_time BIGINT,
     UNIQUE(username),
     UNIQUE(email)
 );
@@ -18,4 +17,4 @@ CREATE TABLE IF NOT EXISTS users (
 -- Create indexes for frequently queried fields
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_uuid ON users(uuid); -- Add UUID index
+CREATE INDEX idx_users_uuid ON users(uuid);
