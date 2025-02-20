@@ -8,12 +8,22 @@ use RuntimeException;
 use InvalidArgumentException;
 use GdImage;
 
+/**
+ * Image Processing Interface
+ * 
+ * Defines contract for image processing implementations.
+ */
 interface ImageProcessorInterface 
 {
     public function processImage(string $source): bool;
     public function outputImage(): void;
 }
 
+/**
+ * Cache Interface
+ * 
+ * Defines contract for image caching implementations.
+ */
 interface CacheInterface
 {
     public function get(string $key): ?string;
@@ -21,6 +31,12 @@ interface CacheInterface
     public function clean(): void;
 }
 
+/**
+ * TimThumb Image Processor
+ * 
+ * Handles image resizing, caching, and optimization.
+ * Supports local and remote images with security measures.
+ */
 final class TimThumb implements ImageProcessorInterface 
 {
     private const VERSION = '3.0.0';
@@ -29,6 +45,9 @@ final class TimThumb implements ImageProcessorInterface
         'image/png', 
         'image/gif'
     ];
+
+    /** @var CacheInterface Cache implementation */
+    private readonly CacheInterface $cache;
 
     private string $source = '';
     private bool $is404 = false;
@@ -47,8 +66,14 @@ final class TimThumb implements ImageProcessorInterface
     private float $lastBenchTime = 0;
     private bool $cropTop = false;
     private readonly string $salt;
-    private readonly CacheInterface $cache;
 
+    /**
+     * Constructor
+     * 
+     * @param array $config Configuration options
+     * @param CacheInterface|null $cache Optional cache implementation
+     * @throws InvalidArgumentException If configuration is invalid
+     */
     public function __construct(
         private readonly array $config,
         ?CacheInterface $cache = null
@@ -131,6 +156,15 @@ final class TimThumb implements ImageProcessorInterface
         }
     }
 
+    /**
+     * Process source image
+     * 
+     * Loads, resizes, and caches image based on configuration.
+     * 
+     * @param string $source Image source path or URL
+     * @return bool True if processing successful
+     * @throws RuntimeException On processing failure
+     */
     public function processImage(string $source): bool
     {
         $this->source = $source;
@@ -258,6 +292,15 @@ final class TimThumb implements ImageProcessorInterface
         return $resized;
     }
 
+    /**
+     * Calculate new image dimensions
+     * 
+     * Determines output dimensions while maintaining aspect ratio.
+     * 
+     * @param int $origWidth Original width
+     * @param int $origHeight Original height
+     * @return array [width, height]
+     */
     private function calculateDimensions(int $origWidth, int $origHeight): array
     {
         $width = $this->config['width'] ?? 0;
@@ -280,6 +323,13 @@ final class TimThumb implements ImageProcessorInterface
         return [$width, $height];
     }
 
+    /**
+     * Preserve image transparency
+     * 
+     * Ensures transparent areas remain transparent after processing.
+     * 
+     * @param GdImage $image Image resource
+     */
     private function preserveTransparency(GdImage $image): void
     {
         imagealphablending($image, false);
@@ -288,6 +338,13 @@ final class TimThumb implements ImageProcessorInterface
         imagefilledrectangle($image, 0, 0, imagesx($image), imagesy($image), $transparent);
     }
 
+    /**
+     * Output processed image
+     * 
+     * Sends image to browser with appropriate headers.
+     * 
+     * @throws RuntimeException If no cached image exists
+     */
     public function outputImage(): void
     {
         $data = $this->cache->get($this->getCacheKey());
@@ -333,6 +390,14 @@ final class TimThumb implements ImageProcessorInterface
         return false;
     }
 
+    /**
+     * Load external image
+     * 
+     * Downloads and processes remote images securely.
+     * 
+     * @return GdImage|null Image resource or null on failure
+     * @throws RuntimeException On download/processing failure
+     */
     private function loadExternalImage(): ?GdImage
     {
         $tempFile = tempnam($this->cacheDirectory, 'thumb_temp_');
@@ -413,8 +478,19 @@ final class TimThumb implements ImageProcessorInterface
     }
 }
 
+/**
+ * File-based Cache Implementation
+ * 
+ * Handles image caching using filesystem storage.
+ */
 final class FileCache implements CacheInterface
 {
+    /**
+     * Constructor
+     * 
+     * @param string $directory Cache directory path
+     * @throws RuntimeException If directory cannot be created
+     */
     public function __construct(
         private readonly string $directory
     ) {

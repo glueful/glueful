@@ -4,13 +4,41 @@ declare(strict_types=1);
 namespace Glueful\Api\Library;
 
 use Glueful\Api\Library\{QueryAction, FilterOperator};
+/**
+ * MySQL Query Builder
+ * 
+ * Handles construction and execution of MySQL queries with support for:
+ * - CRUD operations (SELECT, INSERT, UPDATE, DELETE)
+ * - Parameter binding for SQL injection prevention
+ * - Dynamic filtering and pagination
+ * - UUID support for records
+ * - Resource validation
+ */
 
 class MySQLQueryBuilder 
 {
+    /**
+     * Parameters that receive special handling and shouldn't be used in WHERE clauses
+     * @var array<string>
+     */
     private const RESERVED_PARAMS = [
         'fields', 'orderby', 'token', 'filter', 
         'limit', 'offset', 'dbres', 'fmt'
     ];
+
+     /**
+     * Prepare a database query for execution
+     * 
+     * Builds appropriate SQL query based on action type and handles pagination.
+     * 
+     * @param QueryAction $action The type of query to build
+     * @param array $definition Table/resource definition
+     * @param array|null $params Query parameters and filters
+     * @param array|null $config Additional configuration
+     * @param \Glueful\Api\Http\Pagination|null $pagination Pagination settings
+     * @return array{sql: string, params: array} Prepared query with bound parameters
+     * @throws \InvalidArgumentException If action is not supported
+     */
 
     public static function prepare(
         QueryAction $action, 
@@ -41,6 +69,16 @@ class MySQLQueryBuilder
 
         return $query;
     }
+
+    /**
+     * Execute a prepared query
+     * 
+     * Handles parameter binding and returns appropriate result format based on query type.
+     * 
+     * @param array{sql: string, params: array} $queryData The prepared query
+     * @return mixed Query results (array for SELECT, affected rows for others)
+     * @throws \RuntimeException On database errors
+     */
 
     public static function query(array $queryData): mixed 
     {
@@ -80,6 +118,15 @@ class MySQLQueryBuilder
             throw new \RuntimeException("Database query failed: " . $e->getMessage());
         }
     }
+
+     /**
+     * Build SELECT query with filtering and sorting
+     * 
+     * @param string $table Target table
+     * @param array $fields Available fields
+     * @param array|null $params Query parameters
+     * @return array{sql: string, params: array} Prepared SELECT query
+     */
 
     private static function buildSelectQuery(string $table, array $fields, ?array $params): array {
         $selectedFields = '*';
@@ -127,6 +174,15 @@ class MySQLQueryBuilder
         return ['sql' => $sql, 'params' => $queryParams];
     }
 
+    /**
+     * Build INSERT query with UUID generation
+     * 
+     * @param string $table Target table
+     * @param array|null $params Data to insert
+     * @return array{sql: string, params: array} Prepared INSERT query
+     * @throws \InvalidArgumentException If params is empty
+     */
+
     private static function buildInsertQuery(string $table, ?array $params): array {
         if (empty($params)) {
             throw new \InvalidArgumentException("No parameters provided for INSERT query");
@@ -155,6 +211,15 @@ class MySQLQueryBuilder
 
         return ['sql' => $sql, 'params' => $queryParams];
     }
+
+    /**
+     * Build UPDATE query supporting both ID and UUID
+     * 
+     * @param string $table Target table
+     * @param array|null $params Update data and record identifier
+     * @return array{sql: string, params: array} Prepared UPDATE query
+     * @throws \InvalidArgumentException If required params missing
+     */
 
     private static function buildUpdateQuery(string $table, ?array $params): array {
         if (empty($params)) {
@@ -194,6 +259,15 @@ class MySQLQueryBuilder
         return ['sql' => $sql, 'params' => $queryParams];
     }
 
+    /**
+     * Build DELETE query supporting both ID and UUID
+     * 
+     * @param string $table Target table
+     * @param array|null $params Deletion criteria
+     * @return array{sql: string, params: array} Prepared DELETE query
+     * @throws \InvalidArgumentException If identifier missing
+     */
+
     private static function buildDeleteQuery(string $table, ?array $params): array {
         // Support both id and uuid for deletes
         $identifier = isset($params['uuid']) ? 'uuid' : 'id';
@@ -208,6 +282,14 @@ class MySQLQueryBuilder
             'params' => [":$identifier" => $identifierValue]
         ];
     }
+
+    /**
+     * Parse single filter condition into SQL
+     * 
+     * @param array{field: string, operator: string, value: mixed} $filter Filter definition
+     * @param int $counter Parameter counter for unique names
+     * @return array{condition: string, params: array}|null SQL condition or null if invalid
+     */
 
     private static function parseSingleFilter(array $filter, int $counter): ?array {
         if (!isset($filter['field']) || !isset($filter['operator']) || !isset($filter['value'])) {
@@ -242,6 +324,13 @@ class MySQLQueryBuilder
         ];
     }
 
+    /**
+     * Combine multiple filter conditions
+     * 
+     * @param array $filters Array of filter definitions
+     * @return array{conditions: string, params: array} Combined SQL conditions
+     */
+
     private static function parseFilters(array $filters): array 
     {
         $conditions = [];
@@ -262,6 +351,14 @@ class MySQLQueryBuilder
         ];
     }
 
+    /**
+     * Convert string action to QueryAction enum
+     * 
+     * @param string $value Action name (e.g., 'list', 'insert', etc)
+     * @return QueryAction The corresponding enum value
+     * @throws \ValueError If action name is invalid
+     */
+    
     public static function fromString(string $value): QueryAction {
         return match (strtolower($value)) {
             'list', 'view', 'select' => QueryAction::SELECT,

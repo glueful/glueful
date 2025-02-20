@@ -18,12 +18,21 @@ use Glueful\Api\Http\{
 };
 use Glueful\Api\Extensions\Uploader\FileUploader;
 
-session_start();
-
+/**
+ * Main API handler class
+ * 
+ * Manages API routing, authentication, request handling, and response generation.
+ * Provides RESTful endpoints for user authentication, CRUD operations, and file handling.
+ */
 class API 
 {
     private static bool $routesInitialized = false;
 
+    /**
+     * Initialize the API system
+     * 
+     * Sets up logging, loads extensions, and initializes routes if not already done.
+     */
     public static function init(): void
     {
         if (!self::$routesInitialized) {
@@ -43,6 +52,12 @@ class API
         }
     }
 
+    /**
+     * Set up all API routes
+     * 
+     * Configures public and protected routes for authentication, CRUD operations,
+     * file handling, and other API functionalities.
+     */
     private static function initializeRoutes(): void 
     {
 
@@ -56,12 +71,12 @@ class API
         
         // Public routes - using relative paths
         $router->addRoute('POST', 'auth/login', function($params) {
-            Logger::log('REST Request - Login', [
+            Logger::log('REST Request - Login', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/login',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
 
             $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
             $postData = [];
@@ -75,17 +90,17 @@ class API
             
             self::prepareDatabaseResource(null);
             $response = self::handleLogin('sessions', $postData);
-            Logger::log('REST Response - Login', ['response' => $response]);
+            Logger::log('REST Response - Login', json_encode(['response' => $response]));
             return $response;
         }, true); // Mark as public
 
         $router->addRoute('POST', 'auth/verify-email', function($params) {
-            Logger::log('REST Request - Verify Email', [
+            Logger::log('REST Request - Verify Email', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/verify-email',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]));
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -128,12 +143,12 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/verify-otp', function($params) {
-            Logger::log('REST Request - Validate OTP', [
+            Logger::log('REST Request - Validate OTP', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/verify-otp',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]));
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -174,12 +189,12 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/forgot-password', function($params) {
-            Logger::log('REST Request - Forgot Password', [
+            Logger::log('REST Request - Forgot Password', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/forgot-password',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -219,12 +234,12 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/reset-password', function($params) {
-            Logger::log('REST Request - Reset Password', [
+            Logger::log('REST Request - Reset Password', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/reset-password',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -269,12 +284,12 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/validate-token', function($params) {
-            Logger::log('REST Request - Validate Session', [
+            Logger::log('REST Request - Validate Session', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/validate-token',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
 
             try {
                 $result = self::validateToken();
@@ -286,12 +301,12 @@ class API
         }); // Not public, requires token
 
         $router->addRoute('POST', 'auth/refresh-token', function($params) {
-            Logger::log('REST Request - Refresh Token', [
+            Logger::log('REST Request - Refresh Token', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/refresh-token',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
         
             try {
                 // Check request body for refresh token
@@ -329,13 +344,13 @@ class API
         }, true);
 
         $router->addRoute('GET', 'files/{uuid}', function($params) {
-            Logger::log('REST Request - Get Blob', [
+            Logger::log('REST Request - Get Blob', json_encode([
                 'method' => 'GET',
                 'resource' => 'blobs',
                 'uuid' => $params['uuid'],
                 'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             self::validateToken();
             
@@ -365,12 +380,12 @@ class API
         });
 
         $router->addRoute('POST', 'files', function($params) {
-            Logger::log('REST Request - Upload Blob', [
+            Logger::log('REST Request - Upload Blob', json_encode([
                 'method' => 'POST',
                 'resource' => 'blobs',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             self::validateToken();
             
@@ -396,7 +411,7 @@ class API
                     $response = self::handleBase64Upload($_GET, $postData);
                 }
                 
-                Logger::log('REST Response - Upload Blob', ['response' => $response]);
+                Logger::log('REST Response - Upload Blob', json_encode(['response' => $response]) ?: '');
                 return $response;
                 
             } catch (\Exception $e) {
@@ -410,12 +425,12 @@ class API
         // Protected routes (require token)
         // List all resources
         $router->addRoute('GET', '{resource}', function($params) {
-            Logger::log('REST Request - List', [
+            Logger::log('REST Request - List', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'resource' => $params['resource'],
                 'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
 
             self::validateToken();
             
@@ -444,7 +459,7 @@ class API
                     $queryParams
                 );
                 
-                Logger::log('REST Response - List', ['response' => $result]);
+                Logger::log('REST Response - List', json_encode(['response' => $result]) ?: '');
                 return Response::ok($result)->send();
                 
             } catch (\Exception $e) {
@@ -454,13 +469,13 @@ class API
         
         // Get single resource by UUID
         $router->addRoute('GET', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Get Single', [
+            Logger::log('REST Request - Get Single', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'resource' => $params['resource'],
                 'uuid' => $params['uuid'],
                 'params' => array_merge($params, $_GET),
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             self::validateToken();
             
@@ -491,7 +506,7 @@ class API
                     return Response::error('Resource not found', Response::HTTP_NOT_FOUND)->send();
                 }
                 
-                Logger::log('REST Response - Get Single', ['response' => $result]);
+                Logger::log('REST Response - Get Single', json_encode(['response' => $result]) ?: '');
                 return Response::ok($result[0])->send();
                 
             } catch (\Exception $e) {
@@ -501,12 +516,12 @@ class API
         
         $router->addRoute('POST', '{resource}', function($params) {
             // Log request
-            Logger::log('REST Request - Save', [
+            Logger::log('REST Request - Save', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'resource' => $params['resource'],
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             // Validate authentication
             self::validateToken();
@@ -543,7 +558,7 @@ class API
                 }
         
                 // Log and return response
-                Logger::log('REST Response - Save', ['response' => $response]);
+                Logger::log('REST Response - Save', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -553,13 +568,13 @@ class API
         
         // PUT Route (Update)
         $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Replace', [
+            Logger::log('REST Request - Replace', json_encode([
                 'method' => 'PUT',
                 'resource' => $params['resource'],
                 'uuid' => $params['uuid'],
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             self::validateToken();
             
@@ -596,7 +611,7 @@ class API
                     self::auditChanges($params['resource'], [], $putData, $response);
                 }
                 
-                Logger::log('REST Response - Replace', ['response' => $response]);
+                Logger::log('REST Response - Replace', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -606,13 +621,13 @@ class API
         
         // DELETE Route
         $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Delete', [
+            Logger::log('REST Request - Delete', json_encode([
                 'method' => 'DELETE',
                 'resource' => $params['resource'],
                 'uuid' => $params['uuid'],
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             self::validateToken();
             
@@ -632,7 +647,7 @@ class API
                     ['uuid' => $params['uuid'], 'status' => 'D']
                 );
                 
-                Logger::log('REST Response - Delete', ['response' => $response]);
+                Logger::log('REST Response - Delete', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -642,12 +657,12 @@ class API
         
         $router->addRoute('POST', 'auth/logout', function($params) {
             // Log the request
-            Logger::log('REST Request - Logout', [
+            Logger::log('REST Request - Logout', json_encode([
                 'method' => $_SERVER['REQUEST_METHOD'],
                 'path' => 'auth/logout',
                 'params' => $params,
                 'headers' => getallheaders()
-            ]);
+            ]) ?: '');
             
             // Validate token
             self::validateToken();
@@ -663,7 +678,7 @@ class API
                 // Direct call to kill session without legacy conversion
                 $result = APIEngine::killSession(['token' => $token]);
                 
-                Logger::log('REST Response - Logout', ['response' => $result]);
+                Logger::log('REST Response - Logout', json_encode(['response' => $result]) ?: '');
                 return Response::ok(['message' => 'Logged out successfully'])->send();
                 
             } catch (\Exception $e) {
@@ -675,6 +690,14 @@ class API
         });
     }
 
+    /**
+     * Validate authentication token
+     * 
+     * Checks if the provided token is valid and not expired.
+     * Exits with appropriate error response if validation fails.
+     * 
+     * @return array Session data if token is valid
+     */
     private static function validateToken(): array 
     {
         $token = self::getAuthAuthorizationToken();
@@ -700,8 +723,11 @@ class API
         }
     }
 
-    
-
+    /**
+     * Set up database connection for the current request
+     * 
+     * Creates PDO connection using configuration settings
+     */
     private static function prepareDatabaseResource(): void 
     {
 
@@ -709,6 +735,13 @@ class API
         Utils::createPDOConnection($databaseResource);
     }
 
+    /**
+     * Validate login credentials based on function type
+     * 
+     * @param string $function The login function type
+     * @param array $params Login parameters
+     * @return bool True if credentials are valid
+     */
     private static function validateLoginCredentials(string $function, array $params): bool 
     {
         return match($function) {
@@ -717,6 +750,15 @@ class API
         };
     }
 
+    /**
+     * Handle user login process
+     * 
+     * Validates credentials and creates user session if valid.
+     * 
+     * @param string $function Login function type
+     * @param array $postParams Login data
+     * @return array Response with session data or error
+     */
     private static function handleLogin(string $function, array $postParams): array 
     {
         if (!self::validateLoginCredentials($function, $postParams)) {
@@ -754,7 +796,13 @@ class API
         }
     }
 
-
+    /**
+     * Process base64 encoded file upload
+     * 
+     * @param array $getParams Query parameters
+     * @param array $postParams Post data with base64 content
+     * @return array Upload response
+     */
     private static function handleBase64Upload(array $getParams, array $postParams): array 
     {
         try {
@@ -790,6 +838,13 @@ class API
         }
     }
 
+    /**
+     * Process regular file upload
+     * 
+     * @param array $getParams Query parameters
+     * @param array $fileParams File upload data
+     * @return array Upload response
+     */
     private static function handleFileUpload(array $getParams, array $fileParams): array 
     {
         try {
@@ -810,6 +865,16 @@ class API
         }
     }
 
+    /**
+     * Record changes for auditing
+     * 
+     * Tracks data modifications for audit logging.
+     * 
+     * @param string $function Modified entity
+     * @param array $getParams Query parameters
+     * @param array $postParams Modified data
+     * @param array $response Operation response
+     */
     private static function auditChanges(
         string $function,
         array $getParams,
@@ -905,6 +970,11 @@ class API
         return $token;
     }
 
+    /**
+     * Load API extensions
+     * 
+     * Scans directories for extension classes and initializes them.
+     */
     private static function loadExtensions(): void 
 {
     $extensionsMap = [
@@ -948,19 +1018,19 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
                     try {
                         // Check if class has initializeRoutes method
                         if ($reflection->hasMethod('initializeRoutes')) {
-                            Logger::log('Loading Extension', [
+                            Logger::log('Loading Extension', json_encode([
                                 'class' => $fullClassName,
                                 'file' => $file->getPathname()
-                            ]);
+                            ]) ?: '');
                             
                             // Initialize routes for this extension
                             $fullClassName::initializeRoutes($router);
                         }
                     } catch (\Exception $e) {
-                        Logger::log('Extension Load Error', [
+                        Logger::log('Extension Load Error', json_encode([
                             'class' => $fullClassName,
                             'error' => $e->getMessage()
-                        ]);
+                        ]) ?: '');
                     }
                 }
             }
@@ -968,6 +1038,14 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
     }
 }
 
+    /**
+     * Process incoming API request
+     * 
+     * Main entry point for handling API requests.
+     * Sets up environment and routes request to appropriate handler.
+     * 
+     * @return array API response
+     */
     public static function processRequest(): array 
     {
         // Set JSON response headers

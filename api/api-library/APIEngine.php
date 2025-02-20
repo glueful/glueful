@@ -7,11 +7,27 @@ use Glueful\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
 use Glueful\Api\Http\Response;
 use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
 
+/**
+ * API Engine Core
+ * 
+ * Handles core API functionality including data operations, authentication,
+ * session management, file handling, and audit logging.
+ */
 class APIEngine 
 {
+    /** @var string|null Query builder class name */
     private static ?string $queryBuilderClass = null;
+    
+    /** @var string Current database resource */
     private static string $currentResource;
 
+    /**
+     * Initialize API Engine
+     * 
+     * Sets up query builder and database connection.
+     * 
+     * @param string $queryBuilderClass Class name for query building
+     */
     public static function initialize(string $queryBuilderClass): void 
     {
         self::$queryBuilderClass = $queryBuilderClass;
@@ -20,21 +36,55 @@ class APIEngine
         self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
     }
 
+    /**
+     * Set active database resource
+     * 
+     * @param string $resource Database resource identifier
+     */
     public static function setDatabaseResource(string $resource): void
     {
         self::$currentResource = $resource;
     }
 
+    /**
+     * Retrieve data from database
+     * 
+     * @param string $function Resource/table name
+     * @param string $action Query action (list, view, etc)
+     * @param array $param Query parameters
+     * @param array|null $filter Optional filters
+     * @return array Query results
+     */
     public static function getData(string $function, string $action, array $param, ?array $filter = null): array 
     {
         return self::processData($function, $action, $param, $filter);
     }
 
+    /**
+     * Save data to database
+     * 
+     * Handles insert, update, and delete operations.
+     * 
+     * @param string $function Resource/table name
+     * @param string $action Save action type
+     * @param array $param Data to save
+     * @return array Operation result
+     */
     public static function saveData(string $function, string $action, array $param): array 
     {
         return self::processData($function, $action, $param);
     }
 
+    /**
+     * Create user session
+     * 
+     * Handles user authentication and session creation.
+     * 
+     * @param string $function Authentication function
+     * @param string $action Auth action type
+     * @param array $param Credentials and options
+     * @return array Session data or error
+     */
     public static function createSession(string $function, string $action, array $param): array 
     {
         if (empty($param)) {
@@ -63,6 +113,12 @@ class APIEngine
         }
     }
 
+    /**
+     * End user session
+     * 
+     * @param array $param Session parameters
+     * @return array Operation result
+     */
     public static function killSession(array $param): array 
     {
         if (!isset($param['token'])) {
@@ -76,6 +132,14 @@ class APIEngine
         return Response::error('Session already invalidated', Response::HTTP_BAD_REQUEST)->send();
     }
 
+    /**
+     * Validate session token
+     * 
+     * @param string|null $function Optional resource to check
+     * @param string|null $action Optional action to verify
+     * @param array $params Validation parameters
+     * @return array Validation result
+     */
     public static function validateSession(?string $function, ?string $action, array $params): array 
     {
         $token = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
@@ -120,6 +184,16 @@ class APIEngine
         return Response::ok($session)->send();
     }
 
+    /**
+     * Retrieve binary content
+     * 
+     * Handles file downloads and image processing.
+     * 
+     * @param string $function Resource type
+     * @param string $action Retrieval action
+     * @param array $param Content parameters
+     * @return array Content data
+     */
     public static function getBlob(string $function, string $action, array $param): array 
     {
         try {
@@ -412,6 +486,18 @@ class APIEngine
         return $formattedPermissions;
     }
 
+    /**
+     * Process database operations
+     * 
+     * Core method for handling all database interactions.
+     * 
+     * @param string $function Resource name
+     * @param string $action Operation type
+     * @param array $param Operation parameters
+     * @param array|null $filter Optional filters
+     * @return array Operation result
+     * @throws \RuntimeException On database errors
+     */
     private static function processData(string $function, string $action, array $param, ?array $filter = null): array 
     {
         $definition = self::loadDefinition($function);
@@ -750,8 +836,13 @@ class APIEngine
     }
 }
 
-// Initialize with appropriate query builder
+// Initialize with appropriate query builder class
+/**
+ * Initialize API Engine with appropriate query builder
+ */
 $queryBuilderClass = match(config('database.engine')) {
+    'sqlite' => SQLiteQueryBuilder::class,
+    'mysql' => MySQLQueryBuilder::class,
     default => MySQLQueryBuilder::class
 };
 APIEngine::initialize($queryBuilderClass);

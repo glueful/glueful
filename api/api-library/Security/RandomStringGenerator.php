@@ -3,23 +3,50 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library\Security;
 
-class RandomStringGenerator {
-    // Updated to match SQL function's charset exactly
+/**
+ * Random String Generator
+ * 
+ * Generates cryptographically secure random strings using various character sets.
+ * Optimized for NanoID-style generation with efficient bit operations.
+ */
+class RandomStringGenerator 
+{
+    /** @var string Character set for NanoID-compatible strings */
     public const CHARSET_NANOID = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
-    public const CHARSET_ALPHANUMERIC = self::CHARSET_NANOID; // Alias for compatibility
     
-    // Other charsets
+    /** @var string Alias for NanoID charset */
+    public const CHARSET_ALPHANUMERIC = self::CHARSET_NANOID;
+    
+    /** @var string Numeric characters only */
     public const CHARSET_NUMERIC = '0123456789';
+    
+    /** @var string Alphabetic characters (upper and lower case) */
     public const CHARSET_ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    
+    /** @var string Lowercase alphabetic characters */
     public const CHARSET_ALPHA_LOWER = 'abcdefghijklmnopqrstuvwxyz';
+    
+    /** @var string Uppercase alphabetic characters */
     public const CHARSET_ALPHA_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     
-    private const MASK = 63; // Binary mask for 64 characters (2^6 - 1)
+    /** @var int Binary mask for 64-character alphabet */
+    private const MASK = 63; // 2^6 - 1
 
+    /**
+     * Generate random string
+     * 
+     * Creates cryptographically secure random string using specified charset.
+     * 
+     * @param int $length Desired string length
+     * @param string $charset Character set to use
+     * @return string Generated random string
+     * @throws \InvalidArgumentException If length is invalid
+     */
     public static function generate(
         int $length = 21,
         string $charset = self::CHARSET_NANOID
-    ): string {
+    ): string 
+    {
         if ($length <= 0) {
             throw new \InvalidArgumentException('Length must be greater than zero');
         }
@@ -32,7 +59,16 @@ class RandomStringGenerator {
         return self::generateWithCharset($length, $charset);
     }
 
-    private static function generateNanoStyle(int $length): string {
+    /**
+     * Generate NanoID-style string
+     * 
+     * Optimized generation for 64-character alphabet using bit operations.
+     * 
+     * @param int $length Desired string length
+     * @return string Generated string
+     */
+    private static function generateNanoStyle(int $length): string 
+    {
         $result = '';
         $bytes = random_bytes($length);
         
@@ -44,7 +80,18 @@ class RandomStringGenerator {
         return $result;
     }
 
-    private static function generateWithCharset(int $length, string $charset): string {
+    /**
+     * Generate with custom charset
+     * 
+     * Uses rejection sampling for unbiased random string generation.
+     * 
+     * @param int $length Desired string length
+     * @param string $charset Custom character set
+     * @return string Generated string
+     * @throws \InvalidArgumentException If charset is too short
+     */
+    private static function generateWithCharset(int $length, string $charset): string 
+    {
         $charsetLength = strlen($charset);
         if ($charsetLength <= 1) {
             throw new \InvalidArgumentException('Charset must contain at least 2 characters');

@@ -5,18 +5,39 @@ namespace App\Console\Commands;
 use App\Console\Command;
 use App\Console\Application;
 
+/**
+ * Help Command
+ * 
+ * Provides documentation and usage information for console commands.
+ * Lists available commands and displays detailed help for specific commands.
+ */
 class HelpCommand extends Command
 {
+    /**
+     * Get command name
+     * 
+     * @return string Command identifier
+     */
     public function getName(): string
     {
         return 'help';
     }
 
+    /**
+     * Get command description
+     * 
+     * @return string Brief description
+     */
     public function getDescription(): string
     {
         return 'Display help for a command';
     }
 
+    /**
+     * Get detailed help
+     * 
+     * @return string Command usage instructions
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -37,6 +58,13 @@ Examples:
 HELP;
     }
 
+    /**
+     * Execute help command
+     * 
+     * Shows general help or command-specific help.
+     * 
+     * @param array $args Command arguments
+     */
     public function execute(array $args = []): void
     {
         $app = new Application();
@@ -54,6 +82,11 @@ HELP;
         $this->showFooter();
     }
 
+    /**
+     * Display help header
+     * 
+     * Shows application name and basic usage.
+     */
     private function showHeader(): void
     {
         $this->info("\nGlueful CLI Tool\n");
@@ -61,6 +94,13 @@ HELP;
         $this->info("  php glueful <command> [options] [arguments]\n");
     }
 
+    /**
+     * Display command list
+     * 
+     * Shows all available commands with descriptions.
+     * 
+     * @param array $commands Available commands
+     */
     private function showCommandList(array $commands): void
     {
         $this->info("Available Commands:");
@@ -80,6 +120,13 @@ HELP;
         $this->info("\nUse 'php glueful help <command>' for more information about a command.\n");
     }
 
+    /**
+     * Display command help
+     * 
+     * Shows detailed help for specific command.
+     * 
+     * @param Command $command Command to display help for
+     */
     private function showCommandHelp(Command $command): void
     {
         $this->info("\nCommand: " . $command->getName() . "\n");
@@ -96,6 +143,11 @@ HELP;
         $this->info('');
     }
 
+    /**
+     * Display help footer
+     * 
+     * Shows additional information and resources.
+     */
     private function showFooter(): void
     {
         $this->info("For more information, visit:");

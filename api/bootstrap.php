@@ -7,8 +7,7 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
 $dotenv->load();
 
-use Glueful\Api\Library\ExceptionHandler;
-
 // Load helpers (must be loaded before any config files)
 require_once __DIR__ . '/helpers.php';
-ExceptionHandler::register();
+require_once __DIR__ . '/Library/ExceptionHandler.php';
+Glueful\Api\Library\ExceptionHandler::register();

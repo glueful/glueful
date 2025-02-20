@@ -1,15 +1,59 @@
 <?php
 
+/**
+ * Mail Configuration
+ * 
+ * Email service settings and SMTP configurations.
+ * Supports multiple mailer types with failover options.
+ */
 return [
-    'smtp' => [
-        'host' => env('SMTP_HOST', 'SMTP_HOST'),
-        'username' => env('SMTP_USERNAME', 'SMTP_USERNAME'),
-        'password' => env('SMTP_PASSWORD', 'SMTP_PASSWORD'),
-        'secure' => env('SMTP_SECURE', 'tls'),
-        'port' => env('SMTP_PORT', 587),
-        'useSmtp' => env('USE_SMTP', false),
-        'auth' => env('SMTP_AUTH', true),
+    // Default mailer configuration
+    'default' => env('MAIL_MAILER', 'smtp'),    // smtp, sendmail, or mail
+
+    // Global "From" address settings
+    'from' => [
+        'address' => env('MAIL_FROM_ADDRESS', 'noreply@example.com'),
+        'name' => env('MAIL_FROM_NAME', 'Glueful System'),
     ],
-    'bcc' => env('BCC_EMAILS', ''),
-    'force_advanced' => env('FORCE_ADVANCED_EMAIL', true),
+
+    // SMTP configuration
+    'smtp' => [
+        'host' => env('MAIL_HOST', 'smtp.mailtrap.io'),     // SMTP server address
+        'port' => env('MAIL_PORT', 2525),                   // SMTP port (usually 25, 465, or 587)
+        'encryption' => env('MAIL_ENCRYPTION', 'tls'),      // tls or ssl
+        'username' => env('MAIL_USERNAME'),                 // SMTP authentication username
+        'password' => env('MAIL_PASSWORD'),                 // SMTP authentication password
+        'timeout' => 30,                                    // Connection timeout in seconds
+        'auth_mode' => null,                               // Optional authentication mode
+    ],
+
+    // Sendmail configuration
+    'sendmail' => [
+        'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs'),
+    ],
+
+    // Email retry settings
+    'retry' => [
+        'max_attempts' => 3,                    // Maximum retry attempts
+        'delay' => 5,                          // Delay between retries in seconds
+        'multiplier' => 2,                     // Exponential backoff multiplier
+    ],
+
+    // Email queuing options
+    'queue' => [
+        'enabled' => env('MAIL_QUEUE_ENABLED', false),  // Enable email queuing
+        'connection' => 'redis',                        // Queue connection to use
+        'queue' => 'emails',                           // Queue name for emails
+        'timeout' => 60,                               // Queue job timeout
+    ],
+
+    // Email template settings
+    'templates' => [
+        'path' => dirname(__DIR__) . '/resources/mail', // Email template directory
+        'cache' => env('MAIL_TEMPLATE_CACHE', true),   // Enable template caching
+    ],
+
+    // Debug and logging
+    'debug' => env('MAIL_DEBUG', false),              // Enable detailed logging
+    'log_channel' => env('MAIL_LOG_CHANNEL', 'mail'), // Logging channel name
 ];

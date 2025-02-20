@@ -11,13 +11,26 @@ use Glueful\Api\Library\{
     DocGenerator
 };
 
-
+/**
+ * JSON Definition Generator for API
+ * 
+ * Generates JSON definition files for database tables and API documentation.
+ * These definitions describe the structure and behavior of API endpoints
+ * and database interactions.
+ */
 class JsonGenerator {
     private bool $runFromConsole;
     private array $generatedFiles = [];
     private string $dbResource;
     
 
+    /**
+     * Constructor
+     * 
+     * Initializes generator with console detection and directory setup.
+     * 
+     * @param bool $runFromConsole Force console mode
+     */
     public function __construct(bool $runFromConsole = false) {
 
         $this->runFromConsole = $runFromConsole || $this->isConsole();
@@ -33,6 +46,10 @@ class JsonGenerator {
 
      /**
      * Log messages with proper line endings
+     * 
+     * Handles both console and web output formats.
+     * 
+     * @param string $message Message to log
      */
     private function log(string $message): void 
     {
@@ -56,12 +73,22 @@ class JsonGenerator {
 
     /**
      * Check if running in console mode
+     * 
+     * @return bool True if running from command line
      */
     private function isConsole(): bool
     {
         return php_sapi_name() === 'cli';
     }
 
+    /**
+     * Generate JSON definitions
+     * 
+     * Main method to generate all necessary JSON definition files.
+     * 
+     * @param string|null $specificDatabase Target specific database
+     * @param string|null $tableName Generate for specific table only
+     */
     public function generate(?string $specificDatabase = null,?string $tableName = null): void {
         $this->generateDatabaseDefinitions($specificDatabase);
 
@@ -80,6 +107,14 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Generate JSON definition for a single table
+     * 
+     * Creates API definition file for specified database table.
+     * 
+     * @param string $dbResource Database identifier
+     * @param string $tableName Table to generate for
+     */
     private function generateTableDefinition(string $dbResource, string $tableName): void {
         $filename = \config('paths.json_definitions') . "$dbResource.$tableName.json";
         
@@ -122,10 +157,25 @@ class JsonGenerator {
         $this->log("Generated: $dbResource.$tableName.json");
     }
 
+    /**
+     * Convert database field name to API field name
+     * 
+     * Maps database column names to API-friendly names.
+     * 
+     * @param string $fieldName Database field name
+     * @return string API field name
+     */
     private function generateApiFieldName(string $fieldName): string {
         return $fieldName;
     }
 
+    /**
+     * Create permissions configuration file
+     * 
+     * Generates JSON definition for permissions table.
+     * 
+     * @param string $dbResource Database identifier
+     */
     private function createPermissionsConfig(string $dbResource): void {
         $config = [
             'table' => [
@@ -151,6 +201,11 @@ class JsonGenerator {
         );
     }
 
+    /**
+     * Generate API documentation
+     * 
+     * Creates OpenAPI/Swagger documentation from JSON definitions.
+     */
     public function generateApiDocs(): void 
     {
         $this->log("Generating API Documentation...");
@@ -210,6 +265,12 @@ class JsonGenerator {
     //     }
     // }
 
+    /**
+     * Generate JSON definitions for all tables in database
+     * 
+     * @param string|null $targetDb Specific database to process
+     * @throws \RuntimeException If database configuration is invalid
+     */
     private function generateDatabaseDefinitions(?string $targetDb): void {
         $dbConfig = config('database');
         $dbResource = $targetDb ?? $this->dbResource;
@@ -233,6 +294,11 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Set up administrator role and permissions
+     * 
+     * Creates or updates administrator role with full permissions.
+     */
     private function setupAdministratorRole(): void {
         $this->log("--- Creating Administrator Role ---");
         
@@ -240,6 +306,12 @@ class JsonGenerator {
         $this->updateAdminPermissions($roleId);
     }
 
+    /**
+     * Get or create administrator role
+     * 
+     * @return string|int Role ID
+     * @throws \Exception On database errors
+     */
     private function getOrCreateAdminRole(): string|int {
         $settings = config("database.{$this->dbResource}");
         
@@ -275,6 +347,11 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Create roles configuration file
+     * 
+     * @param string $dbResource Database identifier
+     */
     private function createRolesConfig(string $dbResource): void {
         $config = [
             'table' => [
@@ -301,6 +378,11 @@ class JsonGenerator {
         $this->log("Created roles configuration: $path");
     }
 
+    /**
+     * Create administrator role in database
+     * 
+     * @return string|int New role ID
+     */
     private function createAdminRole(): string|int {
         $param = [
             'name' => 'Administrator',
@@ -317,6 +399,11 @@ class JsonGenerator {
         return $result['id'];
     }
 
+    /**
+     * Update administrator permissions
+     * 
+     * @param string|int $roleId Administrator role ID
+     */
     private function updateAdminPermissions(string|int $roleId): void {
         $this->log("--- Assigning/Updating Administrator Permissions ---");
         $this->updateCorePermissions($roleId);
@@ -324,6 +411,11 @@ class JsonGenerator {
         $this->updateUIModelPermissions($roleId);
     }
 
+    /**
+     * Load and initialize API extensions
+     * 
+     * @param string|int $roleId Administrator role ID
+     */
     private function updateCorePermissions(string|int $roleId): void {
         foreach (glob(config('paths.json_definitions') . "*.json") as $file) {
             $parts = explode('.', basename($file));
@@ -344,6 +436,13 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Assign permissions to role
+     * 
+     * @param string|int $roleId Role ID
+     * @param string $model Permission model identifier
+     * @throws \Exception On database errors
+     */
     private function assignPermissions(string|int $roleId, string $model): void 
     {
         if ($this->permissionExists($roleId, $model)) {
@@ -372,6 +471,11 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Update extension-specific permissions
+     * 
+     * @param string|int $roleId Administrator role ID
+     */
     private function updateExtensionPermissions(string|int $roleId): void {
         $this->log("--- Assigning/Updating Administrator Extension Permissions ---");
         foreach ($this->getExtensionPaths() as $path) {
@@ -379,6 +483,11 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Update UI model permissions
+     * 
+     * @param string|int $roleId Administrator role ID
+     */
     private function updateUIModelPermissions(string|int $roleId): void {
         global $uiModels;
         $this->log("--- Assigning/Updating Administrator UI Model Permissions ---");
@@ -391,6 +500,14 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Check if permission exists
+     * 
+     * @param string|int $roleId Role ID
+     * @param string $model Model to check
+     * @return bool True if permission exists
+     * @throws \Exception On database errors
+     */
     private function permissionExists(string|int $roleId, string $model): bool
     {
         try {
@@ -412,6 +529,11 @@ class JsonGenerator {
         }
     }
 
+    /**
+     * Get extension file paths
+     * 
+     * @return array Extension file paths
+     */
     private function getExtensionPaths(): array {
         $paths = [];
         foreach ([config('paths.api_extensions'), config('paths.project_extensions')] as $dir) {
@@ -424,6 +546,13 @@ class JsonGenerator {
         return $paths;
     }
 
+    /**
+     * Recursively scan directory for files
+     * 
+     * @param string $dir Directory to scan
+     * @param array $results Accumulated results
+     * @return array File paths
+     */
     private function scanDirectory(string $dir, array &$results = []): array {
         foreach (scandir($dir) as $file) {
             if ($file === '.' || $file === '..') continue;
@@ -438,6 +567,12 @@ class JsonGenerator {
         return $results;
     }
 
+    /**
+     * Process extension file for permissions
+     * 
+     * @param string $path Extension file path
+     * @param string|int $roleId Role ID to assign permissions
+     */
     private function processExtensionFile(string $path, string|int $roleId): void {
         $path = str_replace("\\", "/", $path);
         $parts = explode('/', $path);

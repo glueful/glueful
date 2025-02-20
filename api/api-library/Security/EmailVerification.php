@@ -5,31 +5,71 @@ declare(strict_types=1);
 namespace Glueful\Api\Library\Security;
 
 use Glueful\Api\Extensions\Push\Email;
-use Glueful\Api\Library\CacheEngine;
+use Glueful\Api\Library\Cache\CacheEngine;
 use Glueful\Api\Library\{APIEngine};
 
+/**
+ * Email Verification System
+ * 
+ * Handles OTP generation, verification, and rate limiting for email verification.
+ * Includes protection against brute force and spam attempts.
+ */
 class EmailVerification
 {
+    /** @var int Length of generated OTP codes */
     public const OTP_LENGTH = 6;
+    
+    /** @var int OTP validity period in minutes */
     public const OTP_EXPIRY_MINUTES = 15;
+    
+    /** @var string Cache prefix for OTP storage */
     private const OTP_PREFIX = 'email_verification:';
+    
+    /** @var string Cache prefix for failed attempts */
     private const ATTEMPTS_PREFIX = 'email_verification_attempts:';
+    
+    /** @var int Maximum failed attempts before blocking */
     private const MAX_ATTEMPTS = 3;
+    
+    /** @var int Cooldown period in minutes after max attempts */
     private const COOLDOWN_MINUTES = 30;
+    
+    /** @var int Maximum verification requests per day */
     private const MAX_DAILY_REQUESTS = 10;
+    
+    /** @var string Cache prefix for daily request tracking */
     private const REQUESTS_PREFIX = 'email_verification_requests:';
 
+    /**
+     * Constructor
+     * 
+     * Initializes cache engine for OTP storage.
+     */
     public function __construct()
     {
         // Initialize CacheEngine with Redis driver
         CacheEngine::initialize('Glueful:', config('cache.default'));
     }
 
+    /**
+     * Generate OTP code
+     * 
+     * @return string Numeric OTP code
+     */
     public function generateOTP(): string
     {
         return OTP::generateNumeric(self::OTP_LENGTH);
     }
 
+    /**
+     * Send verification email
+     * 
+     * Handles rate limiting and sends OTP via email.
+     * 
+     * @param string $email Recipient email address
+     * @param string $otp Generated OTP code
+     * @return bool True if email sent successfully
+     */
     public function sendVerificationEmail(string $email, string $otp): bool
     {
         try {
@@ -69,6 +109,13 @@ class EmailVerification
         }
     }
 
+    /**
+     * Store OTP in cache
+     * 
+     * @param string $email User email
+     * @param string $hashedOTP Hashed OTP value
+     * @return bool True if stored successfully
+     */
     private function storeOTP(string $email, string $hashedOTP): bool
     {
         $key = self::OTP_PREFIX . $email;
@@ -78,6 +125,15 @@ class EmailVerification
         ], self::OTP_EXPIRY_MINUTES * 60);
     }
 
+    /**
+     * Verify provided OTP
+     * 
+     * Validates OTP and handles failed attempts.
+     * 
+     * @param string $email User email
+     * @param string $providedOTP OTP to verify
+     * @return bool True if OTP is valid
+     */
     public function verifyOTP(string $email, string $providedOTP): bool
     {
         $key = self::OTP_PREFIX . $email;
@@ -102,12 +158,23 @@ class EmailVerification
         return false;
     }
 
+    /**
+     * Check rate limiting status
+     * 
+     * @param string $email User email
+     * @return bool True if rate limited
+     */
     private function isRateLimited(string $email): bool
     {
         $attempts = CacheEngine::get(self::ATTEMPTS_PREFIX . $email) ?? 0;
         return $attempts >= self::MAX_ATTEMPTS;
     }
 
+    /**
+     * Track failed verification attempts
+     * 
+     * @param string $email User email
+     */
     private function incrementAttempts(string $email): void
     {
         $key = self::ATTEMPTS_PREFIX . $email;
@@ -119,11 +186,22 @@ class EmailVerification
         }
     }
 
+    /**
+     * Reset failed attempts counter
+     * 
+     * @param string $email User email
+     */
     private function clearAttempts(string $email): void
     {
         CacheEngine::delete(self::ATTEMPTS_PREFIX . $email);
     }
 
+    /**
+     * Track daily verification requests
+     * 
+     * @param string $email User email
+     * @return bool False if daily limit exceeded
+     */
     private function incrementDailyRequests(string $email): bool
     {
         $key = self::REQUESTS_PREFIX . $email . ':' . date('Y-m-d');
@@ -139,6 +217,12 @@ class EmailVerification
         return true;
     }
 
+    /**
+     * Get email template with OTP
+     * 
+     * @param string $otp OTP to include in email
+     * @return string HTML email template
+     */
     private function getEmailTemplate(string $otp): string
     {
         return "
@@ -151,11 +235,25 @@ class EmailVerification
         ";
     }
 
+    /**
+     * Validate email format
+     * 
+     * @param string $email Email to validate
+     * @return bool True if email format is valid
+     */
     public function isValidEmail(string $email): bool
     {
         return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
     }
 
+    /**
+     * Send password reset email
+     * 
+     * Handles password reset flow with verification.
+     * 
+     * @param string $email User email address
+     * @return array Operation result with status
+     */
     public static function sendPasswordResetEmail(string $email): array 
     {
         try {

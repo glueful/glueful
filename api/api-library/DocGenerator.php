@@ -3,12 +3,27 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library;
 
+/**
+ * API Documentation Generator
+ * 
+ * Generates OpenAPI/Swagger documentation from JSON definition files.
+ * Handles both table definitions and custom API endpoint documentation.
+ */
 class DocGenerator 
 {
+    /** @var array OpenAPI paths storage */
     private array $paths = [];
+    
+    /** @var array OpenAPI schemas storage */
     private array $schemas = [];
 
-
+    /**
+     * Generate documentation from table definition
+     * 
+     * Creates API documentation for database table endpoints.
+     * 
+     * @param string $filename JSON definition file path
+     */
     public function generateFromJson(string $filename): void 
     {
         $jsonContent = file_get_contents($filename);
@@ -25,6 +40,13 @@ class DocGenerator
         $this->addSchemaFromJson($tableName, $definition);
     }
 
+    /**
+     * Generate documentation from custom API definition
+     * 
+     * Creates API documentation for custom endpoints.
+     * 
+     * @param string $filename Custom API definition file path
+     */
     public function generateFromDocJson(string $filename): void 
     {
         $jsonContent = file_get_contents($filename);
@@ -38,6 +60,13 @@ class DocGenerator
         $this->addSchemaFromDocJson($definition);
     }
 
+    /**
+     * Get complete OpenAPI specification
+     * 
+     * Returns the full OpenAPI/Swagger documentation as JSON string.
+     * 
+     * @return string OpenAPI specification JSON
+     */
     public function getSwaggerJson(): string 
     {
         $swagger = [
@@ -86,7 +115,15 @@ class DocGenerator
         return json_encode($swagger, JSON_PRETTY_PRINT);
     }
 
-
+    /**
+     * Add paths from table definition
+     * 
+     * Generates endpoint documentation for standard CRUD operations.
+     * 
+     * @param string $resource API resource name
+     * @param string $tableName Database table name
+     * @param array $definition Table definition data
+     */
     private function addPathsFromJson(string $resource, string $tableName, array $definition): void 
     {
         $access = $definition['access']['mode'] ?? 'r';
@@ -208,6 +245,13 @@ class DocGenerator
         }
     }
 
+    /**
+     * Add paths from custom API definition
+     * 
+     * Generates endpoint documentation for custom API endpoints.
+     * 
+     * @param array $definition Custom API definition
+     */
     private function addPathsFromDocJson(array $definition): void 
     {
         $docName = $definition['doc']['name'];
@@ -298,40 +342,42 @@ class DocGenerator
     }
 
     /**
-     * Process and validate table fields
+     * Process table fields
+     * 
+     * Validates and processes field definitions from table configuration.
+     * 
+     * @param array $definition Table definition
+     * @return array Processed fields
      */
-    // private function processFields(array $tableConfig): ?array 
-    // {
-    //     // Check if fields exist and is array
-    //     if (!isset($tableConfig['fields']) || !is_array($tableConfig['fields'])) {
-    //         error_log("Warning: No fields defined for table " . ($tableConfig['name'] ?? 'unknown'));
-    //         return null;
-    //     }
-
-    //     return $tableConfig['fields'];
-    // }
-
     private function processFields(array $definition): array
-{
-    // Log the full definition for debugging
-    error_log("Processing definition: " . json_encode($definition, JSON_PRETTY_PRINT));
+    {
+        // Log the full definition for debugging
+        error_log("Processing definition: " . json_encode($definition, JSON_PRETTY_PRINT));
 
-    if (!isset($definition['table']) || !isset($definition['table']['fields'])) {
-        $tableName = $definition['table']['name'] ?? 'unknown';
-        error_log("Table structure missing for: $tableName");
-        return [];
+        if (!isset($definition['table']) || !isset($definition['table']['fields'])) {
+            $tableName = $definition['table']['name'] ?? 'unknown';
+            error_log("Table structure missing for: $tableName");
+            return [];
+        }
+
+        // Verify fields is an array
+        if (!is_array($definition['table']['fields'])) {
+            $tableName = $definition['table']['name'] ?? 'unknown';
+            error_log("Fields is not an array for table: $tableName");
+            return [];
+        }
+
+        return $definition['table']['fields'];
     }
 
-    // Verify fields is an array
-    if (!is_array($definition['table']['fields'])) {
-        $tableName = $definition['table']['name'] ?? 'unknown';
-        error_log("Fields is not an array for table: $tableName");
-        return [];
-    }
-
-    return $definition['table']['fields'];
-}
-
+    /**
+     * Add schema from table definition
+     * 
+     * Creates OpenAPI schemas for table data structures.
+     * 
+     * @param string $tableName Database table name
+     * @param array $definition Table definition data
+     */
     private function addSchemaFromJson(string $tableName, array $definition): void 
     {
         $properties = [];
@@ -385,6 +431,14 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Add schema from custom API definition
+     * 
+     * Creates OpenAPI schemas for custom API endpoints.
+     * 
+     * @param array $definition Custom API definition
+     * @return string Generated schema name
+     */
     private function addSchemaFromDocJson(array $definition): string 
     {
         $docName = $definition['doc']['name'];
@@ -452,6 +506,14 @@ class DocGenerator
         return $schemaName;
     }
 
+    /**
+     * Infer OpenAPI type from database type
+     * 
+     * Maps database column types to OpenAPI data types.
+     * 
+     * @param string $dbType Database column type
+     * @return string OpenAPI data type
+     */
     private function inferTypeFromJson(string $dbType): string 
     {
         if (str_contains($dbType, 'int')) {
@@ -469,6 +531,13 @@ class DocGenerator
         return 'string';
     }
 
+    /**
+     * Get common API parameters
+     * 
+     * Returns standard parameters used across endpoints.
+     * 
+     * @return array Common parameters definition
+     */
     private function getCommonParameters(): array 
     {
         return [
@@ -481,6 +550,13 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Get filter parameters
+     * 
+     * Returns standard filtering and pagination parameters.
+     * 
+     * @return array Filter parameters definition
+     */
     private function getFilterParameters(): array 
     {
         return [
@@ -509,6 +585,14 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Get common response definitions
+     * 
+     * Returns standard API response structures.
+     * 
+     * @param string $tableName Related table name
+     * @return array Response definitions
+     */
     private function getCommonResponses(string $tableName): array 
     {
         return [
@@ -559,6 +643,13 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Get error response definitions
+     * 
+     * Returns standard error response structures.
+     * 
+     * @return array Error response definitions
+     */
     private function getErrorResponses(): array 
     {
         return [
@@ -595,6 +686,13 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Get default OpenAPI schemas
+     * 
+     * Returns base schemas used across the API.
+     * 
+     * @return array Default schemas
+     */
     private function getDefaultSchemas(): array 
     {
         return [
@@ -634,6 +732,13 @@ class DocGenerator
         ];
     }
 
+    /**
+     * Generate API tags
+     * 
+     * Creates OpenAPI tags for grouping endpoints.
+     * 
+     * @return array Generated tags
+     */
     private function generateTags(): array 
     {
         $tags = [];
