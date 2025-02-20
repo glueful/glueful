@@ -4,10 +4,19 @@ declare(strict_types=1);
 namespace Glueful\Api\Library;
 
 use Glueful\Api\Library\Security\RandomStringGenerator;
+use Glueful\Api\Library\Cache\CacheEngine;
+use PDO;
+use PDOException;
 
+/**
+ * Utility Functions
+ * 
+ * Provides common utility functions used throughout the API.
+ * Handles database connections, UUID generation, and helper methods.
+ */
 class Utils 
 {
-    /** @var array<string, \PDO> */
+    /** @var array<string, PDO> Database connection cache */
     private static array $resources = [];
 
     public static function init(): void
@@ -16,10 +25,15 @@ class Utils
     }
 
     /**
-     * @return \PDO
-     * @throws \RuntimeException
+     * Get MySQL connection
+     * 
+     * Creates or retrieves cached database connection.
+     * 
+     * @param string $resource Database resource name
+     * @return PDO Active database connection
+     * @throws PDOException On connection failure
      */
-    public static function getMySQLConnection(array $settings = null): \PDO 
+    public static function getMySQLConnection(array $settings = null): PDO 
     {
         $connectionKey = 'primary';
         if (!isset(self::$resources[$connectionKey])) {
@@ -32,14 +46,49 @@ class Utils
 
             try {
                 self::$resources[$connectionKey] = self::createPDOConnection($dbSettings);
-            } catch (\PDOException $e) {
+            } catch (PDOException $e) {
                 throw new \RuntimeException("Database connection failed: " . $e->getMessage());
             }
         }
         return self::$resources[$connectionKey];
     }
 
-    public static function createPDOConnection(array $settings): \PDO 
+    public static function getSQLiteConnection(string $name = 'primary'): PDO 
+    {
+        if (!isset(self::$resources[$name])) {
+            $dbSettings = config('database.sqlite');
+            
+            if (!$dbSettings || !isset($dbSettings[$name])) {
+                throw new \RuntimeException("Invalid SQLite database configuration");
+            }
+
+            try {
+                self::$resources[$name] = self::createSQLitePDOConnection($dbSettings[$name]);
+            } catch (PDOException $e) {
+                throw new \RuntimeException("SQLite database connection failed: " . $e->getMessage());
+            }
+        }
+        return self::$resources[$name];
+    }
+
+    private static function createSQLitePDOConnection(string $dbPath): PDO 
+    {
+        if (!file_exists(dirname($dbPath))) {
+            mkdir(dirname($dbPath), 0755, true);
+        }
+
+        $pdo = new PDO("sqlite:{$dbPath}", null, null, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false
+        ]);
+        
+        $pdo->exec('PRAGMA foreign_keys = ON');
+        
+        return $pdo;
+    }
+
+    public static function createPDOConnection(array $settings): PDO 
     {
         $dsn = sprintf(
             'mysql:host=%s;dbname=%s;port=%d;charset=utf8mb4',
@@ -48,19 +97,19 @@ class Utils
             $settings['port'] ?? 3306
         );
 
-        return new \PDO(
+        return new PDO(
             $dsn,
             $settings['user'] ?? 'root',
             $settings['pass'] ?? '',
             [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-                \PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
             ]
         );
     }
 
-    private static function createPgPDO(array $settings): \PDO 
+    private static function createPgPDO(array $settings): PDO 
     {
         $dsn = sprintf(
             'pgsql:host=%s;port=%d;dbname=%s',
@@ -69,13 +118,13 @@ class Utils
             $settings['db'] ?? ''
         );
 
-        return new \PDO(
+        return new PDO(
             $dsn,
             $settings['user'] ?? 'postgres',
             $settings['pass'] ?? '',
             [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
             ]
         );
     }
@@ -176,6 +225,14 @@ class Utils
         return $session['user'] ?? null;
     }
 
+    /**
+     * Generate NanoID
+     * 
+     * Creates unique identifier using NanoID algorithm.
+     * 
+     * @param int $size Length of ID to generate
+     * @return string Generated NanoID
+     */
     public static function generateNanoID(int $length = 12): string {
         return RandomStringGenerator::generate(
             length: $length,

@@ -8,10 +8,25 @@ use ReflectionClass;
 use ReflectionProperty;
 use Glueful\Api\Library\Validation\Attributes\{Rules, Sanitize};
 
+/**
+ * Data Transfer Object Validator
+ * 
+ * Provides attribute-based validation and sanitization for DTOs.
+ * Supports multiple validation rules and sanitization filters.
+ */
 class Validator
 {
+    /** @var array<string, string[]> Validation error messages */
     private array $errors = [];
 
+    /**
+     * Validate DTO object
+     * 
+     * Processes all properties with validation rules and sanitization filters.
+     * 
+     * @param object $dto Data Transfer Object to validate
+     * @return bool True if validation passes
+     */
     public function validate(object $dto): bool
     {
         $reflection = new ReflectionClass($dto);
@@ -28,6 +43,15 @@ class Validator
         return empty($this->errors);
     }
 
+    /**
+     * Apply sanitization filters
+     * 
+     * Processes property value through configured sanitization filters.
+     * 
+     * @param ReflectionProperty $property Property to sanitize
+     * @param mixed $value Value to sanitize
+     * @return mixed Sanitized value
+     */
     private function sanitize(ReflectionProperty $property, mixed $value): mixed
     {
         foreach ($property->getAttributes(Sanitize::class) as $attribute) {
@@ -45,6 +69,14 @@ class Validator
         return $value;
     }
 
+    /**
+     * Apply validation rules
+     * 
+     * Process all validation rules for a property.
+     * 
+     * @param ReflectionProperty $property Property to validate
+     * @param mixed $value Value to validate
+     */
     private function applyRules(ReflectionProperty $property, mixed $value): void
     {
         foreach ($property->getAttributes(Rules::class) as $attribute) {
@@ -56,6 +88,16 @@ class Validator
         }
     }
 
+    /**
+     * Apply single validation rule
+     * 
+     * Process individual validation rule with parameters.
+     * 
+     * @param ReflectionProperty $property Property being validated
+     * @param mixed $value Value to validate
+     * @param string $rule Validation rule string
+     * @throws \Exception For unknown validation rules
+     */
     private function applyRule(ReflectionProperty $property, mixed $value, string $rule): void
     {
         [$ruleName, $params] = $this->parseRule($rule);
@@ -72,6 +114,14 @@ class Validator
         };
     }
 
+    /**
+     * Parse rule string
+     * 
+     * Extracts rule name and parameters from rule string.
+     * 
+     * @param string $rule Rule definition (e.g., "min:5")
+     * @return array{0: string, 1: array} [rule name, parameters]
+     */
     private function parseRule(string $rule): array
     {
         if (str_contains($rule, ':')) {
@@ -81,6 +131,14 @@ class Validator
         return [$rule, []];
     }
 
+    /**
+     * Validate required field
+     * 
+     * Ensures value is not empty.
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     */
     private function validateRequired(ReflectionProperty $property, mixed $value): void
     {
         if (empty($value)) {
@@ -88,6 +146,12 @@ class Validator
         }
     }
 
+    /**
+     * Validate string type
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     */
     private function validateString(ReflectionProperty $property, mixed $value): void
     {
         if (!is_string($value)) {
@@ -95,6 +159,12 @@ class Validator
         }
     }
 
+    /**
+     * Validate integer type
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     */
     private function validateInt(ReflectionProperty $property, mixed $value): void
     {
         if (!is_int($value)) {
@@ -102,6 +172,15 @@ class Validator
         }
     }
 
+    /**
+     * Validate minimum value
+     * 
+     * Ensures value is at least the specified minimum.
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     * @param int $min Minimum value
+     */
     private function validateMin(ReflectionProperty $property, mixed $value, int $min): void
     {
         if (is_string($value) && strlen($value) < $min) {
@@ -111,6 +190,15 @@ class Validator
         }
     }
 
+    /**
+     * Validate maximum value
+     * 
+     * Ensures value is at most the specified maximum.
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     * @param int $max Maximum value
+     */
     private function validateMax(ReflectionProperty $property, mixed $value, int $max): void
     {
         if (is_string($value) && strlen($value) > $max) {
@@ -120,6 +208,16 @@ class Validator
         }
     }
 
+    /**
+     * Validate value is between minimum and maximum
+     * 
+     * Ensures value is within the specified range.
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     * @param int $min Minimum value
+     * @param int $max Maximum value
+     */
     private function validateBetween(ReflectionProperty $property, mixed $value, int $min, int $max): void
     {
         if ($value < $min || $value > $max) {
@@ -127,6 +225,14 @@ class Validator
         }
     }
 
+    /**
+     * Validate email format
+     * 
+     * Ensures value is a valid email address.
+     * 
+     * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+     */
     private function validateEmail(ReflectionProperty $property, mixed $value): void
     {
         if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
@@ -134,6 +240,13 @@ class Validator
         }
     }
 
+    /**
+     * Get validation errors
+     * 
+     * Returns all validation error messages.
+     * 
+     * @return array<string, string[]> Property errors by field name
+     */
     public function errors(): array
     {
         return $this->errors;

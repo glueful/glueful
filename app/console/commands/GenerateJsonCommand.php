@@ -5,18 +5,39 @@ namespace App\Console\Commands;
 use App\Console\Command;
 use Glueful\Api\JsonGenerator;
 
+/**
+ * JSON Generator Command
+ * 
+ * Generates JSON definitions for API endpoints and documentation.
+ * Supports database schema to API definition conversion.
+ */
 class GenerateJsonCommand extends Command
 {
+    /**
+     * Get command name
+     * 
+     * @return string Command identifier
+     */
     public function getName(): string
     {
         return 'generate:json';
     }
 
+    /**
+     * Get command description
+     * 
+     * @return string Brief command description
+     */
     public function getDescription(): string 
     {
         return 'Generate JSON definitions and API documentation';
     }
 
+    /**
+     * Get detailed help
+     * 
+     * @return string Command usage instructions
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -40,6 +61,13 @@ Examples:
 HELP;
     }
 
+    /**
+     * Execute generator command
+     * 
+     * Processes arguments and generates requested JSON files.
+     * 
+     * @param array $args Command line arguments
+     */
     public function execute(array $args = []): void
     {
         // Show help if requested
@@ -91,6 +119,14 @@ HELP;
         }
     }
 
+    /**
+     * Parse command options
+     * 
+     * Processes command line arguments into options array.
+     * 
+     * @param array $args Raw command arguments
+     * @return array Parsed options
+     */
     private function parseOptions(array $args): array
     {
         $options = [];

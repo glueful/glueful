@@ -6,20 +6,42 @@ use App\Console\Command;
 use PDO;
 use Glueful\Api\Library\Utils;
 
+/**
+ * Database Status Command
+ * 
+ * Displays current database connection status and statistics.
+ * Shows connection, server info, database size, and table counts.
+ */
 class DatabaseStatusCommand extends Command
 {
+    /** @var PDO Database connection instance */
     private PDO $db;
     
+    /**
+     * Get command name
+     * 
+     * @return string Command identifier
+     */
     public function getName(): string
     {
         return 'db:status';
     }
 
+    /**
+     * Get command description
+     * 
+     * @return string Brief command description
+     */
     public function getDescription(): string
     {
         return 'Show database connection status and statistics';
     }
 
+    /**
+     * Get detailed help
+     * 
+     * @return string Command usage instructions
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -38,6 +60,15 @@ Options:
 HELP;
     }
 
+    /**
+     * Execute status command
+     * 
+     * Retrieves and displays database statistics.
+     * Shows connection status, server info, size, and table count.
+     * 
+     * @param array $args Command arguments
+     * @throws \Exception If database connection fails
+     */
     public function execute(array $args = []): void
     {
         try {

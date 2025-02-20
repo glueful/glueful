@@ -1,8 +1,23 @@
 <?php
+declare(strict_types=1);
+
+/**
+ * Global Helper Functions
+ * 
+ * This file contains globally accessible helper functions for environment
+ * variables and configuration management.
+ */
 
 if (!function_exists('env')) {
     /**
-     * Gets the value of an environment variable
+     * Get environment variable value
+     * 
+     * Retrieves value from environment with type casting support.
+     * Handles special values like 'true', 'false', 'null', and 'empty'.
+     * 
+     * @param string $key Environment variable name
+     * @param mixed $default Default value if not found
+     * @return mixed Processed environment value
      */
     function env(string $key, mixed $default = null): mixed
     {
@@ -34,8 +49,16 @@ if (!function_exists('env')) {
 if (!function_exists('config')) {
     /**
      * Get configuration value using dot notation
+     * 
+     * Retrieves configuration values from global config array using dot notation.
+     * Example: config('database.mysql.host') gets $configs['database']['mysql']['host']
+     * 
+     * @param string $key Configuration key in dot notation
+     * @param mixed $default Default value if key not found
+     * @return mixed Configuration value or default
      */
-    function config(string $key, $default = null) {
+    function config(string $key, mixed $default = null): mixed 
+    {
         static $config = [];
         
         $segments = explode('.', $key);
@@ -67,3 +90,9 @@ if (!function_exists('config')) {
         return $current;
     }
 }
+
+/**
+ * Additional helper functions can be added below.
+ * Each function should have proper documentation and
+ * be wrapped in function_exists() check.
+ */

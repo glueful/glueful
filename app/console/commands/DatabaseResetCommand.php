@@ -6,20 +6,42 @@ use App\Console\Command;
 use PDO;
 use Glueful\Api\Library\Utils;
 
+/**
+ * Database Reset Command
+ * 
+ * Provides functionality to reset database to clean state.
+ * Drops all tables and re-runs migrations with safety checks.
+ */
 class DatabaseResetCommand extends Command
 {
+    /** @var PDO Database connection instance */
     private PDO $db;
     
+    /**
+     * Get command name
+     * 
+     * @return string Command identifier
+     */
     public function getName(): string
     {
         return 'db:reset';
     }
 
+    /**
+     * Get command description
+     * 
+     * @return string Brief command description
+     */
     public function getDescription(): string
     {
         return 'Reset database to clean state';
     }
 
+    /**
+     * Get detailed help
+     * 
+     * @return string Command usage instructions
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -39,6 +61,15 @@ Example:
 HELP;
     }
 
+    /**
+     * Execute reset command
+     * 
+     * Performs database reset with safety checks.
+     * Requires --force flag for confirmation.
+     * 
+     * @param array $args Command arguments
+     * @throws \Exception If reset operation fails
+     */
     public function execute(array $args = []): void
     {
         if (!in_array('--force', $args)) {

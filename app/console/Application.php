@@ -2,10 +2,25 @@
 
 namespace App\Console;
 
+/**
+ * Console Application
+ * 
+ * Handles command-line interface functionality.
+ * Manages command registration and execution.
+ */
 class Application
 {
+    /** @var array<string, Command> Registered console commands */
     protected array $commands = [];
 
+    /**
+     * Constructor
+     * 
+     * Initializes console application and registers commands.
+     * Validates PHP version requirement.
+     * 
+     * @throws \RuntimeException If PHP version is insufficient
+     */
     public function __construct()
     {
         // Check PHP version
@@ -26,6 +41,13 @@ class Application
         ]);
     }
 
+    /**
+     * Register command classes
+     * 
+     * Instantiates and stores command objects.
+     * 
+     * @param array $commands Array of command class names
+     */
     private function registerCommands(array $commands)
     {
         foreach ($commands as $commandClass) {
@@ -34,6 +56,12 @@ class Application
         }
     }
 
+    /**
+     * Run console application
+     * 
+     * Processes command line arguments and executes appropriate command.
+     * Falls back to help command if none specified.
+     */
     public function run()
     {
         global $argv;
@@ -50,6 +78,11 @@ class Application
         }
     }
 
+    /**
+     * Get registered commands
+     * 
+     * @return array<string, Command> Array of available commands
+     */
     public function getCommands(): array
     {
         return $this->commands;

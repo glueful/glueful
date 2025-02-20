@@ -3,16 +3,25 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library;
 
-class SessionManager {
+use Glueful\Api\Library\Cache\CacheEngine;
+
+class SessionManager 
+{
     private const SESSION_PREFIX = 'session:';
     private const TOKEN_PREFIX = 'token:';
-    private const DEFAULT_TTL = 3600; // 1 hour - default value
-    private const REDIS_HASH_KEY = 'glueful_sessions';
-    private static $ttl; // Variable to hold configurable TTL
+    private const DEFAULT_TTL = 3600; // 1 hour
+    private static ?int $ttl = null;
+
     public static function initialize(): void
     {
+        if (!defined('CACHE_ENGINE')) {
+            define('CACHE_ENGINE', true);
+        }
+        
         CacheEngine::initialize('glueful:', 'redis');
-        self::$ttl = config('session.access_token_lifetime', self::DEFAULT_TTL);
+        
+        // Cast the config value to int
+        self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
     }
 
     public static function start(array $userData, string $token): void 
@@ -22,35 +31,27 @@ class SessionManager {
         
         $sessionData = [
             'id' => $sessionId,
-            'token' => $token, // Use the provided JWT token
+            'token' => $token,
             'user' => $userData,
             'created_at' => time(),
             'last_activity' => time()
         ];
 
-        $redis = CacheEngine::getInstance();
-        if ($redis instanceof \Redis) {
-            // Store session data with JWT token
-            $redis->hSet(
-                self::REDIS_HASH_KEY, 
-                $sessionId, 
-                serialize($sessionData)
-            );
-            $redis->expire(self::REDIS_HASH_KEY, self::$ttl);
-            
-            // Map JWT token to session ID
-            $redis->setEx(
-                self::TOKEN_PREFIX . $token,
-                self::$ttl,
-                $sessionId
-            );
-        } else {
-            // Fallback to regular CacheEngine methods
-            CacheEngine::set(self::SESSION_PREFIX . $sessionId, $sessionData, self::$ttl);
-            CacheEngine::set(self::TOKEN_PREFIX . $token, $sessionId, self::$ttl);
-        }
+        // Store session data
+        CacheEngine::set(
+            self::SESSION_PREFIX . $sessionId, 
+            $sessionData, 
+            self::$ttl
+        );
 
-        // Store session in database
+        // Map token to session ID
+        CacheEngine::set(
+            self::TOKEN_PREFIX . $token,
+            $sessionId,
+            self::$ttl
+        );
+
+        // Store session in database if refresh token exists
         if (isset($userData['refresh_token'])) {
             TokenManager::storeSession(
                 $userData['user_uuid'],
@@ -67,46 +68,10 @@ class SessionManager {
     {
         self::initialize();
         
-        // First validate token in database
-        $validToken = TokenManager::validateAccessToken($token);
-        if (!$validToken) {
+        if (!TokenManager::validateAccessToken($token)) {
             return null;
         }
 
-        // Then get session from cache
-        $redis = CacheEngine::getInstance();
-        if ($redis instanceof \Redis) {
-            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
-            if (!$sessionId) {
-                return null;
-            }
-
-            $sessionData = $redis->hGet(self::REDIS_HASH_KEY, $sessionId);
-            if (!$sessionData) {
-                return null;
-            }
-
-            $session = unserialize($sessionData);
-            if ($session) {
-                // Update last activity
-                $session['last_activity'] = time();
-                $redis->hSet(
-                    self::REDIS_HASH_KEY,
-                    $sessionId,
-                    serialize($session)
-                );
-                // Refresh token expiry
-                $redis->expire(self::TOKEN_PREFIX . $token, self::DEFAULT_TTL);
-                return $session;
-            }
-        }
-
-        // Fallback to regular CacheEngine get
-        return self::getFallback($token);
-    }
-
-    private static function getFallback(string $token): ?array
-    {
         $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
         if (!$sessionId) {
             return null;
@@ -120,10 +85,13 @@ class SessionManager {
         // Update last activity
         $session['last_activity'] = time();
         CacheEngine::set(
-            self::SESSION_PREFIX . $sessionId, 
-            $session, 
-            self::DEFAULT_TTL
+            self::SESSION_PREFIX . $sessionId,
+            $session,
+            self::$ttl
         );
+
+        // Refresh token expiry
+        CacheEngine::expire(self::TOKEN_PREFIX . $token, self::$ttl);
 
         return $session;
     }
@@ -136,18 +104,14 @@ class SessionManager {
         TokenManager::revokeSession($token);
         
         // Remove from cache
-        $redis = CacheEngine::getInstance();
-        if ($redis instanceof \Redis) {
-            $sessionId = $redis->get(self::TOKEN_PREFIX . $token);
-            if ($sessionId) {
-                $redis->hDel(self::REDIS_HASH_KEY, $sessionId);
-                $redis->del(self::TOKEN_PREFIX . $token);
-                return true;
-            }
-            return false;
+        $sessionId = CacheEngine::get(self::TOKEN_PREFIX . $token);
+        if ($sessionId) {
+            CacheEngine::delete(self::SESSION_PREFIX . $sessionId);
+            CacheEngine::delete(self::TOKEN_PREFIX . $token);
+            return true;
         }
 
-        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
+        return false;
     }
 
     public static function update(string $oldToken, array $newData, string $newToken): bool
@@ -162,7 +126,7 @@ class SessionManager {
         $success = CacheEngine::set(
             self::SESSION_PREFIX . $sessionId, 
             $newData, 
-            self::DEFAULT_TTL
+            self::$ttl
         );
 
         if ($success) {
@@ -170,7 +134,7 @@ class SessionManager {
             return CacheEngine::set(
                 self::TOKEN_PREFIX . $newToken, 
                 $sessionId, 
-                self::DEFAULT_TTL
+                self::$ttl
             );
         }
 
