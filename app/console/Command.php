@@ -91,4 +91,12 @@ abstract class Command
     {
         echo $message . PHP_EOL;
     }
+
+    /**
+     * Check if application is running in production environment
+     */
+    protected function isProduction(): bool
+    {
+        return config('app.env') === 'production';
+    }
 }
