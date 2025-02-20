@@ -1,7 +1,7 @@
 {
     "name": "glueful/glueful",
     "description": "A modern, secure, and scalable PHP framework for API generation and database management",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "type": "library",
     "keywords": [
         "api",
