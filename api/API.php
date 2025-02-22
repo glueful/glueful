@@ -8,7 +8,6 @@ use Glueful\Api\Library\{
     Permission,
     Utils,
     APIEngine,
-    Logger,
     TokenManager,
     Security\EmailVerification
 };
@@ -17,6 +16,8 @@ use Glueful\Api\Http\{
     Router
 };
 use Glueful\Api\Extensions\Uploader\FileUploader;
+use Glueful\Api\Library\Logging\AppLogger;
+use Monolog\Level;
 
 /**
  * Main API handler class
@@ -27,7 +28,8 @@ use Glueful\Api\Extensions\Uploader\FileUploader;
 class API 
 {
     private static bool $routesInitialized = false;
-
+    private static ?AppLogger $logger = null;
+    
     /**
      * Initialize the API system
      * 
@@ -35,15 +37,10 @@ class API
      */
     public static function init(): void
     {
+        if (self::$logger === null) {
+            self::$logger = new AppLogger();
+        }
         if (!self::$routesInitialized) {
-             // Initialize logger first
-        $logFile = config('app.api_log_file');
-        $debugLogging = config('app.debug_logging');
-        Logger::init(
-            defined('API_DEBUG_LOGGING') ? $debugLogging : false, 
-            defined('API_LOG_FILE') ? $logFile : null
-        );
-        
         // Load extensions before main routes
         // This allows extensions to register their routes first
         self::loadExtensions();
@@ -60,24 +57,11 @@ class API
      */
     private static function initializeRoutes(): void 
     {
-
-        // Initialize logger
-        $logFile = config('app.api_log_file');
-        $debugLogging = config('app.debug_logging');
-        Logger::init(defined('API_DEBUG_LOGGING') ? $debugLogging : false, 
-                    defined('API_LOG_FILE') ? $logFile : null);
         
         $router = Router::getInstance();
         
         // Public routes - using relative paths
         $router->addRoute('POST', 'auth/login', function($params) {
-            Logger::log('REST Request - Login', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/login',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-
             $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
             $postData = [];
             
@@ -90,17 +74,10 @@ class API
             
             self::prepareDatabaseResource(null);
             $response = self::handleLogin('sessions', $postData);
-            Logger::log('REST Response - Login', json_encode(['response' => $response]));
             return $response;
         }, true); // Mark as public
 
         $router->addRoute('POST', 'auth/verify-email', function($params) {
-            Logger::log('REST Request - Verify Email', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/verify-email',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]));
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -143,12 +120,6 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/verify-otp', function($params) {
-            Logger::log('REST Request - Validate OTP', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/verify-otp',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]));
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -189,12 +160,6 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/forgot-password', function($params) {
-            Logger::log('REST Request - Forgot Password', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/forgot-password',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
 
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -234,13 +199,6 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/reset-password', function($params) {
-            Logger::log('REST Request - Reset Password', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/reset-password',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
                 $postData = [];
@@ -284,12 +242,6 @@ class API
         }, true);
 
         $router->addRoute('POST', 'auth/validate-token', function($params) {
-            Logger::log('REST Request - Validate Session', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/validate-token',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
 
             try {
                 $result = self::validateToken();
@@ -301,13 +253,6 @@ class API
         }); // Not public, requires token
 
         $router->addRoute('POST', 'auth/refresh-token', function($params) {
-            Logger::log('REST Request - Refresh Token', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/refresh-token',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-        
             try {
                 // Check request body for refresh token
                 $input = file_get_contents('php://input');
@@ -344,14 +289,6 @@ class API
         }, true);
 
         $router->addRoute('GET', 'files/{uuid}', function($params) {
-            Logger::log('REST Request - Get Blob', json_encode([
-                'method' => 'GET',
-                'resource' => 'blobs',
-                'uuid' => $params['uuid'],
-                'params' => array_merge($params, $_GET),
-                'headers' => getallheaders()
-            ]) ?: '');
-            
             self::validateToken();
             
             try {
@@ -380,12 +317,6 @@ class API
         });
 
         $router->addRoute('POST', 'files', function($params) {
-            Logger::log('REST Request - Upload Blob', json_encode([
-                'method' => 'POST',
-                'resource' => 'blobs',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
             
             self::validateToken();
             
@@ -411,7 +342,6 @@ class API
                     $response = self::handleBase64Upload($_GET, $postData);
                 }
                 
-                Logger::log('REST Response - Upload Blob', json_encode(['response' => $response]) ?: '');
                 return $response;
                 
             } catch (\Exception $e) {
@@ -425,13 +355,7 @@ class API
         // Protected routes (require token)
         // List all resources
         $router->addRoute('GET', '{resource}', function($params) {
-            Logger::log('REST Request - List', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'resource' => $params['resource'],
-                'params' => array_merge($params, $_GET),
-                'headers' => getallheaders()
-            ]) ?: '');
-
+           
             self::validateToken();
             
             try {
@@ -459,7 +383,6 @@ class API
                     $queryParams
                 );
                 
-                Logger::log('REST Response - List', json_encode(['response' => $result]) ?: '');
                 return Response::ok($result)->send();
                 
             } catch (\Exception $e) {
@@ -469,13 +392,6 @@ class API
         
         // Get single resource by UUID
         $router->addRoute('GET', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Get Single', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'resource' => $params['resource'],
-                'uuid' => $params['uuid'],
-                'params' => array_merge($params, $_GET),
-                'headers' => getallheaders()
-            ]) ?: '');
             
             self::validateToken();
             
@@ -505,8 +421,7 @@ class API
                 if (empty($result)) {
                     return Response::error('Resource not found', Response::HTTP_NOT_FOUND)->send();
                 }
-                
-                Logger::log('REST Response - Get Single', json_encode(['response' => $result]) ?: '');
+
                 return Response::ok($result[0])->send();
                 
             } catch (\Exception $e) {
@@ -515,14 +430,6 @@ class API
         });
         
         $router->addRoute('POST', '{resource}', function($params) {
-            // Log request
-            Logger::log('REST Request - Save', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'resource' => $params['resource'],
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-            
             // Validate authentication
             self::validateToken();
             
@@ -557,8 +464,6 @@ class API
                     self::auditChanges($params['resource'], $_GET, $data, $response);
                 }
         
-                // Log and return response
-                Logger::log('REST Response - Save', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -568,14 +473,6 @@ class API
         
         // PUT Route (Update)
         $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Replace', json_encode([
-                'method' => 'PUT',
-                'resource' => $params['resource'],
-                'uuid' => $params['uuid'],
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-            
             self::validateToken();
             
             try {
@@ -611,7 +508,6 @@ class API
                     self::auditChanges($params['resource'], [], $putData, $response);
                 }
                 
-                Logger::log('REST Response - Replace', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -621,14 +517,6 @@ class API
         
         // DELETE Route
         $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
-            Logger::log('REST Request - Delete', json_encode([
-                'method' => 'DELETE',
-                'resource' => $params['resource'],
-                'uuid' => $params['uuid'],
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-            
             self::validateToken();
             
             try {
@@ -647,7 +535,6 @@ class API
                     ['uuid' => $params['uuid'], 'status' => 'D']
                 );
                 
-                Logger::log('REST Response - Delete', json_encode(['response' => $response]) ?: '');
                 return Response::ok($response)->send();
                 
             } catch (\Exception $e) {
@@ -656,14 +543,6 @@ class API
         });
         
         $router->addRoute('POST', 'auth/logout', function($params) {
-            // Log the request
-            Logger::log('REST Request - Logout', json_encode([
-                'method' => $_SERVER['REQUEST_METHOD'],
-                'path' => 'auth/logout',
-                'params' => $params,
-                'headers' => getallheaders()
-            ]) ?: '');
-            
             // Validate token
             self::validateToken();
             
@@ -678,7 +557,6 @@ class API
                 // Direct call to kill session without legacy conversion
                 $result = APIEngine::killSession(['token' => $token]);
                 
-                Logger::log('REST Response - Logout', json_encode(['response' => $result]) ?: '');
                 return Response::ok(['message' => 'Logged out successfully'])->send();
                 
             } catch (\Exception $e) {
@@ -703,21 +581,59 @@ class API
         $token = self::getAuthAuthorizationToken();
         
         if (!$token) {
+            self::$logger->log(
+                "Authentication failed - No token provided",
+                ['ip' => $_SERVER['REMOTE_ADDR']],
+                Level::Warning,
+                'auth'
+            );
             echo json_encode(Response::unauthorized('Authentication required')->send());
             exit;
         }
         
-        $_GET['token'] = $token; // Store token for downstream use
+        $_GET['token'] = $token;
         
-        // Validate token
         try {
             $result = APIEngine::validateSession('sessions', 'validate', ['token' => $token]);
+            
             if (!isset($result['success']) || !$result['success']) {
+                self::$logger?->log(
+                    "Token validation failed",
+                    [
+                        'token_prefix' => substr($token, 0, 8) . '...',
+                        'ip' => $_SERVER['REMOTE_ADDR'],
+                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'
+                    ],
+                    Level::Warning,
+                    'auth'
+                );
                 echo json_encode(Response::unauthorized('Invalid or expired token')->send());
                 exit;
             }
+
+            // Log successful validation
+            self::$logger?->log(
+                "Token validated successfully",
+                [
+                    'user_uuid' => $result['uuid'] ?? null,
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ],
+                Level::Info,
+                'auth'
+            );
+            
             return $result;
         } catch (\Exception $e) {
+            self::$logger?->log(
+                "Token validation error",
+                [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ],
+                Level::Error,
+                'auth'
+            );
             echo json_encode(Response::error('Token validation failed', Response::HTTP_INTERNAL_SERVER_ERROR)->send());
             exit;
         }
@@ -762,6 +678,12 @@ class API
     private static function handleLogin(string $function, array $postParams): array 
     {
         if (!self::validateLoginCredentials($function, $postParams)) {
+            self::$logger?->log(
+                "Login failed - Missing credentials",
+                ['ip' => $_SERVER['REMOTE_ADDR']],
+                Level::Warning,
+                'auth'
+            );
             return Response::error('Username/Email and Password Required', Response::HTTP_BAD_REQUEST)->send();
         }
 
@@ -780,15 +702,44 @@ class API
             
             // Convert API response to proper HTTP response
             if (isset($result['success']) && !$result['success']) {
+                self::$logger?->log(
+                    "Login failed - Invalid credentials",
+                    [
+                        'username' => $postParams['username'] ?? $postParams['email'] ?? 'unknown',
+                        'ip' => $_SERVER['REMOTE_ADDR']
+                    ],
+                    Level::Warning,
+                    'auth'
+                );
                 return Response::error(
                     $result['message'] ?? 'Login failed', 
                     $result['code'] ?? Response::HTTP_BAD_REQUEST
                 )->send();
             }
+
+            self::$logger?->log(
+                "Login successful",
+                [
+                    'user_uuid' => $result['user']['uuid'] ?? null,
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ],
+                Level::Info,
+                'auth'
+            );
             
             return Response::ok($result)->send();
             
         } catch (\Exception $e) {
+            self::$logger?->log(
+                "Login error",
+                [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ],
+                Level::Error,
+                'auth'
+            );
             return Response::error(
                 'Login failed: ' . $e->getMessage(), 
                 Response::HTTP_INTERNAL_SERVER_ERROR
@@ -810,6 +761,12 @@ class API
 
             $token = self::getAuthAuthorizationToken();
             if (!$token) {
+                self::$logger?->log(
+                    "Upload failed - No authentication",
+                    ['ip' => $_SERVER['REMOTE_ADDR']],
+                    Level::Warning,
+                    'upload'
+                );
                 echo json_encode(Response::unauthorized('Authentication required')->send());
                 exit;
             }
@@ -827,13 +784,45 @@ class API
                 'size' => filesize($tmpFile)
             ];
 
-            return $uploader->handleUpload(
+            self::$logger?->log(
+                "Processing base64 upload",
+                [
+                    'filename' => $fileParams['name'],
+                    'size' => $fileParams['size'],
+                    'mime_type' => $fileParams['type']
+                ],
+                Level::Info,
+                'upload'
+            );
+
+            $response = $uploader->handleUpload(
                 $getParams['token'],
                 $getParams,
                 ['file' => $fileParams]
             );
 
+            self::$logger?->log(
+                "Base64 upload completed",
+                [
+                    'filename' => $fileParams['name'],
+                    'uuid' => $response['uuid'] ?? null
+                ],
+                Level::Info,
+                'upload'
+            );
+
+            return $response;
+
         } catch (\Exception $e) {
+            self::$logger?->log(
+                "Base64 upload failed",
+                [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ],
+                Level::Error,
+                'upload'
+            );
             return Response::error('Base64 upload failed: ' . $e->getMessage())->send();
         }
     }
@@ -853,14 +842,54 @@ class API
             $token = self::getAuthAuthorizationToken();
         
             if (!$token) {
+                self::$logger?->log(
+                    "Upload failed - No authentication",
+                    ['ip' => $_SERVER['REMOTE_ADDR']],
+                    Level::Warning,
+                    'upload'
+                );
                 echo json_encode(Response::unauthorized('Authentication required')->send());
                 exit;
             }
             
             $_GET['token'] = $token; // Store token for downstream use
 
-            return $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
+            self::$logger?->log(
+                "Processing file upload",
+                [
+                    'filename' => $fileParams['file']['name'] ?? 'unknown',
+                    'size' => $fileParams['file']['size'] ?? 0,
+                    'type' => $fileParams['file']['type'] ?? 'unknown'
+                ],
+                Level::Info,
+                'upload'
+            );
+
+            $response = $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
+
+            self::$logger?->log(
+                "File upload completed",
+                [
+                    'filename' => $fileParams['file']['name'] ?? 'unknown',
+                    'uuid' => $response['uuid'] ?? null
+                ],
+                Level::Info,
+                'upload'
+            );
+
+            return $response;
+
         } catch (\Exception $e) {
+            self::$logger?->log(
+                "File upload failed",
+                [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'filename' => $fileParams['file']['name'] ?? 'unknown'
+                ],
+                Level::Error,
+                'upload'
+            );
             return Response::error('File upload failed: ' . $e->getMessage())->send();
         }
     }
@@ -1018,19 +1047,10 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
                     try {
                         // Check if class has initializeRoutes method
                         if ($reflection->hasMethod('initializeRoutes')) {
-                            Logger::log('Loading Extension', json_encode([
-                                'class' => $fullClassName,
-                                'file' => $file->getPathname()
-                            ]) ?: '');
-                            
                             // Initialize routes for this extension
                             $fullClassName::initializeRoutes($router);
                         }
                     } catch (\Exception $e) {
-                        Logger::log('Extension Load Error', json_encode([
-                            'class' => $fullClassName,
-                            'error' => $e->getMessage()
-                        ]) ?: '');
                     }
                 }
             }

@@ -1,7 +1,7 @@
 <?php
 
-use Glueful\App\Database\Migrations\MigrationInterface;
-use Glueful\App\Database\Schemas\SchemaManager;
+use Glueful\App\Migrations\MigrationInterface;
+use Glueful\Api\Schemas\SchemaManager;
 
 class CreateInitialSchema implements MigrationInterface
 {
@@ -184,10 +184,29 @@ class CreateInitialSchema implements MigrationInterface
                 'referenceColumn' => 'uuid'
             ]
         ]);
+
+        // Create App Logs Table
+        $schema->createTable('app_logs', [
+            'id' => 'BIGINT UNSIGNED AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
+            'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
+            'message' => 'TEXT NOT NULL',
+            'context' => 'JSON NULL',
+            'exec_time' => 'FLOAT NULL',  // Execution time for querying
+            'channel' => 'VARCHAR(255) NOT NULL',
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
+        ], [
+            ['type' => 'PRIMARY KEY', 'column' => 'id'],
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'level'],
+            ['type' => 'INDEX', 'column' => 'channel'],
+            ['type' => 'INDEX', 'column' => 'created_at']
+        ]);
     }
 
     public function down(SchemaManager $schema): void
     {
+        $schema->dropTable('app_logs');
         $schema->dropTable('auth_sessions');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');

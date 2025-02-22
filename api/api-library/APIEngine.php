@@ -6,6 +6,8 @@ namespace Glueful\Api\Library;
 use Glueful\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
 use Glueful\Api\Http\Response;
 use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
+use Glueful\Api\Library\Logging\AppLogger;
+use Monolog\Level;
 
 /**
  * API Engine Core
@@ -21,6 +23,9 @@ class APIEngine
     /** @var string Current database resource */
     private static string $currentResource;
 
+    /** @var AppLogger Logger instance */
+    private static ?AppLogger $logger = null;
+
     /**
      * Initialize API Engine
      * 
@@ -34,6 +39,9 @@ class APIEngine
         // Initialize with first available database resource
         $dbConfig = config('database');
         self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
+        
+        // Initialize logger
+        self::$logger = new AppLogger();
     }
 
     /**
@@ -146,6 +154,12 @@ class APIEngine
         $token = str_replace('Bearer ', '', $token);
         
         if (empty($token)) {
+            self::$logger?->log(
+                "Session validation failed - No token provided",
+                ['ip' => $_SERVER['REMOTE_ADDR']],
+                Level::Warning,
+                'auth'
+            );
             return Response::unauthorized('No session token provided')->send();
         }
 
@@ -164,6 +178,15 @@ class APIEngine
         }
 
         if (!$session) {
+            self::$logger?->log(
+                "Session validation failed - Invalid token",
+                [
+                    'token' => substr($token, 0, 8) . '...',
+                    'ip' => $_SERVER['REMOTE_ADDR']
+                ],
+                Level::Warning,
+                'auth'
+            );
             return Response::unauthorized('Invalid or expired session')->send();
         }
 
@@ -180,6 +203,17 @@ class APIEngine
                 return Response::error('Permission denied', Response::HTTP_FORBIDDEN)->send();
             }
         }
+
+        // Log successful validation
+        self::$logger?->log(
+            "Session validated successfully",
+            [
+                'user_uuid' => $session['uuid'] ?? null,
+                'ip' => $_SERVER['REMOTE_ADDR']
+            ],
+            Level::Info,
+            'auth'
+        );
 
         return Response::ok($session)->send();
     }
@@ -607,18 +641,33 @@ class APIEngine
 
     private static function executeQuery(string $action, array $definition, array $params): array 
     {
-        if (!self::$queryBuilderClass) {
-            throw new \RuntimeException("Query builder not initialized");
-        }
-
-        $builder = self::$queryBuilderClass;
-        $query = $builder::prepare(QueryAction::fromString($action), $definition, $params);
-
-        // Get PDO connection
-        $databaseResource = config('database.primary');
-        $db = Utils::getMySQLConnection($databaseResource);
-
+        $startTime = microtime(true);
+        
         try {
+            if (!self::$queryBuilderClass) {
+                throw new \RuntimeException("Query builder not initialized");
+            }
+
+            $builder = self::$queryBuilderClass;
+            $query = $builder::prepare(QueryAction::fromString($action), $definition, $params);
+
+            // Log query before execution
+            self::$logger?->log(
+                "Executing query",
+                [
+                    'action' => $action,
+                    'table' => $definition['table']['name'] ?? 'unknown',
+                    'query' => $query['sql'],
+                    'params' => $query['params'] ?? []
+                ],
+                Level::Debug,
+                'database'
+            );
+
+            // Get PDO connection
+            $databaseResource = config('database.primary');
+            $db = Utils::getMySQLConnection($databaseResource);
+
             // Prepare the statement
             $stmt = $db->prepare($query['sql']);
             
@@ -634,7 +683,7 @@ class APIEngine
             $stmt->execute();
 
             // Return results based on query type
-            return match($action) {
+            $result = match($action) {
                 'list', 'view' => $stmt->fetchAll(\PDO::FETCH_ASSOC),
                 'count' => $stmt->fetchAll(\PDO::FETCH_ASSOC), // Return count as array
                 'insert' => ['uuid' => self::getLastInsertedUUID($db, $definition['table']['name'])],
@@ -642,7 +691,43 @@ class APIEngine
                 default => []
             };
 
+            $endTime = microtime(true);
+            $execTime = round($endTime - $startTime, 6);
+
+            // Log successful query execution
+            self::$logger?->log(
+                "Query executed successfully",
+                [
+                    'action' => $action,
+                    'table' => $definition['table']['name'] ?? 'unknown',
+                    'exec_time' => $execTime,
+                    'affected_rows' => $stmt->rowCount()
+                ],
+                Level::Debug,
+                'database'
+            );
+
+            return $result;
+
         } catch (\PDOException $e) {
+            $endTime = microtime(true);
+            $execTime = round($endTime - $startTime, 6);
+
+            // Log query error
+            self::$logger?->log(
+                "Query execution failed",
+                [
+                    'action' => $action,
+                    'table' => $definition['table']['name'] ?? 'unknown',
+                    'error' => $e->getMessage(),
+                    'exec_time' => $execTime,
+                    'query' => $query['sql'] ?? null,
+                    'params' => $query['params'] ?? []
+                ],
+                Level::Error,
+                'database'
+            );
+
             throw new \RuntimeException("Query execution failed: " . $e->getMessage());
         }
     }
@@ -800,14 +885,6 @@ class APIEngine
         }
         
         $session = SessionManager::getCurrentSession();
-        return AuditLogger::log(
-            $action,
-            $table,
-            $recordUuid,
-            $changes,
-            $session['user_uuid'] ?? null,
-            $session['token'] ?? null
-        );
     }
 
     public static function getAuditTrail(string $function, string $action, array $param): array 

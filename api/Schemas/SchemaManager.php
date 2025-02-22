@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\App\Database\Schemas;
+namespace Glueful\Api\Schemas;
 
 /**
  * Schema Manager Interface

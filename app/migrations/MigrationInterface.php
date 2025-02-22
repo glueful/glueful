@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Glueful\App\Database\Migrations;
+namespace Glueful\App\Migrations;
 
-use Glueful\App\Database\Schemas\SchemaManager;
+use Glueful\Api\Schemas\SchemaManager;
 
 /**
  * Migration Interface

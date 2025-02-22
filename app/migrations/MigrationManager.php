@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Glueful\App\Database\Migrations;
+namespace Glueful\App\Migrations;
 
-use Glueful\App\Database\Schemas\SchemaManager;
-use Glueful\App\Database\Schemas\SchemaManagerFactory;
+use Glueful\App\Migrations\MigrationInterface;
+use Glueful\Api\Schemas\SchemaManager;
+use Glueful\Api\Schemas\SchemaManagerFactory;
 use PDO;
 use PDOException;
 use RuntimeException;
@@ -63,6 +64,7 @@ class MigrationManager
         $this->schema = SchemaManagerFactory::create();
         $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 2) . '/database/migrations';
         $this->ensureVersionTable();
+        $this->db =  SchemaManagerFactory::getConnection();
     }
 
     /**
