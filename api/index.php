@@ -14,7 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../api/bootstrap.php';
 
 use Glueful\Api\API;
-use Glueful\Api\Library\Logging\AppLogger;
+use Glueful\Api\Library\Logging\LogManager;
 use Monolog\Level;
 use Glueful\Api\Http\ServerRequestFactory;
 use Glueful\Api\Exceptions\{ValidationException, AuthenticationException};
@@ -22,7 +22,7 @@ use Glueful\Api\Exceptions\{ValidationException, AuthenticationException};
 $startTime = microtime(true);
 
 // Initialize logger
-$logger = new AppLogger();
+$logger = new LogManager();
 
 // Common request data for context
 $requestContext = [

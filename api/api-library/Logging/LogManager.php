@@ -3,10 +3,8 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library\Logging;
 
-use PDO;
 use Monolog\Logger;
 use Monolog\Handler\RotatingFileHandler;
-use Glueful\Api\Schemas\SchemaManagerFactory;
 use Glueful\Api\Library\Utils;
 use Monolog\Level;
 use Glueful\Api\Library\Logging\DatabaseLogHandler;
@@ -28,7 +26,7 @@ use Glueful\Api\Library\Logging\DatabaseLogHandler;
  * 
  * Usage:
  * ```php
- * $logger = new AppLogger();
+ * $logger = new LogManager();
  * 
  * // Basic logging
  * $logger->log("User logged in", ['user_id' => 123], Level::Info);
@@ -39,7 +37,7 @@ use Glueful\Api\Library\Logging\DatabaseLogHandler;
  * 
  * @package Glueful\Api\Library\Logging
  */
-class AppLogger
+class LogManager
 {
     /** @var Logger Monolog logger instance */
     private Logger $logger;
