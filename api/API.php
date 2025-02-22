@@ -16,7 +16,7 @@ use Glueful\Api\Http\{
     Router
 };
 use Glueful\Api\Extensions\Uploader\FileUploader;
-use Glueful\Api\Library\Logging\AppLogger;
+use Glueful\Api\Library\Logging\LogManager;
 use Monolog\Level;
 
 /**
@@ -28,7 +28,7 @@ use Monolog\Level;
 class API 
 {
     private static bool $routesInitialized = false;
-    private static ?AppLogger $logger = null;
+    private static ?LogManager $logger = null;
     
     /**
      * Initialize the API system
@@ -38,7 +38,7 @@ class API
     public static function init(): void
     {
         if (self::$logger === null) {
-            self::$logger = new AppLogger();
+            self::$logger = new LogManager();
         }
         if (!self::$routesInitialized) {
         // Load extensions before main routes

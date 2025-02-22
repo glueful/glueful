@@ -8,7 +8,7 @@ use Glueful\Api\Exceptions\ApiException;
 use Glueful\Api\Exceptions\ValidationException;
 use Glueful\Api\Exceptions\AuthenticationException;
 use Glueful\Api\Exceptions\NotFoundException;
-use Glueful\Api\Library\Logging\AppLogger;
+use Glueful\Api\Library\Logging\LogManager;
 use Monolog\Level;
 use Throwable;
 
@@ -20,8 +20,8 @@ use Throwable;
  */
 class ExceptionHandler
 {
-    /** @var AppLogger Logger instance */
-    private static ?AppLogger $logger = null;
+    /** @var LogManager Logger instance */
+    private static ?LogManager $logger = null;
 
     /** @var array<string, string> Exception type to channel mapping */
     private static array $channelMap = [
@@ -41,7 +41,7 @@ class ExceptionHandler
     public static function register(): void
     {
         // Initialize logger
-        self::$logger = new AppLogger();
+        self::$logger = new LogManager();
         
         set_exception_handler([self::class, 'handleException']);
         register_shutdown_function([self::class, 'handleShutdown']);

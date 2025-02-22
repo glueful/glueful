@@ -6,7 +6,7 @@ namespace Glueful\Api\Library;
 use Glueful\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
 use Glueful\Api\Http\Response;
 use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
-use Glueful\Api\Library\Logging\AppLogger;
+use Glueful\Api\Library\Logging\LogManager;
 use Monolog\Level;
 
 /**
@@ -23,8 +23,8 @@ class APIEngine
     /** @var string Current database resource */
     private static string $currentResource;
 
-    /** @var AppLogger Logger instance */
-    private static ?AppLogger $logger = null;
+    /** @var LogManager Logger instance */
+    private static ?LogManager $logger = null;
 
     /**
      * Initialize API Engine
@@ -41,7 +41,7 @@ class APIEngine
         self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
         
         // Initialize logger
-        self::$logger = new AppLogger();
+        self::$logger = new LogManager();
     }
 
     /**
