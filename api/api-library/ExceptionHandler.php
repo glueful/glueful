@@ -8,6 +8,8 @@ use Glueful\Api\Exceptions\ApiException;
 use Glueful\Api\Exceptions\ValidationException;
 use Glueful\Api\Exceptions\AuthenticationException;
 use Glueful\Api\Exceptions\NotFoundException;
+use Glueful\Api\Library\Logging\AppLogger;
+use Monolog\Level;
 use Throwable;
 
 /**
@@ -18,14 +20,29 @@ use Throwable;
  */
 class ExceptionHandler
 {
+    /** @var AppLogger Logger instance */
+    private static ?AppLogger $logger = null;
+
+    /** @var array<string, string> Exception type to channel mapping */
+    private static array $channelMap = [
+        ValidationException::class => 'validation',
+        AuthenticationException::class => 'auth',
+        NotFoundException::class => 'http',
+        ApiException::class => 'api',
+        'default' => 'error'  // Default channel for unhandled exceptions
+    ];
+
     /**
      * Register all error and exception handlers
      * 
-     * Sets up exception handling, error handling, and shutdown functions
-     * to ensure all errors are properly caught and handled.
+     * Sets up exception handling, error handling, shutdown functions,
+     * and initializes the logger instance.
      */
     public static function register(): void
     {
+        // Initialize logger
+        self::$logger = new AppLogger();
+        
         set_exception_handler([self::class, 'handleException']);
         register_shutdown_function([self::class, 'handleShutdown']);
         set_error_handler([self::class, 'handleError']);
@@ -42,30 +59,56 @@ class ExceptionHandler
      */
     public static function handleException(Throwable $exception): void
     {
-        // Log error details with context
-        $message = 'Exception: ' . $exception->getMessage();
+        // Prepare context for logging
         $context = [
             'file' => $exception->getFile(),
             'line' => $exception->getLine(),
             'trace' => $exception->getTraceAsString(),
+            'type' => get_class($exception)
         ];
-        Logger::log($message, json_encode($context));
 
-        // Map exceptions to responses
+        // Determine logging channel based on exception type
+        $channel = self::$channelMap[get_class($exception)] ?? self::$channelMap['default'];
+
+        // Log based on exception type
         switch (true) {
             case $exception instanceof ValidationException:
+                self::$logger->log(
+                    $exception->getMessage(), 
+                    $context + ['errors' => $exception->getErrors()], 
+                    Level::Warning,
+                    $channel
+                );
                 self::outputJsonResponse(422, 'Validation Error', $exception->getErrors());
                 break;
+
             case $exception instanceof AuthenticationException:
+                self::$logger->log(
+                    $exception->getMessage(), 
+                    $context, 
+                    Level::Warning,
+                    $channel
+                );
                 self::outputJsonResponse(401, 'Unauthorized', $exception->getMessage());
                 break;
+
             case $exception instanceof NotFoundException:
+                self::$logger->log($exception->getMessage(), $context, Level::Warning, $channel);
                 self::outputJsonResponse(404, 'Not Found', $exception->getMessage());
                 break;
+
             case $exception instanceof ApiException:
+                self::$logger->log($exception->getMessage(), $context + ['data' => $exception->getData()], Level::Error, $channel);
                 self::outputJsonResponse($exception->getStatusCode(), $exception->getMessage(), $exception->getData());
                 break;
+
             default:
+                self::$logger->log(
+                    'Unhandled exception: ' . $exception->getMessage(),
+                    $context,
+                    Level::Error,
+                    $channel
+                );
                 self::outputJsonResponse(500, 'Internal Server Error');
                 break;
         }
@@ -81,11 +124,16 @@ class ExceptionHandler
     {
         $error = error_get_last();
         if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-            Logger::log('Fatal Error', json_encode([
-                'message' => $error['message'],
-                'file' => $error['file'],
-                'line' => $error['line'],
-            ]));
+            self::$logger?->log(
+                'Fatal Error: ' . $error['message'],
+                [
+                    'file' => $error['file'],
+                    'line' => $error['line'],
+                    'type' => $error['type']
+                ],
+                Level::Critical,
+                'PHP'
+            );
             self::outputJsonResponse(500, 'Internal Server Error');
         }
     }
@@ -123,13 +171,26 @@ class ExceptionHandler
      */
     private static function outputJsonResponse(int $statusCode, string $message, mixed $data = null): void
     {
-        http_response_code($statusCode);
-        header('Content-Type: application/json');
-        echo json_encode([
+        $response = [
             'status' => $statusCode,
             'message' => $message,
             'data' => $data
-        ]);
+        ];
+
+        // Log the response being sent
+        self::$logger?->log(
+            'Sending error response',
+            [
+                'status_code' => $statusCode,
+                'response' => $response
+            ],
+            Level::Debug,
+            'response'  // Specific channel for response logging
+        );
+
+        http_response_code($statusCode);
+        header('Content-Type: application/json');
+        echo json_encode($response);
         exit;
     }
 }

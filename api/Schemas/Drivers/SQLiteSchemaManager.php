@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Api\Database\Schemas\Drivers;
+namespace Glueful\Api\Schemas\Drivers;
 
-use Glueful\App\Database\Schemas\SchemaManager;
+use Glueful\Api\Schemas\SchemaManager;
 use PDO;
 use PDOException;
 

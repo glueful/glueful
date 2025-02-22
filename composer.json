@@ -41,7 +41,7 @@
             "Glueful\\Api\\Library\\": "api/api-library/",
             "Glueful\\Api\\Extensions\\": "api/api-extensions/",
             "Glueful\\Extensions\\": "extensions/",
-            "App\\": "app/"
+            "Glueful\\App\\": "app/"
         }
     },
     "config": {
@@ -53,6 +53,9 @@
         "php": "^8.2",
         "vlucas/phpdotenv": "^5.6",
         "aws/aws-sdk-php": "^3.339",
-        "phpmailer/phpmailer": "^6.9"
+        "phpmailer/phpmailer": "^6.9",
+        "monolog/monolog": "^3.8",
+        "nyholm/psr7": "^1.8",
+        "nyholm/psr7-server": "^1.1"
     }
 }

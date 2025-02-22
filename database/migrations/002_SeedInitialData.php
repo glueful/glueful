@@ -1,8 +1,8 @@
 <?php
 
-use Glueful\App\Database\Migrations\MigrationInterface;
-use Glueful\App\Database\Schemas\SchemaManager;
-use Glueful\App\Database\Schemas\SchemaManagerFactory;
+use Glueful\App\Migrations\MigrationInterface;
+use Glueful\Api\Schemas\SchemaManager;
+use Glueful\Api\Schemas\SchemaManagerFactory;
 use Glueful\Api\Library\Utils;
 
 class SeedInitialData implements MigrationInterface
@@ -12,7 +12,7 @@ class SeedInitialData implements MigrationInterface
 
     public function __construct()
     {
-        $this->db = SchemaManagerFactory::create();
+        $this->db = SchemaManagerFactory::getConnection();;
     }
 
     public function up(SchemaManager $schema): void
