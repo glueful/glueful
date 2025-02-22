@@ -2,72 +2,96 @@
 
 use Glueful\App\Migrations\MigrationInterface;
 use Glueful\Api\Schemas\SchemaManager;
-use Glueful\Api\Schemas\SchemaManagerFactory;
 use Glueful\Api\Library\Utils;
 
 class SeedInitialData implements MigrationInterface
 {
-    private SchemaManager $schemaManager;
-    private PDO $db;
-
-    public function __construct()
-    {
-        $this->db = SchemaManagerFactory::getConnection();;
-    }
+    private SchemaManager $schema;
 
     public function up(SchemaManager $schema): void
     {
-        // Use injected schema manager for structural changes
-        $this->schemaManager = $schema;
-        
-        // Seed Roles with generated UUIDs
-        $adminUuid = Utils::generateNanoID(12);
-        $userUuid = Utils::generateNanoID(12);
-        
-        $this->db->exec("
-            INSERT INTO roles (uuid, name, description, status) VALUES 
-                ('$adminUuid', 'Administrator', 'Full system access with all privileges', 'active'),
-                ('$userUuid', 'User', 'Standard user access with basic privileges', 'active')
-            ON DUPLICATE KEY UPDATE id=id
-        ");
+        $this->schema = $schema;
 
-        // Get Admin role ID for permissions
-        $adminRoleId = $this->db->query("SELECT id FROM roles WHERE name = 'Administrator'")->fetchColumn();
+        try {
+            // First create admin role
+            $adminRoleUuid = Utils::generateNanoID(12);
+            $adminId = $this->schema->insert('roles', [
+                'uuid' => $adminRoleUuid,
+                'name' => 'Administrator',
+                'description' => 'Full system access',
+                'status' => 'active'
+            ]);
+            
+            if (!$adminId) {
+                throw new \RuntimeException('Failed to create admin role');
+            }
 
-        // Create Admin User
-        // Seed Admin User with generated UUIDs
-        $adminUserUuid = Utils::generateNanoID(12);
+            // Create user role
+            $userRoleUuid = Utils::generateNanoID(12);
+            $userId=$this->schema->insert('roles', [
+                'uuid' => $userRoleUuid,
+                'name' => 'User',
+                'description' => 'Standard user access',
+                'status' => 'active'
+            ]);
+            
+            if (!$userId) {
+                throw new \RuntimeException('Failed to create user role');
+            }
 
+            // Then create admin user
+            $adminUserUuid = Utils::generateNanoID(12);
+            $adminUserId = $this->schema->insert('users', [
+                'uuid' => $adminUserUuid,
+                'username' => 'admin',
+                'email' => 'admin@example.com',
+                'password' => password_hash('admin123', PASSWORD_DEFAULT),
+                'status' => 'active'
+            ]);
 
-        $this->db->exec("
-            INSERT INTO users (uuid, username, email, password, status)
-            VALUES (
-                '$adminUserUuid',
-                'admin',
-                'admin@example.com',
-                '" . password_hash('admin123', PASSWORD_BCRYPT) . "',
-                'active'
-            )
-        ");
+            if (!$adminUserId) {
+                throw new \RuntimeException('Failed to create admin user');
+            }
 
-        // Assign Admin Role
-        $this->db->exec("
-            INSERT INTO user_roles_lookup (user_uuid, role_id)
-            VALUES ('$adminUserUuid', $adminRoleId)
-        ");
+            // Then create profile for admin user
+            $profileUuid = Utils::generateNanoID(12);
+            $profileId = $this->schema->insert('profiles', [
+                'uuid' => $profileUuid,
+                'user_uuid' => $adminUserUuid,
+                'first_name' => 'System',
+                'last_name' => 'Administrator',
+                'status' => 'active'
+            ]);
+
+            if (!$profileId) {
+                throw new \RuntimeException('Failed to create admin profile');
+            }
+
+            // Finally create role mapping
+            $mappingId = $this->schema->insert('user_roles_lookup', [
+                'user_uuid' => $adminUserUuid,
+                'role_uuid' => $adminRoleUuid
+            ]);
+
+            if (!$mappingId) {
+                throw new \RuntimeException('Failed to create role mapping');
+            }
+
+        } catch (\Exception $e) {
+            throw new \RuntimeException('Seeding failed: ' . $e->getMessage());
+        }
     }
 
     public function down(SchemaManager $schema): void
     {
-        // Use injected schema manager for structural changes
-        $this->schemaManager = $schema;
+        $this->schema = $schema;
         
-        // Use factory-created connection for data operations
-        $this->db->exec("DELETE FROM user_roles_lookup");
-        $this->db->exec("DELETE FROM role_permissions");
-        $this->db->exec("DELETE FROM permissions");
-        $this->db->exec("DELETE FROM users WHERE username = 'admin'");
-        $this->db->exec("DELETE FROM roles WHERE name = 'Administrator'");
+        // Delete in reverse order of dependencies
+        $this->schema->delete('profiles', ['first_name' => 'System', 'last_name' => 'Administrator']);
+        $this->schema->delete('permissions', ['model' => '*']);
+        $this->schema->delete('user_roles_lookup', ['user_uuid' => ['username' => 'admin']]);
+        $this->schema->delete('users', ['username' => 'admin']);
+        $this->schema->delete('roles', ['name' => ['Administrator', 'User']]);
     }
 
     public function getDescription(): string

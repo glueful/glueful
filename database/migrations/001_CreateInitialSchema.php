@@ -49,7 +49,7 @@ class CreateInitialSchema implements MigrationInterface
         $schema->createTable('permissions', [
             'id' => 'BIGINT AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
-            'role_id' => 'BIGINT NOT NULL',
+            'role_uuid' => 'CHAR(12) NOT NULL',
             'model' => 'VARCHAR(255) NOT NULL',
             'permissions' => 'VARCHAR(10) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
@@ -57,40 +57,40 @@ class CreateInitialSchema implements MigrationInterface
         ], [
             ['type' => 'PRIMARY KEY', 'column' => 'id'],
             ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'role_id'],
+            ['type' => 'INDEX', 'column' => 'role_uuid'],
             ['type' => 'INDEX', 'column' => 'uuid']
         ], [
             [
-                'column' => 'role_id',
+                'column' => 'role_uuid',
                 'referenceTable' => 'roles',
-                'referenceColumn' => 'id',
+                'referenceColumn' => 'uuid',
                 'onDelete' => 'CASCADE'
             ]
         ]);
 
-
-        // Create User Roles Lookup Table
-        $schema->createTable('user_roles_lookup', [
+        // Create Blobs Table
+        $schema->createTable('blobs', [
             'id' => 'BIGINT AUTO_INCREMENT',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'role_id' => 'BIGINT NOT NULL'
+            'uuid' => 'CHAR(12) NOT NULL',
+            'name' => 'VARCHAR(255) NOT NULL',
+            'description' => 'TEXT',
+            'mime_type' => 'VARCHAR(127) NOT NULL',
+            'size' => 'BIGINT NOT NULL',
+            'url' => 'VARCHAR(2048) NOT NULL',
+            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
+            'created_by' => 'CHAR(12) NOT NULL',
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ], [
             ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'user_uuid, role_id'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'role_id']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'created_by'],
+            ['type' => 'INDEX', 'column' => 'uuid']
         ], [
             [
-                'column' => 'user_uuid',
+                'column' => 'created_by',
                 'referenceTable' => 'users',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'role_id',
-                'referenceTable' => 'roles',
-                'referenceColumn' => 'id',
-                'onDelete' => 'CASCADE'
+                'referenceColumn' => 'uuid'
             ]
         ]);
 
@@ -127,29 +127,30 @@ class CreateInitialSchema implements MigrationInterface
             ]
         ]);
 
-        // Create Blobs Table
-        $schema->createTable('blobs', [
+
+        // Create User Roles Lookup Table
+        $schema->createTable('user_roles_lookup', [
             'id' => 'BIGINT AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'description' => 'TEXT',
-            'mime_type' => 'VARCHAR(127) NOT NULL',
-            'size' => 'BIGINT NOT NULL',
-            'url' => 'VARCHAR(2048) NOT NULL',
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_by' => 'CHAR(12) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'user_uuid' => 'CHAR(12) NOT NULL',
+            'role_uuid' => 'CHAR(12) NOT NULL'
         ], [
             ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'created_by'],
-            ['type' => 'INDEX', 'column' => 'uuid']
+            ['type' => 'UNIQUE', 'column' => 'user_uuid'],
+            ['type' => 'UNIQUE', 'column' => 'role_uuid'],
+            ['type' => 'INDEX', 'column' => 'user_uuid'],
+            ['type' => 'INDEX', 'column' => 'role_uuid']
         ], [
             [
-                'column' => 'created_by',
+                'column' => 'user_uuid',
                 'referenceTable' => 'users',
-                'referenceColumn' => 'uuid'
+                'referenceColumn' => 'uuid',
+                'onDelete' => 'CASCADE'
+            ],
+            [
+                'column' => 'role_uuid',
+                'referenceTable' => 'roles',
+                'referenceColumn' => 'uuid',
+                'onDelete' => 'CASCADE'
             ]
         ]);
 
@@ -172,7 +173,8 @@ class CreateInitialSchema implements MigrationInterface
         ], [
             ['type' => 'PRIMARY KEY', 'column' => 'id'],
             ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid, status'],
+            ['type' => 'INDEX', 'column' => 'user_uuid'],
+            ['type' => 'INDEX', 'column' => 'status'],
             ['type' => 'INDEX', 'column' => 'access_token'],
             ['type' => 'INDEX', 'column' => 'refresh_token'],
             ['type' => 'INDEX', 'column' => 'token_fingerprint'],
@@ -208,11 +210,10 @@ class CreateInitialSchema implements MigrationInterface
     {
         $schema->dropTable('app_logs');
         $schema->dropTable('auth_sessions');
+        $schema->dropTable('user_roles_lookup');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');
-        $schema->dropTable('user_roles_lookup');
-        $schema->dropTable('role_permissions');
-        $schema->dropTable('permissions'); // Make sure permissions is dropped before roles
+        $schema->dropTable('permissions');
         $schema->dropTable('roles');
         $schema->dropTable('users');
     }

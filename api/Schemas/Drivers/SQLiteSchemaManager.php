@@ -11,6 +11,7 @@ use PDOException;
 class SQLiteSchemaManager implements SchemaManager
 {
     private PDO $db;
+    private bool $transactionActive = false;
 
     public function __construct(PDO $db)
     {
@@ -194,5 +195,160 @@ class SQLiteSchemaManager implements SchemaManager
         string $fkName = null
     ): bool {
         throw new PDOException("SQLite does not support adding foreign keys after table creation");
+    }
+
+    /**
+     * Begin a database transaction
+     */
+    public function beginTransaction(): bool
+    {
+        if ($this->transactionActive) {
+            return false; // Already in a transaction
+        }
+        $this->transactionActive = $this->db->beginTransaction();
+        return $this->transactionActive;
+    }
+
+    /**
+     * Commit the current transaction
+     */
+    public function commit(): bool
+    {
+        if (!$this->transactionActive) {
+            return false; // No active transaction
+        }
+        $result = $this->db->commit();
+        $this->transactionActive = false;
+        return $result;
+    }
+
+    /**
+     * Rollback the current transaction
+     */
+    public function rollBack(): bool
+    {
+        if (!$this->transactionActive) {
+            return false; // No active transaction
+        }
+        $result = $this->db->rollBack();
+        $this->transactionActive = false;
+        return $result;
+    }
+
+    /**
+     * Insert data into a table
+     * 
+     * @param string $tableName Name of table to insert into
+     * @param array<string,mixed> $data Associative array of column => value pairs
+     * @return int|string|false Last insert ID or false on failure
+     * @throws \PDOException If insert fails
+     */
+    public function insert(string $tableName, array $data): int|string|false
+    {
+        try {
+            $this->db->beginTransaction();
+
+            $columns = array_keys($data);
+            $values = array_values($data);
+            $placeholders = array_fill(0, count($columns), '?');
+
+            $sql = sprintf(
+                'INSERT INTO "%s" ("%s") VALUES (%s)',
+                $tableName,
+                implode('", "', $columns),
+                implode(', ', $placeholders)
+            );
+
+            $stmt = $this->db->prepare($sql);
+            $success = $stmt->execute($values);
+
+            if (!$success) {
+                $this->db->rollBack();
+                error_log("Insert failed for table $tableName: " . json_encode($data));
+                return false;
+            }
+
+            $lastId = $this->db->lastInsertId();
+            $this->db->commit();
+
+            error_log("Successfully inserted into $tableName. Last ID: $lastId");
+            return $lastId;
+
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            error_log("Failed to insert data into $tableName: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Delete records from a table
+     * 
+     * @param string $tableName Name of table to delete from
+     * @param array<string,mixed> $conditions WHERE conditions as column => value pairs
+     * @return int Number of affected rows
+     * @throws \PDOException If delete fails
+     */
+    public function delete(string $tableName, array $conditions): int
+    {
+        try {
+            $where = array_map(fn($col) => "\"$col\" = ?", array_keys($conditions));
+            
+            $sql = sprintf(
+                'DELETE FROM "%s" WHERE %s',
+                $tableName,
+                implode(' AND ', $where)
+            );
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute(array_values($conditions));
+
+            return $stmt->rowCount();
+        } catch (PDOException $e) {
+            error_log("SQLite delete error: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    public function getData(string $tableName, array $options = []): array
+    {
+        try {
+            $fields = $options['fields'] ?? '*';
+            $where = [];
+            $params = [];
+            $orderBy = '';
+            $limit = '';
+
+            // Build WHERE clause
+            if (isset($options['where'])) {
+                foreach ($options['where'] as $column => $value) {
+                    $where[] = "\"$column\" = ?";
+                    $params[] = $value;
+                }
+            }
+
+            // Build ORDER BY clause
+            if (isset($options['order'])) {
+                $orderBy = "ORDER BY " . $options['order'];
+            }
+
+            // Build LIMIT clause
+            if (isset($options['limit'])) {
+                $limit = "LIMIT " . (int)$options['limit'];
+            }
+
+            $whereClause = !empty($where) ? "WHERE " . implode(' AND ', $where) : '';
+
+            $sql = "SELECT $fields FROM \"$tableName\" $whereClause $orderBy $limit";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (PDOException $e) {
+            error_log("Failed to get data: " . $e->getMessage());
+            return [];
+        }
     }
 }

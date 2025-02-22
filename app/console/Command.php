@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console;
+namespace Glueful\App\Console;
 
 /**
  * Base Command Class

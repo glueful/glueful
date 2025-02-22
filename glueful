@@ -1,9 +1,33 @@
 #!/usr/bin/env php
 <?php
+/**
+ * Glueful Console Application
+ * 
+ * Command line interface for Glueful framework. Provides utilities for:
+ * - Database migrations
+ * - Schema management
+ * - Cache operations
+ * - Code generation
+ * - Development tools
+ * 
+ * Usage:
+ *   ./glueful <command> [options] [arguments]
+ * 
+ * Examples:
+ *   php glueful help                     Show available commands
+ * 
+ * @package Glueful
+ * @version 1.0.0
+ */
 
-require 'vendor/autoload.php'; // Autoload classes if using Composer
+// Ensure we're running from command line
+if (PHP_SAPI !== 'cli') {
+    die('This script can only be run from the command line.');
+}
 
-use App\Console\Application;
+// Load composer autoloader
+require dirname(__FILE__) . '/vendor/autoload.php';
 
-$app = new Application();
+// Initialize and run console application
+$app = new Glueful\App\Console\Application();
 $app->run();

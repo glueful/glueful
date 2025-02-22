@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Schemas;
 
+require_once __DIR__ . '/../../api/bootstrap.php';
+
 use Glueful\Api\Schemas\Drivers\{MySQLSchemaManager, SQLiteSchemaManager};
 use Glueful\Api\Library\Utils;
 use PDO;
@@ -26,12 +28,18 @@ class SchemaManagerFactory
     public static function getConnection(?string $engine = null): PDO
     {
         $engine = $engine ?? config('database.engine');
-        
-        return match($engine) {
+        $pdo = match($engine) {
             'mysql' => Utils::getMySQLConnection(),
             'sqlite' => Utils::getSQLiteConnection(),
             default => throw new RuntimeException("Unsupported database engine: $engine")
         };
+        
+        // Ensure PDO is configured for transactions
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+        $pdo->setAttribute(PDO::ATTR_AUTOCOMMIT, false);
+        
+        return $pdo;
     }
 
     /**
@@ -44,7 +52,6 @@ class SchemaManagerFactory
     {
         $engine = config('database.engine');
         $connection = self::getConnection($engine);
-
         return self::createForConnection($engine, $connection);
     }
 

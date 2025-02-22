@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Glueful\App\Console\Commands;
 
-use App\Console\Command;
+use Glueful\App\Console\Command;
 use PDO;
 use Glueful\Api\Library\Utils;
 
