@@ -207,4 +207,18 @@ class QueryBuilder
             'to' => $to,
         ];
     }
+    public function lastInsertId(string $table, string $column = 'uuid'): string 
+    {
+        $result = $this->select(
+            $table,
+            [$column],
+            ['id' => $this->rawQuery('SELECT LAST_INSERT_ID()')[0]['LAST_INSERT_ID()']]
+        );
+
+        if (empty($result) || !isset($result[0][$column])) {
+            throw new \RuntimeException("Failed to retrieve $column for new record");
+        }
+
+        return $result[0][$column];
+    }
 }

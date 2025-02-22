@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library;
 
+use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
 /**
  * Token Management System
  * 
@@ -10,7 +12,14 @@ namespace Glueful\Api\Library;
  * Manages both access tokens and refresh tokens for user sessions.
  */
 class TokenManager 
-{
+{   
+    private static Connection $connection;
+    private static QueryBuilder $queryBuilder;
+
+    public function __construct() {
+        self::$connection = new Connection();
+        self::$queryBuilder = new QueryBuilder(self::$connection->getPDO(), self::$connection->getDriver());
+    }
     /**
      * Generate new token pair
      * 
@@ -61,31 +70,19 @@ class TokenManager
                 return false;
             }
 
-            $definition = [
-                'table' => [
-                    'name' => 'auth_sessions',
-                    'alias' => 'as'
-                ],
-                'fields' => ['status'],
-                'conditions' => [
-                    'access_token' => ':token',
-                    'token_fingerprint' => ':fingerprint',
+            // Execute query using QueryBuilder
+            $result = self::$queryBuilder->select(
+                'auth_sessions',
+                ['status'],
+                [
+                    'access_token' => $token,
+                    'token_fingerprint' => self::generateTokenFingerprint($token),
                     'status' => 'active',
                     'access_expires_at > NOW()' => null
-                ]
-            ];
+                ],
+            );
 
-            $params = [
-                ':token' => $token,
-                ':fingerprint' => self::generateTokenFingerprint($token)
-            ];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::SELECT, $definition, $params);
-            $db = Utils::getMySQLConnection();
-            $stmt = $db->prepare($query['sql']);
-            $stmt->execute($query['params']);
-
-            return $stmt->fetch(\PDO::FETCH_COLUMN) === 'active';
+            return !empty($result) && $result[0]['status'] === 'active';
         } catch (\Exception $e) {
             error_log("Token validation error: " . $e->getMessage());
             return false;
@@ -103,27 +100,18 @@ class TokenManager
     public static function validateRefreshToken(string $refreshToken): ?array 
     {
         try {
-            $definition = [
-                'table' => [
-                    'name' => 'auth_sessions',
-                    'alias' => 'as'
-                ],
-                'fields' => ['user_uuid', 'refresh_token', 'status'],
-                'conditions' => [
-                    'refresh_token' => ':token',
+            // Execute query using QueryBuilder
+            $result = self::$queryBuilder->select(
+                'auth_sessions',
+                ['user_uuid', 'refresh_token', 'status'],
+                [
+                    'refresh_token' =>  $refreshToken,
                     'status' => 'active',
                     'refresh_expires_at > NOW()' => null
                 ]
-            ];
+            );
 
-            $params = [':token' => $refreshToken];
-            
-            $query = MySQLQueryBuilder::prepare(QueryAction::SELECT, $definition, $params);
-            $db = Utils::getMySQLConnection();
-            $stmt = $db->prepare($query['sql']);
-            $stmt->execute($query['params']);
-
-            return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
+            return !empty($result) ? $result[0] : null;
         } catch (\Exception $e) {
             error_log("Refresh token validation error: " . $e->getMessage());
             return null;
@@ -172,9 +160,6 @@ class TokenManager
     {
         try {
             $definition = [
-                'table' => [
-                    'name' => 'auth_sessions'
-                ],
                 'fields' => [
                     'uuid' => Utils::generateNanoID(12),
                     'user_uuid' => $userUuid,
@@ -183,20 +168,24 @@ class TokenManager
                     'token_fingerprint' => $tokenData['token_fingerprint'],
                     'ip_address' => $_SERVER['REMOTE_ADDR'],
                     'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL :access_lifetime SECOND)'],
-                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL :refresh_lifetime SECOND)']
+                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL'.config('session.access_token_lifetime').' SECOND)'],
+                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.refresh_token_lifetime').' SECOND)']
                 ]
             ];
-
-            $params = [
-                ':access_lifetime' => config('session.access_token_lifetime'),
-                ':refresh_lifetime' => config('session.refresh_token_lifetime')
-            ];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::INSERT, $definition, $params);
-            $db = Utils::getMySQLConnection();
-            $stmt = $db->prepare($query['sql']);
-            return $stmt->execute($query['params']);
+            
+            // Convert definition fields to data array
+            $data = [];
+            foreach ($definition['fields'] as $field => $value) {
+                if (is_array($value) && isset($value['EXPR'])) {
+                    // Handle expressions separately if needed
+                    $data[$field] = $value['EXPR'];
+                } else {
+                    $data[$field] = $value;
+                }
+            }
+            
+            // Execute insert using QueryBuilder
+            return self::$queryBuilder->insert('auth_sessions', $data) > 0;
         } catch (\Exception $e) {
             error_log("Failed to store session: " . $e->getMessage());
             return false;
@@ -214,24 +203,14 @@ class TokenManager
     public static function revokeSession(string $token): bool 
     {
         try {
-            $definition = [
-                'table' => [
-                    'name' => 'auth_sessions'
-                ],
-                'fields' => [
-                    'status' => 'revoked'
-                ],
-                'conditions' => [
-                    'access_token' => ':token'
-                ]
-            ];
-
-            $params = [':token' => $token];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::UPDATE, $definition, $params);
-            $db = Utils::getMySQLConnection();
-            $stmt = $db->prepare($query['sql']);
-            return $stmt->execute($query['params']);
+            return self::$queryBuilder->upsert(
+                'auth_sessions',
+                [array_merge(
+                    ['access_token' => $token],
+                    ['status' => 'revoked']
+                )],
+                ['status']
+            ) > 0;
         } catch (\Exception $e) {
             error_log("Failed to revoke session: " . $e->getMessage());
             return false;
@@ -263,33 +242,35 @@ class TokenManager
     {
         try {
             $definition = [
-                'table' => [
-                    'name' => 'auth_sessions'
-                ],
                 'fields' => [
                     'access_token' => $newTokens['access_token'],
                     'refresh_token' => $newTokens['refresh_token'],
                     'token_fingerprint' => self::generateTokenFingerprint($newTokens['access_token']),
                     'last_token_refresh' => ['EXPR' => 'NOW()'],
-                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL :access_lifetime SECOND)'],
-                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL :refresh_lifetime SECOND)']
+                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.access_token_lifetime').'SECOND)'],
+                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.refresh_token_lifetime').' SECOND)']
                 ],
                 'conditions' => [
-                    'refresh_token' => ':old_refresh_token',
+                    'refresh_token' => $oldRefreshToken,
                     'status' => 'active'
                 ]
             ];
 
-            $params = [
-                ':access_lifetime' => config('session.access_token_lifetime'),
-                ':refresh_lifetime' => config('session.refresh_token_lifetime'),
-                ':old_refresh_token' => $oldRefreshToken
-            ];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::UPDATE, $definition, $params);
-            $db = Utils::getMySQLConnection();
-            $stmt = $db->prepare($query['sql']);
-            return $stmt->execute($query['params']);
+            $data = array_merge(
+                ['refresh_token' => $oldRefreshToken],
+                array_map(function($value) {
+                    return is_array($value) && isset($value['EXPR']) ? 
+                        $value['EXPR'] : 
+                        $value;
+                }, $definition['fields'])
+            );
+            
+            // Execute update using QueryBuilder's upsert
+            return self::$queryBuilder->upsert(
+                'auth_sessions',
+                [$data],
+                array_keys($definition['fields'])
+            ) > 0;
         } catch (\Exception $e) {
             error_log("Failed to update session tokens: " . $e->getMessage());
             return false;
