@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console;
+namespace Glueful\App\Console;
 
 /**
  * Console Application
@@ -33,11 +33,11 @@ class Application
 
         // Auto-register commands
         $this->registerCommands([
-            \App\Console\Commands\HelpCommand::class,
-            \App\Console\Commands\GenerateJsonCommand::class,
-            \App\Console\Commands\MigrateCommand::class,
-            \App\Console\Commands\DatabaseStatusCommand::class,
-            \App\Console\Commands\DatabaseResetCommand::class,
+            \Glueful\App\Console\Commands\HelpCommand::class,
+            \Glueful\App\Console\Commands\GenerateJsonCommand::class,
+            \Glueful\App\Console\Commands\MigrateCommand::class,
+            \Glueful\App\Console\Commands\DatabaseStatusCommand::class,
+            \Glueful\App\Console\Commands\DatabaseResetCommand::class,
         ]);
     }
 

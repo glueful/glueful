@@ -122,4 +122,54 @@ interface SchemaManager
         string $onUpdate = 'CASCADE',
         string $fkName = null
     ): bool;
+
+    /**
+     * Insert data into a table
+     * 
+     * @param string $tableName Name of table to insert into
+     * @param array<string,mixed> $data Associative array of column => value pairs
+     * @return int|string|false Last insert ID or false on failure
+     * @throws \PDOException If insert fails
+     */
+    public function insert(string $tableName, array $data): int|string|false;
+
+    /**
+     * Delete records from a table
+     * 
+     * @param string $tableName Name of table to delete from
+     * @param array<string,mixed> $conditions WHERE conditions as column => value pairs
+     * @return int Number of affected rows
+     * @throws \PDOException If delete fails
+     */
+    public function delete(string $tableName, array $conditions): int;
+
+    /**
+     * Get data from a table
+     * 
+     * @param string $tableName Table to query
+     * @param array<string,mixed> $options Query options (fields, where, order, limit, etc)
+     * @return array<int,array<string,mixed>> Query results
+     */
+    public function getData(string $tableName, array $options = []): array;
+
+    /**
+     * Begin a database transaction
+     * 
+     * @return bool True if transaction started successfully
+     */
+    public function beginTransaction(): bool;
+
+    /**
+     * Commit the current transaction
+     * 
+     * @return bool True if commit was successful
+     */
+    public function commit(): bool;
+
+    /**
+     * Rollback the current transaction
+     * 
+     * @return bool True if rollback was successful
+     */
+    public function rollBack(): bool;
 }

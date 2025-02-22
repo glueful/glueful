@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Glueful\App\Console\Commands;
 
-use App\Console\Command;
-use Glueful\App\Database\Migrations\MigrationManager;
+use Glueful\App\Console\Command;
+use Glueful\App\Migrations\MigrationManager;
 
 /**
  * Database Migration Command

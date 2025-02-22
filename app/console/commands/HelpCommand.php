@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Glueful\App\Console\Commands;
 
-use App\Console\Command;
-use App\Console\Application;
+use Glueful\App\Console\Command;
+use Glueful\App\Console\Application;
 
 /**
  * Help Command
