@@ -11,7 +11,7 @@ return [
     'engine' => env('DB_ENGINE', 'mysql'),
 
     // Primary database connection
-    'primary' => [
+    'mysql' => [
         'driver' => env('DB_DRIVER', 'mysql'),
         'host' => env('DB_HOST', '127.0.0.1'),        // Database host
         'port' => env('DB_PORT', 3306),               // Database port
@@ -23,6 +23,21 @@ return [
         'prefix' => env('DB_PREFIX', ''),             // Table prefix
         'strict' => true,                             // Strict mode
         'engine' => 'InnoDB',                         // Storage engine
+    ],
+
+    // PostgreSQL configuration
+    'pgsql' => [
+        'driver' => env('DB_PGSQL_DRIVER', 'pgsql'),
+        'host' => env('DB_PGSQL_HOST', '127.0.0.1'),
+        'port' => env('DB_PGSQL_PORT', 5432),
+        'db' => env('DB_PGSQL_DATABASE', 'glueful'),
+        'user' => env('DB_PGSQL_USERNAME', 'postgres'),
+        'pass' => env('DB_PGSQL_PASSWORD', ''),
+        'schema' => env('DB_PGSQL_SCHEMA', 'public'),
+        'charset' => 'utf8',
+        'prefix' => env('DB_PGSQL_PREFIX', ''),
+        'sslmode' => env('DB_PGSQL_SSL_MODE', 'prefer'),
+        'timezone' => env('DB_PGSQL_TIMEZONE', 'UTC')
     ],
 
     // SQLite configuration
