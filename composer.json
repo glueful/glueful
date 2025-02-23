@@ -41,7 +41,11 @@
             "Glueful\\Api\\Library\\": "api/api-library/",
             "Glueful\\Api\\Extensions\\": "api/api-extensions/",
             "Glueful\\Extensions\\": "extensions/",
-            "Glueful\\App\\": "app/"
+            "Glueful\\App\\": "app/",
+            "Glueful\\": "api/",
+            "Glueful\\Database\\": "api/Database/",
+            "Glueful\\Database\\Driver\\": "api/Database/Driver/",
+            "Glueful\\Console\\": "api/Console/"
         }
     },
     "config": {

@@ -2,50 +2,52 @@
 
 declare(strict_types=1);
 
-namespace Glueful\App\Migrations;
+namespace Glueful\Database\Migrations;
 
-use Glueful\App\Migrations\MigrationInterface;
-use Glueful\Api\Schemas\SchemaManager;
-use Glueful\Api\Schemas\SchemaManagerFactory;
-use PDO;
-use PDOException;
+use Glueful\Database\Migrations\MigrationInterface;
+use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use RuntimeException;
 
 /**
- * Migration Manager
+ * Database Migration Manager
  * 
- * Manages database schema migrations and version tracking.
- * Provides functionality for:
- * - Running new migrations
- * - Rolling back applied migrations
- * - Tracking migration history
- * - Managing migration batches
- * - Verifying migration integrity
- * - Handling migration dependencies
+ * Manages database schema migrations including:
+ * - Migration tracking using version table
+ * - Forward and rollback migrations
+ * - Batch management for grouped migrations
+ * - Transaction handling for safe execution
+ * - Checksum verification for file integrity
+ * - Migration history tracking
+ * 
+ * Each migration is executed within a transaction and tracked in the
+ * migrations table. Supports rollback operations by batch number
+ * and maintains migration order.
  * 
  * Usage:
  * ```php
  * $manager = new MigrationManager();
  * 
- * // Run all pending migrations
+ * // Run pending migrations
  * $result = $manager->migrate();
  * 
  * // Run specific migration
  * $result = $manager->migrate('/path/to/migration.php');
  * 
- * // Rollback last migration
+ * // Rollback last batch
  * $result = $manager->rollback();
  * ```
  */
 class MigrationManager
 {
-    /** @var SchemaManager Database schema manager instance */
+    /** @var SchemaManager Database schema manager for table operations */
     private SchemaManager $schema;
 
-    /** @var PDO Active database connection */
-    private PDO $db;
+    /** @var QueryBuilder Query builder for database operations */
+    private QueryBuilder $db;
 
-    /** @var string Path to migration files directory */
+    /** @var string Directory containing migration files */
     private string $migrationsPath;
 
     /** @var string Name of migrations tracking table */
@@ -61,20 +63,24 @@ class MigrationManager
      */
     public function __construct(string $migrationsPath = null)
     {
-        $this->schema = SchemaManagerFactory::create();
+        $connection = new Connection();
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->schema = $connection->getSchemaManager();
+
         $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 2) . '/database/migrations';
         $this->ensureVersionTable();
     }
 
     /**
-     * Create migration history table
+     * Create migrations tracking table
      * 
-     * Ensures table exists for tracking:
-     * - Applied migrations
-     * - Batch numbers
-     * - File checksums
-     * - Application timestamps
-     * - Migration descriptions
+     * Ensures migrations table exists with required structure:
+     * - id: Auto-incrementing primary key
+     * - migration: Migration filename (unique)
+     * - batch: Batch number for grouped rollbacks
+     * - applied_at: Timestamp of execution
+     * - checksum: File hash for integrity check
+     * - description: Migration description
      */
     private function ensureVersionTable(): void
     {
@@ -91,9 +97,12 @@ class MigrationManager
     }
 
     /**
-     * Get list of pending migrations
+     * Get pending migrations
      * 
-     * Returns array of migration files that haven't been applied.
+     * Returns list of migration files that haven't been executed:
+     * - Scans migrations directory for .php files
+     * - Compares against applied migrations
+     * - Returns array of pending migration paths
      * 
      * @return array<string> List of pending migration file paths
      */
@@ -111,8 +120,11 @@ class MigrationManager
      */
     private function getAppliedMigrations(): array
     {
-        // Use schema manager instead of direct PDO
-        $result = $this->schema->getData(self::VERSION_TABLE, ['fields' => 'migration']);
+        $result = $this->db
+        ->select(self::VERSION_TABLE, ['migration'])
+        ->where([])
+        ->get();
+        
         return array_column($result, 'migration');
     }
 
@@ -188,26 +200,28 @@ class MigrationManager
 
         try {
             // Make sure no transaction is active before starting a new one
-            if ($this->schema->rollBack()) {
+            if ($this->db->rollBack()) {
                 error_log("Rolling back existing transaction");
             }
 
             // Run migration
             $migration->up($this->schema);
 
-            // Record migration using schema manager
-            $this->schema->insert(self::VERSION_TABLE, [
-                'migration' => $filename,
-                'batch' => $batch ?? $this->getNextBatchNumber(),
-                'checksum' => $checksum,
-                'description' => $migration->getDescription()
-            ]);
+            $this->db->insert(
+                self::VERSION_TABLE, 
+                [
+                    'migration' => $filename,
+                    'batch' => $batch ?? $this->getNextBatchNumber(),
+                    'checksum' => $checksum,
+                    'description' => $migration->getDescription()
+                ]
+            ) > 0;
 
-            $this->schema->commit();
+            $this->db->commit();
             return ['success' => true, 'file' => $filename];
 
         } catch (\Exception $e) {
-            $this->schema->rollBack();
+            $this->db->rollBack();
             error_log("Migration failed: " . $e->getMessage());
             return ['success' => false, 'file' => $filename, 'error' => $e->getMessage()];
         }
@@ -220,8 +234,10 @@ class MigrationManager
      */
     private function getNextBatchNumber(): int
     {
-        // Use schema manager for getting max batch number
-        $result = $this->schema->getData(self::VERSION_TABLE, ['fields' => 'MAX(batch) as max_batch']);
+        $result = $this->db
+        ->select(self::VERSION_TABLE, ['MAX(batch) as max_batch'])
+        ->get();
+        
         return (int)($result[0]['max_batch'] ?? 0) + 1;
     }
 
@@ -269,14 +285,16 @@ class MigrationManager
     private function getMigrationsToRollback(int $steps): array
     {
         // Use schema manager for getting migrations to rollback
-        $result = $this->schema->getData(
-            self::VERSION_TABLE,
-            [
-                'fields' => 'migration',
-                'order' => 'batch DESC, id DESC',
-                'limit' => $steps
-            ]
-        );
+
+        $result = $this->db
+        ->select(self::VERSION_TABLE, ['migration'])
+        ->orderBy([
+            'batch' => 'DESC',
+            'id' => 'DESC'
+        ])
+        ->limit($steps)
+        ->get();
+
         return array_column($result, 'migration');
     }
 
@@ -311,13 +329,13 @@ class MigrationManager
             $migration->down($this->schema);
             
             // Delete using schema manager
-            $this->schema->delete(self::VERSION_TABLE, ['migration' => $filename]);
+            $this->db->delete(self::VERSION_TABLE, ['migration' => $filename]);
             
-            $this->schema->commit();
+            $this->db->commit();
             return ['success' => true, 'file' => $filename];
 
         } catch (\Exception $e) {
-            $this->schema->rollBack();
+            $this->db->rollBack();
             error_log("Rollback failed: " . $e->getMessage());
             return ['success' => false, 'file' => $filename, 'error' => $e->getMessage()];
         }
@@ -332,9 +350,9 @@ class MigrationManager
     {
         try {
             $migration->up($this->schema);
-            $this->schema->commit();
+            $this->db->commit();
         } catch (\Exception $e) {
-            $this->schema->rollBack();
+            $this->db->rollBack();
             throw $e;
         }
     }
@@ -348,9 +366,9 @@ class MigrationManager
     {
         try {
             $migration->down($this->schema);
-            $this->schema->commit();
+            $this->db->commit();
         } catch (\Exception $e) {
-            $this->schema->rollBack();
+            $this->db->rollBack();
             throw $e;
         }
     }

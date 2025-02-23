@@ -14,15 +14,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../api/bootstrap.php';
 
 use Glueful\Api\API;
-use Glueful\Api\Library\Logging\LogManager;
-use Monolog\Level;
 use Glueful\Api\Http\ServerRequestFactory;
 use Glueful\Api\Exceptions\{ValidationException, AuthenticationException};
-// Record start time for performance tracking
-$startTime = microtime(true);
-
-// Initialize logger
-$logger = new LogManager();
 
 // Common request data for context
 $requestContext = [
@@ -53,12 +46,6 @@ try {
 
     // Handle OPTIONS request
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-        $logger->log(
-            "CORS Preflight Request",
-            $requestContext,
-            Level::Debug,
-            'api.cors'
-        );
         exit(0);
     }
 
@@ -68,58 +55,23 @@ try {
         $input = file_get_contents('php://input');
         if (!empty($input)) {
             $_POST = json_decode($input, true) ?? [];
-            $logger->log(
-                "JSON Body Parsed",
-                ['body_size' => strlen($input)],
-                Level::Debug,
-                'api.request'
-            );
         }
     }
 
     // Process the request
     $response = API::processRequest();
 
-    // Calculate execution time
-    $execTime = microtime(true) - $startTime;
-
-    // Log the complete API request/response cycle
-    $logger->logApiRequest(
-        $request,
-        $response,
-        null,
-        $startTime
-    );
-
     // Send response
     header('Content-Type: application/json');
     echo json_encode($response);
 
 } catch (ValidationException $e) {
-    $logger->logApiRequest(
-        $request ?? null,
-        null,
-        $e,
-        $startTime
-    );
     throw $e;
 
 } catch (AuthenticationException $e) {
-    $logger->logApiRequest(
-        $request ?? null,
-        null,
-        $e,
-        $startTime
-    );
     throw $e;
 
 } catch (Throwable $e) {
-    $logger->logApiRequest(
-        $request ?? null,
-        null,
-        $e,
-        $startTime
-    );
     throw $e;
 }
 ?>

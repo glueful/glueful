@@ -1,51 +1,40 @@
 <?php
 
-namespace Glueful\App\Console\Commands;
+namespace Glueful\Console\Commands;
 
-use Glueful\App\Console\Command;
-use Glueful\App\Migrations\MigrationManager;
+use Glueful\Console\Command;
+use Glueful\Database\Migrations\MigrationManager;
 
 /**
- * Database Migration Command
+ * Database Migration System
  * 
- * Command-line interface for managing database migrations.
- * Provides functionality for:
- * - Running pending migrations
- * - Executing specific migrations
- * - Previewing pending changes
- * - Production safety controls
- * - Migration status reporting
+ * Manages database schema version control:
+ * - Executes pending migrations
+ * - Tracks migration history
+ * - Handles schema versioning
+ * - Provides rollback capability
+ * - Ensures data integrity
+ * - Supports dry runs
+ * - Enforces migration order
+ * - Manages dependencies
  * 
- * Examples:
- * ```bash
- * # Run all pending migrations
- * php glueful db:migrate
- * 
- * # Run specific migration
- * php glueful db:migrate --file CreateUsersTable.php
- * 
- * # Preview changes
- * php glueful db:migrate --dry-run
- * 
- * # Force run in production
- * php glueful db:migrate --force
- * ```
- * 
- * Safety Features:
- * - Production environment detection
- * - Dry run capability
- * - Transaction safety
- * - Detailed error reporting
+ * @package Glueful\Console\Commands
  */
 class MigrateCommand extends Command
 {
-    /** @var MigrationManager Database migration manager instance */
+    /** @var MigrationManager Database migration handler */
     private MigrationManager $migrationManager;
 
     /**
-     * Initialize migration command
+     * Initialize Migration Command
      * 
-     * Sets up migration manager instance.
+     * Sets up migration environment:
+     * - Creates migration manager
+     * - Validates migration path
+     * - Checks database connection
+     * - Prepares logging system
+     * 
+     * @throws \RuntimeException If initialization fails
      */
     public function __construct()
     {
@@ -53,9 +42,14 @@ class MigrateCommand extends Command
     }
 
     /**
-     * Get command identifier
+     * Get Command Name
      * 
-     * @return string Command name used in CLI
+     * Returns command identifier:
+     * - Used as `php glueful db:migrate`
+     * - Follows naming standards
+     * - Must be unique
+     * 
+     * @return string Command name
      */
     public function getName(): string
     {
@@ -63,9 +57,14 @@ class MigrateCommand extends Command
     }
 
     /**
-     * Get command description
+     * Get Command Description
      * 
-     * @return string Short description for command listing
+     * Provides command summary:
+     * - Shows in command lists
+     * - Single line description
+     * - Explains primary purpose
+     * 
+     * @return string Brief description
      */
     public function getDescription(): string
     {
@@ -73,15 +72,15 @@ class MigrateCommand extends Command
     }
 
     /**
-     * Get detailed usage instructions
+     * Get Command Help
      * 
-     * Returns formatted help including:
-     * - Command syntax
-     * - Available options
-     * - Usage examples
-     * - Operation descriptions
+     * Details command usage:
+     * - Shows syntax options
+     * - Lists parameters
+     * - Provides examples
+     * - Explains behavior
      * 
-     * @return string Multi-line help text with examples
+     * @return string Detailed help text
      */
     public function getHelp(): string
     {
@@ -107,22 +106,19 @@ class MigrateCommand extends Command
     }
 
     /**
-     * Execute migration command
+     * Execute Migration Process
      * 
-     * Process flow:
-     * 1. Parse command arguments
-     * 2. Handle dry run requests
-     * 3. Enforce production safety
-     * 4. Execute migrations
-     * 5. Display results
+     * Handles migration workflow:
+     * - Validates arguments
+     * - Checks environment
+     * - Processes migrations
+     * - Reports results
+     * - Handles errors
+     * - Logs operations
      * 
-     * Supported options:
-     * --force   Override production safety check
-     * --dry-run Preview pending migrations
-     * --file    Run specific migration file
-     * 
-     * @param array $args Command line arguments
+     * @param array $args Command arguments
      * @throws \RuntimeException If migration fails
+     * @return void
      */
     public function execute(array $args = []): void
     {
@@ -170,18 +166,18 @@ class MigrateCommand extends Command
     }
 
     /**
-     * Display migration operation results
+     * Display Migration Results
      * 
-     * Formats and displays:
-     * - Successfully applied migrations
-     * - Failed migrations
-     * - Operation summary
+     * Formats operation output:
+     * - Lists successful migrations
+     * - Shows failed operations
+     * - Provides statistics
+     * - Indicates warnings
+     * - Reports errors
      * 
-     * @param array{
-     *     applied: array<string>,
-     *     failed: array<string>
-     * } $result Migration operation results
-     * @param bool $isSingle Whether this was a single file operation
+     * @param array $result Operation results
+     * @param bool $isSingle Single file mode
+     * @return void
      */
     private function displayMigrationResult(array $result, bool $isSingle = false): void
     {

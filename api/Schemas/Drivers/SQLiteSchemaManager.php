@@ -203,7 +203,7 @@ class SQLiteSchemaManager implements SchemaManager
     public function beginTransaction(): bool
     {
         if ($this->transactionActive) {
-            return false; // Already in a transaction
+            return true; // Already in transaction
         }
         $this->transactionActive = $this->db->beginTransaction();
         return $this->transactionActive;
@@ -215,7 +215,7 @@ class SQLiteSchemaManager implements SchemaManager
     public function commit(): bool
     {
         if (!$this->transactionActive) {
-            return false; // No active transaction
+            return true; // No transaction to commit
         }
         $result = $this->db->commit();
         $this->transactionActive = false;
@@ -228,7 +228,7 @@ class SQLiteSchemaManager implements SchemaManager
     public function rollBack(): bool
     {
         if (!$this->transactionActive) {
-            return false; // No active transaction
+            return true; // No transaction to rollback
         }
         $result = $this->db->rollBack();
         $this->transactionActive = false;
@@ -246,7 +246,10 @@ class SQLiteSchemaManager implements SchemaManager
     public function insert(string $tableName, array $data): int|string|false
     {
         try {
-            $this->db->beginTransaction();
+            $wasInTransaction = $this->transactionActive;
+            if (!$wasInTransaction) {
+                $this->beginTransaction();
+            }
 
             $columns = array_keys($data);
             $values = array_values($data);
@@ -263,19 +266,26 @@ class SQLiteSchemaManager implements SchemaManager
             $success = $stmt->execute($values);
 
             if (!$success) {
-                $this->db->rollBack();
+                if (!$wasInTransaction) {
+                    $this->rollBack();
+                }
                 error_log("Insert failed for table $tableName: " . json_encode($data));
                 return false;
             }
 
             $lastId = $this->db->lastInsertId();
-            $this->db->commit();
+            
+            if (!$wasInTransaction) {
+                $this->commit();
+            }
 
             error_log("Successfully inserted into $tableName. Last ID: $lastId");
             return $lastId;
 
         } catch (PDOException $e) {
-            $this->db->rollBack();
+            if (!$wasInTransaction) {
+                $this->rollBack();
+            }
             error_log("Failed to insert data into $tableName: " . $e->getMessage());
             throw $e;
         }
@@ -350,5 +360,32 @@ class SQLiteSchemaManager implements SchemaManager
             error_log("Failed to get data: " . $e->getMessage());
             return [];
         }
+    }
+
+    public function getTables(): array
+    {
+        $stmt = $this->db->query("SELECT name FROM sqlite_master WHERE type='table'");
+        return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    public function getTableColumns(string $table): array
+    {
+        $stmt = $this->db->query("PRAGMA table_info(`$table`)");
+        $columns = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        return array_map(function($col) {
+            return [
+                'name' => $col['name'],
+                'type' => $col['type'],
+                'nullable' => !$col['notnull'],
+                'default' => $col['dflt_value'],
+                'extra' => $col['pk'] ? 'PRIMARY KEY' : ''
+            ];
+        }, $columns);
+    }
+
+    public function isTransactionActive(): bool
+    {
+        return $this->transactionActive;
     }
 }

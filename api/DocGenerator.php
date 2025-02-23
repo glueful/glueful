@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful\Api\Library;
+namespace Glueful\Api;
 
 /**
  * API Documentation Generator
@@ -352,22 +352,22 @@ class DocGenerator
     private function processFields(array $definition): array
     {
         // Log the full definition for debugging
-        error_log("Processing definition: " . json_encode($definition, JSON_PRETTY_PRINT));
+        // error_log("Processing definition: " . json_encode($definition, JSON_PRETTY_PRINT));
 
-        if (!isset($definition['table']) || !isset($definition['table']['fields'])) {
-            $tableName = $definition['table']['name'] ?? 'unknown';
-            error_log("Table structure missing for: $tableName");
+        if (!isset($definition['table']) || !isset($definition['fields'])) {
+            $tableName = $definition['name'] ?? 'unknown';
+            // error_log("Table structure missing for: $tableName");
             return [];
         }
 
         // Verify fields is an array
-        if (!is_array($definition['table']['fields'])) {
-            $tableName = $definition['table']['name'] ?? 'unknown';
+        if (!is_array($definition['fields'])) {
+            $tableName = $definition['name'] ?? 'unknown';
             error_log("Fields is not an array for table: $tableName");
             return [];
         }
 
-        return $definition['table']['fields'];
+        return $definition['fields'];
     }
 
     /**
@@ -384,7 +384,8 @@ class DocGenerator
         $required = [];
 
         // Replace the code around line 305 with:
-        $fields = $this->processFields($config['table'] ?? []);
+
+        $fields = $this->processFields($definition['table'] ?? []);
         if ($fields === null) {
             // Handle missing fields gracefully
             return;

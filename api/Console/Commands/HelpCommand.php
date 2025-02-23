@@ -1,20 +1,34 @@
 <?php
 
-namespace Glueful\App\Console\Commands;
+namespace Glueful\Console\Commands;
 
-use Glueful\App\Console\Command;
-use Glueful\App\Console\Application;
+use Glueful\Console\Command;
+use Glueful\Console\Kernel;
 
 /**
- * Help Command
+ * Console Help System
  * 
- * Provides documentation and usage information for console commands.
- * Lists available commands and displays detailed help for specific commands.
+ * Provides comprehensive command documentation:
+ * - Lists available commands
+ * - Shows detailed command help
+ * - Formats usage instructions
+ * - Provides examples
+ * - Displays command options
+ * - Shows command arguments
+ * - Links to documentation
+ * - Supports command discovery
+ * 
+ * @package Glueful\Console\Commands
  */
 class HelpCommand extends Command
 {
     /**
-     * Get command name
+     * Get Command Name
+     * 
+     * Returns command identifier:
+     * - Used in CLI as `php glueful help`
+     * - Core help command
+     * - Default when no command specified
      * 
      * @return string Command identifier
      */
@@ -24,7 +38,12 @@ class HelpCommand extends Command
     }
 
     /**
-     * Get command description
+     * Get Command Description
+     * 
+     * Provides help system overview:
+     * - Shows in command lists
+     * - Explains help functionality
+     * - Single line summary
      * 
      * @return string Brief description
      */
@@ -34,9 +53,15 @@ class HelpCommand extends Command
     }
 
     /**
-     * Get detailed help
+     * Get Command Help
      * 
-     * @return string Command usage instructions
+     * Provides detailed help information:
+     * - Shows command syntax
+     * - Lists available options
+     * - Shows usage examples
+     * - Documents arguments
+     * 
+     * @return string Complete help text
      */
     public function getHelp(): string
     {
@@ -59,16 +84,22 @@ HELP;
     }
 
     /**
-     * Execute help command
+     * Execute Help Command
      * 
-     * Shows general help or command-specific help.
+     * Processes help request:
+     * - Shows general help if no command specified
+     * - Displays command-specific help if command given
+     * - Formats output consistently
+     * - Handles unknown commands
+     * - Shows usage examples
      * 
-     * @param array $args Command arguments
+     * @param array $args Command line arguments
+     * @return void
      */
     public function execute(array $args = []): void
     {
-        $app = new Application();
-        $commands = $app->getCommands();
+        $kernel = new Kernel();
+        $commands = $kernel->getCommands();
 
         // Show help for specific command if provided
         if (!empty($args) && isset($commands[$args[0]])) {
@@ -83,9 +114,15 @@ HELP;
     }
 
     /**
-     * Display help header
+     * Display Help Header
      * 
-     * Shows application name and basic usage.
+     * Shows application introduction:
+     * - Application name
+     * - Basic usage
+     * - Version info
+     * - Command format
+     * 
+     * @return void
      */
     private function showHeader(): void
     {
@@ -95,11 +132,17 @@ HELP;
     }
 
     /**
-     * Display command list
+     * Display Command List
      * 
-     * Shows all available commands with descriptions.
+     * Shows available commands:
+     * - Groups by category
+     * - Shows brief descriptions
+     * - Formats consistently
+     * - Sorts alphabetically
+     * - Handles command aliases
      * 
      * @param array $commands Available commands
+     * @return void
      */
     private function showCommandList(array $commands): void
     {
@@ -121,11 +164,18 @@ HELP;
     }
 
     /**
-     * Display command help
+     * Display Command Help
      * 
-     * Shows detailed help for specific command.
+     * Shows detailed command documentation:
+     * - Full description
+     * - Usage syntax
+     * - Available options
+     * - Arguments list
+     * - Usage examples
+     * - Related commands
      * 
-     * @param Command $command Command to display help for
+     * @param Command $command Command to document
+     * @return void
      */
     private function showCommandHelp(Command $command): void
     {
@@ -144,9 +194,15 @@ HELP;
     }
 
     /**
-     * Display help footer
+     * Display Help Footer
      * 
-     * Shows additional information and resources.
+     * Shows additional help resources:
+     * - Documentation links
+     * - Support contacts
+     * - Related information
+     * - Version details
+     * 
+     * @return void
      */
     private function showFooter(): void
     {

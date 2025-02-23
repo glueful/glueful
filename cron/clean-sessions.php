@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../bootstrap.php';
 
-use glueful\Api\Library\{MySQLQueryBuilder, QueryAction, Utils};
+use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
 
 class SessionCleaner
 {
@@ -15,27 +16,28 @@ class SessionCleaner
         'errors' => []
     ];
 
-    public function __construct()
-    {
-        $this->db = Utils::getMySQLConnection();
+    private static Connection $connection;
+    private static QueryBuilder $queryBuilder;
+
+    public function __construct() {
+        self::$connection = new Connection();
+        self::$queryBuilder = new QueryBuilder(self::$connection->getPDO(), self::$connection->getDriver());
     }
 
     public function cleanExpiredAccessTokens(): void
     {
         try {
-            $definition = [
-                'table' => ['name' => 'auth_sessions'],
-                'conditions' => [
-                    'access_expires_at < NOW()' => null,
-                    'status' => 'active'
-                ]
-            ];
 
-            $query = MySQLQueryBuilder::prepare(QueryAction::DELETE, $definition);
-            $stmt = $this->db->prepare($query['sql']);
-            $stmt->execute($query['params'] ?? []);
+            $affected = self::$queryBuilder->delete(
+                'auth_sessions',
+                [
+                    'status' => 'active',
+                    'access_expires_at < NOW()' => null
+                ],
+                false // Use soft delete if enabled
+            );
             
-            $this->stats['expired_access'] = $stmt->rowCount();
+            $this->stats['expired_access'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired access tokens: " . $e->getMessage();
         }
@@ -44,19 +46,17 @@ class SessionCleaner
     public function cleanExpiredRefreshTokens(): void
     {
         try {
-            $definition = [
-                'table' => ['name' => 'auth_sessions'],
-                'conditions' => [
-                    'refresh_expires_at < NOW()' => null,
-                    'status' => 'active'
-                ]
-            ];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::DELETE, $definition);
-            $stmt = $this->db->prepare($query['sql']);
-            $stmt->execute($query['params'] ?? []);
             
-            $this->stats['expired_refresh'] = $stmt->rowCount();
+            $affected = self::$queryBuilder->delete(
+                'auth_sessions',
+                [
+                    'status' => 'active',
+                    'refresh_expires_at < NOW()' => null
+                ],
+                false // Use real delete instead of soft delete for cleanup
+            );
+            
+            $this->stats['expired_refresh'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired refresh tokens: " . $e->getMessage();
         }
@@ -65,19 +65,16 @@ class SessionCleaner
     public function cleanOldRevokedSessions(): void
     {
         try {
-            $definition = [
-                'table' => ['name' => 'auth_sessions'],
-                'conditions' => [
-                    'status' => 'revoked',
+            $affected = self::$queryBuilder->delete(
+                'auth_sessions',
+                [
+                   'status' => 'revoked',
                     'updated_at < DATE_SUB(NOW(), INTERVAL 30 DAY)' => null
-                ]
-            ];
-
-            $query = MySQLQueryBuilder::prepare(QueryAction::DELETE, $definition);
-            $stmt = $this->db->prepare($query['sql']);
-            $stmt->execute($query['params'] ?? []);
+                ],
+                false // Use real delete instead of soft delete for cleanup
+            );
             
-            $this->stats['old_revoked'] = $stmt->rowCount();
+            $this->stats['expired_refresh'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean old revoked sessions: " . $e->getMessage();
         }

@@ -1,60 +1,50 @@
 <?php
 declare(strict_types=1);
-
 namespace Glueful\Api\Library;
 
-use Glueful\Api\Library\{QueryAction, Utils, JWTService, SessionManager};
-use Glueful\Api\Http\Response;
+use PDO;
+use Glueful\Database\Driver\DatabaseDriver;
+use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
+use Glueful\Api\Library\{Utils, JWTService, SessionManager};
 use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
-use Glueful\Api\Library\Logging\LogManager;
-use Monolog\Level;
+use Glueful\Api\Http\Response;
 
-/**
- * API Engine Core
- * 
- * Handles core API functionality including data operations, authentication,
- * session management, file handling, and audit logging.
- */
-class APIEngine 
-{
-    /** @var string|null Query builder class name */
-    private static ?string $queryBuilderClass = null;
-    
-    /** @var string Current database resource */
+class APIEngine{
+    private static PDO $db;
+    private static DatabaseDriver $driver;
     private static string $currentResource;
 
-    /** @var LogManager Logger instance */
-    private static ?LogManager $logger = null;
-
-    /**
-     * Initialize API Engine
-     * 
-     * Sets up query builder and database connection.
-     * 
-     * @param string $queryBuilderClass Class name for query building
-     */
-    public static function initialize(string $queryBuilderClass): void 
+    public static function initialize(): void 
     {
-        self::$queryBuilderClass = $queryBuilderClass;
-        // Initialize with first available database resource
-        $dbConfig = config('database');
-        self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
-        
-        // Initialize logger
-        self::$logger = new LogManager();
+        self::initializeDatabase();
     }
 
     /**
-     * Set active database resource
-     * 
-     * @param string $resource Database resource identifier
+     * Initialize API Engine with new database connection
      */
-    public static function setDatabaseResource(string $resource): void
+    private static function initializeDatabase(): void 
     {
-        self::$currentResource = $resource;
+        try {
+            // Get database configuration
+            $dbConfig = config('database');
+            
+            // Create database connection
+            $connection = new Connection();
+            
+            // Store connection and driver
+            self::$db = $connection->getPDO();
+            self::$driver = $connection->getDriver();
+            
+            // Set current database resource
+            self::$currentResource = config('database.json_prefix');
+            
+        } catch (\Exception $e) {
+            throw new \RuntimeException("Failed to initialize database: " . $e->getMessage());
+        }
     }
 
-    /**
+     /**
      * Retrieve data from database
      * 
      * @param string $function Resource/table name
@@ -154,12 +144,6 @@ class APIEngine
         $token = str_replace('Bearer ', '', $token);
         
         if (empty($token)) {
-            self::$logger?->log(
-                "Session validation failed - No token provided",
-                ['ip' => $_SERVER['REMOTE_ADDR']],
-                Level::Warning,
-                'auth'
-            );
             return Response::unauthorized('No session token provided')->send();
         }
 
@@ -178,21 +162,7 @@ class APIEngine
         }
 
         if (!$session) {
-            self::$logger?->log(
-                "Session validation failed - Invalid token",
-                [
-                    'token' => substr($token, 0, 8) . '...',
-                    'ip' => $_SERVER['REMOTE_ADDR']
-                ],
-                Level::Warning,
-                'auth'
-            );
             return Response::unauthorized('Invalid or expired session')->send();
-        }
-
-        // Rest of validation logic
-        if (!self::validateSecurityLevel($session)) {
-            return Response::error('Session security check failed', Response::HTTP_FORBIDDEN)->send();
         }
 
         if ($function) {
@@ -203,22 +173,168 @@ class APIEngine
                 return Response::error('Permission denied', Response::HTTP_FORBIDDEN)->send();
             }
         }
-
-        // Log successful validation
-        self::$logger?->log(
-            "Session validated successfully",
-            [
-                'user_uuid' => $session['uuid'] ?? null,
-                'ip' => $_SERVER['REMOTE_ADDR']
-            ],
-            Level::Info,
-            'auth'
-        );
-
         return Response::ok($session)->send();
     }
 
+    private static function createSessionData(array $userInfo, bool $remember): array 
+    {
+        $sessionData = [
+            'uuid' => $userInfo['uuid'],
+            'info' => array_diff_key($userInfo, ['password' => '']),
+            'ip' => $_SERVER['REMOTE_ADDR'],
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',
+            'role' => $userInfo['role'],
+            'permissions' => self::getUserPermissions($userInfo['uuid']),
+            'login_timestamp' => gmdate('Y-m-d H:i:s')
+        ];
+
+        // Generate token pair
+        $tokens = TokenManager::generateTokenPair($sessionData);
+        
+        // Add refresh token to session data for storage
+        $sessionData['refresh_token'] = $tokens['refresh_token'];
+        
+        // Store session with access token
+        SessionManager::start($sessionData, $tokens['access_token']);
+        
+        return [
+            ...$sessionData,
+            'token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token']
+        ];
+    }
+
+    public static function updateSessionData(string $token, array $updates): array 
+    {
+        $session = SessionManager::get($token);
+        if (!$session) {
+            return Response::unauthorized('Invalid or expired session')->send();
+        }
+
+        // Update specific session data fields
+        foreach ($updates as $key => $value) {
+            if (isset($session[$key])) {
+                $session[$key] = $value;
+            }
+        }
+
+        // If user info is being updated, refresh permissions
+        if (isset($updates['info']) && isset($session['uid'])) {
+            $session['role'] = self::getUserPermissions($session['uid']);
+        }
+
+        // Generate new token with updated data
+        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
+        SessionManager::update($token, $session, $newToken);
+
+        return Response::ok([
+            'token' => $newToken,
+            'session' => $session
+        ])->send();
+    }
+
+    public static function refreshPermissions(string $token): array 
+    {
+        $session = SessionManager::get($token);
+        if (!$session) {
+            return Response::unauthorized('Invalid or expired session')->send();
+        }
+
+        // Refresh permissions
+        $session['role'] = self::getUserPermissions($session['uid']);
+
+        // Generate new token with updated permissions
+        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
+        SessionManager::update($token, $session, $newToken);
+
+        return Response::ok([
+            'token' => $newToken,
+            'permissions' => $session['role']
+        ])->send();
+    }
+
     /**
+ * Get user data using QueryBuilder
+ */
+private static function getUserData(string $function, array $param): ?array 
+{
+    try {
+        // Initialize QueryBuilder
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        // Base query parameters
+        $conditions = [
+            'status' => 'active'
+        ];
+
+        // Add username/email condition if provided
+        if (isset($param['username'])) {
+            $conditions['username'] = $param['username'];
+        } elseif (isset($param['email'])) {
+            $conditions['email'] = $param['email'];
+        }
+
+        // Get user data
+        $fields = ['id', 'uuid', 'username', 'email', 'password', 'status', 'created_at'];
+
+        $result = $queryBuilder
+        ->select('users', $fields)
+        ->where($conditions)
+        ->get();
+        if (empty($result)) {
+            return null;
+        }
+
+        $userData = $result[0];
+
+        // Verify password if provided
+        if (isset($param['password'])) {
+            if (!password_verify($param['password'], $userData['password'])) {
+                return null;
+            }
+        }
+
+        unset($userData['password']); // Remove sensitive data
+
+        // Get profile data using user UUID
+        $profileData = $queryBuilder
+        ->select('profiles', ['first_name', 'last_name', 'photo_url'])
+        ->where([
+            'user_uuid' => $userData['uuid'],
+            'status' => 'active'
+        ])
+        ->get();
+
+        $profile = !empty($profileData) ? $profileData[0] : [];
+
+        // Format response
+        return [
+            'id' => $userData['id'],
+            'uuid' => $userData['uuid'],
+            'username' => $userData['username'],
+            'email' => $userData['email'],
+            // 'role' => $userData['role'] ?? 'user',
+            'created_at' => $userData['created_at'],
+            'last_login' => date('Y-m-d H:i:s'),
+            'profile' => [
+                'first_name' => $profile['first_name'] ?? null,
+                'last_name' => $profile['last_name'] ?? null,
+                'photo_url' => $profile['photo_url'] ?? null,
+                'full_name' => trim(
+                    ($profile['first_name'] ?? '') . ' ' . 
+                    ($profile['last_name'] ?? '')
+                ) ?: null
+            ]
+        ];
+
+    } catch (\Exception $e) {
+        error_log("Failed to get user data: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
      * Retrieve binary content
      * 
      * Handles file downloads and image processing.
@@ -304,186 +420,244 @@ class APIEngine
         return Response::error('File not found', Response::HTTP_NOT_FOUND)->send();
     }
 
-    private static function getStorageDriver(): StorageInterface 
-    {
-        $storageDriver = config('storage.driver');
-        return match($storageDriver) {
-            's3' => new \Glueful\Api\Extensions\Uploader\Storage\S3Storage(),
-            default => new \Glueful\Api\Extensions\Uploader\Storage\LocalStorage(
-                config('paths.uploads'),
-                config('paths.cdn')
-            )
-        };
-    }
+private static function getStorageDriver(): StorageInterface 
+{
+    $storageDriver = config('storage.driver');
+    return match($storageDriver) {
+        's3' => new \Glueful\Api\Extensions\Uploader\Storage\S3Storage(),
+        default => new \Glueful\Api\Extensions\Uploader\Storage\LocalStorage(
+            config('paths.uploads'),
+            config('paths.cdn')
+        )
+    };
+}
 
-    private static function getBlobInfo(string $function, array $param): array 
-    {
-        $fields = [
-            'fields' => 'uuid,filepath,filename,mime_type,file_size,created_at,updated_at,status'
+private static function getBlobInfo(string $function, array $param): array 
+{
+    $fields = [
+        'fields' => 'uuid,filepath,filename,mime_type,file_size,created_at,updated_at,status'
+    ];
+    $queryParams = array_merge($param, $fields);
+    
+    $definition = self::loadDefinition($function);
+    return self::executeQuery('list', $definition, $queryParams);
+}
+
+private static function processImageBlob(string $src, array $params): array 
+{
+    try {
+        $config = [
+            'maxWidth' => 1500,
+            'maxHeight' => 1500,
+            'quality' => (int)($params['q'] ?? 90),
+            'width' => isset($params['w']) ? (int)$params['w'] : null,
+            'height' => isset($params['h']) ? (int)$params['h'] : null,
+            'zoom' => isset($params['z']) ? (int)$params['z'] : null,
+            'memoryLimit' => '256M',
+            'allowExternal' => true,
+            'cacheDir' => config('paths.cache') . '/images'
         ];
-        $queryParams = array_merge($param, $fields);
+
+        $thumbnailer = new \Glueful\ImageProcessing\TimThumb($config);
         
-        $definition = self::loadDefinition($function);
-        return self::executeQuery('list', $definition, $queryParams);
-    }
+        if (!$thumbnailer->processImage($src)) {
+            throw new \RuntimeException("Failed to process image");
+        }
 
-    private static function processImageBlob(string $src, array $params): array 
-    {
-        try {
-            $config = [
-                'maxWidth' => 1500,
-                'maxHeight' => 1500,
-                'quality' => (int)($params['q'] ?? 90),
-                'width' => isset($params['w']) ? (int)$params['w'] : null,
-                'height' => isset($params['h']) ? (int)$params['h'] : null,
-                'zoom' => isset($params['z']) ? (int)$params['z'] : null,
-                'memoryLimit' => '256M',
-                'allowExternal' => true,
-                'cacheDir' => config('paths.cache') . '/images'
-            ];
+        // Generate cache path and filename
+        $cacheKey = md5($src . serialize($config));
+        $cachedFilename = $cacheKey . '.jpg';
+        $cachePath = $config['cacheDir'] . '/' . $cachedFilename;
 
-            $thumbnailer = new \Glueful\ImageProcessing\TimThumb($config);
-            
-            if (!$thumbnailer->processImage($src)) {
-                throw new \RuntimeException("Failed to process image");
-            }
+        // Ensure cache directory exists and save image
+        if (!is_dir($config['cacheDir'])) {
+            mkdir($config['cacheDir'], 0755, true);
+        }
 
-            // Generate cache path and filename
-            $cacheKey = md5($src . serialize($config));
-            $cachedFilename = $cacheKey . '.jpg';
-            $cachePath = $config['cacheDir'] . '/' . $cachedFilename;
+        ob_start();
+        $thumbnailer->outputImage();
+        $imageData = ob_get_clean();
 
-            // Ensure cache directory exists and save image
-            if (!is_dir($config['cacheDir'])) {
-                mkdir($config['cacheDir'], 0755, true);
-            }
+        if (!file_put_contents($cachePath, $imageData)) {
+            throw new \RuntimeException("Failed to save processed image");
+        }
 
-            ob_start();
-            $thumbnailer->outputImage();
-            $imageData = ob_get_clean();
-
-            if (!file_put_contents($cachePath, $imageData)) {
-                throw new \RuntimeException("Failed to save processed image");
-            }
-
-            // Use storage driver for caching
-            $storage = self::getStorageDriver();
-            $cachedPath = 'cache/images/' . $cachedFilename;
-            
-            if ($storage->store($cachePath, $cachedPath)) {
-                return [
-                    'url' => $storage->getUrl($cachedPath),
-                    'cached' => true,
-                    'dimensions' => [
-                        'width' => $config['width'] ?? imagesx(imagecreatefromstring($imageData)),
-                        'height' => $config['height'] ?? imagesy(imagecreatefromstring($imageData))
-                    ],
-                    'size' => strlen($imageData)
-                ];
-            }
-
-            // Fallback to original URL if caching fails
+        // Use storage driver for caching
+        $storage = self::getStorageDriver();
+        $cachedPath = 'cache/images/' . $cachedFilename;
+        
+        if ($storage->store($cachePath, $cachedPath)) {
             return [
-                'url' => $src,
-                'cached' => false,
-                'error' => null
+                'url' => $storage->getUrl($cachedPath),
+                'cached' => true,
+                'dimensions' => [
+                    'width' => $config['width'] ?? imagesx(imagecreatefromstring($imageData)),
+                    'height' => $config['height'] ?? imagesy(imagecreatefromstring($imageData))
+                ],
+                'size' => strlen($imageData)
             ];
+        }
+
+        // Fallback to original URL if caching fails
+        return [
+            'url' => $src,
+            'cached' => false,
+            'error' => null
+        ];
+
+    } catch (\Exception $e) {
+        return [
+            'url' => $src,
+            'cached' => false,
+            'error' => 'Failed to process image'
+        ];
+    }
+}
+
+    /**
+     * Process database operations using new QueryBuilder
+     */
+    private static function processData(string $function, string $action, array $param, ?array $filter = null): array 
+    {
+        $definition = self::loadDefinition($function);
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        try {
+            // Handle pagination configuration
+            $paginationEnabled = config('pagination.enabled', true);
+            $usePagination = $param['paginate'] ?? $paginationEnabled;
+            $page = max(1, (int)($param['page'] ?? 1));
+            $perPage = $usePagination ? min(
+                config('pagination.max_size', 100),
+                max(1, (int)($param['per_page'] ?? config('pagination.default_size', 25)))
+            ) : null;
+
+            // Handle sorting
+            $sort = $param['sort'] ?? 'created_at';
+            $order = strtolower($param['order'] ?? 'desc');
+            $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
+
+            // Process filters
+            if ($filter) {
+                $conditions = [];
+                foreach ($filter as $field => $value) {
+                    if (is_array($value)) {
+                        // Complex conditions handled by QueryBuilder's where methods
+                        foreach ($value as $operator => $val) {
+                            $conditions[$field] = [$operator => $val];
+                        }
+                    } else {
+                        $conditions[$field] = $value;
+                    }
+                }
+                $param['conditions'] = $conditions;
+            }
+
+            // Handle paginated list actions
+            if ($action === 'list' && $usePagination) {
+                return $queryBuilder->select(
+                    $definition['table']['name'],
+                    explode(',', $param['fields'] ?? '*')
+                )
+                ->where($param['conditions'] ?? [])
+                ->orderBy($param['orderBy'] ?? [])
+                ->paginate($page, $perPage);
+            }
+
+            // Handle other actions
+            $result = self::executeQuery(
+                $action, 
+                $definition, 
+                $param
+            );
+
+
+            return $result;
 
         } catch (\Exception $e) {
-            error_log("Image processing error: " . $e->getMessage());
-            return [
-                'url' => $src,
-                'cached' => false,
-                'error' => 'Failed to process image'
-            ];
+            throw new \RuntimeException("Data processing failed: " . $e->getMessage());
         }
     }
 
-    public static function updateSessionData(string $token, array $updates): array 
-    {
-        $session = SessionManager::get($token);
-        if (!$session) {
-            return Response::unauthorized('Invalid or expired session')->send();
-        }
-
-        // Update specific session data fields
-        foreach ($updates as $key => $value) {
-            if (isset($session[$key])) {
-                $session[$key] = $value;
-            }
-        }
-
-        // If user info is being updated, refresh permissions
-        if (isset($updates['info']) && isset($session['uid'])) {
-            $session['role'] = self::getUserPermissions($session['uid']);
-        }
-
-        // Generate new token with updated data
-        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
-        SessionManager::update($token, $session, $newToken);
-
-        return Response::ok([
-            'token' => $newToken,
-            'session' => $session
-        ])->send();
+    /**
+     * Execute database query using QueryBuilder's upsert functionality
+     */
+    private static function executeQuery(string $action, array $definition, array $params): array 
+{
+    try {
+        $queryBuilder = new QueryBuilder(self::$db, self::$driver);
+        
+        $result = match($action) {
+            'list', 'view' => $queryBuilder
+                ->select(
+                    $definition['table']['name'],
+                    explode(',', $params['fields'] ?? '*')
+                )
+                ->where($params['where'] ?? [])
+                ->orderBy($params['orderBy'] ?? [])
+                ->limit($params['limit'] ?? null)
+                ->get(),
+                
+            'count' => [['total' => $queryBuilder
+                ->count($definition['table']['name'], $params['where'] ?? [])]],
+                
+            'insert' => [
+                'uuid' => $queryBuilder->insert($definition['table']['name'], $params) ? 
+                    self::getLastInsertedUUID(self::$db, $definition['table']['name']) : 
+                    null
+            ],
+            
+            'update' => [
+                'affected' => $queryBuilder->upsert(
+                    $definition['table']['name'],
+                    [array_merge(
+                        ['uuid' => $params['uuid']],
+                        $params['data'] ?? []
+                    )],
+                    array_keys($params['data'] ?? [])
+                )
+            ],
+            
+            'delete' => [
+                'affected' => $queryBuilder
+                    ->delete(
+                        $definition['table']['name'],
+                        $params['where'] ?? [],
+                        true
+                    ) ? 1 : 0
+            ],
+            
+            default => []
+        };
+        
+        return $result;
+    } catch (\Exception $e) {
+        throw new \RuntimeException("Query execution failed: " . $e->getMessage());
     }
+}
 
-    public static function refreshPermissions(string $token): array 
+    /**
+     * Get last inserted UUID from database
+     */
+    private static function getLastInsertedUUID(?\PDO $db, string $table): string 
     {
-        $session = SessionManager::get($token);
-        if (!$session) {
-            return Response::unauthorized('Invalid or expired session')->send();
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        try {
+            return $queryBuilder->lastInsertId($table, 'uuid');
+        } catch (\Exception $e) {
+            error_log("Failed to get last inserted UUID: " . $e->getMessage());
+            throw new \RuntimeException("Failed to retrieve UUID for new record: " . $e->getMessage());
         }
-
-        // Refresh permissions
-        $session['role'] = self::getUserPermissions($session['uid']);
-
-        // Generate new token with updated permissions
-        $newToken = JWTService::generate($session, config('session.access_token_lifetime'));
-        SessionManager::update($token, $session, $newToken);
-
-        return Response::ok([
-            'token' => $newToken,
-            'permissions' => $session['role']
-        ])->send();
-    }
-
-    private static function createSessionData(array $userInfo, bool $remember): array 
-    {
-        $sessionData = [
-            'uuid' => $userInfo['uuid'],
-            'info' => array_diff_key($userInfo, ['password' => '']),
-            'ip' => $_SERVER['REMOTE_ADDR'],
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified',
-            'role' => $userInfo['role'],
-            'permissions' => self::getUserPermissions($userInfo['uuid']),
-            'login_timestamp' => gmdate('Y-m-d H:i:s')
-        ];
-
-        // Generate token pair
-        $tokens = TokenManager::generateTokenPair($sessionData);
-        
-        // Add refresh token to session data for storage
-        $sessionData['refresh_token'] = $tokens['refresh_token'];
-        
-        // Store session with access token
-        SessionManager::start($sessionData, $tokens['access_token']);
-        
-        return [
-            ...$sessionData,
-            'token' => $tokens['access_token'],
-            'refresh_token' => $tokens['refresh_token']
-        ];
     }
 
     private static function getUserPermissions(string $userUUID): array 
     {
-        $databaseResource = config('database.primary');
+        $databaseResource = config('database.json_prefix');
         $currentResource = $databaseResource;
         
-        // Use PDO connection instead of mysqli
-        $db = Utils::getMySQLConnection($databaseResource);
-
         // Get user roles using JSON definition and UUID
         $param = [
             'fields' => 'user_uuid,role_id', // Changed from user_id to user_uuid
@@ -520,336 +694,6 @@ class APIEngine
         return $formattedPermissions;
     }
 
-    /**
-     * Process database operations
-     * 
-     * Core method for handling all database interactions.
-     * 
-     * @param string $function Resource name
-     * @param string $action Operation type
-     * @param array $param Operation parameters
-     * @param array|null $filter Optional filters
-     * @return array Operation result
-     * @throws \RuntimeException On database errors
-     */
-    private static function processData(string $function, string $action, array $param, ?array $filter = null): array 
-    {
-        $definition = self::loadDefinition($function);
-        
-        // Get pagination configuration
-        $paginationEnabled = config('pagination.enabled', true);
-        $defaultSize = config('pagination.default_size', 25);
-        $maxSize = config('pagination.max_size', 100);
-        
-        // Extract pagination and sorting parameters
-        $usePagination = $param['paginate'] ?? $paginationEnabled;
-        $page = max(1, (int)($param['page'] ?? 1));
-        $perPage = $usePagination ? min($maxSize, max(1, (int)($param['per_page'] ?? $defaultSize))) : null;
-        $sort = $param['sort'] ?? 'created_at';
-        $order = strtolower($param['order'] ?? 'desc');
-        $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
-        
-        // Handle filters
-        if ($filter) {
-            $formattedFilters = [];
-            foreach ($filter as $field => $conditions) {
-                if (!is_array($conditions)) {
-                    $formattedFilters[] = [
-                        'field' => $field,
-                        'operator' => 'eq',
-                        'value' => $conditions
-                    ];
-                    continue;
-                }
-                
-                foreach ($conditions as $operator => $value) {
-                    $formattedFilters[] = [
-                        'field' => $field,
-                        'operator' => $operator,
-                        'value' => $value
-                    ];
-                }
-            }
-            $param['_filter'] = $formattedFilters;
-        }
-
-        // Handle list actions with pagination
-        if ($action === 'list' && $usePagination) {
-            // Get total count first
-            $countParams = array_merge($param, ['fields' => 'COUNT(*) as total']);
-            unset($countParams['page'], $countParams['per_page'], $countParams['sort'], $countParams['order']);
-            
-            $totalResult = self::executeQuery('count', $definition, self::sanitizeParams($countParams));
-            $totalRecords = (int)($totalResult[0]['total'] ?? 0);
-
-            // Add pagination and sorting to params
-            $param['_limit'] = $perPage;
-            $param['_offset'] = ($page - 1) * $perPage;
-            $param['_sort'] = $sort;
-            $param['_order'] = $order;
-
-            // Get paginated results
-            $results = self::executeQuery(
-                $action, 
-                $definition, 
-                self::sanitizeParams($param)
-            );
-
-            // Return with pagination metadata
-            return [
-                'data' => $results,
-                'pagination' => [
-                    'total' => $totalRecords,
-                    'per_page' => $perPage,
-                    'current_page' => $page,
-                    'last_page' => ceil($totalRecords / $perPage),
-                    'from' => ($page - 1) * $perPage + 1,
-                    'to' => min($page * $perPage, $totalRecords),
-                    'has_more' => ($page * $perPage) < $totalRecords
-                ],
-                'sort' => [
-                    'field' => $sort,
-                    'order' => $order
-                ]
-            ];
-        }
-
-        // For non-paginated list actions or other actions
-        $result = self::executeQuery(
-            $action, 
-            $definition, 
-            self::sanitizeParams($param)
-        );
-
-        // Audit changes for write operations
-        if (in_array($action, ['insert', 'update', 'delete']) && isset($definition['table'])) {
-            $recordUuid = match($action) {
-                'insert' => $result['uuid'] ?? null,
-                'update', 'delete' => $param['uuid'] ?? null
-            };
-
-            self::auditChanges(
-                $action, 
-                $definition['table']['name'],
-                $recordUuid,
-                ['params' => $param, 'result' => $result]
-            );
-        }
-
-        return $result;
-    }
-
-    private static function executeQuery(string $action, array $definition, array $params): array 
-    {
-        $startTime = microtime(true);
-        
-        try {
-            if (!self::$queryBuilderClass) {
-                throw new \RuntimeException("Query builder not initialized");
-            }
-
-            $builder = self::$queryBuilderClass;
-            $query = $builder::prepare(QueryAction::fromString($action), $definition, $params);
-
-            // Log query before execution
-            self::$logger?->log(
-                "Executing query",
-                [
-                    'action' => $action,
-                    'table' => $definition['table']['name'] ?? 'unknown',
-                    'query' => $query['sql'],
-                    'params' => $query['params'] ?? []
-                ],
-                Level::Debug,
-                'database'
-            );
-
-            // Get PDO connection
-            $databaseResource = config('database.primary');
-            $db = Utils::getMySQLConnection($databaseResource);
-
-            // Prepare the statement
-            $stmt = $db->prepare($query['sql']);
-            
-            // Bind parameters
-            if (isset($query['params'])) {
-                foreach ($query['params'] as $param => $value) {
-                    $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
-                    $stmt->bindValue($param, $value, $type);
-                }
-            }
-
-            // Execute the query
-            $stmt->execute();
-
-            // Return results based on query type
-            $result = match($action) {
-                'list', 'view' => $stmt->fetchAll(\PDO::FETCH_ASSOC),
-                'count' => $stmt->fetchAll(\PDO::FETCH_ASSOC), // Return count as array
-                'insert' => ['uuid' => self::getLastInsertedUUID($db, $definition['table']['name'])],
-                'update', 'delete' => ['affected' => $stmt->rowCount()],
-                default => []
-            };
-
-            $endTime = microtime(true);
-            $execTime = round($endTime - $startTime, 6);
-
-            // Log successful query execution
-            self::$logger?->log(
-                "Query executed successfully",
-                [
-                    'action' => $action,
-                    'table' => $definition['table']['name'] ?? 'unknown',
-                    'exec_time' => $execTime,
-                    'affected_rows' => $stmt->rowCount()
-                ],
-                Level::Debug,
-                'database'
-            );
-
-            return $result;
-
-        } catch (\PDOException $e) {
-            $endTime = microtime(true);
-            $execTime = round($endTime - $startTime, 6);
-
-            // Log query error
-            self::$logger?->log(
-                "Query execution failed",
-                [
-                    'action' => $action,
-                    'table' => $definition['table']['name'] ?? 'unknown',
-                    'error' => $e->getMessage(),
-                    'exec_time' => $execTime,
-                    'query' => $query['sql'] ?? null,
-                    'params' => $query['params'] ?? []
-                ],
-                Level::Error,
-                'database'
-            );
-
-            throw new \RuntimeException("Query execution failed: " . $e->getMessage());
-        }
-    }
-
-    private static function getLastInsertedUUID(?\PDO $db, string $table): string 
-    {
-        $stmt = $db->query("SELECT uuid FROM `$table` WHERE id = LAST_INSERT_ID()");
-        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
-        if (!$result || !isset($result['uuid'])) {
-            throw new \RuntimeException("Failed to retrieve UUID for new record");
-        }
-        return $result['uuid'];
-    }
-
-    private static function getUserData(string $function, array $param): ?array 
-    {
-        try {
-            // Add status check to parameters
-            $param['status'] = 'active';
-            
-            // Hash password if provided
-            if (isset($param['password'])) {
-                $param['password'] = password_hash($param['password'], PASSWORD_DEFAULT);
-            }
-
-            // Include uuid in fields if it exists
-            $fields = ['id', 'uuid', 'username', 'email', 'password', 'role', 'status', 'created_at'];
-            $param['fields'] = implode(',', $fields);
-
-            // Load users definition and execute query
-            $definition = self::getDefinition('users');
-            $result = self::executeQuery('list', $definition, self::sanitizeParams($param));
-            
-            if (count($result) !== 1) {
-                return null;
-            }
-            
-            $userData = $result[0];
-            
-            // Verify password if provided
-            if (isset($param['password']) && !password_verify($param['password'], $userData['password'])) {
-                return null;
-            }
-            
-            unset($userData['password']); // Remove sensitive data
-
-            // Get profile data
-            $profileResult = self::executeQuery(
-                'list',
-                self::getDefinition('profiles'),
-                [
-                    'fields' => 'first_name,last_name,photo_url',
-                    'user_uuid' => $userData['uuid'],
-                    'status' => 'active'
-                ]
-            );
-
-            // Merge profile data if exists
-            $profile = !empty($profileResult) ? $profileResult[0] : null;
-            
-            return [
-                'id' => $userData['id'],
-                'uuid' => $userData['uuid'] ?? null,
-                'username' => $userData['username'] ?? null,
-                'email' => $userData['email'] ?? null,
-                'role' => $userData['role'] ?? 'user',
-                'created_at' => $userData['created_at'] ?? null,
-                'last_login' => date('Y-m-d H:i:s'),
-                'profile' => [
-                    'first_name' => $profile['first_name'] ?? null,
-                    'last_name' => $profile['last_name'] ?? null,
-                    'photo_url' => $profile['photo_url'] ?? null,
-                    'full_name' => trim(($profile['first_name'] ?? '') . ' ' . ($profile['last_name'] ?? '')) ?: null
-                ]
-            ];
-        } catch (\Exception $e) {
-            error_log("Failed to get user data: " . $e->getMessage());
-            return null;
-        }
-    }
-
-    private static function loadDefinition(string $function): array 
-    {
-        $resource = self::$currentResource;
-        $path = config('paths.json_definitions') . $resource . '.' . $function . '.json';
-        
-        if (!file_exists($path)) {
-            throw new \RuntimeException(
-                "The definition $resource.$function.json does not exist",
-                Response::HTTP_NOT_FOUND
-            );
-        }
-
-        $definition = json_decode(file_get_contents($path), true);
-        if (!$definition) {
-            throw new \RuntimeException("Invalid JSON definition for $function");
-        }
-
-        return $definition;
-    }
-
-    private static function sanitizeParams(array $params): array 
-    {
-        return array_map(
-            fn($value) => htmlspecialchars($value, ENT_QUOTES, 'UTF-8'),
-            $params
-        );
-    }
-    
-    private static function validateSecurityLevel(array $sessionData): bool 
-    {
-        $securityLevels = config('security.levels');
-        
-        return match($sessionData['type']) {
-            $securityLevels['flexible'] => true,
-            $securityLevels['moderate'] => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'],
-            $securityLevels['strict'] => $sessionData['ip'] === $_SERVER['REMOTE_ADDR'] 
-                && $sessionData['user_agent'] === ($_SERVER['HTTP_USER_AGENT'] ?? 'Unspecified'),
-            default => false
-        };
-    }
-
     private static function getMimeType(string $mime): string 
     {
         return match(true) {
@@ -878,53 +722,26 @@ class APIEngine
         return self::loadDefinition($function);
     }
 
-    public static function auditChanges(string $action, string $table, ?string $recordUuid, array $changes): bool 
+
+    private static function loadDefinition(string $function): array 
     {
-        if (!config('app.enable_audit', false)) {
-            return true; // Skip auditing if disabled
-        }
+        $resource = self::$currentResource;
+        $path = config('paths.json_definitions') . $resource . '.' . $function . '.json';
         
-        $session = SessionManager::getCurrentSession();
-    }
-
-    public static function getAuditTrail(string $function, string $action, array $param): array 
-    {
-        try {
-            if (!isset($param['uuid'])) {
-                return Response::error('UUID is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            // Check if this is a table audit or specific record audit
-            $tableAudit = $param['type'] ?? '' === 'table';
-            $audits = $tableAudit 
-                ? AuditLogger::getAuditTrail($param['table'], $param['uuid'])
-                : AuditLogger::getAuditTrail($param['uuid']);
-
-            if (empty($audits)) {
-                return Response::ok(['audits' => []])->send();
-            }
-
-            return Response::ok(['audits' => $audits])->send();
-
-        } catch (\Exception $e) {
-            error_log("Audit trail error: " . $e->getMessage());
-            return Response::error('Failed to retrieve audit trail')->send();
+        if (!file_exists($path)) {
+            throw new \RuntimeException(
+                "The definition $resource.$function.json does not exist",
+                Response::HTTP_NOT_FOUND
+            );
         }
+
+        $definition = json_decode(file_get_contents($path), true);
+        if (!$definition) {
+            throw new \RuntimeException("Invalid JSON definition for $function");
+        }
+
+        return $definition;
     }
-}
 
-// Initialize with appropriate query builder class
-/**
- * Initialize API Engine with appropriate query builder
- */
-$queryBuilderClass = match(config('database.engine')) {
-    'sqlite' => SQLiteQueryBuilder::class,
-    'mysql' => MySQLQueryBuilder::class,
-    default => MySQLQueryBuilder::class
-};
-APIEngine::initialize($queryBuilderClass);
-
-// Initialize AuditLogger if auditing is enabled
-if (config('app.enable_audit', false)) {
-    AuditLogger::initialize($queryBuilderClass);
 }
+APIEngine::initialize();

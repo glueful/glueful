@@ -3,14 +3,14 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Library\Logging;
 
-
-use PDO;
-use Glueful\Api\Schemas\SchemaManagerFactory;
 use Monolog\LogRecord;
 use Monolog\Level;
 use Monolog\Handler\AbstractProcessingHandler;
 use Glueful\Api\Library\Utils;
-use RuntimeException;
+use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
+
 
 /**
  * Database Log Handler
@@ -29,8 +29,8 @@ use RuntimeException;
  */
 class DatabaseLogHandler extends AbstractProcessingHandler 
 {
-    /** @var PDO Database connection instance */
-    private PDO $db;
+    private SchemaManager $schema;
+    private QueryBuilder $db;
 
     /**
      * Initialize database log handler
@@ -43,9 +43,12 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     public function __construct(Level $level = Level::Debug) 
     {
         parent::__construct($level);
+        $connection = new Connection();
+        $this->schema = $connection->getSchemaManager();
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         
-        // Get database connection directly using SchemaManagerFactory
-        $this->db = SchemaManagerFactory::getConnection();
+        // Ensure logs table exists
+        $this->ensureLogsTable();
     }
 
     /**
@@ -63,22 +66,42 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      */
     protected function write(LogRecord $record): void 
     {
-        $stmt = $this->db->prepare(
-            "INSERT INTO app_logs (uuid, channel, level, message, context, exec_time, created_at)
-             VALUES (:uuid, :channel, :level, :message, :context, :exec_time, :created_at)"
-        );
-        
-        $stmt->execute([
-            'uuid'       => Utils::generateNanoID(12),  // Generate unique identifier
-            'channel'    => $record->channel,           // Logging channel (e.g., 'api', 'app')
-            'level'      => $record->level->value,      // Log level (INFO, WARNING, ERROR)
-            'message'    => $record->message,           // Main log message
-            'context'    => json_encode(                // Additional context data
-                $record->context, 
-                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-            ),
-            'exec_time'  => $record->context['exec_time'] ?? null,  // Optional execution timing
-            'created_at' => $record->datetime->format('Y-m-d H:i:s'),  // Timestamp
+        try {
+            // Insert log entry using SchemaManager
+            $this->db->insert('app_logs', [
+                'uuid' => Utils::generateNanoID(12),
+                'channel' => $record->channel,
+                'level' => $record->level,
+                'message' => $record->message,
+                'context' => json_encode(
+                    $record->context,
+                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                ),
+                'exec_time' => $record->context['exec_time'] ?? null,
+                'created_at' => $record->datetime->format('Y-m-d H:i:s')
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log("Failed to write log to database: " . $e->getMessage());
+        }
+    }
+
+    private function ensureLogsTable(): void
+    {
+        $this->schema->createTable('app_logs', [
+            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
+            'channel' => 'VARCHAR(50) NOT NULL',
+            'level' => 'INTEGER NOT NULL',
+            'message' => 'TEXT NOT NULL',
+            'context' => 'JSON',
+            'exec_time' => 'FLOAT NULL',
+            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        ], [
+            ['type' => 'INDEX', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'channel'],
+            ['type' => 'INDEX', 'column' => 'level'],
+            ['type' => 'INDEX', 'column' => 'created_at']
         ]);
     }
 }

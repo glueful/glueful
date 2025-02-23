@@ -8,6 +8,12 @@ use Glueful\Api\Schemas\SchemaManager;
 use PDO;
 use PDOException;
 
+/**
+ * MySQL implementation of the Schema Manager
+ * 
+ * Provides database schema management functionality specifically for MySQL databases.
+ * Handles table creation, modification, and various database operations with transaction support.
+ */
 class MySQLSchemaManager implements SchemaManager
 {
     private PDO $db;
@@ -18,6 +24,15 @@ class MySQLSchemaManager implements SchemaManager
         $this->db = $db;
     }
 
+    /**
+     * Creates a new table in the database
+     * 
+     * @param string $tableName Name of the table to create
+     * @param array<string,string> $columns Associative array of column definitions
+     * @param array<array{type?: string, column: string}> $indexes Array of index definitions
+     * @param array<array{name?: string, column: string, referenceTable: string, referenceColumn: string, onDelete?: string, onUpdate?: string}> $foreignKeys Array of foreign key definitions
+     * @return bool True if table created successfully
+     */
     public function createTable(string $tableName, array $columns, array $indexes = [], array $foreignKeys = []): bool
     {
         try {
@@ -215,7 +230,10 @@ class MySQLSchemaManager implements SchemaManager
     public function insert(string $tableName, array $data): int|string|false
     {
         try {
-            $this->db->beginTransaction();
+            $wasInTransaction = $this->transactionActive;
+            if (!$wasInTransaction) {
+                $this->beginTransaction();
+            }
 
             $columns = array_keys($data);
             $values = array_values($data);
@@ -232,21 +250,28 @@ class MySQLSchemaManager implements SchemaManager
             $success = $stmt->execute($values);
 
             if (!$success) {
-                $this->db->rollBack();
+                if (!$wasInTransaction) {
+                    $this->rollBack();
+                }
                 error_log("Insert failed for table $tableName: " . json_encode($data));
                 return false;
             }
 
             $lastId = $this->db->lastInsertId();
-            $this->db->commit();
+            
+            if (!$wasInTransaction) {
+                $this->commit();
+            }
 
             error_log("Successfully inserted into $tableName. Last ID: $lastId");
             return $lastId;
 
         } catch (PDOException $e) {
-            $this->db->rollBack();
+            if (!$wasInTransaction) {
+                $this->rollBack();
+            }
             error_log("Failed to insert data into $tableName: " . $e->getMessage());
-            throw $e; // Re-throw to let migration manager handle it
+            throw $e;
         }
     }
 
@@ -324,7 +349,7 @@ class MySQLSchemaManager implements SchemaManager
     public function beginTransaction(): bool
     {
         if ($this->transactionActive) {
-            return false; // Already in a transaction
+            return true; // Return true if already in transaction
         }
         $this->transactionActive = $this->db->beginTransaction();
         return $this->transactionActive;
@@ -333,7 +358,7 @@ class MySQLSchemaManager implements SchemaManager
     public function commit(): bool
     {
         if (!$this->transactionActive) {
-            return false; // No active transaction
+            return true; // Return true if no transaction to commit
         }
         $result = $this->db->commit();
         $this->transactionActive = false;
@@ -343,10 +368,43 @@ class MySQLSchemaManager implements SchemaManager
     public function rollBack(): bool
     {
         if (!$this->transactionActive) {
-            return false; // No active transaction
+            return true; // Return true if no transaction to rollback
         }
         $result = $this->db->rollBack();
         $this->transactionActive = false;
         return $result;
+    }
+
+    public function getTables(): array
+    {
+        $stmt = $this->db->query('SHOW TABLES');
+        return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    public function isTransactionActive(): bool
+    {
+        return $this->transactionActive;
+    }
+
+    /**
+     * Gets database column information
+     * 
+     * @param string $table Name of table to get columns from
+     * @return array<array{name: string, type: string, nullable: bool, default: mixed, extra: string}>
+     */
+    public function getTableColumns(string $table): array
+    {
+        $stmt = $this->db->query("SHOW COLUMNS FROM `$table`");
+        $columns = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        return array_map(function($col) {
+            return [
+                'name' => $col['Field'],
+                'type' => $col['Type'],
+                'nullable' => $col['Null'] === 'YES',
+                'default' => $col['Default'],
+                'extra' => $col['Extra']
+            ];
+        }, $columns);
     }
 }
