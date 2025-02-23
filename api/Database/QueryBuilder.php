@@ -7,22 +7,56 @@ use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
 
+/**
+ * Database Query Builder
+ * 
+ * Provides a fluent interface for building and executing database queries.
+ * Supports multiple database drivers, transaction management, and common CRUD operations.
+ */
 class QueryBuilder
 {
+    /** @var PDO Active database connection */
     protected PDO $pdo;
+    
+    /** @var DatabaseDriver Database-specific driver implementation */
     protected DatabaseDriver $driver;
+    
+    /** @var int Current transaction nesting level */
     protected int $transactionLevel = 0;
+    
+    /** @var int Maximum retry attempts for deadlocked transactions */
     protected int $maxRetries = 3;
+    
+    /** @var bool Whether to use soft deletes */
     protected bool $softDeletes = true;
+
+    /** @var array Group by clauses */
     protected array $groupBy = [];
+    
+    /** @var array Order by clauses */
     protected array $orderBy = [];
 
+    /**
+     * Initialize query builder
+     * 
+     * @param PDO $pdo Active database connection
+     * @param DatabaseDriver $driver Database-specific driver
+     */
     public function __construct(PDO $pdo, DatabaseDriver $driver)
     {
         $this->pdo = $pdo;
         $this->driver = $driver;
     }
 
+    /**
+     * Execute callback within transaction
+     * 
+     * Handles automatic retries on deadlocks and proper nesting.
+     * 
+     * @param callable $callback Code to execute in transaction
+     * @return mixed Result of callback
+     * @throws Exception On max retries exceeded or other errors
+     */
     public function transaction(callable $callback)
     {
         $retryCount = 0;
@@ -47,11 +81,22 @@ class QueryBuilder
         throw new Exception("Transaction failed after {$this->maxRetries} retries due to deadlock.");
     }
 
+    /**
+     * Check if exception is a deadlock
+     * 
+     * @param Exception $e Exception to check
+     * @return bool True if deadlock detected
+     */
     protected function isDeadlock(Exception $e): bool
     {
         return in_array($e->getCode(), ['1213', '40001']);
     }
 
+    /**
+     * Begin new transaction or savepoint
+     * 
+     * Creates new transaction or savepoint based on nesting level.
+     */
     public function beginTransaction(): void
     {
         if ($this->transactionLevel === 0) {
@@ -62,6 +107,11 @@ class QueryBuilder
         $this->transactionLevel++;
     }
 
+    /**
+     * Commit current transaction level
+     * 
+     * Commits transaction or releases savepoint based on nesting.
+     */
     public function commit(): void
     {
         if ($this->transactionLevel === 1) {
@@ -70,6 +120,11 @@ class QueryBuilder
         $this->transactionLevel = max(0, $this->transactionLevel - 1);
     }
 
+    /**
+     * Rollback current transaction level
+     * 
+     * Rolls back transaction or to savepoint based on nesting.
+     */
     public function rollback(): void
     {
         if ($this->transactionLevel === 1) {
@@ -80,6 +135,13 @@ class QueryBuilder
         $this->transactionLevel = max(0, $this->transactionLevel - 1);
     }
 
+    /**
+     * Insert new record
+     * 
+     * @param string $table Target table
+     * @param array $data Column data to insert
+     * @return int Number of affected rows
+     */
     public function insert(string $table, array $data): int
     {
         $keys = array_keys($data);
@@ -92,6 +154,14 @@ class QueryBuilder
         return $stmt->execute(array_values($data)) ? $stmt->rowCount() : 0;
     }
     
+    /**
+     * Insert or update record
+     * 
+     * @param string $table Target table
+     * @param array $data Records to insert/update
+     * @param array $updateColumns Columns to update on duplicate
+     * @return int Number of affected rows
+     */
     public function upsert(string $table, array $data, array $updateColumns): int
     {
         if (empty($data)) {
@@ -112,27 +182,76 @@ class QueryBuilder
         return $insertCount;
     }
 
-    public function select(string $table, array $columns = ['*'], array $conditions = [], bool $withTrashed = false): array
-    {
+    /**
+     * Select records from database
+     * 
+     * @param string $table Target table
+     * @param array $columns Columns to select
+     * @param array $conditions WHERE conditions
+     * @param bool $withTrashed Include soft deleted records
+     * @param array $orderBy Sorting options
+     * @param int|null $limit Maximum records to return
+     * @return array Query results
+     */
+    public function select(
+        string $table,
+        array $columns = ['*'],
+        array $conditions = [],
+        bool $withTrashed = false,
+        array $orderBy = [], // Supports both ['batch DESC', 'id DESC'] and ['column' => 'DESC']
+        ?int $limit = null
+    ): array {
         $columnList = implode(", ", array_map([$this->driver, 'wrapIdentifier'], $columns));
         $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
-
+    
         $whereClauses = [];
         foreach ($conditions as $col => $value) {
             $whereClauses[] = "{$this->driver->wrapIdentifier($col)} = ?";
         }
-
+    
         if ($this->softDeletes && !$withTrashed) {
             $whereClauses[] = "deleted_at IS NULL";
         }
-
+    
         if (!empty($whereClauses)) {
             $sql .= " WHERE " . implode(" AND ", $whereClauses);
         }
-
-        return $this->rawQuery($sql, array_values($conditions));
+    
+        if (!empty($orderBy)) {
+            $orderByClauses = [];
+            foreach ($orderBy as $key => $value) {
+                if (is_int($key)) {
+                    // Raw orderBy string e.g. ['batch DESC', 'id DESC']
+                    $orderByClauses[] = $value;
+                } else {
+                    // Key-value orderBy e.g. ['created_at' => 'DESC']
+                    $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
+                    $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+                }
+            }
+            $sql .= " ORDER BY " . implode(", ", $orderByClauses);
+        }
+    
+        if (!is_null($limit)) {
+            $sql .= " LIMIT ?";
+        }
+    
+        $params = array_values($conditions);
+        if (!is_null($limit)) {
+            $params[] = $limit;
+        }
+    
+        return $this->rawQuery($sql, $params);
     }
 
+    /**
+     * Delete records from database
+     * 
+     * @param string $table Target table
+     * @param array $conditions WHERE conditions
+     * @param bool $softDelete Use soft delete if available
+     * @return bool True if operation succeeded
+     */
     public function delete(string $table, array $conditions, bool $softDelete = true): bool
     {
         $sql = $softDelete ? 
@@ -144,6 +263,13 @@ class QueryBuilder
         return $this->executeQuery($sql, array_values($conditions))->rowCount() > 0;
     }
 
+    /**
+     * Restore soft-deleted records
+     * 
+     * @param string $table Target table
+     * @param array $conditions WHERE conditions
+     * @return bool True if operation succeeded
+     */
     public function restore(string $table, array $conditions): bool
     {
         $sql = "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = NULL WHERE " .
@@ -151,6 +277,13 @@ class QueryBuilder
         return $this->executeQuery($sql, array_values($conditions))->rowCount() > 0;
     }
 
+    /**
+     * Count records in table
+     * 
+     * @param string $table Target table
+     * @param array $conditions WHERE conditions
+     * @return int Number of matching records
+     */
     public function count(string $table, array $conditions = []): int
     {
         $sql = "SELECT COUNT(*) FROM " . $this->driver->wrapIdentifier($table);
@@ -163,12 +296,26 @@ class QueryBuilder
         return (int) $stmt->fetchColumn();
     }
 
+    /**
+     * Execute raw SQL query
+     * 
+     * @param string $sql Raw SQL query
+     * @param array $params Query parameters
+     * @return array Query results
+     */
     public function rawQuery(string $sql, array $params = []): array
     {
         $stmt = $this->executeQuery($sql, $params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * Execute prepared statement
+     * 
+     * @param string $sql SQL query
+     * @param array $params Query parameters
+     * @return \PDOStatement Executed statement
+     */
     public function executeQuery(string $sql, array $params = [])
     {
         $stmt = $this->pdo->prepare($sql);
@@ -176,6 +323,16 @@ class QueryBuilder
         return $stmt;
     }
 
+    /**
+     * Get paginated results
+     * 
+     * @param string $table Target table
+     * @param array $columns Columns to select
+     * @param array $conditions WHERE conditions
+     * @param int $page Page number
+     * @param int $perPage Records per page
+     * @return array Paginated results with metadata
+     */
     public function paginate(string $table, array $columns = ['*'], array $conditions = [], int $page = 1, int $perPage = 10): array
     {
         $offset = ($page - 1) * $perPage;
@@ -207,6 +364,25 @@ class QueryBuilder
             'to' => $to,
         ];
     }
+
+    /**
+     * Get identifier of last inserted record
+     * 
+     * Retrieves the specified column value (usually UUID) for the most recently
+     * inserted record. Uses LAST_INSERT_ID() to find the record and returns
+     * the requested column value.
+     * 
+     * @param string $table The table where the record was inserted
+     * @param string $column The column to retrieve (defaults to 'uuid')
+     * @return string The column value from the last inserted record
+     * @throws \RuntimeException If the record or column value cannot be found
+     * 
+     * @example
+     * ```php
+     * $uuid = $queryBuilder->lastInsertId('users', 'uuid');
+     * $customId = $queryBuilder->lastInsertId('orders', 'order_number');
+     * ```
+     */
     public function lastInsertId(string $table, string $column = 'uuid'): string 
     {
         $result = $this->select(
