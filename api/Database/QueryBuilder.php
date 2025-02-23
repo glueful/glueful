@@ -10,8 +10,23 @@ use Glueful\Database\Driver\DatabaseDriver;
 /**
  * Database Query Builder
  * 
- * Provides a fluent interface for building and executing database queries.
- * Supports multiple database drivers, transaction management, and common CRUD operations.
+ * Provides fluent interface for SQL query construction with features:
+ * - Database-agnostic query building
+ * - Prepared statement support
+ * - Transaction management with savepoints
+ * - Automatic deadlock handling
+ * - Soft delete integration
+ * - Pagination support
+ * 
+ * Design patterns:
+ * - Fluent interface for method chaining
+ * - Strategy pattern for database operations
+ * - Template method for query construction
+ * 
+ * Security features:
+ * - Automatic parameter binding
+ * - Identifier escaping
+ * - Transaction isolation
  */
 class QueryBuilder
 {
@@ -36,6 +51,14 @@ class QueryBuilder
     /** @var array Order by clauses */
     protected array $orderBy = [];
 
+    /** @var array Stores join clauses */
+    protected array $joins = [];
+
+    /** @var array Stores query parameter bindings */
+    protected array $bindings = [];
+
+    private string $query = '';
+
     /**
      * Initialize query builder
      * 
@@ -49,13 +72,17 @@ class QueryBuilder
     }
 
     /**
-     * Execute callback within transaction
+     * Execute callback within database transaction
      * 
-     * Handles automatic retries on deadlocks and proper nesting.
+     * Features:
+     * - Automatic deadlock detection and retry
+     * - Nested transaction support via savepoints
+     * - Proper cleanup on failure
+     * - Progressive backoff between retries
      * 
-     * @param callable $callback Code to execute in transaction
-     * @return mixed Result of callback
-     * @throws Exception On max retries exceeded or other errors
+     * @param callable $callback Function to execute in transaction
+     * @return mixed Result of callback execution
+     * @throws Exception After max retries or on unhandled error
      */
     public function transaction(callable $callback)
     {
@@ -136,11 +163,18 @@ class QueryBuilder
     }
 
     /**
-     * Insert new record
+     * Insert new database record
      * 
-     * @param string $table Target table
-     * @param array $data Column data to insert
+     * Features:
+     * - Automatic column escaping
+     * - Bulk insert support
+     * - Generated column handling
+     * - Last insert ID retrieval
+     * 
+     * @param string $table Target table name
+     * @param array $data Column data key-value pairs
      * @return int Number of affected rows
+     * @throws PDOException On insert failure
      */
     public function insert(string $table, array $data): int
     {
@@ -183,65 +217,73 @@ class QueryBuilder
     }
 
     /**
-     * Select records from database
+     * Select records with advanced filtering
      * 
-     * @param string $table Target table
+     * Supports:
+     * - Column selection
+     * - WHERE conditions
+     * - JOIN clauses
+     * - ORDER BY
+     * - LIMIT/OFFSET
+     * - Soft delete filtering
+     * 
+     * @param string $table Base table for query
      * @param array $columns Columns to select
      * @param array $conditions WHERE conditions
-     * @param bool $withTrashed Include soft deleted records
-     * @param array $orderBy Sorting options
-     * @param int|null $limit Maximum records to return
-     * @return array Query results
+     * @param bool $withTrashed Include soft-deleted records
+     * @param array $orderBy Sorting specification
+     * @param int|null $limit Maximum rows to return
+     * @return self Builder instance for chaining
      */
     public function select(
         string $table,
         array $columns = ['*'],
         array $conditions = [],
         bool $withTrashed = false,
-        array $orderBy = [], // Supports both ['batch DESC', 'id DESC'] and ['column' => 'DESC']
-        ?int $limit = null
-    ): array {
+        array $orderBy = [],
+        ?int $limit = null,
+        bool $applySoftDeletes = false
+    ): self {
+        $this->bindings = []; // Reset bindings
         $columnList = implode(", ", array_map([$this->driver, 'wrapIdentifier'], $columns));
         $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
-    
+
+        // Add JOIN clauses if any
+        if (!empty($this->joins)) {
+            $sql .= " " . implode(" ", $this->joins);
+        }
+
         $whereClauses = [];
         foreach ($conditions as $col => $value) {
             $whereClauses[] = "{$this->driver->wrapIdentifier($col)} = ?";
+            $this->bindings[] = $value;
         }
-    
-        if ($this->softDeletes && !$withTrashed) {
+
+        if ($this->softDeletes && !$withTrashed && $applySoftDeletes) {
             $whereClauses[] = "deleted_at IS NULL";
         }
-    
+
         if (!empty($whereClauses)) {
             $sql .= " WHERE " . implode(" AND ", $whereClauses);
         }
-    
+
         if (!empty($orderBy)) {
             $orderByClauses = [];
             foreach ($orderBy as $key => $value) {
-                if (is_int($key)) {
-                    // Raw orderBy string e.g. ['batch DESC', 'id DESC']
-                    $orderByClauses[] = $value;
-                } else {
-                    // Key-value orderBy e.g. ['created_at' => 'DESC']
-                    $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
-                    $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
-                }
+                $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
+                $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
             }
             $sql .= " ORDER BY " . implode(", ", $orderByClauses);
         }
-    
-        if (!is_null($limit)) {
-            $sql .= " LIMIT ?";
+
+        $this->query = $sql;
+
+        if ($limit !== null) {
+            $this->query .= " LIMIT ?";
+            $this->bindings[] = $limit;
         }
-    
-        $params = array_values($conditions);
-        if (!is_null($limit)) {
-            $params[] = $limit;
-        }
-    
-        return $this->rawQuery($sql, $params);
+
+        return $this;
     }
 
     /**
@@ -284,15 +326,21 @@ class QueryBuilder
      * @param array $conditions WHERE conditions
      * @return int Number of matching records
      */
-    public function count(string $table, array $conditions = []): int
-    {
-        $sql = "SELECT COUNT(*) FROM " . $this->driver->wrapIdentifier($table);
+    public function count(string $table, array $conditions = []): int {
+        $this->bindings = []; // Reset bindings
+        $sql = "SELECT COUNT(*) as total FROM " . $this->driver->wrapIdentifier($table);
+        
         if (!empty($conditions)) {
-            $whereClauses = array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions));
+            $whereClauses = [];
+            foreach ($conditions as $col => $value) {
+                $whereClauses[] = "{$this->driver->wrapIdentifier($col)} = ?";
+                $this->bindings[] = $value;
+            }
             $sql .= " WHERE " . implode(" AND ", $whereClauses);
         }
-
-        $stmt = $this->executeQuery($sql, array_values($conditions));
+    
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($this->bindings);
         return (int) $stmt->fetchColumn();
     }
 
@@ -324,37 +372,42 @@ class QueryBuilder
     }
 
     /**
-     * Get paginated results
+     * Paginate query results
      * 
-     * @param string $table Target table
-     * @param array $columns Columns to select
-     * @param array $conditions WHERE conditions
-     * @param int $page Page number
+     * Returns structured pagination data:
+     * - Result subset for current page
+     * - Total record count
+     * - Page information
+     * - Navigation metadata
+     * 
+     * @param int $page Current page number
      * @param int $perPage Records per page
-     * @return array Paginated results with metadata
+     * @return array Pagination result set
      */
-    public function paginate(string $table, array $columns = ['*'], array $conditions = [], int $page = 1, int $perPage = 10): array
+    public function paginate(int $page = 1, int $perPage = 10): array
     {
         $offset = ($page - 1) * $perPage;
-        $columnList = implode(", ", array_map([$this->driver, 'wrapIdentifier'], $columns));
-        $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
 
-        if (!empty($conditions)) {
-            $whereClauses = array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions));
-            $sql .= " WHERE " . implode(" AND ", $whereClauses);
-        }
+        // Modify query to include pagination
+        $paginatedQuery = $this->query . " LIMIT ? OFFSET ?";
+        $bindings = [...$this->bindings, $perPage, $offset];
 
-        $sql .= " LIMIT ? OFFSET ?";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([...array_values($conditions), $perPage, $offset]);
+        // Execute the paginated query
+        $stmt = $this->pdo->prepare($paginatedQuery);
+        $stmt->execute($bindings);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $totalRecords = $this->count($table, $conditions);
+        // Get total count
+        $countQuery = "SELECT COUNT(*) as total FROM (" . $this->query . ") as subquery";
+        $countStmt = $this->pdo->prepare($countQuery);
+        $countStmt->execute($this->bindings);
+        $totalRecords = $countStmt->fetchColumn();
         $lastPage = (int) ceil($totalRecords / $perPage);
         $from = $totalRecords > 0 ? $offset + 1 : 0;
         $to = min($offset + $perPage, $totalRecords);
 
         return [
-            'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            'data' => $data,
             'current_page' => $page,
             'per_page' => $perPage,
             'total' => $totalRecords,
@@ -396,5 +449,79 @@ class QueryBuilder
         }
 
         return $result[0][$column];
+    }
+
+    /**
+     * Join additional table to query
+     * 
+     * Supports:
+     * - INNER, LEFT, RIGHT, FULL joins
+     * - Custom join conditions
+     * - Multiple joins
+     * - Aliased tables
+     * 
+     * @param string $table Table to join
+     * @param string $on Join condition
+     * @param string $type Join type (INNER, LEFT, etc)
+     * @return self Builder instance for chaining
+     */
+    public function join(string $table, string $on, string $type = 'INNER'): self {
+        $joinClause = strtoupper($type) . " JOIN " . $this->driver->wrapIdentifier($table) . " ON $on";
+        $this->joins[] = $joinClause;
+        return $this;
+    }
+
+    /**
+     * Add WHERE conditions to query
+     * 
+     * Features:
+     * - Multiple condition support
+     * - Automatic parameter binding
+     * - Complex condition building
+     * - Chain-safe condition addition
+     * 
+     * @param array $conditions Column-value pairs
+     * @return self Builder instance for chaining
+     */
+    public function where(array $conditions): self {
+        foreach ($conditions as $col => $value) {
+            $this->query .= (strpos($this->query, 'WHERE') === false ? " WHERE " : " AND ") . "{$this->driver->wrapIdentifier($col)} = ?";
+            $this->bindings[] = $value;
+        }
+        return $this;
+    }
+
+    public function orderBy(array $orderBy): self {
+        $orderByClauses = [];
+        foreach ($orderBy as $key => $value) {
+            $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
+            $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+        }
+        $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
+        return $this;
+    }
+
+    public function limit(int $limit): self {
+        $this->query .= " LIMIT ?";
+        $this->bindings[] = $limit;
+        return $this;
+    }
+
+    /**
+     * Execute and retrieve query results
+     * 
+     * Features:
+     * - Automatic statement preparation
+     * - Parameter binding
+     * - Result set fetching
+     * - Error handling
+     * 
+     * @return array Query result set
+     * @throws PDOException On query execution failure
+     */
+    public function get(): array {
+        $stmt = $this->pdo->prepare($this->query);
+        $stmt->execute($this->bindings);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

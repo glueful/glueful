@@ -29,5 +29,5 @@ if (PHP_SAPI !== 'cli') {
 require dirname(__FILE__) . '/vendor/autoload.php';
 
 // Initialize and run console application
-$app = new Glueful\App\Console\Application();
-$app->run();
+$kernel = new Glueful\Console\Kernel();
+$kernel->run();

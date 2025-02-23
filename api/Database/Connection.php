@@ -1,25 +1,39 @@
 <?php
 
 namespace Glueful\Database;
+require_once __DIR__ . '../../bootstrap.php';
 
 use PDO;
-use Glueful\Database\Driver\{MySQLDriver, PostgreSQLDriver, SQLiteDriver};
+use Glueful\Database\Driver\MySQLDriver;
+use Glueful\Database\Driver\PostgreSQLDriver;
+use Glueful\Database\Driver\SQLiteDriver;
 use Glueful\Database\Driver\DatabaseDriver;
+use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\MySQLSchemaManager;
+use Glueful\Database\Schema\PostgreSQLSchemaManager;
+use Glueful\Database\Schema\SQLiteSchemaManager;
 use Exception;
 
 /**
  * Database Connection Manager
  * 
- * Manages database connections with support for:
- * - Multiple database engines (MySQL, PostgreSQL, SQLite)
- * - Connection pooling
- * - Driver abstraction
- * - Configuration management
- * - Auto-reconnection
+ * Provides centralized database connection management with features:
+ * - Connection pooling with lazy instantiation
+ * - Multi-engine support (MySQL, PostgreSQL, SQLite)
+ * - Automatic driver resolution
+ * - Schema management integration
+ * - Configuration-based initialization
  * 
- * Provides a consistent interface for database connections across
- * different database engines while handling connection pooling
- * and configuration.
+ * Design patterns:
+ * - Singleton pool for connection reuse
+ * - Factory method for driver creation
+ * - Strategy pattern for database operations
+ * 
+ * Requirements:
+ * - PHP PDO extension
+ * - Database-specific PDO drivers
+ * - Valid configuration settings
+ * - Appropriate database permissions
  */
 class Connection
 {
@@ -32,22 +46,28 @@ class Connection
     /** @var DatabaseDriver Database-specific driver instance */
     protected DatabaseDriver $driver;
 
-    /** @var array Database configuration parameters */
-    protected array $config;
+    protected SchemaManager $schemaManager;
+    
 
     /**
-     * Initialize database connection
+     * Initialize database connection with pooling
      * 
-     * Creates new connection or returns existing pooled connection.
-     * Resolves appropriate database driver based on engine type.
+     * Creates or reuses database connections based on engine type.
+     * Implements connection pooling to minimize resource usage.
+     * Automatically resolves appropriate driver and schema manager.
      * 
-     * @param array $config Custom database configuration
-     * @throws Exception If connection fails or engine unsupported
+     * Connection lifecycle:
+     * 1. Check pool for existing connection
+     * 2. Create new connection if needed
+     * 3. Initialize driver and schema manager
+     * 4. Store connection in pool
+     * 
+     * @throws Exception On connection failure or invalid configuration
      */
-    public function __construct(array $config = [])
+    public function __construct()
     {
-        $this->config = $config;
-        $engine = $config['engine'] ?? config('database.engine');
+        // $this->config = $config;
+        $engine = config('database.engine');
 
         // Use existing connection if available (Pooling)
         if (isset(self::$instances[$engine])) {
@@ -58,23 +78,28 @@ class Connection
         }
 
         $this->driver = $this->resolveDriver($engine);
+        $this->schemaManager = $this->resolveSchemaManager($engine);
     }
 
     /**
-     * Create new PDO connection
+     * Create PDO connection with engine-specific options
      * 
-     * Establishes connection to database with engine-specific options.
+     * Establishes database connection with:
+     * - Engine-specific PDO options
+     * - Error handling configuration
+     * - Character set settings
+     * - Strict mode (MySQL)
+     * - SSL configuration (PostgreSQL)
      * 
-     * @param string $engine Database engine type
-     * @return PDO Active database connection
-     * @throws Exception If connection fails
+     * @param string $engine Target database engine
+     * @return PDO Configured PDO instance
+     * @throws Exception On connection failure or invalid credentials
      */
     private function createPDOConnection(string $engine): PDO
     {
         // Get engine-specific configuration
         $dbConfig = array_merge(
             config("database.{$engine}") ?? [],
-            $this->config
         );
 
         // Set common PDO options
@@ -98,14 +123,28 @@ class Connection
     }
 
     /**
-     * Build database connection DSN
+     * Build database-specific connection DSN
      * 
-     * Creates connection string for specified database engine.
+     * Generates connection string with support for:
+     * MySQL:
+     * - Host, port, database name
+     * - Character set configuration
+     * - SSL settings
+     * 
+     * PostgreSQL:
+     * - Host, port, database name
+     * - Schema search path
+     * - SSL mode configuration
+     * 
+     * SQLite:
+     * - File path handling
+     * - Directory creation
+     * - Journal mode settings
      * 
      * @param string $engine Database engine type
-     * @param array $config Connection configuration
-     * @return string Connection DSN
-     * @throws Exception If engine unsupported
+     * @param array $config Engine-specific configuration
+     * @return string Formatted DSN string
+     * @throws Exception For unsupported engines
      */
     private function buildDSN(string $engine, array $config): string
     {
@@ -131,12 +170,16 @@ class Connection
     }
 
     /**
-     * Prepare SQLite database path
+     * Prepare SQLite database storage
      * 
-     * Ensures SQLite database directory exists and returns DSN.
+     * Ensures database file location is:
+     * - Accessible
+     * - Has proper permissions
+     * - Parent directory exists
      * 
-     * @param string $dbPath Path to SQLite database file
-     * @return string SQLite connection DSN
+     * @param string $dbPath Target database file path
+     * @return string SQLite connection string
+     * @throws Exception If path is invalid or inaccessible
      */
     private function prepareSQLiteDSN(string $dbPath): string
     {
@@ -145,13 +188,14 @@ class Connection
     }
 
     /**
-     * Resolve database driver
+     * Factory method for database driver resolution
      * 
-     * Creates appropriate driver instance for database engine.
+     * Creates appropriate driver instance based on engine type.
+     * Supports extensibility for additional engines.
      * 
-     * @param string $engine Database engine type
-     * @return DatabaseDriver Driver instance
-     * @throws Exception If engine unsupported
+     * @param string $engine Target database engine
+     * @return DatabaseDriver Initialized driver instance
+     * @throws Exception For unsupported engines
      */
     private function resolveDriver(string $engine): DatabaseDriver
     {
@@ -164,9 +208,45 @@ class Connection
     }
 
     /**
-     * Get active PDO connection
+     * Factory method for schema manager resolution
      * 
-     * @return PDO Current database connection
+     * Creates database-specific schema manager instance.
+     * Integrates with driver capabilities.
+     * 
+     * @param string $engine Target database engine
+     * @return SchemaManager Initialized schema manager
+     * @throws Exception For unsupported engines
+     */
+    private function resolveSchemaManager(string $engine): SchemaManager
+    {
+        return match ($engine) {
+            'mysql' => new MySQLSchemaManager($this->pdo),
+            'pgsql' => new PostgreSQLSchemaManager($this->pdo),
+            'sqlite' => new SQLiteSchemaManager($this->pdo),
+            default => throw new Exception("Unsupported database engine: {$engine}"),
+        };
+    }
+
+    /**
+     * Access active schema manager instance
+     * 
+     * @return SchemaManager Current schema manager
+     * @throws Exception If schema manager not initialized
+     */
+    public function getSchemaManager(): SchemaManager
+    {
+        return $this->schemaManager;
+    }
+
+
+    /**
+     * Access active PDO connection
+     * 
+     * Returns pooled connection instance.
+     * Ensures connection is active.
+     * 
+     * @return PDO Active database connection
+     * @throws Exception If connection lost
      */
     public function getPDO(): PDO 
     {
@@ -174,9 +254,12 @@ class Connection
     }
 
     /**
-     * Get current database driver
+     * Access current database driver
+     * 
+     * Returns engine-specific driver instance.
      * 
      * @return DatabaseDriver Active database driver
+     * @throws Exception If driver not initialized
      */
     public function getDriver(): DatabaseDriver 
     {

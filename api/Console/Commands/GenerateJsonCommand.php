@@ -1,20 +1,33 @@
 <?php
 
-namespace Glueful\App\Console\Commands;
+namespace Glueful\Console\Commands;
 
-use Glueful\App\Console\Command;
+use Glueful\Console\Command;
 use Glueful\Api\JsonGenerator;
 
 /**
- * JSON Generator Command
+ * JSON Definition Generator
  * 
- * Generates JSON definitions for API endpoints and documentation.
- * Supports database schema to API definition conversion.
+ * Manages API definition file generation:
+ * - Creates API endpoint definitions
+ * - Generates API documentation
+ * - Converts database schemas
+ * - Handles multiple databases
+ * - Supports selective generation
+ * - Validates output
+ * - Maintains consistency
+ * 
+ * @package Glueful\Console\Commands
  */
 class GenerateJsonCommand extends Command
 {
     /**
-     * Get command name
+     * Get Command Name
+     * 
+     * Returns command identifier:
+     * - Used in CLI as `php glueful generate:json`
+     * - Unique command name
+     * - Follows naming conventions
      * 
      * @return string Command identifier
      */
@@ -24,9 +37,14 @@ class GenerateJsonCommand extends Command
     }
 
     /**
-     * Get command description
+     * Get Command Description
      * 
-     * @return string Brief command description
+     * Provides overview for help listings:
+     * - Single line summary
+     * - Shows in command lists
+     * - Explains primary purpose
+     * 
+     * @return string Brief description
      */
     public function getDescription(): string 
     {
@@ -34,9 +52,15 @@ class GenerateJsonCommand extends Command
     }
 
     /**
-     * Get detailed help
+     * Get Command Help
      * 
-     * @return string Command usage instructions
+     * Provides detailed usage instructions:
+     * - Shows command syntax
+     * - Lists all options
+     * - Includes usage examples
+     * - Documents parameters
+     * 
+     * @return string Detailed help text
      */
     public function getHelp(): string
     {
@@ -62,11 +86,20 @@ HELP;
     }
 
     /**
-     * Execute generator command
+     * Execute Generation Command
      * 
-     * Processes arguments and generates requested JSON files.
+     * Handles JSON generation process:
+     * - Parses command arguments
+     * - Validates input options
+     * - Selects generation type
+     * - Processes database schemas
+     * - Generates output files
+     * - Reports results
+     * - Handles errors
      * 
      * @param array $args Command line arguments
+     * @throws \RuntimeException If generation fails
+     * @return void
      */
     public function execute(array $args = []): void
     {
@@ -120,12 +153,17 @@ HELP;
     }
 
     /**
-     * Parse command options
+     * Parse Command Options
      * 
-     * Processes command line arguments into options array.
+     * Processes command line input:
+     * - Handles short and long options
+     * - Validates option values
+     * - Maps option aliases
+     * - Provides defaults
+     * - Maintains option order
      * 
      * @param array $args Raw command arguments
-     * @return array Parsed options
+     * @return array Processed options
      */
     private function parseOptions(array $args): array
     {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Glueful\App\Console;
+namespace Glueful\Console;
 
 /**
  * Base Command Class
@@ -90,6 +90,16 @@ abstract class Command
     protected function info(string $message): void
     {
         echo $message . PHP_EOL;
+    }
+
+    /**
+     * Output success message in green
+     * 
+     * @param string $message Message to display
+     */
+    protected function success(string $message): void
+    {
+        echo "\033[32m" . $message . "\033[0m\n";
     }
 
     /**

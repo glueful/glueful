@@ -9,8 +9,9 @@
 return [
     // Default database engine (mysql, sqlite, pgsql)
     'engine' => env('DB_ENGINE', 'mysql'),
+    'json_prefix' => 'api', // Prefix for file name of generate api difinitions json files
 
-    // Primary database connection
+    // MySQL database connection
     'mysql' => [
         'driver' => env('DB_DRIVER', 'mysql'),
         'host' => env('DB_HOST', '127.0.0.1'),        // Database host

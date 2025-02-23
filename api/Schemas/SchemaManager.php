@@ -172,4 +172,26 @@ interface SchemaManager
      * @return bool True if rollback was successful
      */
     public function rollBack(): bool;
+
+    /**
+     * Check if there is an active transaction
+     * 
+     * @return bool True if transaction is active
+     */
+    public function isTransactionActive(): bool;
+
+    /**
+     * Get list of all tables in database
+     * 
+     * @return array List of table names
+     */
+    public function getTables(): array;
+
+    /**
+     * Get column information for a table
+     * 
+     * @param string $table Table name
+     * @return array List of column definitions
+     */
+    public function getTableColumns(string $table): array;
 }

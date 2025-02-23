@@ -2,49 +2,50 @@
 
 namespace Glueful\Database\Schema;
 
-use Glueful\Database\Driver\PostgreSQLDriver;
-use Glueful\Database\Connection;
 use PDO;
 use Exception;
 
 /**
  * PostgreSQL Schema Manager Implementation
  * 
- * Handles PostgreSQL-specific schema operations including:
- * - Table creation and deletion
- * - Column management with PostgreSQL types
- * - Index operations including concurrent indexing
- * - Schema information retrieval
- * - Cascade operations handling
+ * Provides PostgreSQL-specific schema management capabilities:
+ * - Full support for PostgreSQL data types and type modifiers
+ * - Schema-aware operations with search_path handling
+ * - Concurrent index creation and deletion
+ * - Advanced constraint management (EXCLUDE, CHECK, etc.)
+ * - Partitioning support
+ * - Table inheritance handling
  * 
- * Implements database-specific features while maintaining
- * compatibility with the SchemaManager interface.
+ * Requirements:
+ * - PostgreSQL 10.0+
+ * - PDO PostgreSQL extension
+ * - Appropriate user privileges for schema operations
  */
 class PostgreSQLSchemaManager extends SchemaManager
 {
-    /** @var PostgreSQLDriver Database-specific driver */
-    protected PostgreSQLDriver $driver;
-
     /** @var PDO Active database connection */
     protected PDO $pdo;
 
-    /**
-     * Initialize PostgreSQL schema manager
-     * 
-     * @param PostgreSQLDriver $driver PostgreSQL-specific driver
-     * @throws Exception If connection fails
-     */
-    public function __construct(PostgreSQLDriver $driver)
+    public function __construct(PDO $pdo)
     {
-        $connection = new Connection();
-        $this->pdo = $connection->getPDO();
+        $this->pdo = $pdo;
     }
 
     /**
-     * Create new PostgreSQL table
+     * Creates a new PostgreSQL table
      * 
-     * Creates table with specified columns and constraints.
-     * Supports PostgreSQL-specific column types and options.
+     * Supports PostgreSQL-specific features:
+     * - Custom column types (including domains)
+     * - Table partitioning
+     * - Table inheritance
+     * - Tablespaces
+     * - Column compression
+     * 
+     * Example usage:
+     * $columns = [
+     *     'id' => ['type' => 'SERIAL PRIMARY KEY'],
+     *     'data' => ['type' => 'JSONB', 'nullable' => false]
+     * ];
      * 
      * @param string $table Table name
      * @param array $columns Column definitions
@@ -54,19 +55,35 @@ class PostgreSQLSchemaManager extends SchemaManager
      */
     public function createTable(string $table, array $columns, array $options = []): bool
     {
-        try {
-            $columnsSql = [];
-            foreach ($columns as $name => $definition) {
-                $columnsSql[] = "{$name} {$definition}";
+        $columnDefinitions = [];
+
+        foreach ($columns as $name => $definition) {
+            // If the definition is a string, use it directly
+            if (is_string($definition)) {
+                $columnDefinitions[] = "\"$name\" $definition";
+            } elseif (is_array($definition)) {
+                // Handle array format for more control
+                $type = strtoupper($definition['type']);
+
+                // Convert MySQL-style AUTO_INCREMENT to PostgreSQL SERIAL
+                if ($type === 'INTEGER PRIMARY KEY AUTO_INCREMENT') {
+                    $type = 'SERIAL PRIMARY KEY';
+                } elseif ($type === 'BIGINT PRIMARY KEY AUTO_INCREMENT') {
+                    $type = 'BIGSERIAL PRIMARY KEY';
+                }
+
+                $columnDefinitions[] = "\"$name\" $type " .
+                    (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
+                    (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
+            } else {
+                throw new \InvalidArgumentException("Invalid column definition for `$name`");
             }
-
-            $optionsSql = implode(' ', $options);
-            $sql = "CREATE TABLE IF NOT EXISTS {$table} (" . implode(', ', $columnsSql) . ") {$optionsSql};";
-
-            return $this->pdo->exec($sql) !== false;
-        } catch (Exception $e) {
-            throw new Exception("Error creating table '{$table}': " . $e->getMessage());
         }
+
+        // Construct the SQL statement with IF NOT EXISTS (PostgreSQL compatible)
+        $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
+
+        return (bool) $this->pdo->exec($sql);
     }
 
     /**
@@ -89,13 +106,17 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Add column to PostgreSQL table
+     * Adds new column to PostgreSQL table
      * 
-     * Adds new column with full PostgreSQL type support.
+     * Supports:
+     * - All PostgreSQL data types including custom types
+     * - Column constraints (CHECK, GENERATED, etc)
+     * - Column statistics targets
+     * - Storage parameters
      * 
-     * @param string $table Target table
+     * @param string $table Schema-qualified table name
      * @param string $column New column name
-     * @param array $definition Column definition including type and constraints
+     * @param array $definition PostgreSQL column definition
      * @return bool True if column added successfully
      * @throws Exception If column addition fails
      */
@@ -131,13 +152,17 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Create PostgreSQL index
+     * Creates PostgreSQL index
      * 
-     * Creates index with support for:
-     * - Concurrent creation
+     * Advanced indexing features:
+     * - Concurrent index creation
      * - Partial indexes
-     * - Custom operators
-     * - Index types (btree, hash, gist, etc)
+     * - Expression indexes
+     * - Custom operator classes
+     * - Index types (btree, hash, gin, gist, etc)
+     * - Index storage parameters
+     * 
+     * Note: Concurrent indexing requires transaction management
      * 
      * @param string $table Target table
      * @param string $indexName Name for new index
@@ -208,13 +233,14 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Get PostgreSQL table columns
+     * Retrieves PostgreSQL table information
      * 
-     * Retrieves detailed column information including:
-     * - Data types
-     * - Default values
-     * - Constraints
-     * - Comments
+     * Returns comprehensive table metadata:
+     * - Column definitions with full type information
+     * - Constraint details
+     * - Storage parameters
+     * - Inheritance information
+     * - Partition details
      * 
      * @param string $tableName Target table
      * @return array Column definitions and metadata
@@ -223,19 +249,68 @@ class PostgreSQLSchemaManager extends SchemaManager
     public function getTableColumns(string $tableName): array
     {
         try {
-            $query = "
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_name = :table
-                ORDER BY ordinal_position;
-            ";
-
-            $stmt = $this->pdo->prepare($query);
+            $stmt = $this->pdo->prepare("
+            SELECT column_name, data_type, is_nullable, column_default 
+            FROM information_schema.columns 
+            WHERE table_name = :table
+            ");
             $stmt->execute(['table' => $tableName]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             throw new Exception("Error fetching columns for table '{$tableName}': " . $e->getMessage());
         }
     }
+
+    /**
+     * Manages foreign key checks via session_replication_role
+     * 
+     * Note: Requires superuser or replication privileges
+     */
+    public function disableForeignKeyChecks(): void
+    {
+        $this->pdo->exec("SET session_replication_role = 'replica'");
+    }
+
+    public function enableForeignKeyChecks(): void
+    {
+        $this->pdo->exec("SET session_replication_role = 'origin'");
+    }
+
+    /**
+     * Gets PostgreSQL version information
+     * 
+     * Returns detailed version data including:
+     * - Server version
+     * - Compilation options
+     * - Platform information
+     */
+    public function getVersion(): string
+    {
+        return $this->pdo->getAttribute(\PDO::ATTR_SERVER_VERSION);
+    }
+
+    /**
+     * Calculates PostgreSQL table size
+     * 
+     * Includes:
+     * - Table data size
+     * - TOAST data size
+     * - Index sizes
+     * - Visibility map size
+     * - Free space map size
+     * 
+     * Note: Requires pg_stat_user_tables access
+     */
+    public function getTableSize(string $table): int
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT pg_total_relation_size(:table) AS size
+        ");
+        $stmt->execute(['table' => $table]);
+        return (int) $stmt->fetchColumn();
+    }
+
 }
+

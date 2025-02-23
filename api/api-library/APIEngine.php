@@ -28,7 +28,6 @@ class APIEngine{
         try {
             // Get database configuration
             $dbConfig = config('database');
-            $engine = $dbConfig['engine'] ?? 'mysql';
             
             // Create database connection
             $connection = new Connection();
@@ -38,7 +37,7 @@ class APIEngine{
             self::$driver = $connection->getDriver();
             
             // Set current database resource
-            self::$currentResource = array_key_first(array_filter($dbConfig, 'is_array'));
+            self::$currentResource = config('database.json_prefix');
             
         } catch (\Exception $e) {
             throw new \RuntimeException("Failed to initialize database: " . $e->getMessage());
@@ -277,13 +276,12 @@ private static function getUserData(string $function, array $param): ?array
         }
 
         // Get user data
-        $fields = ['id', 'uuid', 'username', 'email', 'password', 'role', 'status', 'created_at'];
-        $result = $queryBuilder->select(
-            'users',
-            $fields,
-            $conditions
-        );
+        $fields = ['id', 'uuid', 'username', 'email', 'password', 'status', 'created_at'];
 
+        $result = $queryBuilder
+        ->select('users', $fields)
+        ->where($conditions)
+        ->get();
         if (empty($result)) {
             return null;
         }
@@ -300,14 +298,13 @@ private static function getUserData(string $function, array $param): ?array
         unset($userData['password']); // Remove sensitive data
 
         // Get profile data using user UUID
-        $profileData = $queryBuilder->select(
-            'profiles',
-            ['first_name', 'last_name', 'photo_url'],
-            [
-                'user_uuid' => $userData['uuid'],
-                'status' => 'active'
-            ]
-        );
+        $profileData = $queryBuilder
+        ->select('profiles', ['first_name', 'last_name', 'photo_url'])
+        ->where([
+            'user_uuid' => $userData['uuid'],
+            'status' => 'active'
+        ])
+        ->get();
 
         $profile = !empty($profileData) ? $profileData[0] : [];
 
@@ -317,7 +314,7 @@ private static function getUserData(string $function, array $param): ?array
             'uuid' => $userData['uuid'],
             'username' => $userData['username'],
             'email' => $userData['email'],
-            'role' => $userData['role'] ?? 'user',
+            // 'role' => $userData['role'] ?? 'user',
             'created_at' => $userData['created_at'],
             'last_login' => date('Y-m-d H:i:s'),
             'profile' => [
@@ -559,13 +556,13 @@ private static function processImageBlob(string $src, array $params): array
 
             // Handle paginated list actions
             if ($action === 'list' && $usePagination) {
-                return $queryBuilder->paginate(
+                return $queryBuilder->select(
                     $definition['table']['name'],
-                    explode(',', $param['fields'] ?? '*'),
-                    $param['conditions'] ?? [],
-                    $page,
-                    $perPage
-                );
+                    explode(',', $param['fields'] ?? '*')
+                )
+                ->where($param['conditions'] ?? [])
+                ->orderBy($param['orderBy'] ?? [])
+                ->paginate($page, $perPage);
             }
 
             // Handle other actions
@@ -587,52 +584,58 @@ private static function processImageBlob(string $src, array $params): array
      * Execute database query using QueryBuilder's upsert functionality
      */
     private static function executeQuery(string $action, array $definition, array $params): array 
-    {
+{
+    try {
+        $queryBuilder = new QueryBuilder(self::$db, self::$driver);
         
-        try {
-            // Create connection and query builder
-            $queryBuilder = new QueryBuilder(self::$db, self::$driver);
-            // Execute based on action type
-            $result = match($action) {
-                'list', 'view' => $queryBuilder->select(
+        $result = match($action) {
+            'list', 'view' => $queryBuilder
+                ->select(
                     $definition['table']['name'],
-                    explode(',', $params['fields'] ?? '*'),
-                    $params['where'] ?? []
-                ),
-                'count' => [['total' => $queryBuilder->count(
+                    explode(',', $params['fields'] ?? '*')
+                )
+                ->where($params['where'] ?? [])
+                ->orderBy($params['orderBy'] ?? [])
+                ->limit($params['limit'] ?? null)
+                ->get(),
+                
+            'count' => [['total' => $queryBuilder
+                ->count($definition['table']['name'], $params['where'] ?? [])]],
+                
+            'insert' => [
+                'uuid' => $queryBuilder->insert($definition['table']['name'], $params) ? 
+                    self::getLastInsertedUUID(self::$db, $definition['table']['name']) : 
+                    null
+            ],
+            
+            'update' => [
+                'affected' => $queryBuilder->upsert(
                     $definition['table']['name'],
-                    $params['where'] ?? []
-                )]],
-                'insert' => [
-                    'uuid' => $queryBuilder->insert($definition['table']['name'], $params) ? 
-                        self::getLastInsertedUUID(self::$db, $definition['table']['name']) : 
-                        null
-                ],
-                'update' => [
-                    'affected' => $queryBuilder->upsert(
-                        $definition['table']['name'],
-                        [array_merge(
-                            ['uuid' => $params['uuid']],
-                            $params['data'] ?? []
-                        )],
-                        array_keys($params['data'] ?? [])
-                    )
-                ],
-                'delete' => [
-                    'affected' => $queryBuilder->delete(
+                    [array_merge(
+                        ['uuid' => $params['uuid']],
+                        $params['data'] ?? []
+                    )],
+                    array_keys($params['data'] ?? [])
+                )
+            ],
+            
+            'delete' => [
+                'affected' => $queryBuilder
+                    ->delete(
                         $definition['table']['name'],
                         $params['where'] ?? [],
-                        true // Use soft delete by default
+                        true
                     ) ? 1 : 0
-                ],
-                default => []
-            };
-            return $result;
-
-        } catch (\Exception $e) {
-            throw new \RuntimeException("Query execution failed: " . $e->getMessage());
-        }
+            ],
+            
+            default => []
+        };
+        
+        return $result;
+    } catch (\Exception $e) {
+        throw new \RuntimeException("Query execution failed: " . $e->getMessage());
     }
+}
 
     /**
      * Get last inserted UUID from database
@@ -652,7 +655,7 @@ private static function processImageBlob(string $src, array $params): array
 
     private static function getUserPermissions(string $userUUID): array 
     {
-        $databaseResource = config('database.primary');
+        $databaseResource = config('database.json_prefix');
         $currentResource = $databaseResource;
         
         // Get user roles using JSON definition and UUID

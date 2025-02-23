@@ -5,11 +5,12 @@ require_once __DIR__ . '/bootstrap.php';
 
 use Glueful\Api\Library\{
     Utils, 
-    Permission, 
-    QueryAction, 
-    MySQLQueryBuilder,
-    DocGenerator
+    Permission,
 };
+use Glueful\Api\DocGenerator;
+use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
 
 /**
  * JSON Definition Generator for API
@@ -22,7 +23,8 @@ class JsonGenerator {
     private bool $runFromConsole;
     private array $generatedFiles = [];
     private string $dbResource;
-    
+    private SchemaManager $schema;
+    private QueryBuilder $db;
 
     /**
      * Constructor
@@ -34,9 +36,12 @@ class JsonGenerator {
     public function __construct(bool $runFromConsole = false) {
 
         $this->runFromConsole = $runFromConsole || $this->isConsole();
-        
-        $dbConfig = config('database');
-        $this->dbResource = array_key_first(array_filter($dbConfig, 'is_array'));
+        $this->log("Starting JSON Definition Generator...");
+        $this->dbResource = config('database.json_prefix');
+
+        $connection = new Connection();
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->schema = $connection->getSchemaManager();
         
         $dir = config('paths.json_definitions');
         if (!is_dir($dir)) {
@@ -121,13 +126,9 @@ class JsonGenerator {
         if (isset($this->generatedFiles[$filename])) {
             return;
         }
-        
-        $settings = config("database.$dbResource");
-        $db = Utils::getMySQLConnection($settings);
-        // Quote the table name properly to prevent SQL injection
-        $quotedTableName = "`" . str_replace("`", "``", $tableName) . "`";
-        $stmt = $db->query("DESCRIBE $quotedTableName");
-        $fields = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // Get table structure using SchemaManager
+        $fields = $this->schema->getTableColumns($tableName);
         
         $config = [
             'table' => [
@@ -182,7 +183,8 @@ class JsonGenerator {
                 'name' => 'permissions',
                 'fields' => [
                     ['name' => 'id'],
-                    ['name' => 'role_id'],
+                    ['name' => 'uuid'],
+                    ['name' => 'role_uuid'],
                     ['name' => 'model'],
                     ['name' => 'permissions'],
                     ['name' => 'created_at'],
@@ -272,26 +274,67 @@ class JsonGenerator {
      * @throws \RuntimeException If database configuration is invalid
      */
     private function generateDatabaseDefinitions(?string $targetDb): void {
-        $dbConfig = config('database');
-        $dbResource = $targetDb ?? $this->dbResource;
-        
-        if (empty($dbConfig) || !isset($dbConfig[$dbResource])) {
-            throw new \RuntimeException("No valid database configuration found for: $dbResource");
-        }
-
-        $settings = $dbConfig[$dbResource];
-        
         try {
-            $db = Utils::getMySQLConnection($settings);
+            $dbResource = $targetDb ?? $this->dbResource;
             $this->log("--- Generating JSON: dbres=$dbResource ---");
 
-            $tables = $db->query("SHOW TABLES");
-            while ($table = $tables->fetch(\PDO::FETCH_NUM)) {
-                $this->generateTableDefinition($dbResource, $table[0]);
+            
+            // Get all tables from the database
+            $tables = $this->schema->getTables();
+
+            foreach ($tables as $table) {
+                // Get column information using SchemaManager
+                $columns = $this->schema->getTableColumns($table);
+
+                $fields = [];
+                foreach ($columns as $col) {
+                    $fields[] = [
+                        'Field' => $col['Field'],
+                        'Type' => $col['Type'],
+                        'Null' => $col['Null'] ? 'YES' : 'NO'
+                    ];
+                }
+                
+                $this->generateTableDefinitionFromColumns($dbResource, $table, $fields);
             }
         } catch (\Exception $e) {
             $this->log("Error processing database: " . $e->getMessage());
         }
+    }
+
+    private function generateTableDefinitionFromColumns(string $dbResource, string $tableName, array $columns): void {
+        $filename = \config('paths.json_definitions') . "$dbResource.$tableName.json";
+        
+        if (isset($this->generatedFiles[$filename])) {
+            return;
+        }
+        
+        $config = [
+            'table' => [
+                'name' => $tableName,
+                'fields' => []
+            ],
+            'access' => [
+                'mode' => 'rw'
+            ]
+        ];
+
+        foreach ($columns as $field) {
+            $config['table']['fields'][] = [
+                'name' => $field['Field'],
+                'api_field' => $this->generateApiFieldName($field['Field']),
+                'type' => $field['Type'],
+                'nullable' => $field['Null'] === 'YES'
+            ];
+        }
+
+        file_put_contents(
+            $filename, 
+            json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+        
+        $this->generatedFiles[$filename] = true;
+        $this->log("Generated: $dbResource.$tableName.json");
     }
 
     /**
@@ -302,8 +345,8 @@ class JsonGenerator {
     private function setupAdministratorRole(): void {
         $this->log("--- Creating Administrator Role ---");
         
-        $roleId = $this->getOrCreateAdminRole();
-        $this->updateAdminPermissions($roleId);
+        $roleUuid = $this->getOrCreateAdminRole();
+        $this->updateAdminPermissions($roleUuid);
     }
 
     /**
@@ -312,12 +355,9 @@ class JsonGenerator {
      * @return string|int Role ID
      * @throws \Exception On database errors
      */
-    private function getOrCreateAdminRole(): string|int {
-        $settings = config("database.{$this->dbResource}");
-        
+    private function getOrCreateAdminRole(): string 
+    {
         try {
-            $db = Utils::getMySQLConnection($settings);
-            
             // Create both roles and permissions configurations if they don't exist
             if (!file_exists(config('paths.json_definitions') . "{$this->dbResource}.roles.json")) {
                 $this->createRolesConfig($this->dbResource);
@@ -326,20 +366,26 @@ class JsonGenerator {
                 $this->createPermissionsConfig($this->dbResource);
             }
             
-            $stmt = $db->prepare("SELECT * FROM roles WHERE name = :name LIMIT 1");
-            $stmt->execute(['name' => 'Administrator']);
-            $adminRole = $stmt->fetch();
+           // Get admin role using QueryBuilder
+            $adminRole = $this->db->select(
+                'roles',
+                ['uuid'],
+                ['name' => 'Administrator'],
+                false,  // withTrashed
+                [],     // orderBy
+                1       // limit
+            );
 
-            $roleId = $adminRole['id'] ?? null;
+            $roleUuid = $adminRole[0]['uuid'] ?? null;
             
-            if (!$roleId) {
-                $roleId = $this->createAdminRole();
+            if (!$roleUuid) {
+                $roleUuid = $this->createAdminRole();
                 $this->log("--- Administrator role created ---");
             } else {
                 $this->log("--- Administrator role already exists ---");
             }
             
-            return $roleId;
+            return $roleUuid;
             
         } catch (\Exception $e) {
             $this->log("Error in getOrCreateAdminRole: " . $e->getMessage());
@@ -358,6 +404,7 @@ class JsonGenerator {
                 'name' => 'roles',
                 'fields' => [
                     ['name' => 'id'],
+                    ['name' => 'uuid'],
                     ['name' => 'name'],
                     ['name' => 'description'],
                     ['name' => 'created_at'],
@@ -384,19 +431,42 @@ class JsonGenerator {
      * @return string|int New role ID
      */
     private function createAdminRole(): string|int {
-        $param = [
-            'name' => 'Administrator',
-            'description' => 'This is the Administrator role'
-        ];
+        try {
+            // Generate UUID for new role
+            $roleUuid = Utils::generateNanoID(12);
+            
+            // Insert role using SchemaManager
+            $result = $this->db->insert(
+                'roles',
+                [
+                    'uuid' => $roleUuid,
+                    'name' => 'Administrator',
+                    'description' => 'This is the Administrator role',
+                    'status' => 'active'
+                ]
+            ) > 0;
+            
+            if (!$result) {
+                throw new \RuntimeException('Failed to create administrator role');
+            }
 
-        $rolesFile = config('paths.json_definitions') . 'users.roles.json';
-        $roles = json_decode(file_get_contents($rolesFile), true);
-        
-        $result = MySQLQueryBuilder::query(
-            MySQLQueryBuilder::prepare(QueryAction::INSERT, $roles, $param, null)
-        );
+            // Get the role ID using the UUID
+            $roleData = $this->db->select(
+                'roles',
+                ['uuid'],
+                ['uuid' => $roleUuid]
+            );
 
-        return $result['id'];
+            if (empty($roleData)) {
+                throw new \RuntimeException('Failed to retrieve role ID');
+            }
+
+            return $roleData[0]['id'];
+            
+        } catch (\Exception $e) {
+            $this->log("Failed to create admin role: " . $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -404,100 +474,139 @@ class JsonGenerator {
      * 
      * @param string|int $roleId Administrator role ID
      */
-    private function updateAdminPermissions(string|int $roleId): void {
-        $this->log("--- Assigning/Updating Administrator Permissions ---");
-        $this->updateCorePermissions($roleId);
-        $this->updateExtensionPermissions($roleId);
-        $this->updateUIModelPermissions($roleId);
+    //TODO: Create version for SQLite and other databases
+    private function updateAdminPermissions(string $roleUuid): void 
+{
+    $this->log("--- Assigning/Updating Administrator Permissions ---");
+    
+    try {
+
+        // Collect all permissions using separate functions
+        $allPermissions = array_merge(
+            $this->collectCorePermissions($roleUuid),
+            $this->collectExtensionPermissions($roleUuid),
+            $this->collectUIModelPermissions($roleUuid)
+        );
+
+        // echo "Permissions: ";
+        // print_r($allPermissions);
+        // exit;
+
+        if (!empty($allPermissions)) {
+            $this->log("Found " . count($allPermissions) . " permissions to assign");
+            
+            // Use transaction through QueryBuilder
+            $this->db->transaction(function($qb) use ($allPermissions) {
+                $insertCount = 0;
+                foreach ($allPermissions as $permission) {
+                    $this->log($permission['model']);
+                    
+                    // Use upsert to handle potential duplicates
+                    if ($qb->upsert(
+                        'permissions',
+                        [$permission],
+                        ['permissions'] // Update permissions if record exists
+                    ) > 0) {
+                        $insertCount++;
+                    }
+                }
+                
+                if ($insertCount > 0) {
+                    $this->log("Successfully assigned $insertCount permissions");
+                    return true;
+                } else {
+                    $this->log("No permissions were inserted");
+                    return false;
+                }
+            });
+
+        } else {
+            $this->log("No new permissions to assign");
+        }
+    } catch (\Exception $e) {
+        $this->log("Error updating permissions: " . $e->getMessage());
+        throw $e;
     }
+}
 
     /**
-     * Load and initialize API extensions
-     * 
-     * @param string|int $roleId Administrator role ID
+     * Collect core permissions for JSON definition files
      */
-    private function updateCorePermissions(string|int $roleId): void {
+    private function collectCorePermissions(string $roleUuid): array 
+    {
+        $permissions = [];
         foreach (glob(config('paths.json_definitions') . "*.json") as $file) {
             $parts = explode('.', basename($file));
-            if (count($parts) !== 3) continue; // Skip if not in format: dbname.tablename.json
+            if (count($parts) !== 3) continue;
             
-            // Extract database and table name from filename (e.g., "primary.users.json")
-            $dbName = $parts[0];
-            $tableName = $parts[1];
-            
-            $model = "api.$dbName.$tableName"; // Create model in format "dbname.tablename"
-            
-            try {
-                $this->assignPermissions($roleId, $model);
-                $this->log($model);
-            } catch (\Exception $e) {
-                $this->log("Failed to assign core permission: " . $e->getMessage());
+            $model = "api.{$parts[0]}.{$parts[1]}";
+            if (!$this->permissionExists($roleUuid, $model)) {
+                $permissions[] = [
+                    'uuid' => Utils::generateNanoID(12),
+                    'role_uuid' => $roleUuid,
+                    'model' => $model,
+                    'permissions' => implode('', Permission::getAll())
+                ];
             }
         }
+        return $permissions;
     }
 
     /**
-     * Assign permissions to role
-     * 
-     * @param string|int $roleId Role ID
-     * @param string $model Permission model identifier
-     * @throws \Exception On database errors
+     * Collect extension-based permissions
      */
-    private function assignPermissions(string|int $roleId, string $model): void 
+    private function collectExtensionPermissions(string $roleUuid): array 
     {
-        if ($this->permissionExists($roleId, $model)) {
-            return;
-        }
-        
-        $permissions = implode('', Permission::getAll());
-        $settings = config("database.{$this->dbResource}");
-        
-        try {
-            $db = Utils::getMySQLConnection($settings);
-            $stmt = $db->prepare(
-                "INSERT INTO permissions (role_id, model, permissions) VALUES (:roleId, :model, :permissions)"
-            );
-            
-            $result = $stmt->execute([
-                ':roleId' => $roleId,
-                ':model' => $model,
-                ':permissions' => $permissions
-            ]);
-            
-            $this->log("Permissions assigned: " . ($result ? "success" : "failed"));
-        } catch (\Exception $e) {
-            $this->log("Error assigning permissions: " . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Update extension-specific permissions
-     * 
-     * @param string|int $roleId Administrator role ID
-     */
-    private function updateExtensionPermissions(string|int $roleId): void {
-        $this->log("--- Assigning/Updating Administrator Extension Permissions ---");
+        $permissions = [];
         foreach ($this->getExtensionPaths() as $path) {
-            $this->processExtensionFile($path, $roleId);
+            $path = str_replace("\\", "/", $path);
+            $parts = explode('/', $path);
+            $filename = end($parts);
+            $function = current(explode('.', $filename));
+            $action = prev($parts);
+            
+            if (!file_exists($path)) continue;
+            
+            $extension = file_get_contents($path);
+            if (!str_contains($extension, 'extends') || !str_contains($extension, 'Extensions')) {
+                continue;
+            }
+            
+            $model = "api.ext.$action.$function";
+            if (!$this->permissionExists($roleUuid, $model)) {
+                $permissions[] = [
+                    'uuid' => Utils::generateNanoID(12),
+                    'role_uuid' => $roleUuid,
+                    'model' => $model,
+                    'permissions' => implode('', Permission::getAll())
+                ];
+            }
         }
+        return $permissions;
     }
 
     /**
-     * Update UI model permissions
-     * 
-     * @param string|int $roleId Administrator role ID
+     * Collect UI model permissions
      */
-    private function updateUIModelPermissions(string|int $roleId): void {
+    private function collectUIModelPermissions(string $roleUuid): array 
+    {
+        $permissions = [];
         global $uiModels;
-        $this->log("--- Assigning/Updating Administrator UI Model Permissions ---");
-
+        
         if (!empty($uiModels)) {
             foreach ($uiModels as $view) {
-                $this->assignPermissions($roleId, "ui.$view");
-                $this->log("ui.$view");
+                $model = "ui.$view";
+                if (!$this->permissionExists($roleUuid, $model)) {
+                    $permissions[] = [
+                        'uuid' => Utils::generateNanoID(12),
+                        'role_uuid' => $roleUuid,
+                        'model' => $model,
+                        'permissions' => implode('', Permission::getAll())
+                    ];
+                }
             }
         }
+        return $permissions;
     }
 
     /**
@@ -508,21 +617,23 @@ class JsonGenerator {
      * @return bool True if permission exists
      * @throws \Exception On database errors
      */
-    private function permissionExists(string|int $roleId, string $model): bool
+    private function permissionExists(string $roleUuid, string $model): bool
     {
         try {
-            $settings = config("database.{$this->dbResource}");
-            $db = Utils::getMySQLConnection($settings);
-            $stmt = $db->prepare(
-                "SELECT 1 FROM permissions WHERE role_id = :roleId AND model = :model LIMIT 1"
+            // Check permissions using role UUID directly
+            $permissions = $this->db->select(
+                'permissions',
+                ['id'],
+                [
+                    'role_uuid' => $roleUuid,
+                    'model' => $model
+                ],
+                false,
+                [],
+                1
             );
             
-            $stmt->execute([
-                ':roleId' => $roleId,
-                ':model' => $model
-            ]);
-            
-            return (bool)$stmt->fetch();
+            return !empty($permissions);
         } catch (\Exception $e) {
             $this->log("Error checking permissions: " . $e->getMessage());
             throw $e;
@@ -565,31 +676,6 @@ class JsonGenerator {
             }
         }
         return $results;
-    }
-
-    /**
-     * Process extension file for permissions
-     * 
-     * @param string $path Extension file path
-     * @param string|int $roleId Role ID to assign permissions
-     */
-    private function processExtensionFile(string $path, string|int $roleId): void {
-        $path = str_replace("\\", "/", $path);
-        $parts = explode('/', $path);
-        $filename = end($parts);
-        $function = current(explode('.', $filename));
-        $action = prev($parts);
-
-        if (!file_exists($path)) return;
-
-        $extension = file_get_contents($path);
-        if (!str_contains($extension, 'extends') || !str_contains($extension, 'Extensions')) {
-            return;
-        }
-
-        $model = "api.ext.$action.$function";
-        $this->assignPermissions($roleId, $model);
-        $this->log($model);
     }
 }
 

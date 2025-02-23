@@ -1,61 +1,75 @@
 <?php
 
 namespace Glueful\Database\Schema;
-
-use Glueful\Database\Driver\MySQLDriver;
-use Glueful\Database\Connection;
 use PDO;
 
 /**
  * MySQL Schema Manager Implementation
  * 
- * Handles MySQL-specific schema operations including:
- * - Table and column management
- * - Index creation/deletion
- * - Schema information retrieval
- * - MySQL-specific SQL generation
+ * Provides MySQL-specific implementation of schema operations with features including:
+ * - InnoDB table management with optional engine selection
+ * - Full MySQL column type support (VARCHAR, TEXT, INT, etc.)
+ * - Index management including UNIQUE and regular indexes
+ * - Foreign key constraint handling
+ * - Table statistics and metadata retrieval
  * 
- * Uses PDO for database operations and follows MySQL
- * best practices for schema modifications.
+ * Requirements:
+ * - MySQL 5.7+ or MariaDB 10.2+
+ * - PDO MySQL extension
+ * - Appropriate database user privileges for DDL operations
  */
 class MySQLSchemaManager implements SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
 
-    /**
-     * Initialize MySQL schema manager
-     * 
-     * @param MySQLDriver $driver MySQL-specific database driver
-     */
-    public function __construct(MySQLDriver $driver)
+    public function __construct(PDO $pdo)
     {
-        $connection = new Connection();
-        $this->pdo = $connection->getPDO();
+        $this->pdo = $pdo;
     }
 
     /**
-     * Create new MySQL table
+     * Creates a new MySQL table with specified structure
      * 
-     * Creates table with specified columns and options using InnoDB engine.
-     * Supports column types, nullability, and default values.
+     * Supports MySQL-specific features:
+     * - All MySQL column types and attributes
+     * - Table engines (default: InnoDB)
+     * - Character sets and collations
+     * - Auto-increment columns
+     * - Column position specifications
      * 
-     * @param string $table Table name
-     * @param array $columns Column definitions with types and constraints
-     * @param array $options Additional table options
-     * @return bool True if table created successfully
-     * @throws \PDOException If table creation fails
+     * Example usage:
+     * $columns = [
+     *     'id' => ['type' => 'INT', 'auto_increment' => true],
+     *     'name' => ['type' => 'VARCHAR(255)', 'nullable' => false]
+     * ];
+     * 
+     * @param string $table Table name without prefix
+     * @param array $columns Column definitions with MySQL-specific types
+     * @param array $options MySQL table options (engine, charset, etc.)
+     * @throws \PDOException On MySQL-specific errors (duplicate table, invalid syntax)
      */
     public function createTable(string $table, array $columns, array $options = []): bool
     {
         $columnDefinitions = [];
+
         foreach ($columns as $name => $definition) {
-            $columnDefinitions[] = "`$name` {$definition['type']} " .
-                (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
-                (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
+            // If the definition is a string, use it directly
+            if (is_string($definition)) {
+                $columnDefinitions[] = "`$name` $definition";
+            } elseif (is_array($definition)) {
+                // Handle array format for more control
+                $columnDefinitions[] = "`$name` {$definition['type']} " .
+                    (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
+                    (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
+            } else {
+                throw new \InvalidArgumentException("Invalid column definition for `$name`");
+            }
         }
 
-        $sql = "CREATE TABLE `$table` (" . implode(", ", $columnDefinitions) . ") ENGINE=InnoDB";
+        
+        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(", ", $columnDefinitions) . ") ENGINE=InnoDB";
+
         return (bool) $this->pdo->exec($sql);
     }
 
@@ -74,15 +88,23 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Add column to MySQL table
+     * Adds new column to MySQL table
      * 
-     * Adds new column with specified definition using ALTER TABLE.
+     * Supports MySQL column features:
+     * - AFTER/FIRST position specifiers
+     * - All MySQL data types and modifiers
+     * - Column character sets
+     * - Generated/Virtual columns
      * 
-     * @param string $table Target table
+     * @param string $table Target table name
      * @param string $column New column name
-     * @param array $definition Column type and constraints
-     * @return bool True if column added successfully
-     * @throws \PDOException If column addition fails
+     * @param array $definition MySQL column definition including:
+     *                         - type: MySQL data type
+     *                         - nullable: NULL/NOT NULL
+     *                         - default: Default value
+     *                         - charset: Column character set
+     *                         - after/first: Position specifier
+     * @throws \PDOException On MySQL errors (duplicate column, invalid type)
      */
     public function addColumn(string $table, string $column, array $definition): bool
     {
@@ -108,16 +130,16 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Create MySQL index
+     * Creates MySQL index on specified columns
      * 
-     * Creates regular or unique index on specified columns.
+     * Supports:
+     * - Regular indexes (non-unique)
+     * - Unique indexes
+     * - Multiple column indexes
+     * - Index prefixes for TEXT/BLOB
      * 
-     * @param string $table Target table
-     * @param string $indexName Name for new index
-     * @param array $columns Columns to index
-     * @param bool $unique Whether to create unique index
-     * @return bool True if index created successfully
-     * @throws \PDOException If index creation fails
+     * Note: Maximum index key length varies by MySQL version
+     * and storage engine settings.
      */
     public function createIndex(string $table, string $indexName, array $columns, bool $unique = false): bool
     {
@@ -156,18 +178,64 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Get MySQL table columns
+     * Retrieves MySQL table column information
      * 
-     * Retrieves detailed column information for specified table.
+     * Returns detailed MySQL-specific column metadata:
+     * - Column name and position
+     * - Complete type definition
+     * - Nullability and defaults
+     * - Character set and collation
+     * - Extra attributes (on update, etc)
      * 
-     * @param string $table Target table
-     * @return array Column definitions including type, null, key, default and extra
-     * @throws \PDOException If column information retrieval fails
+     * @return array MySQL SHOW COLUMNS format data
      */
     public function getTableColumns(string $table): array
     {
         $stmt = $this->pdo->prepare("SHOW COLUMNS FROM `$table`");
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function disableForeignKeyChecks(): void
+    {
+        $this->pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    }
+
+    public function enableForeignKeyChecks(): void
+    {
+        $this->pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    }
+
+    /**
+     * Gets MySQL server version string
+     * 
+     * Returns complete MySQL version including:
+     * - Major, minor, and patch versions
+     * - Distribution info (MySQL/MariaDB)
+     * - Build details
+     */
+    public function getVersion(): string
+    {
+        return $this->pdo->getAttribute(\PDO::ATTR_SERVER_VERSION);
+    }
+
+    /**
+     * Calculates MySQL table size
+     * 
+     * Returns combined size including:
+     * - Actual data length
+     * - Index size
+     * - Data free space
+     * - Average row length calculations
+     * 
+     * Note: Size may be approximate depending on storage engine
+     */
+    public function getTableSize(string $table): int
+    {
+        $stmt = $this->pdo->query("SHOW TABLE STATUS LIKE '$table'");
+        $status = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return isset($status['Data_length'], $status['Index_length'])
+            ? (int) ($status['Data_length'] + $status['Index_length'])
+            : 0;
     }
 }

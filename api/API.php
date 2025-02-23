@@ -6,7 +6,6 @@ namespace Glueful\Api;
 use Glueful\Api\Library\{
     Permissions,
     Permission,
-    Utils,
     APIEngine,
     TokenManager,
     Security\EmailVerification
@@ -16,30 +15,38 @@ use Glueful\Api\Http\{
     Router
 };
 use Glueful\Api\Extensions\Uploader\FileUploader;
-use Glueful\Api\Library\Logging\LogManager;
-use Monolog\Level;
 
 /**
- * Main API handler class
+ * Main API Router and Request Handler
  * 
- * Manages API routing, authentication, request handling, and response generation.
- * Provides RESTful endpoints for user authentication, CRUD operations, and file handling.
+ * Provides centralized routing and request handling for the API:
+ * - Route registration and management
+ * - Authentication and authorization
+ * - Request validation and processing
+ * - Response formatting
+ * - File upload handling
+ * - Audit logging
+ * 
+ * @package Glueful\Api
  */
 class API 
 {
     private static bool $routesInitialized = false;
-    private static ?LogManager $logger = null;
     
     /**
-     * Initialize the API system
+     * Initialize API Routes and Extensions
      * 
-     * Sets up logging, loads extensions, and initializes routes if not already done.
+     * Sets up the routing system and loads API extensions:
+     * - Loads API extensions first to allow route registration
+     * - Initializes core API routes
+     * - Sets up authentication routes
+     * - Configures CRUD endpoints
+     * - Registers file handling routes
+     * 
+     * @return void
      */
     public static function init(): void
     {
-        if (self::$logger === null) {
-            self::$logger = new LogManager();
-        }
         if (!self::$routesInitialized) {
         // Load extensions before main routes
         // This allows extensions to register their routes first
@@ -72,7 +79,7 @@ class API
                 $postData = $_POST;
             }
             
-            self::prepareDatabaseResource(null);
+            // self::prepareDatabaseResource(null);
             $response = self::handleLogin('sessions', $postData);
             return $response;
         }, true); // Mark as public
@@ -569,24 +576,23 @@ class API
     }
 
     /**
-     * Validate authentication token
+     * Validate Authentication Token
      * 
-     * Checks if the provided token is valid and not expired.
-     * Exits with appropriate error response if validation fails.
+     * Verifies JWT token validity and permissions:
+     * - Checks token presence
+     * - Validates token signature
+     * - Verifies token expiration
+     * - Checks user permissions
      * 
-     * @return array Session data if token is valid
+     * @return array Session data if token valid
+     * @throws \RuntimeException If token invalid or expired
      */
     private static function validateToken(): array 
     {
         $token = self::getAuthAuthorizationToken();
         
         if (!$token) {
-            self::$logger->log(
-                "Authentication failed - No token provided",
-                ['ip' => $_SERVER['REMOTE_ADDR']],
-                Level::Warning,
-                'auth'
-            );
+           
             echo json_encode(Response::unauthorized('Authentication required')->send());
             exit;
         }
@@ -597,43 +603,12 @@ class API
             $result = APIEngine::validateSession('sessions', 'validate', ['token' => $token]);
             
             if (!isset($result['success']) || !$result['success']) {
-                self::$logger?->log(
-                    "Token validation failed",
-                    [
-                        'token_prefix' => substr($token, 0, 8) . '...',
-                        'ip' => $_SERVER['REMOTE_ADDR'],
-                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'
-                    ],
-                    Level::Warning,
-                    'auth'
-                );
                 echo json_encode(Response::unauthorized('Invalid or expired token')->send());
                 exit;
             }
 
-            // Log successful validation
-            self::$logger?->log(
-                "Token validated successfully",
-                [
-                    'user_uuid' => $result['uuid'] ?? null,
-                    'ip' => $_SERVER['REMOTE_ADDR']
-                ],
-                Level::Info,
-                'auth'
-            );
-            
             return $result;
         } catch (\Exception $e) {
-            self::$logger?->log(
-                "Token validation error",
-                [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'ip' => $_SERVER['REMOTE_ADDR']
-                ],
-                Level::Error,
-                'auth'
-            );
             echo json_encode(Response::error('Token validation failed', Response::HTTP_INTERNAL_SERVER_ERROR)->send());
             exit;
         }
@@ -648,7 +623,6 @@ class API
     {
 
         $databaseResource = config('database.primary');
-        Utils::createPDOConnection($databaseResource);
     }
 
     /**
@@ -678,12 +652,6 @@ class API
     private static function handleLogin(string $function, array $postParams): array 
     {
         if (!self::validateLoginCredentials($function, $postParams)) {
-            self::$logger?->log(
-                "Login failed - Missing credentials",
-                ['ip' => $_SERVER['REMOTE_ADDR']],
-                Level::Warning,
-                'auth'
-            );
             return Response::error('Username/Email and Password Required', Response::HTTP_BAD_REQUEST)->send();
         }
 
@@ -702,44 +670,15 @@ class API
             
             // Convert API response to proper HTTP response
             if (isset($result['success']) && !$result['success']) {
-                self::$logger?->log(
-                    "Login failed - Invalid credentials",
-                    [
-                        'username' => $postParams['username'] ?? $postParams['email'] ?? 'unknown',
-                        'ip' => $_SERVER['REMOTE_ADDR']
-                    ],
-                    Level::Warning,
-                    'auth'
-                );
                 return Response::error(
                     $result['message'] ?? 'Login failed', 
                     $result['code'] ?? Response::HTTP_BAD_REQUEST
                 )->send();
             }
-
-            self::$logger?->log(
-                "Login successful",
-                [
-                    'user_uuid' => $result['user']['uuid'] ?? null,
-                    'ip' => $_SERVER['REMOTE_ADDR']
-                ],
-                Level::Info,
-                'auth'
-            );
             
             return Response::ok($result)->send();
             
         } catch (\Exception $e) {
-            self::$logger?->log(
-                "Login error",
-                [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'ip' => $_SERVER['REMOTE_ADDR']
-                ],
-                Level::Error,
-                'auth'
-            );
             return Response::error(
                 'Login failed: ' . $e->getMessage(), 
                 Response::HTTP_INTERNAL_SERVER_ERROR
@@ -761,12 +700,6 @@ class API
 
             $token = self::getAuthAuthorizationToken();
             if (!$token) {
-                self::$logger?->log(
-                    "Upload failed - No authentication",
-                    ['ip' => $_SERVER['REMOTE_ADDR']],
-                    Level::Warning,
-                    'upload'
-                );
                 echo json_encode(Response::unauthorized('Authentication required')->send());
                 exit;
             }
@@ -783,46 +716,16 @@ class API
                 'error' => 0,
                 'size' => filesize($tmpFile)
             ];
-
-            self::$logger?->log(
-                "Processing base64 upload",
-                [
-                    'filename' => $fileParams['name'],
-                    'size' => $fileParams['size'],
-                    'mime_type' => $fileParams['type']
-                ],
-                Level::Info,
-                'upload'
-            );
-
             $response = $uploader->handleUpload(
                 $getParams['token'],
                 $getParams,
                 ['file' => $fileParams]
             );
 
-            self::$logger?->log(
-                "Base64 upload completed",
-                [
-                    'filename' => $fileParams['name'],
-                    'uuid' => $response['uuid'] ?? null
-                ],
-                Level::Info,
-                'upload'
-            );
-
             return $response;
 
         } catch (\Exception $e) {
-            self::$logger?->log(
-                "Base64 upload failed",
-                [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
-                ],
-                Level::Error,
-                'upload'
-            );
+
             return Response::error('Base64 upload failed: ' . $e->getMessage())->send();
         }
     }
@@ -842,54 +745,17 @@ class API
             $token = self::getAuthAuthorizationToken();
         
             if (!$token) {
-                self::$logger?->log(
-                    "Upload failed - No authentication",
-                    ['ip' => $_SERVER['REMOTE_ADDR']],
-                    Level::Warning,
-                    'upload'
-                );
                 echo json_encode(Response::unauthorized('Authentication required')->send());
                 exit;
             }
             
             $_GET['token'] = $token; // Store token for downstream use
 
-            self::$logger?->log(
-                "Processing file upload",
-                [
-                    'filename' => $fileParams['file']['name'] ?? 'unknown',
-                    'size' => $fileParams['file']['size'] ?? 0,
-                    'type' => $fileParams['file']['type'] ?? 'unknown'
-                ],
-                Level::Info,
-                'upload'
-            );
-
             $response = $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
-
-            self::$logger?->log(
-                "File upload completed",
-                [
-                    'filename' => $fileParams['file']['name'] ?? 'unknown',
-                    'uuid' => $response['uuid'] ?? null
-                ],
-                Level::Info,
-                'upload'
-            );
 
             return $response;
 
         } catch (\Exception $e) {
-            self::$logger?->log(
-                "File upload failed",
-                [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'filename' => $fileParams['file']['name'] ?? 'unknown'
-                ],
-                Level::Error,
-                'upload'
-            );
             return Response::error('File upload failed: ' . $e->getMessage())->send();
         }
     }
@@ -968,9 +834,9 @@ class API
         ];
 
         $currentDb = $GLOBALS['databaseResource'];
-        self::prepareDatabaseResource('audit');
+        // self::prepareDatabaseResource('audit');
         APIEngine::saveData('sysaudit', 'save', $auditPost);
-        self::prepareDatabaseResource($currentDb);
+        // self::prepareDatabaseResource($currentDb);
     }
 
      /**
@@ -1000,9 +866,15 @@ class API
     }
 
     /**
-     * Load API extensions
+     * Load API Extensions
      * 
-     * Scans directories for extension classes and initializes them.
+     * Dynamically loads API extension modules:
+     * - Scans extension directories
+     * - Loads extension classes
+     * - Initializes extension routes
+     * - Handles extension dependencies
+     * 
+     * @return void
      */
     private static function loadExtensions(): void 
 {
@@ -1059,12 +931,17 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
 }
 
     /**
-     * Process incoming API request
+     * Process API Request
      * 
-     * Main entry point for handling API requests.
-     * Sets up environment and routes request to appropriate handler.
+     * Main entry point for handling API requests:
+     * - Sets response headers
+     * - Initializes API system
+     * - Routes request to appropriate handler
+     * - Handles errors and exceptions
+     * - Returns formatted response
      * 
-     * @return array API response
+     * @return array API response with status and data
+     * @throws \RuntimeException If request processing fails
      */
     public static function processRequest(): array 
     {
