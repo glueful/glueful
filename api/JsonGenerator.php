@@ -1,13 +1,10 @@
 <?php
 declare(strict_types=1);
-namespace Glueful\Api;
+namespace Glueful;
 require_once __DIR__ . '/bootstrap.php';
 
-use Glueful\Api\Library\{
-    Utils, 
-    Permission,
-};
-use Glueful\Api\DocGenerator;
+use Glueful\Permissions\Permission;
+use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
@@ -19,7 +16,7 @@ use Glueful\Database\QueryBuilder;
  * These definitions describe the structure and behavior of API endpoints
  * and database interactions.
  */
-class JsonGenerator {
+class JsonDefinition {
     private bool $runFromConsole;
     private array $generatedFiles = [];
     private string $dbResource;
@@ -367,14 +364,11 @@ class JsonGenerator {
             }
             
            // Get admin role using QueryBuilder
-            $adminRole = $this->db->select(
-                'roles',
-                ['uuid'],
-                ['name' => 'Administrator'],
-                false,  // withTrashed
-                [],     // orderBy
-                1       // limit
-            );
+           $adminRole = $this->db
+           ->select('roles', ['uuid'])
+           ->where(['name' => 'Administrator'])
+           ->limit(1)
+           ->get();
 
             $roleUuid = $adminRole[0]['uuid'] ?? null;
             
@@ -680,6 +674,6 @@ class JsonGenerator {
 }
 
 // Run the generator
-$generator = new JsonGenerator();
+$generator = new JsonDefinition();
 $generator->generate();
 ?>

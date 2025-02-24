@@ -5,57 +5,74 @@ namespace Glueful\Database\Driver;
 /**
  * Database Driver Interface
  * 
- * Defines contract for database-specific operations and SQL generation.
- * Each supported database engine (MySQL, PostgreSQL, SQLite) must implement
- * these methods according to their specific SQL syntax and requirements.
+ * Core interface defining the contract for database-specific operations and SQL generation.
+ * Implementations of this interface handle the variations in SQL syntax across different
+ * database management systems (DBMS).
  * 
- * Handles:
- * - Identifier quoting
- * - INSERT IGNORE operations
- * - UPSERT (INSERT/UPDATE) operations
- * - Database-specific SQL generation
+ * Key responsibilities:
+ * - Safe identifier quoting to prevent SQL injection
+ * - Handle database-specific syntax for INSERT IGNORE operations
+ * - Manage UPSERT (INSERT/UPDATE) operations across different DBMS
+ * - Generate optimized, database-specific SQL statements
+ * 
+ * Supported databases should implement this interface according to their specific
+ * SQL dialect and optimization requirements.
  */
 interface DatabaseDriver
 {
     /**
-     * Wrap identifier with database-specific quotes
+     * Wrap an identifier with database-specific quotes
      * 
-     * Examples:
-     * - MySQL: `identifier`
-     * - PostgreSQL: "identifier"
-     * - SQLite: "identifier"
+     * Ensures proper escaping of identifiers (table names, column names) according
+     * to the specific database's requirements.
      * 
-     * @param string $identifier Column or table name
-     * @return string Quoted identifier
+     * Database-specific examples:
+     * - MySQL:      `table_name`
+     * - PostgreSQL: "table_name"
+     * - SQLite:     "table_name"
+     * 
+     * @param string $identifier The raw identifier (table/column name) to be quoted
+     * @return string The properly quoted identifier safe for SQL queries
+     * @throws \InvalidArgumentException If identifier contains invalid characters
      */
     public function wrapIdentifier(string $identifier): string;
 
     /**
-     * Generate INSERT IGNORE statement
+     * Generate an INSERT IGNORE statement for the target database
      * 
-     * Creates SQL for inserting records while ignoring duplicates:
-     * - MySQL: INSERT IGNORE INTO
-     * - PostgreSQL: INSERT INTO ... ON CONFLICT DO NOTHING
-     * - SQLite: INSERT OR IGNORE INTO
+     * Creates a database-specific SQL statement that will insert records while
+     * silently handling duplicate key conflicts.
      * 
-     * @param string $table Target table
-     * @param array $columns Column definitions
-     * @return string Generated SQL statement
+     * Implementation examples:
+     * - MySQL:      INSERT IGNORE INTO table (col1, col2) VALUES (?, ?)
+     * - PostgreSQL: INSERT INTO table (col1, col2) ON CONFLICT DO NOTHING
+     * - SQLite:     INSERT OR IGNORE INTO table (col1, col2) VALUES (?, ?)
+     * 
+     * @param string $table The target table name (unquoted)
+     * @param array $columns Array of column definitions
+     * @return string Complete SQL statement with proper syntax for target database
+     * @throws \InvalidArgumentException If table name or columns are invalid
      */
     public function insertIgnore(string $table, array $columns): string;
 
     /**
-     * Generate UPSERT statement
+     * Generate an UPSERT (INSERT or UPDATE) statement
      * 
-     * Creates SQL for insert-or-update operations:
-     * - MySQL: INSERT ... ON DUPLICATE KEY UPDATE
-     * - PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
-     * - SQLite: INSERT OR REPLACE INTO
+     * Creates a database-specific SQL statement that will either insert a new record
+     * or update an existing one based on a key constraint violation.
      * 
-     * @param string $table Target table
-     * @param array $columns Columns to insert
-     * @param array $updateColumns Columns to update on conflict
-     * @return string Generated SQL statement
+     * Implementation examples:
+     * - MySQL:      INSERT INTO table (col1, col2) VALUES (?, ?)
+     *              ON DUPLICATE KEY UPDATE col2 = VALUES(col2)
+     * - PostgreSQL: INSERT INTO table (col1, col2) VALUES (?, ?)
+     *              ON CONFLICT (col1) DO UPDATE SET col2 = EXCLUDED.col2
+     * - SQLite:     INSERT OR REPLACE INTO table (col1, col2) VALUES (?, ?)
+     * 
+     * @param string $table The target table name (unquoted)
+     * @param array $columns Columns to insert in the format [name => value]
+     * @param array $updateColumns Columns to update on conflict in format [name => value]
+     * @return string Complete SQL statement with proper syntax for target database
+     * @throws \InvalidArgumentException If parameters are invalid
      */
     public function upsert(string $table, array $columns, array $updateColumns): string;
 }

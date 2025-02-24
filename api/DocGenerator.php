@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful\Api;
+namespace Glueful;
 
 /**
  * API Documentation Generator

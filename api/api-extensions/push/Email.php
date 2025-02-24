@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Extensions\Push;
 
-use Glueful\Api\Library\Extensions;
+use Glueful\Extensions;
 use Glueful\Api\API;
 use Glueful\Api\Extensions\Push\AdvancedEmail;
 use PHPMailer\PHPMailer\{PHPMailer, Exception as PHPMailerException};

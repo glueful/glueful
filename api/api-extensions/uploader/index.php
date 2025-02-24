@@ -6,7 +6,8 @@ namespace Glueful\Api\Extensions\Uploader;
 
 require_once __DIR__ . '/../../bootstrap.php';
 
-use Glueful\Api\Library\{ Utils, APIEngine,};
+use Glueful\{APIEngine,};
+use Glueful\Helpers\Utils;
 use RuntimeException;
 use InvalidArgumentException;
 use Glueful\Api\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
