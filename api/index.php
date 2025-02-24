@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../api/bootstrap.php';
 
-use Glueful\Api\API;
-use Glueful\Api\Http\ServerRequestFactory;
-use Glueful\Api\Exceptions\{ValidationException, AuthenticationException};
+use Glueful\API;
+use Glueful\Http\ServerRequestFactory;
+use Glueful\Exceptions\{ValidationException, AuthenticationException};
 
 // Common request data for context
 $requestContext = [

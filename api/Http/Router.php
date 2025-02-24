@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful\Api\Http;
+namespace Glueful\Http;
 
 /**
  * API Router

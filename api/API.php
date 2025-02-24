@@ -1,19 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful\Api;
+namespace Glueful;
 
-use Glueful\Api\Library\{
-    Permissions,
-    Permission,
-    APIEngine,
-    TokenManager,
-    Security\EmailVerification
-};
-use Glueful\Api\Http\{
-    Response,
-    Router
-};
+use Glueful\{ Auth\TokenManager, Security\EmailVerification};
+use Glueful\Permissions\{Permissions, Permission};
+use Glueful\APIEngine;
+use Glueful\Http\{Response,Router};
 use Glueful\Api\Extensions\Uploader\FileUploader;
 
 /**
@@ -915,7 +908,7 @@ private static function scanExtensionsDirectory(string $dir, string $namespace, 
             // Check if class exists and extends Extensions
             if (class_exists($fullClassName)) {
                 $reflection = new \ReflectionClass($fullClassName);
-                if ($reflection->isSubclassOf(\Glueful\Api\Library\Extensions::class)) {
+                if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
                     try {
                         // Check if class has initializeRoutes method
                         if ($reflection->hasMethod('initializeRoutes')) {

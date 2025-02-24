@@ -5,7 +5,7 @@ The `RateLimiter` class provides a sliding window rate limiting implementation u
 ## Basic Usage
 
 ```php
-use Glueful\Api\Library\Security\RateLimiter;
+use Glueful\Security\RateLimiter;
 
 // Allow 100 requests per minute
 $limiter = new RateLimiter(

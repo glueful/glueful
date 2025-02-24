@@ -1,6 +1,6 @@
 <?php
 
-namespace Glueful\Api\Http;
+namespace Glueful\Http;
 
 /**
  * API Response Handler

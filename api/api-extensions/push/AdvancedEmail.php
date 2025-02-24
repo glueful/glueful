@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Api\Extensions\Push;
 
-use Glueful\Api\Library\Extensions;
+use Glueful\Extensions;
 use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};
 
 final class AdvancedEmail extends Extensions

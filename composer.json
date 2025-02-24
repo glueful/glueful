@@ -36,16 +36,20 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "autoload": {
+        "files": [
+            "api/helpers.php",
+            "api/Exceptions/ExceptionHandler.php"
+        ],
         "psr-4": {
-            "Glueful\\Api\\": "api/",
-            "Glueful\\Api\\Library\\": "api/api-library/",
-            "Glueful\\Api\\Extensions\\": "api/api-extensions/",
-            "Glueful\\Extensions\\": "extensions/",
-            "Glueful\\App\\": "app/",
             "Glueful\\": "api/",
-            "Glueful\\Database\\": "api/Database/",
-            "Glueful\\Database\\Driver\\": "api/Database/Driver/",
-            "Glueful\\Console\\": "api/Console/"
+            "Glueful\\Database\\": [
+                "api/Database/",
+                "api/Database/Driver/"
+            ],
+            "Glueful\\Extensions\\": [
+                "api/api-extensions/",
+                "extensions/"
+            ]
         }
     },
     "config": {

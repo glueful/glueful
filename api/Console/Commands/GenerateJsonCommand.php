@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Api\JsonGenerator;
+use Glueful\Api\JsonDefinition;
 
 /**
  * JSON Definition Generator
@@ -123,7 +123,7 @@ HELP;
             return;
         }
 
-        $generator = new JsonGenerator(true);
+        $generator = new JsonDefinition(true);
         
         if ($options['type'] === 'api-definitions') {
             $database = $options['database'] ?? null;

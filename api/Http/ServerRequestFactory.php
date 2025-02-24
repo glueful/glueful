@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Api\Http;
+namespace Glueful\Http;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7Server\ServerRequestCreator;

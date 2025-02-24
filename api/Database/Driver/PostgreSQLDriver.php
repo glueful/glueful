@@ -1,7 +1,6 @@
 <?php
 
 namespace Glueful\Database\Driver;
-
 /**
  * PostgreSQL Database Driver Implementation
  * 
@@ -13,7 +12,7 @@ namespace Glueful\Database\Driver;
  * - PostgreSQL-specific optimizations
  * 
  * Follows PostgreSQL best practices for SQL generation and
- * maintains compatibility with the DatabaseDriver interface.
+ * maintains compatibility with the Driver interface.
  */
 class PostgreSQLDriver implements DatabaseDriver
 {
