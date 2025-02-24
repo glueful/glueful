@@ -8,6 +8,7 @@ use Glueful\Permissions\{Permissions, Permission};
 use Glueful\APIEngine;
 use Glueful\Http\{Response,Router};
 use Glueful\Api\Extensions\Uploader\FileUploader;
+use Glueful\Identity\Auth;
 
 /**
  * Main API Router and Request Handler
@@ -73,7 +74,7 @@ class API
             }
             
             // self::prepareDatabaseResource(null);
-            $response = self::handleLogin('sessions', $postData);
+            $response = Auth::login($postData);
             return $response;
         }, true); // Mark as public
 
@@ -244,7 +245,7 @@ class API
         $router->addRoute('POST', 'auth/validate-token', function($params) {
 
             try {
-                $result = self::validateToken();
+                $result = Auth::validateToken();
                 return Response::ok($result)->send();
 
             } catch (\Exception $e) {
@@ -289,7 +290,7 @@ class API
         }, true);
 
         $router->addRoute('GET', 'files/{uuid}', function($params) {
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 $result = APIEngine::getBlob('blobs', 'retrieve', $params);
@@ -318,7 +319,7 @@ class API
 
         $router->addRoute('POST', 'files', function($params) {
             
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
@@ -356,7 +357,7 @@ class API
         // List all resources
         $router->addRoute('GET', '{resource}', function($params) {
            
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get token from request
@@ -393,7 +394,7 @@ class API
         // Get single resource by UUID
         $router->addRoute('GET', '{resource}/{uuid}', function($params) {
             
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get token from request
@@ -431,7 +432,7 @@ class API
         
         $router->addRoute('POST', '{resource}', function($params) {
             // Validate authentication
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get content type and parse body
@@ -473,7 +474,7 @@ class API
         
         // PUT Route (Update)
         $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get request body
@@ -517,7 +518,7 @@ class API
         
         // DELETE Route
         $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get token from request
@@ -544,7 +545,7 @@ class API
         
         $router->addRoute('POST', 'auth/logout', function($params) {
             // Validate token
-            self::validateToken();
+            Auth::validateToken();
             
             try {
                 // Get token from request
@@ -554,10 +555,7 @@ class API
                     return Response::unauthorized('Token required')->send();
                 }
                 
-                // Direct call to kill session without legacy conversion
-                $result = APIEngine::killSession(['token' => $token]);
-                
-                return Response::ok(['message' => 'Logged out successfully'])->send();
+                return Auth::logout($token);
                 
             } catch (\Exception $e) {
                 return Response::error(
@@ -568,116 +566,6 @@ class API
         });
     }
 
-    /**
-     * Validate Authentication Token
-     * 
-     * Verifies JWT token validity and permissions:
-     * - Checks token presence
-     * - Validates token signature
-     * - Verifies token expiration
-     * - Checks user permissions
-     * 
-     * @return array Session data if token valid
-     * @throws \RuntimeException If token invalid or expired
-     */
-    private static function validateToken(): array 
-    {
-        $token = self::getAuthAuthorizationToken();
-        
-        if (!$token) {
-           
-            echo json_encode(Response::unauthorized('Authentication required')->send());
-            exit;
-        }
-        
-        $_GET['token'] = $token;
-        
-        try {
-            $result = APIEngine::validateSession('sessions', 'validate', ['token' => $token]);
-            
-            if (!isset($result['success']) || !$result['success']) {
-                echo json_encode(Response::unauthorized('Invalid or expired token')->send());
-                exit;
-            }
-
-            return $result;
-        } catch (\Exception $e) {
-            echo json_encode(Response::error('Token validation failed', Response::HTTP_INTERNAL_SERVER_ERROR)->send());
-            exit;
-        }
-    }
-
-    /**
-     * Set up database connection for the current request
-     * 
-     * Creates PDO connection using configuration settings
-     */
-    private static function prepareDatabaseResource(): void 
-    {
-
-        $databaseResource = config('database.primary');
-    }
-
-    /**
-     * Validate login credentials based on function type
-     * 
-     * @param string $function The login function type
-     * @param array $params Login parameters
-     * @return bool True if credentials are valid
-     */
-    private static function validateLoginCredentials(string $function, array $params): bool 
-    {
-        return match($function) {
-            'sessions' => isset($params['username']) && isset($params['password']),
-            default => false
-        };
-    }
-
-    /**
-     * Handle user login process
-     * 
-     * Validates credentials and creates user session if valid.
-     * 
-     * @param string $function Login function type
-     * @param array $postParams Login data
-     * @return array Response with session data or error
-     */
-    private static function handleLogin(string $function, array $postParams): array 
-    {
-        if (!self::validateLoginCredentials($function, $postParams)) {
-            return Response::error('Username/Email and Password Required', Response::HTTP_BAD_REQUEST)->send();
-        }
-
-        try {
-            // Check if username value is an email address
-            if ($function === 'sessions' && isset($postParams['username'])) {
-                if (filter_var($postParams['username'], FILTER_VALIDATE_EMAIL)) {
-                    // If username is actually an email, move it to email parameter
-                    $postParams['email'] = $postParams['username'];
-                    unset($postParams['username']);
-                }
-}
-
-            $postParams['status'] = config('app.active_status');
-            $result = APIEngine::createSession($function, 'login', $postParams);
-            
-            // Convert API response to proper HTTP response
-            if (isset($result['success']) && !$result['success']) {
-                return Response::error(
-                    $result['message'] ?? 'Login failed', 
-                    $result['code'] ?? Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-            
-            return Response::ok($result)->send();
-            
-        } catch (\Exception $e) {
-            return Response::error(
-                'Login failed: ' . $e->getMessage(), 
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
-    }
 
     /**
      * Process base64 encoded file upload
@@ -691,7 +579,7 @@ class API
         try {
             $uploader = new FileUploader();
 
-            $token = self::getAuthAuthorizationToken();
+            $token = Auth::getAuthAuthorizationToken();
             if (!$token) {
                 echo json_encode(Response::unauthorized('Authentication required')->send());
                 exit;
@@ -735,7 +623,7 @@ class API
         try {
             $uploader = new FileUploader();
 
-            $token = self::getAuthAuthorizationToken();
+            $token = Auth::getAuthAuthorizationToken();
         
             if (!$token) {
                 echo json_encode(Response::unauthorized('Authentication required')->send());
@@ -830,32 +718,6 @@ class API
         // self::prepareDatabaseResource('audit');
         APIEngine::saveData('sysaudit', 'save', $auditPost);
         // self::prepareDatabaseResource($currentDb);
-    }
-
-     /**
-     * Extract authorization token from request
-     *
-     * @return string|null The bearer token or null if not found
-     */
-    private static function getAuthAuthorizationToken(): ?string 
-    {
-        $headers = getallheaders();
-        $token = null;
-        
-        // Check Authorization header
-        if (isset($headers['Authorization'])) {
-            $auth = $headers['Authorization'];
-            if (strpos($auth, 'Bearer ') === 0) {
-                $token = substr($auth, 7);
-            }
-        }
-        
-        // Check query parameter if no header
-        if (!$token && isset($_GET['token'])) {
-            $token = $_GET['token'];
-        }
-
-        return $token;
     }
 
     /**

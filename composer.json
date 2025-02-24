@@ -42,6 +42,7 @@
         ],
         "psr-4": {
             "Glueful\\": "api/",
+            "Glueful\\Identity\\": "api/Auth/Identity/",
             "Glueful\\Database\\": [
                 "api/Database/",
                 "api/Database/Driver/"
