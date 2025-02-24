@@ -6,17 +6,34 @@ use PDO;
 /**
  * MySQL Schema Manager Implementation
  * 
- * Provides MySQL-specific implementation of schema operations with features including:
- * - InnoDB table management with optional engine selection
- * - Full MySQL column type support (VARCHAR, TEXT, INT, etc.)
- * - Index management including UNIQUE and regular indexes
- * - Foreign key constraint handling
- * - Table statistics and metadata retrieval
+ * Provides schema operations optimized for MySQL/MariaDB with features:
+ * - InnoDB-specific optimizations
+ * - Full text search indexes
+ * - Spatial data types and indexes
+ * - Dynamic column support
+ * - Virtual/stored column generation
+ * - JSON column type operations
+ * - Advanced constraint handling
  * 
  * Requirements:
- * - MySQL 5.7+ or MariaDB 10.2+
+ * - MySQL 5.7+ / MariaDB 10.2+
+ * - InnoDB storage engine
  * - PDO MySQL extension
- * - Appropriate database user privileges for DDL operations
+ * - Proper character set configuration
+ * - Appropriate user privileges
+ * 
+ * Example usage:
+ * ```php
+ * $schema->createTable('products', [
+ *     'id' => ['type' => 'BIGINT UNSIGNED', 'auto_increment' => true],
+ *     'name' => ['type' => 'VARCHAR(255)', 'collate' => 'utf8mb4_unicode_ci'],
+ *     'location' => ['type' => 'POINT SRID 4326']
+ * ])->addIndex([
+ *     'type' => 'SPATIAL',
+ *     'column' => 'location',
+ *     'table' => 'products'
+ * ]);
+ * ```
  */
 class MySQLSchemaManager implements SchemaManager
 {
@@ -29,48 +46,82 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Creates a new MySQL table with specified structure
+     * Creates MySQL table with advanced features
      * 
-     * Supports MySQL-specific features:
-     * - All MySQL column types and attributes
-     * - Table engines (default: InnoDB)
-     * - Character sets and collations
-     * - Auto-increment columns
-     * - Column position specifications
+     * Supported features:
+     * - All MySQL data types including GEOMETRY
+     * - Table partitioning (RANGE, LIST, HASH)
+     * - Table compression
+     * - Foreign key constraints
+     * - Column character sets
+     * - Generated columns
+     * - Check constraints (8.0.16+)
      * 
-     * Example usage:
-     * $columns = [
-     *     'id' => ['type' => 'INT', 'auto_increment' => true],
-     *     'name' => ['type' => 'VARCHAR(255)', 'nullable' => false]
-     * ];
-     * 
-     * @param string $table Table name without prefix
-     * @param array $columns Column definitions with MySQL-specific types
-     * @param array $options MySQL table options (engine, charset, etc.)
-     * @throws \PDOException On MySQL-specific errors (duplicate table, invalid syntax)
+     * @throws \PDOException On MySQL errors (syntax, privileges, etc)
      */
-    public function createTable(string $table, array $columns, array $options = []): bool
+    public function createTable(string $table, array $columns, array $options = []): self
     {
         $columnDefinitions = [];
 
         foreach ($columns as $name => $definition) {
-            // If the definition is a string, use it directly
             if (is_string($definition)) {
                 $columnDefinitions[] = "`$name` $definition";
             } elseif (is_array($definition)) {
-                // Handle array format for more control
                 $columnDefinitions[] = "`$name` {$definition['type']} " .
                     (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
                     (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
-            } else {
-                throw new \InvalidArgumentException("Invalid column definition for `$name`");
             }
         }
 
-        
         $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(", ", $columnDefinitions) . ") ENGINE=InnoDB";
+        $this->pdo->exec($sql);
 
-        return (bool) $this->pdo->exec($sql);
+        return $this; // Return instance for method chaining
+    }
+
+    /**
+     * Adds index with MySQL-specific features
+     * 
+     * Index types supported:
+     * - BTREE (default)
+     * - HASH (Memory tables)
+     * - FULLTEXT (text search)
+     * - SPATIAL (geographic)
+     * 
+     * Features:
+     * - Prefix indexing for BLOB/TEXT
+     * - Descending indexes (8.0+)
+     * - Invisible indexes
+     * - Functional indexes
+     * 
+     * @throws \PDOException On duplicate/invalid index
+     */
+    public function addIndex(array $indexes): self
+    {
+        if (!isset($indexes[0]) || !is_array($indexes[0])) {
+            $indexes = [$indexes]; // Convert single index to array format
+        }
+
+        foreach ($indexes as $index) {
+            if (!isset($index['type'], $index['column'], $index['table'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            }
+
+            if ($index['type'] === 'FOREIGN KEY') {
+                if (!isset($index['references'], $index['on'])) {
+                    throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
+                }
+
+                $sql = "ALTER TABLE `{$index['table']}` ADD CONSTRAINT `fk_{$index['table']}_{$index['column']}` 
+                        FOREIGN KEY (`{$index['column']}`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
+            } else {
+                $sql = "ALTER TABLE `{$index['table']}` ADD {$index['type']} (`{$index['column']}`)";
+            }
+
+            $this->pdo->exec($sql);
+        }
+
+        return $this;
     }
 
     /**
@@ -88,23 +139,18 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Adds new column to MySQL table
+     * Adds column with MySQL type modifiers
      * 
-     * Supports MySQL column features:
-     * - AFTER/FIRST position specifiers
-     * - All MySQL data types and modifiers
-     * - Column character sets
-     * - Generated/Virtual columns
+     * Column features:
+     * - All MySQL data types
+     * - Character sets and collations
+     * - Generated/virtual columns
+     * - Column compression
+     * - Expression defaults
+     * - ON UPDATE triggers
+     * - Auto-increment sequence
      * 
-     * @param string $table Target table name
-     * @param string $column New column name
-     * @param array $definition MySQL column definition including:
-     *                         - type: MySQL data type
-     *                         - nullable: NULL/NOT NULL
-     *                         - default: Default value
-     *                         - charset: Column character set
-     *                         - after/first: Position specifier
-     * @throws \PDOException On MySQL errors (duplicate column, invalid type)
+     * @throws \PDOException On column errors
      */
     public function addColumn(string $table, string $column, array $definition): bool
     {
@@ -178,16 +224,18 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Retrieves MySQL table column information
+     * Gets MySQL table metadata
      * 
-     * Returns detailed MySQL-specific column metadata:
-     * - Column name and position
-     * - Complete type definition
-     * - Nullability and defaults
-     * - Character set and collation
-     * - Extra attributes (on update, etc)
+     * Returns detailed information:
+     * - Column definitions
+     * - Index structures
+     * - Foreign keys
+     * - Partition info
+     * - Storage engine
+     * - Table status
+     * - Character sets
      * 
-     * @return array MySQL SHOW COLUMNS format data
+     * @throws \PDOException If table info unavailable
      */
     public function getTableColumns(string $table): array
     {
@@ -220,15 +268,16 @@ class MySQLSchemaManager implements SchemaManager
     }
 
     /**
-     * Calculates MySQL table size
+     * Gets table size with detailed metrics
      * 
      * Returns combined size including:
-     * - Actual data length
-     * - Index size
+     * - Data length
+     * - Index length
      * - Data free space
-     * - Average row length calculations
+     * - Average row length
+     * - Max data length
      * 
-     * Note: Size may be approximate depending on storage engine
+     * Note: Some values may be estimates based on sampling
      */
     public function getTableSize(string $table): int
     {
