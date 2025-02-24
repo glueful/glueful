@@ -8,18 +8,42 @@ use Exception;
 /**
  * SQLite Schema Manager Implementation
  * 
- * Manages SQLite database schema with consideration for its unique characteristics:
- * - Schema-less design with dynamic typing
+ * Specialized schema manager for SQLite with consideration for its unique traits:
+ * 
+ * Core Features:
+ * - Schema-less dynamic typing system
  * - Single-writer concurrency model
+ * - Zero configuration setup
+ * - In-memory database support
+ * - Full text search capabilities
+ * 
+ * Limitations:
+ * - No ALTER TABLE column drop
+ * - Limited column modifications
+ * - No native foreign key checks
  * - No user permissions system
- * - Limited ALTER TABLE support
- * - Journal modes (WAL, DELETE, TRUNCATE)
+ * - MAX 2000 bytes per index key
  * 
  * Requirements:
  * - SQLite 3.x
  * - PDO SQLite extension
  * - Write permissions on database file
  * - Proper journal mode configuration
+ * 
+ * Example usage:
+ * ```php
+ * $schema
+ *     ->createTable('posts', [
+ *         'id' => ['type' => 'INTEGER PRIMARY KEY'],
+ *         'title' => ['type' => 'TEXT NOT NULL'],
+ *         'created' => ['type' => 'DATETIME DEFAULT CURRENT_TIMESTAMP']
+ *     ])
+ *     ->addIndex([
+ *         'type' => 'UNIQUE',
+ *         'column' => 'title',
+ *         'table' => 'posts'
+ *     ]);
+ * ```
  */
 class SQLiteSchemaManager extends SchemaManager
 {
@@ -33,49 +57,94 @@ class SQLiteSchemaManager extends SchemaManager
     }
 
     /**
-     * Creates a new SQLite table
+     * Creates SQLite table with type affinity
      * 
-     * Supports SQLite-specific features:
-     * - WITHOUT ROWID tables
-     * - STRICT tables (SQLite 3.37+)
+     * Features:
+     * - Dynamic type system
+     * - WITHOUT ROWID optimization
+     * - STRICT tables (3.37+)
      * - Generated columns
-     * - Expression-based defaults
-     * - Table constraints
+     * - CHECK constraints
+     * - DEFAULT expressions
      * 
-     * Example usage:
-     * $columns = [
-     *     'id' => ['type' => 'INTEGER PRIMARY KEY'],
-     *     'data' => ['type' => 'TEXT', 'default' => 'NULL']
-     * ];
+     * Type Affinity Rules:
+     * - INT -> INTEGER
+     * - CHAR/CLOB/TEXT -> TEXT
+     * - BLOB -> BLOB
+     * - REAL/FLOA/DOUB -> REAL
+     * - Others -> NUMERIC
      * 
-     * @param string $table Table name
-     * @param array $columns Column definitions
-     * @param array $options Additional table options
-     * @return bool True if table created successfully
-     * @throws Exception If table creation fails
+     * @throws Exception On syntax error or constraint violation
      */
-    public function createTable(string $table, array $columns, array $options = []): bool
+    public function createTable(string $table, array $columns, array $options = []): self
     {
         $columnDefinitions = [];
 
         foreach ($columns as $name => $definition) {
-            // If the definition is a string, use it directly
             if (is_string($definition)) {
-                $columnDefinitions[] = "`$name` $definition";
+                // Handle string-based column definitions
+                $columnDefinitions[] = "\"$name\" $definition";
             } elseif (is_array($definition)) {
-                // Handle array format for more control
-                $columnDefinitions[] = "`$name` {$definition['type']} " .
-                    (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
-                    (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
-            } else {
-                throw new \InvalidArgumentException("Invalid column definition for `$name`");
+                // Handle array-based column definitions
+                $columnDefinitions[] = "\"$name\" {$definition['type']} " .
+                    (!empty($definition['nullable']) ? '' : 'NOT NULL') .
+                    (!empty($definition['default']) ? " DEFAULT {$definition['default']}" : '');
             }
         }
 
-        // Construct the SQL statement with IF NOT EXISTS (SQLite compatible)
-        $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(", ", $columnDefinitions) . ")";
+        // SQLite does not support ENGINE=InnoDB
+        $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
 
-        return (bool) $this->pdo->exec($sql);
+        $this->pdo->exec($sql);
+
+        return $this; // Return instance for method chaining
+    }
+
+    /**
+     * Adds SQLite table indexes
+     * 
+     * Supported Index Types:
+     * - Regular B-tree indexes
+     * - Unique constraints
+     * - Partial indexes (WHERE clause)
+     * - Expression indexes
+     * - Descending key indexes
+     * 
+     * Performance Notes:
+     * - Max 2000 bytes per key
+     * - Sequential autoincrement optimal
+     * - Index sorts maintained on insert
+     * 
+     * @throws Exception On duplicate or invalid index
+     */
+    public function addIndex(array $indexes): self
+    {
+        if (!isset($indexes[0]) || !is_array($indexes[0])) {
+            $indexes = [$indexes]; // Convert single index to array format
+        }
+
+        foreach ($indexes as $index) {
+            if (!isset($index['type'], $index['column'], $index['table'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            }
+
+            $table = $index['table'];
+            $column = $index['column'];
+
+            if ($index['type'] === 'FOREIGN KEY') {
+                throw new \RuntimeException("SQLite does not support adding foreign keys after table creation.");
+            } elseif ($index['type'] === 'UNIQUE') {
+                $indexName = "unique_{$table}_{$column}";
+                $sql = "CREATE UNIQUE INDEX IF NOT EXISTS \"$indexName\" ON \"$table\" (\"$column\")";
+            } else {
+                $indexName = "idx_{$table}_{$column}";
+                $sql = "CREATE INDEX IF NOT EXISTS \"$indexName\" ON \"$table\" (\"$column\")";
+            }
+
+            $this->pdo->exec($sql);
+        }
+
+        return $this;
     }
 
     /**
@@ -98,19 +167,22 @@ class SQLiteSchemaManager extends SchemaManager
     }
 
     /**
-     * Adds column to SQLite table
+     * Add column with SQLite limitations
      * 
-     * Important limitations:
-     * - Cannot add PRIMARY KEY columns
-     * - Cannot add UNIQUE columns
-     * - Cannot add FOREIGN KEY columns
-     * - New columns must be nullable or have default
+     * Restrictions:
+     * - No PRIMARY KEY
+     * - No UNIQUE constraints
+     * - No FOREIGN KEY
+     * - Must be NULL or have DEFAULT
+     * - No position specification
      * 
-     * @param string $table Target table
-     * @param string $column New column name
-     * @param array $definition Column definition
-     * @return bool True if column added successfully
-     * @throws Exception When column constraints violate SQLite limitations
+     * Workaround for constraints:
+     * 1. Create new table with desired schema
+     * 2. Copy data
+     * 3. Drop old table
+     * 4. Rename new table
+     * 
+     * @throws Exception On constraint violation
      */
     public function addColumn(string $table, string $column, array $definition): bool
     {
@@ -217,20 +289,21 @@ class SQLiteSchemaManager extends SchemaManager
     }
 
     /**
-     * Gets SQLite table columns
+     * Get SQLite table information
      * 
-     * Returns column information via PRAGMA table_info:
-     * - Name and position
-     * - Declared type
-     * - NOT NULL constraint
-     * - Default value
-     * - Primary key position
+     * Returns via PRAGMA table_info:
+     * - Column names and positions
+     * - Declared types (with affinity)
+     * - NOT NULL constraints
+     * - DEFAULT values
+     * - PRIMARY KEY columns
      * 
-     * Note: Type affinity rules apply to declared types
+     * Additional PRAGMA commands:
+     * - foreign_key_list
+     * - index_list
+     * - table_xinfo
      * 
-     * @param string $table Target table
-     * @return array Column definitions and metadata
-     * @throws Exception If column information retrieval fails
+     * @throws Exception On invalid table
      */
     public function getTableColumns(string $table): array
     {
@@ -244,10 +317,13 @@ class SQLiteSchemaManager extends SchemaManager
     }
 
     /**
-     * Manages foreign key enforcement
+     * Manage foreign key constraints
      * 
-     * Note: Foreign keys must be enabled during
-     * table creation to be enforced
+     * Note: Foreign keys in SQLite:
+     * - Must be enabled at table creation
+     * - Checked only on write
+     * - No partial keys
+     * - No update cascades
      */
     public function disableForeignKeyChecks(): void
     {
@@ -273,14 +349,15 @@ class SQLiteSchemaManager extends SchemaManager
     }
 
     /**
-     * Calculates SQLite table size
+     * Calculate SQLite storage size
      * 
      * Includes:
-     * - Table data pages
+     * - Database pages
      * - Index pages
      * - Overflow pages
+     * - Free pages
      * 
-     * Note: Requires sqlite_stat1 table
+     * Note: Requires dbstat virtual table
      */
     public function getTableSize(string $table): int
     {

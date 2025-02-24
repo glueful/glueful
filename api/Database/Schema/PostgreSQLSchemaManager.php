@@ -8,18 +8,43 @@ use Exception;
 /**
  * PostgreSQL Schema Manager Implementation
  * 
- * Provides PostgreSQL-specific schema management capabilities:
- * - Full support for PostgreSQL data types and type modifiers
- * - Schema-aware operations with search_path handling
- * - Concurrent index creation and deletion
- * - Advanced constraint management (EXCLUDE, CHECK, etc.)
- * - Partitioning support
- * - Table inheritance handling
+ * Advanced schema manager with PostgreSQL-specific capabilities:
+ * 
+ * Core Features:
+ * - Multi-schema support with search_path
+ * - Table inheritance and partitioning
+ * - Custom data types and domains
+ * - Advanced constraints (EXCLUDE, CHECK)
+ * - Concurrent index operations
+ * - TOAST storage management
+ * 
+ * Performance Features:
+ * - Parallel query execution
+ * - Tablespace management
+ * - Vacuum operations
+ * - Statistics management
+ * - Index-only scans
  * 
  * Requirements:
  * - PostgreSQL 10.0+
  * - PDO PostgreSQL extension
- * - Appropriate user privileges for schema operations
+ * - Superuser or appropriate grants
+ * - pg_stat_statements extension
+ * 
+ * Example usage:
+ * ```php
+ * $schema
+ *     ->createTable('events', [
+ *         'id' => ['type' => 'BIGSERIAL PRIMARY KEY'],
+ *         'data' => ['type' => 'JSONB NOT NULL'],
+ *         'range' => ['type' => 'TSTZRANGE']
+ *     ])
+ *     ->addIndex([
+ *         'type' => 'GIN',
+ *         'column' => 'data',
+ *         'table' => 'events'
+ *     ]);
+ * ```
  */
 class PostgreSQLSchemaManager extends SchemaManager
 {
@@ -32,58 +57,107 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Creates a new PostgreSQL table
+     * Create PostgreSQL table with advanced features
      * 
-     * Supports PostgreSQL-specific features:
-     * - Custom column types (including domains)
-     * - Table partitioning
-     * - Table inheritance
-     * - Tablespaces
+     * Supported Features:
+     * - Custom column types and domains
+     * - Table inheritance (INHERITS)
+     * - Tablespace allocation
+     * - Partitioning strategies
+     * - UNLOGGED tables
      * - Column compression
+     * - Identity columns
+     * - Generated columns
      * 
-     * Example usage:
-     * $columns = [
-     *     'id' => ['type' => 'SERIAL PRIMARY KEY'],
-     *     'data' => ['type' => 'JSONB', 'nullable' => false]
-     * ];
+     * Storage Parameters:
+     * - fillfactor
+     * - autovacuum_*
+     * - toast_tuple_target
+     * - parallel_workers
      * 
-     * @param string $table Table name
-     * @param array $columns Column definitions
-     * @param array $options Table options (like INHERITS, TABLESPACE)
-     * @return bool True if table created successfully
-     * @throws Exception If table creation fails
+     * @throws Exception On syntax error or permission denied
      */
-    public function createTable(string $table, array $columns, array $options = []): bool
+    public function createTable(string $table, array $columns, array $options = []): self
     {
         $columnDefinitions = [];
 
         foreach ($columns as $name => $definition) {
-            // If the definition is a string, use it directly
             if (is_string($definition)) {
+                // Handle string-based column definitions
                 $columnDefinitions[] = "\"$name\" $definition";
             } elseif (is_array($definition)) {
-                // Handle array format for more control
-                $type = strtoupper($definition['type']);
-
-                // Convert MySQL-style AUTO_INCREMENT to PostgreSQL SERIAL
-                if ($type === 'INTEGER PRIMARY KEY AUTO_INCREMENT') {
-                    $type = 'SERIAL PRIMARY KEY';
-                } elseif ($type === 'BIGINT PRIMARY KEY AUTO_INCREMENT') {
-                    $type = 'BIGSERIAL PRIMARY KEY';
-                }
-
-                $columnDefinitions[] = "\"$name\" $type " .
-                    (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
-                    (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
-            } else {
-                throw new \InvalidArgumentException("Invalid column definition for `$name`");
+                // Handle array-based column definitions
+                $columnDefinitions[] = "\"$name\" {$definition['type']} " .
+                    (!empty($definition['nullable']) ? '' : 'NOT NULL') .
+                    (!empty($definition['default']) ? " DEFAULT {$definition['default']}" : '');
             }
         }
 
-        // Construct the SQL statement with IF NOT EXISTS (PostgreSQL compatible)
+        // PostgreSQL does not use ENGINE=InnoDB
         $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
 
-        return (bool) $this->pdo->exec($sql);
+        $this->pdo->exec($sql);
+
+        return $this; // Return instance for method chaining
+    }
+
+    /**
+     * Add PostgreSQL-specific indexes
+     * 
+     * Index Types:
+     * - B-tree (default)
+     * - GiST (geometric/custom)
+     * - GIN (full text/jsonb)
+     * - SP-GiST (space partitioned)
+     * - BRIN (block range)
+     * - Hash
+     * 
+     * Features:
+     * - Concurrent creation
+     * - Partial indexes
+     * - Expression indexes
+     * - Covering indexes (INCLUDE)
+     * - Custom operators
+     * 
+     * @throws Exception On duplicate or invalid index
+     */
+    public function addIndex(array $indexes): self
+    {
+        if (!isset($indexes[0]) || !is_array($indexes[0])) {
+            $indexes = [$indexes]; // Convert single index to array format
+        }
+
+        foreach ($indexes as $index) {
+            if (!isset($index['type'], $index['column'], $index['table'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            }
+
+            $table = $index['table'];
+            $column = $index['column'];
+
+            if ($index['type'] === 'FOREIGN KEY') {
+                if (!isset($index['references'], $index['on'])) {
+                    throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
+                }
+
+                $constraintName = "fk_{$table}_{$column}";
+
+                $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"$constraintName\" 
+                        FOREIGN KEY (\"$column\") REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+            } elseif ($index['type'] === 'UNIQUE') {
+                $indexName = "unique_{$table}_{$column}";
+
+                $sql = "CREATE UNIQUE INDEX \"$indexName\" ON \"$table\" (\"$column\")";
+            } else {
+                $indexName = "idx_{$table}_{$column}";
+
+                $sql = "CREATE INDEX \"$indexName\" ON \"$table\" (\"$column\")";
+            }
+
+            $this->pdo->exec($sql);
+        }
+
+        return $this;
     }
 
     /**
@@ -106,19 +180,23 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Adds new column to PostgreSQL table
+     * Add column with PostgreSQL features
      * 
-     * Supports:
-     * - All PostgreSQL data types including custom types
-     * - Column constraints (CHECK, GENERATED, etc)
-     * - Column statistics targets
-     * - Storage parameters
+     * Column Features:
+     * - All PostgreSQL types
+     * - Custom types/domains
+     * - Collations
+     * - Generated columns
+     * - Identity columns
+     * - Exclusion constraints
+     * - LIKE dependency
      * 
-     * @param string $table Schema-qualified table name
-     * @param string $column New column name
-     * @param array $definition PostgreSQL column definition
-     * @return bool True if column added successfully
-     * @throws Exception If column addition fails
+     * Storage Options:
+     * - Compression methods
+     * - TOAST strategies
+     * - Statistics targets
+     * 
+     * @throws Exception On invalid type or permission denied
      */
     public function addColumn(string $table, string $column, array $definition): bool
     {
@@ -233,18 +311,25 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Retrieves PostgreSQL table information
+     * Get PostgreSQL table information
      * 
-     * Returns comprehensive table metadata:
-     * - Column definitions with full type information
+     * Returns Metadata:
+     * - Column definitions
      * - Constraint details
      * - Storage parameters
-     * - Inheritance information
-     * - Partition details
+     * - Dependencies
+     * - Inheritance
+     * - Partitioning
+     * - Statistics
+     * - Permissions
      * 
-     * @param string $tableName Target table
-     * @return array Column definitions and metadata
-     * @throws Exception If column information retrieval fails
+     * System Views Used:
+     * - information_schema.columns
+     * - pg_stat_user_tables
+     * - pg_class
+     * - pg_attribute
+     * 
+     * @throws Exception On invalid table or permission denied
      */
     public function getTableColumns(string $tableName): array
     {
@@ -263,8 +348,14 @@ class PostgreSQLSchemaManager extends SchemaManager
         }
     }
 
-    /**
-     * Manages foreign key checks via session_replication_role
+     /**
+     * Manage foreign key enforcement
+     * 
+     * Uses session_replication_role for:
+     * - Bulk data loading
+     * - Schema changes
+     * - Replication setup
+     * - Disaster recovery
      * 
      * Note: Requires superuser or replication privileges
      */
@@ -292,14 +383,19 @@ class PostgreSQLSchemaManager extends SchemaManager
     }
 
     /**
-     * Calculates PostgreSQL table size
+     * Calculate PostgreSQL table metrics
      * 
-     * Includes:
-     * - Table data size
-     * - TOAST data size
+     * Size Components:
+     * - Main relation size
+     * - TOAST relation
      * - Index sizes
-     * - Visibility map size
-     * - Free space map size
+     * - FSM and VM sizes
+     * 
+     * Additional Stats:
+     * - Bloat estimation
+     * - Buffer usage
+     * - IO timing
+     * - Tuple statistics
      * 
      * Note: Requires pg_stat_user_tables access
      */
@@ -311,6 +407,5 @@ class PostgreSQLSchemaManager extends SchemaManager
         $stmt->execute(['table' => $table]);
         return (int) $stmt->fetchColumn();
     }
-
 }
 

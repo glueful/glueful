@@ -84,15 +84,18 @@ class MigrationManager
      */
     private function ensureVersionTable(): void
     {
-        $this->schema->createTable(self::VERSION_TABLE, [
+        $this->schema
+        ->createTable(self::VERSION_TABLE, [
             'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
             'migration' => 'VARCHAR(255) NOT NULL',
             'batch' => 'INTEGER NOT NULL',
             'applied_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
             'checksum' => 'VARCHAR(64) NOT NULL',
             'description' => 'TEXT'
-        ], [
-            ['type' => 'UNIQUE', 'column' => 'migration']
+        ])->addIndex([
+            'type' => 'UNIQUE',
+            'column' => 'migration',
+            'table' => self::VERSION_TABLE
         ]);
     }
 

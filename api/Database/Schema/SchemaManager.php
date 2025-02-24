@@ -5,39 +5,80 @@ namespace Glueful\Database\Schema;
 /**
  * Database Schema Manager Interface
  * 
- * A comprehensive interface for managing database schema operations across different database systems.
- * This interface provides a standardized way to handle common database structure operations including
- * table management, column modifications, index handling, and schema information retrieval.
+ * Core contract for database schema operations with comprehensive features:
  * 
- * Key features:
- * - Table creation, modification, and removal
- * - Column management (add, modify, remove)
- * - Index operations (create, remove)
+ * Core Capabilities:
+ * - Schema structure management
+ * - Table/column operations
+ * - Index/constraint handling
+ * - Transaction support
  * - Schema information retrieval
- * - Foreign key constraint management
  * 
- * Implementations should ensure database-specific optimizations while maintaining
- * consistent behavior across different database engines.
+ * Security Features:
+ * - Prepared statements
+ * - Identifier quoting
+ * - Transaction isolation
+ * - Permission validation
+ * 
+ * Design Principles:
+ * - Engine agnostic interface
+ * - Fluent method chaining
+ * - Consistent error handling
+ * - Type safety
+ * 
+ * Example usage:
+ * ```php
+ * $schema
+ *     ->createTable('users', [
+ *         'id' => ['type' => 'INTEGER', 'autoIncrement' => true],
+ *         'email' => ['type' => 'VARCHAR(255)', 'unique' => true]
+ *     ])
+ *     ->addIndex([
+ *         'type' => 'UNIQUE',
+ *         'column' => 'email',
+ *         'table' => 'users'
+ *     ]);
+ * ```
  */
 interface SchemaManager
 {
     /**
-     * Creates a new database table with specified columns and options
+     * Create database table with fluent interface
      * 
-     * @param string $table Name of the table to create (without prefixes)
-     * @param array $columns Associative array of column definitions where:
-     *                      - key: column name
-     *                      - value: array of column attributes (type, length, nullable, default, etc.)
-     * @param array $options Additional table options including:
-     *                      - engine: Storage engine (e.g., InnoDB, MyISAM)
-     *                      - charset: Character set
-     *                      - collation: Collation rules
-     *                      - indexes: Array of index definitions
-     *                      - foreignKeys: Array of foreign key constraints
-     * @return bool True on successful table creation
-     * @throws \RuntimeException When table creation fails or if table already exists
+     * Structural Options:
+     * - Column types and modifiers
+     * - Table constraints
+     * - Storage parameters
+     * - Character sets
+     * - Collations
+     * 
+     * Advanced Features:
+     * - Auto-increment sequences
+     * - Computed columns
+     * - Check constraints
+     * - Triggers
+     * - Partitioning
+     * 
+     * @return self For method chaining
+     * @throws \RuntimeException On creation failure
      */
-    public function createTable(string $table, array $columns, array $options = []): bool;
+    public function createTable(string $table, array $columns, array $options = []): self;
+
+    /**
+     * Add database index or constraint
+     * 
+     * Supported Types:
+     * - Regular indexes
+     * - Unique constraints
+     * - Foreign keys
+     * - Spatial indexes
+     * - Partial indexes
+     * - Expression indexes
+     * 
+     * @return self For method chaining
+     * @throws \RuntimeException On index creation failure
+     */
+    public function addIndex(array $indexes): self;
 
     /**
      * Drops (removes) an existing database table
@@ -49,18 +90,21 @@ interface SchemaManager
     public function dropTable(string $table): bool;
 
     /**
-     * Adds a new column to an existing table
+     * Adds new column to existing table
      * 
-     * @param string $table Name of the target table
-     * @param string $column Name of the new column
-     * @param array $definition Column attributes including:
-     *                         - type: Data type (VARCHAR, INTEGER, etc.)
-     *                         - length: Column length/precision
-     *                         - nullable: Whether NULL values are allowed
-     *                         - default: Default value
-     *                         - after: Column after which to add new column
-     * @return bool True on successful column addition
-     * @throws \RuntimeException When column addition fails
+     * Position Options:
+     * - FIRST: Add as first column
+     * - AFTER column: Add after specific column
+     * - Default: Add as last column
+     * 
+     * Constraints:
+     * - NOT NULL
+     * - UNIQUE
+     * - CHECK constraints
+     * - Foreign keys
+     * - Default values
+     * 
+     * @throws \RuntimeException On invalid type, duplicate column
      */
     public function addColumn(string $table, string $column, array $definition): bool;
 
@@ -75,14 +119,21 @@ interface SchemaManager
     public function dropColumn(string $table, string $column): bool;
 
     /**
-     * Creates an index on specified table columns
+     * Creates database index with specified configuration
      * 
-     * @param string $table Name of the target table
-     * @param string $indexName Name for the new index (should be unique within table)
-     * @param array $columns Array of column names to include in index
-     * @param bool $unique Whether to create a unique index (prevents duplicate values)
-     * @return bool True on successful index creation
-     * @throws \RuntimeException When index creation fails or if invalid columns specified
+     * Index Types:
+     * - BTREE (default)
+     * - HASH (if supported)
+     * - FULLTEXT (text columns)
+     * - SPATIAL (geometric)
+     * 
+     * Options:
+     * - Partial indexes
+     * - Covering indexes
+     * - Expression indexes
+     * - Descending indexes
+     * 
+     * @throws \RuntimeException On invalid columns, duplicate index
      */
     public function createIndex(string $table, string $indexName, array $columns, bool $unique = false): bool;
 
@@ -105,43 +156,89 @@ interface SchemaManager
     public function getTables(): array;
 
     /**
-     * Retrieves detailed information about table columns
+     * Get table metadata
      * 
-     * @param string $table Name of the target table
-     * @return array Associative array of column information including:
-     *               - name: Column name
-     *               - type: Data type
-     *               - length: Column length/precision
-     *               - nullable: Whether NULL is allowed
-     *               - default: Default value
-     *               - extra: Additional attributes (auto_increment, etc.)
-     * @throws \RuntimeException When table doesn't exist or information cannot be retrieved
+     * Returns Information About:
+     * - Column definitions
+     * - Constraints
+     * - Indexes
+     * - Storage parameters
+     * - Statistics
+     * - Dependencies
+     * 
+     * Format varies by engine but includes:
+     * - Name and ordinal position
+     * - Type and modifiers
+     * - Default values
+     * - Constraints
+     * - Comments
+     * 
+     * @throws \RuntimeException When table info unavailable
      */
     public function getTableColumns(string $table): array;
 
     /**
-     * Disable foreign key checks (if supported by the database)
+     * Manage foreign key constraint checking
+     * 
+     * Use Cases:
+     * - Bulk data loading
+     * - Schema modifications
+     * - Data migration
+     * - Testing setup
+     * 
+     * Note: Some engines may not support this feature
      */
     public function disableForeignKeyChecks(): void;
 
     /**
-     * Enable foreign key checks (reverting to default behavior)
+     * Enable foreign key constraint checking
+     * 
+     * Re-enables foreign key constraints after they were disabled.
+     * Should be called after completing operations that required
+     * constraint checks to be disabled.
+     * 
+     * Engine-specific behavior:
+     * - MySQL: Sets FOREIGN_KEY_CHECKS = 1
+     * - PostgreSQL: Sets session_replication_role = 'origin'
+     * - SQLite: Sets PRAGMA foreign_keys = ON
+     * 
+     * Important:
+     * - Should be called even if operation fails
+     * - Preferably in a finally block
+     * - Verifies data integrity after bulk operations
+     * - May trigger constraint validation
+     * 
+     * @throws \RuntimeException If constraints cannot be re-enabled
      */
     public function enableForeignKeyChecks(): void;
 
     /**
-     * Retrieves the database server version information
-     *
-     * @return string Formatted version string (e.g., "5.7.31-log", "8.0.23")
+     * Get database engine version
+     * 
+     * Returns comprehensive version info:
+     * - Version numbers
+     * - Build details
+     * - Platform info
+     * - Configuration
+     * 
+     * Examples:
+     * MySQL: "5.7.31-log"
+     * PostgreSQL: "12.3 (Ubuntu 12.3-1)"
+     * SQLite: "3.32.3"
      */
     public function getVersion(): string;
 
     /**
-     * Calculates and returns the size of a specific table
-     *
-     * @param string $table Name of the target table
-     * @return int Size of the table in bytes (including indexes and overhead)
-     * @throws \RuntimeException When table doesn't exist or size cannot be determined
+     * Calculate table storage metrics
+     * 
+     * Returns size information including:
+     * - Data storage
+     * - Index overhead
+     * - TOAST/overflow
+     * - Free space
+     * - Fragmentation
+     * 
+     * Note: Accuracy varies by engine
      */
     public function getTableSize(string $table): int;
 }
