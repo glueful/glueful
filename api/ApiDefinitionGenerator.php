@@ -34,7 +34,7 @@ class ApiDefinitionGenerator {
 
         $this->runFromConsole = $runFromConsole || $this->isConsole();
         $this->log("Starting JSON Definition Generator...");
-        $this->dbResource = config('database.json_prefix');
+        $this->dbResource = Utils::getDatabaseRole();
 
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());

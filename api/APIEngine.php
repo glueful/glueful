@@ -10,6 +10,7 @@ use Glueful\Auth\{JWTService, SessionManager, TokenManager};
 use Glueful\Permissions\{Permissions, Permission};
 use Glueful\Api\Extensions\Uploader\Storage\StorageInterface;
 use Glueful\Http\Response;
+use Glueful\Helpers\Utils;
 
 class APIEngine{
     private static PDO $db;
@@ -27,9 +28,6 @@ class APIEngine{
     private static function initializeDatabase(): void 
     {
         try {
-            // Get database configuration
-            $dbConfig = config('database');
-            
             // Create database connection
             $connection = new Connection();
             
@@ -38,7 +36,7 @@ class APIEngine{
             self::$driver = $connection->getDriver();
             
             // Set current database resource
-            self::$currentResource = config('database.json_prefix');
+            self::$currentResource = Utils::getDatabaseRole();;
             
         } catch (\Exception $e) {
             throw new \RuntimeException("Failed to initialize database: " . $e->getMessage());

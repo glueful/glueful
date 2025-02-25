@@ -9,7 +9,6 @@
 return [
     // Default database engine (mysql, sqlite, pgsql)
     'engine' => env('DB_ENGINE', 'mysql'),
-    'json_prefix' => 'api', // Prefix for file name of generate api difinitions json files
 
     // MySQL database connection
     'mysql' => [
@@ -23,7 +22,8 @@ return [
         'collation' => 'utf8mb4_unicode_ci',          // Collation
         'prefix' => env('DB_PREFIX', ''),             // Table prefix
         'strict' => true,                             // Strict mode
-        'engine' => 'InnoDB',                         // Storage engine
+        'engine' => 'InnoDB',  
+        'role' => 'primary', // Defines the role of this database connection
     ],
 
     // PostgreSQL configuration
@@ -38,13 +38,15 @@ return [
         'charset' => 'utf8',
         'prefix' => env('DB_PGSQL_PREFIX', ''),
         'sslmode' => env('DB_PGSQL_SSL_MODE', 'prefer'),
-        'timezone' => env('DB_PGSQL_TIMEZONE', 'UTC')
+        'timezone' => env('DB_PGSQL_TIMEZONE', 'UTC'),
+        'role' => '',
     ],
 
     // SQLite configuration
     'sqlite' => [
         'primary' => env('DB_SQLITE_DATABASE', dirname(__DIR__) . '/database/primary.sqlite'),
         'testing' => env('DB_SQLITE_TESTING', dirname(__DIR__) . '/database/testing.sqlite'),
+        'role' => '',
     ],
 
     // Connection pool settings

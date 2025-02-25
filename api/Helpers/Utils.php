@@ -169,6 +169,38 @@ class Utils
             return null;
         }
     }
+
+    /**
+     * Get Database Connection Role
+     * 
+     * Determines if current database connection is primary or secondary (replica).
+     * Used for read/write decision making and load balancing.
+     * 
+     * Features:
+     * - Reads from configuration
+     * - Supports multiple database engines
+     * - Fallback to primary if not specified
+     * - Used in replication scenarios
+     * 
+     * @return string Connection role ('primary' or 'secondary')
+     * 
+     * @example
+     * ```php
+     * $role = Utils::getDatabaseRole();
+     * if ($role === 'primary') {
+     *     // Perform write operations
+     * }
+     * ```
+     */
+    public static function getDatabaseRole(): string 
+    {
+        $engine = config('database.engine');
+        $dbConfig = array_merge(
+            config("database.{$engine}") ?? [],
+        );
+
+        return $dbConfig['role'] ?? 'primary';
+    }
 }
 
 // Initialize cache engine with optional prefix
