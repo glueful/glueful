@@ -126,37 +126,41 @@ class PostgreSQLSchemaManager extends SchemaManager
         if (!isset($indexes[0]) || !is_array($indexes[0])) {
             $indexes = [$indexes]; // Convert single index to array format
         }
-
+    
         foreach ($indexes as $index) {
             if (!isset($index['type'], $index['column'], $index['table'])) {
                 throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
             }
-
+    
             $table = $index['table'];
             $column = $index['column'];
-
-            if ($index['type'] === 'FOREIGN KEY') {
+            $type = strtoupper($index['type']);
+    
+            // Check if index already exists in PostgreSQL
+            $existingIndexes = $this->pdo
+                ->query("SELECT indexname FROM pg_indexes WHERE tablename = '$table'")
+                ->fetchAll(PDO::FETCH_COLUMN);
+    
+            if (in_array("{$table}_{$column}_idx", $existingIndexes)) {
+                continue; // Skip if index exists
+            }
+    
+            if ($type === 'FOREIGN KEY') {
                 if (!isset($index['references'], $index['on'])) {
                     throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
                 }
-
-                $constraintName = "fk_{$table}_{$column}";
-
-                $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"$constraintName\" 
+    
+                $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"fk_{$table}_{$column}\" 
                         FOREIGN KEY (\"$column\") REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
-            } elseif ($index['type'] === 'UNIQUE') {
-                $indexName = "unique_{$table}_{$column}";
-
-                $sql = "CREATE UNIQUE INDEX \"$indexName\" ON \"$table\" (\"$column\")";
+            } elseif ($type === 'UNIQUE') {
+                $sql = "CREATE UNIQUE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
             } else {
-                $indexName = "idx_{$table}_{$column}";
-
-                $sql = "CREATE INDEX \"$indexName\" ON \"$table\" (\"$column\")";
+                $sql = "CREATE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
             }
-
+    
             $this->pdo->exec($sql);
         }
-
+    
         return $this;
     }
 

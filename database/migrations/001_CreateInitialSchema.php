@@ -1,15 +1,60 @@
 <?php
 
-use Glueful\App\Migrations\MigrationInterface;
-use Glueful\Api\Schemas\SchemaManager;
+use Glueful\Database\Migrations\MigrationInterface;
+use Glueful\Database\Schema\SchemaManager;
 
+/**
+ * Initial Database Schema Migration
+ * 
+ * Creates core system tables and relationships:
+ * - Users and authentication
+ * - Roles and permissions
+ * - File storage and blobs
+ * - User profiles
+ * - Audit logging
+ * 
+ * Database Design:
+ * - Follows ACID principles
+ * - Implements proper indexing
+ * - Uses foreign key constraints
+ * - Supports soft deletes
+ * - Handles timestamps
+ * 
+ * Security Features:
+ * - Password hashing
+ * - Token management
+ * - Permission tracking
+ * - Activity logging
+ * 
+ * @package Glueful\Database\Migrations
+ */
 class CreateInitialSchema implements MigrationInterface
 {
+    /**
+     * Execute the migration
+     * 
+     * Creates all required database tables with:
+     * - Primary and foreign keys
+     * - Indexes for optimization
+     * - Data integrity constraints
+     * - Timestamp tracking
+     * 
+     * Tables created:
+     * - users: User accounts and authentication
+     * - roles: Role definitions and hierarchy
+     * - role_permissions, user_permissions: Access control rules
+     * - profiles: User profile information
+     * - blobs: File storage metadata
+     * - sessions: Authentication sessions
+     * - logs: System activity tracking
+     * 
+     * @param SchemaManager $schema Database schema manager
+     */
     public function up(SchemaManager $schema): void
     {
         // Create Users Table
         $schema->createTable('users', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'username' => 'VARCHAR(255) NOT NULL',
             'email' => 'VARCHAR(255) NOT NULL',
@@ -19,58 +64,61 @@ class CreateInitialSchema implements MigrationInterface
             'ip_address' => 'VARCHAR(40)',
             'x_forwarded_for_ip_address' => 'VARCHAR(40)',
             'last_login_date' => 'TIMESTAMP',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'username'],
-            ['type' => 'UNIQUE', 'column' => 'email'],
-            ['type' => 'INDEX', 'column' => 'email'],
-            ['type' => 'INDEX', 'column' => 'username'],
-            ['type' => 'INDEX', 'column' => 'uuid']
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'users'],
+            ['type' => 'UNIQUE', 'column' => 'username', 'table' => 'users'],
+            ['type' => 'UNIQUE', 'column' => 'email', 'table' => 'users'],
         ]);
 
         // Create Roles Table
         $schema->createTable('roles', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'name' => 'VARCHAR(255) NOT NULL',
             'description' => 'TEXT NOT NULL',
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'name'],
-            ['type' => 'INDEX', 'column' => 'uuid']
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'roles'],
+            ['type' => 'UNIQUE', 'column' => 'name', 'table' => 'roles']
         ]);
 
-        // Create Permissions Table
-        $schema->createTable('permissions', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+        // Create Role Permissions Table
+        $schema->createTable('role_permissions', [
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'role_uuid' => 'CHAR(12) NOT NULL',
             'model' => 'VARCHAR(255) NOT NULL',
             'permissions' => 'VARCHAR(10) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid'],
-            ['type' => 'INDEX', 'column' => 'uuid']
-        ], [
-            [
-                'column' => 'role_uuid',
-                'referenceTable' => 'roles',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'CASCADE'
-            ]
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'role_permissions'],
+            ['type' => 'INDEX', 'column' => 'role_uuid', 'table' => 'role_permissions'],
+            ['type' => 'FOREIGN KEY', 'column' => 'role_uuid', 'table' => 'role_permissions', 'references' => 'uuid', 'on' => 'roles', 'onDelete' => 'CASCADE']
+        ]);
+
+        // Create User Permissions Table
+        $schema->createTable('user_permissions', [
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
+            'user_uuid' => 'CHAR(12) NOT NULL',
+            'model' => 'VARCHAR(255) NOT NULL',
+            'permissions' => 'VARCHAR(10) NOT NULL',
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'user_permissions'],
+            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'user_permissions'],
+            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'user_permissions', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE']
         ]);
 
         // Create Blobs Table
         $schema->createTable('blobs', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'name' => 'VARCHAR(255) NOT NULL',
             'description' => 'TEXT',
@@ -80,23 +128,17 @@ class CreateInitialSchema implements MigrationInterface
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_by' => 'CHAR(12) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'created_by'],
-            ['type' => 'INDEX', 'column' => 'uuid']
-        ], [
-            [
-                'column' => 'created_by',
-                'referenceTable' => 'users',
-                'referenceColumn' => 'uuid'
-            ]
+            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP',
+            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'blobs'],
+            ['type' => 'INDEX', 'column' => 'created_by', 'table' => 'blobs'],
+            ['type' => 'FOREIGN KEY', 'column' => 'created_by', 'table' => 'blobs', 'references' => 'uuid', 'on' => 'users']
         ]);
 
         // Create Profiles Table
         $schema->createTable('profiles', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'user_uuid' => 'CHAR(12) NOT NULL',
             'first_name' => 'VARCHAR(100) DEFAULT NULL',
@@ -105,58 +147,31 @@ class CreateInitialSchema implements MigrationInterface
             'photo_url' => 'VARCHAR(255) DEFAULT NULL',
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'photo_uuid']
-        ], [
-            [
-                'column' => 'user_uuid',
-                'referenceTable' => 'users',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'photo_uuid',
-                'referenceTable' => 'blobs',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'SET NULL'
-            ]
+            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'profiles'],
+            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'profiles'],
+            ['type' => 'INDEX', 'column' => 'photo_uuid', 'table' => 'profiles'],
+            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
+            ['type' => 'FOREIGN KEY', 'column' => 'photo_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'blobs', 'onDelete' => 'SET NULL']
         ]);
-
 
         // Create User Roles Lookup Table
         $schema->createTable('user_roles_lookup', [
-            'id' => 'BIGINT AUTO_INCREMENT',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'user_uuid' => 'CHAR(12) NOT NULL',
             'role_uuid' => 'CHAR(12) NOT NULL'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'user_uuid'],
-            ['type' => 'UNIQUE', 'column' => 'role_uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid']
-        ], [
-            [
-                'column' => 'user_uuid',
-                'referenceTable' => 'users',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'role_uuid',
-                'referenceTable' => 'roles',
-                'referenceColumn' => 'uuid',
-                'onDelete' => 'CASCADE'
-            ]
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'user_uuid', 'table' => 'user_roles_lookup'],
+            ['type' => 'UNIQUE', 'column' => 'role_uuid', 'table' => 'user_roles_lookup'],
+            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
+            ['type' => 'FOREIGN KEY', 'column' => 'role_uuid', 'table' => 'user_roles_lookup', 'references' => 'uuid', 'on' => 'roles', 'onDelete' => 'CASCADE']
         ]);
 
         // Create Auth Sessions Table
         $schema->createTable('auth_sessions', [
-            'id' => 'BIGINT UNSIGNED AUTO_INCREMENT',
+            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'user_uuid' => 'CHAR(12) NOT NULL',
             'access_token' => 'VARCHAR(255) NOT NULL',
@@ -170,42 +185,50 @@ class CreateInitialSchema implements MigrationInterface
             'status' => "ENUM('active', 'revoked') DEFAULT 'active'",
             'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'status'],
-            ['type' => 'INDEX', 'column' => 'access_token'],
-            ['type' => 'INDEX', 'column' => 'refresh_token'],
-            ['type' => 'INDEX', 'column' => 'token_fingerprint'],
-            ['type' => 'INDEX', 'column' => 'uuid']
-        ], [
-            [
-                'column' => 'user_uuid',
-                'referenceTable' => 'users',
-                'referenceColumn' => 'uuid'
-            ]
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'auth_sessions'],
+            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'auth_sessions'],
+            ['type' => 'INDEX', 'column' => 'status', 'table' => 'auth_sessions'],
+            ['type' => 'INDEX', 'column' => 'access_token', 'table' => 'auth_sessions'],
+            ['type' => 'INDEX', 'column' => 'refresh_token', 'table' => 'auth_sessions'],
+            ['type' => 'INDEX', 'column' => 'token_fingerprint', 'table' => 'auth_sessions'],
+            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'auth_sessions', 'references' => 'uuid', 'on' => 'users']
         ]);
 
         // Create App Logs Table
         $schema->createTable('app_logs', [
-            'id' => 'BIGINT UNSIGNED AUTO_INCREMENT',
+            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
             'message' => 'TEXT NOT NULL',
             'context' => 'JSON NULL',
-            'exec_time' => 'FLOAT NULL',  // Execution time for querying
+            'exec_time' => 'FLOAT NULL',
             'channel' => 'VARCHAR(255) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'PRIMARY KEY', 'column' => 'id'],
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'level'],
-            ['type' => 'INDEX', 'column' => 'channel'],
-            ['type' => 'INDEX', 'column' => 'created_at']
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'app_logs'],
+            ['type' => 'INDEX', 'column' => 'level', 'table' => 'app_logs'],
+            ['type' => 'INDEX', 'column' => 'channel', 'table' => 'app_logs'],
+            ['type' => 'INDEX', 'column' => 'created_at', 'table' => 'app_logs']
         ]);
     }
 
+    /**
+     * Reverse the migration
+     * 
+     * Removes all created tables in correct order:
+     * - Respects foreign key constraints
+     * - Handles dependent tables
+     * - Cleans up completely
+     * 
+     * Drop order:
+     * 1. Dependent tables first (logs, sessions)
+     * 2. Junction tables (role assignments)
+     * 3. Feature tables (blobs, profiles)
+     * 4. Core tables (roles, users)
+     * 
+     * @param SchemaManager $schema Database schema manager
+     */
     public function down(SchemaManager $schema): void
     {
         $schema->dropTable('app_logs');
@@ -213,11 +236,22 @@ class CreateInitialSchema implements MigrationInterface
         $schema->dropTable('user_roles_lookup');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');
-        $schema->dropTable('permissions');
+        $schema->dropTable('role_permissions');
+        $schema->dropTable('user_permissions');
         $schema->dropTable('roles');
         $schema->dropTable('users');
     }
 
+    /**
+     * Get migration description
+     * 
+     * Provides human-readable description of:
+     * - Migration purpose
+     * - Major changes
+     * - System impacts
+     * 
+     * @return string Migration description
+     */
     public function getDescription(): string
     {
         return 'Creates initial database schema including users, roles, and permissions tables';

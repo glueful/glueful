@@ -122,28 +122,38 @@ class SQLiteSchemaManager extends SchemaManager
         if (!isset($indexes[0]) || !is_array($indexes[0])) {
             $indexes = [$indexes]; // Convert single index to array format
         }
-
+    
         foreach ($indexes as $index) {
             if (!isset($index['type'], $index['column'], $index['table'])) {
                 throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
             }
-
+    
             $table = $index['table'];
             $column = $index['column'];
-
-            if ($index['type'] === 'FOREIGN KEY') {
-                throw new \RuntimeException("SQLite does not support adding foreign keys after table creation.");
-            } elseif ($index['type'] === 'UNIQUE') {
-                $indexName = "unique_{$table}_{$column}";
-                $sql = "CREATE UNIQUE INDEX IF NOT EXISTS \"$indexName\" ON \"$table\" (\"$column\")";
-            } else {
-                $indexName = "idx_{$table}_{$column}";
-                $sql = "CREATE INDEX IF NOT EXISTS \"$indexName\" ON \"$table\" (\"$column\")";
+            $type = strtoupper($index['type']);
+    
+            // Check if index already exists in SQLite
+            $existingIndexes = $this->pdo
+                ->query("PRAGMA index_list(`$table`)")
+                ->fetchAll(PDO::FETCH_ASSOC);
+    
+            foreach ($existingIndexes as $existingIndex) {
+                if ($existingIndex['name'] === "{$table}_{$column}_idx") {
+                    continue 2; // Skip if index exists
+                }
             }
-
+    
+            if ($type === 'FOREIGN KEY') {
+                throw new \RuntimeException("SQLite does not support adding foreign keys with ALTER TABLE. Define them in CREATE TABLE.");
+            } elseif ($type === 'UNIQUE') {
+                $sql = "CREATE UNIQUE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+            } else {
+                $sql = "CREATE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+            }
+    
             $this->pdo->exec($sql);
         }
-
+    
         return $this;
     }
 
