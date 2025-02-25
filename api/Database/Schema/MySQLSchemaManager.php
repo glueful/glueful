@@ -107,15 +107,34 @@ class MySQLSchemaManager implements SchemaManager
                 throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
             }
 
-            if ($index['type'] === 'FOREIGN KEY') {
+            $table = $index['table'];
+            $column = $index['column'];
+            $type = strtoupper($index['type']);
+
+            // Prevent duplicate indexing
+            $existingIndexes = $this->pdo->query("SHOW INDEXES FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($existingIndexes as $existingIndex) {
+                if ($existingIndex['Column_name'] === $column) {
+                    // Index already exists, skip it
+                    continue 2;
+                }
+            }
+
+            if ($type === 'FOREIGN KEY') {
                 if (!isset($index['references'], $index['on'])) {
                     throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
                 }
 
-                $sql = "ALTER TABLE `{$index['table']}` ADD CONSTRAINT `fk_{$index['table']}_{$index['column']}` 
-                        FOREIGN KEY (`{$index['column']}`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
+                $sql = "ALTER TABLE `$table` ADD CONSTRAINT `fk_{$table}_{$column}` 
+                        FOREIGN KEY (`$column`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
+            } elseif ($type === 'PRIMARY KEY') {
+                // Primary Key should be handled in CREATE TABLE
+                continue;
+            } elseif ($type === 'UNIQUE') {
+                $sql = "ALTER TABLE `$table` ADD UNIQUE (`$column`)";
             } else {
-                $sql = "ALTER TABLE `{$index['table']}` ADD {$index['type']} (`{$index['column']}`)";
+                // Default case: add normal index
+                $sql = "ALTER TABLE `$table` ADD INDEX (`$column`)";
             }
 
             $this->pdo->exec($sql);
@@ -123,7 +142,6 @@ class MySQLSchemaManager implements SchemaManager
 
         return $this;
     }
-
     /**
      * Drop MySQL table
      * 

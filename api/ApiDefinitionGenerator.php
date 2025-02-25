@@ -16,7 +16,7 @@ use Glueful\Database\QueryBuilder;
  * These definitions describe the structure and behavior of API endpoints
  * and database interactions.
  */
-class JsonDefinition {
+class ApiDefinitionGenerator {
     private bool $runFromConsole;
     private array $generatedFiles = [];
     private string $dbResource;
@@ -340,7 +340,7 @@ class JsonDefinition {
      * Creates or updates administrator role with full permissions.
      */
     private function setupAdministratorRole(): void {
-        $this->log("--- Creating Administrator Role ---");
+        $this->log("--- Creating Superuser Role ---");
         
         $roleUuid = $this->getOrCreateAdminRole();
         $this->updateAdminPermissions($roleUuid);
@@ -366,7 +366,7 @@ class JsonDefinition {
            // Get admin role using QueryBuilder
            $adminRole = $this->db
            ->select('roles', ['uuid'])
-           ->where(['name' => 'Administrator'])
+           ->where(['name' => 'superuser'])
            ->limit(1)
            ->get();
 
@@ -374,9 +374,9 @@ class JsonDefinition {
             
             if (!$roleUuid) {
                 $roleUuid = $this->createAdminRole();
-                $this->log("--- Administrator role created ---");
+                $this->log("--- Superuser role created ---");
             } else {
-                $this->log("--- Administrator role already exists ---");
+                $this->log("--- Superuser role already exists ---");
             }
             
             return $roleUuid;
@@ -434,8 +434,8 @@ class JsonDefinition {
                 'roles',
                 [
                     'uuid' => $roleUuid,
-                    'name' => 'Administrator',
-                    'description' => 'This is the Administrator role',
+                    'name' => 'superuser',
+                    'description' => 'Full system access',
                     'status' => 'active'
                 ]
             ) > 0;
@@ -448,13 +448,12 @@ class JsonDefinition {
             $roleData = $this->db->select(
                 'roles',
                 ['uuid'],
-                ['uuid' => $roleUuid]
-            );
+            )->where(['uuid' => $roleUuid])->get();
 
             if (empty($roleData)) {
                 throw new \RuntimeException('Failed to retrieve role ID');
             }
-
+            
             return $roleData[0]['id'];
             
         } catch (\Exception $e) {
@@ -471,7 +470,7 @@ class JsonDefinition {
     //TODO: Create version for SQLite and other databases
     private function updateAdminPermissions(string $roleUuid): void 
 {
-    $this->log("--- Assigning/Updating Administrator Permissions ---");
+    $this->log("--- Assigning/Updating Superuser Permissions ---");
     
     try {
 
@@ -497,7 +496,7 @@ class JsonDefinition {
                     
                     // Use upsert to handle potential duplicates
                     if ($qb->upsert(
-                        'permissions',
+                        'role_permissions',
                         [$permission],
                         ['permissions'] // Update permissions if record exists
                     ) > 0) {
@@ -616,16 +615,9 @@ class JsonDefinition {
         try {
             // Check permissions using role UUID directly
             $permissions = $this->db->select(
-                'permissions',
+                'role_permissions',
                 ['id'],
-                [
-                    'role_uuid' => $roleUuid,
-                    'model' => $model
-                ],
-                false,
-                [],
-                1
-            );
+            )->where(['role_uuid' => $roleUuid, 'model' => $model])->limit(1)->get();
             
             return !empty($permissions);
         } catch (\Exception $e) {
@@ -674,6 +666,6 @@ class JsonDefinition {
 }
 
 // Run the generator
-$generator = new JsonDefinition();
+$generator = new ApiDefinitionGenerator();
 $generator->generate();
 ?>

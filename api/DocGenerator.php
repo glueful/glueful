@@ -399,9 +399,9 @@ class DocGenerator
             if (strtolower($fieldName) === 'id' || strtolower($fieldName) === 'uuid') {
                 continue;
             }
-            
+            $fieldType = $field['type'] ?? '';
             $properties[$apiField] = [
-                'type' => $this->inferTypeFromJson($field['type']),
+                'type' => $this->inferTypeFromJson($fieldType),
                 'description' => $field['description'] ?? $fieldName
             ];
 
@@ -517,6 +517,10 @@ class DocGenerator
      */
     private function inferTypeFromJson(string $dbType): string 
     {
+        // Handle null or empty type
+        if (!$dbType) {
+            return 'string'; // Default to string type
+        }
         if (str_contains($dbType, 'int')) {
             return 'integer';
         }

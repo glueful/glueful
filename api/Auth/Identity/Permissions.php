@@ -142,7 +142,7 @@ class Permissions {
     public function unassignUser(string $user_uuid, string $model): Response
     {
         try {
-            $deleted = $this->db->delete('user_permissions', ['user_uuid' => $user_uuid, 'model' => $model]);
+            $deleted = $this->db->delete('user_permissions', ['user_uuid' => $user_uuid, 'model' => $model],false);
 
             return $deleted ? Response::ok(['message' => 'Permission removed']) 
                             : Response::error('No permission found to remove');
@@ -227,7 +227,7 @@ class Permissions {
     public function unassignRole(string $role_uuid, string $model): Response
     {
         try {
-            $deleted = $this->db->delete('role_permissions', ['role_uuid' => $role_uuid, 'model' => $model]);
+            $deleted = $this->db->delete('role_permissions', ['role_uuid' => $role_uuid, 'model' => $model],false);
 
             return $deleted ? Response::ok(['message' => 'Role permission removed']) 
                             : Response::error('No role permission found to remove');

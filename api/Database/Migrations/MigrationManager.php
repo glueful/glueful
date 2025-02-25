@@ -67,7 +67,9 @@ class MigrationManager
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
 
-        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 2) . '/database/migrations';
+        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__,3) . '/database/migrations';
+        // echo $this->migrationsPath;
+        // exit;
         $this->ensureVersionTable();
     }
 
@@ -154,6 +156,7 @@ class MigrationManager
         $batch = $this->getNextBatchNumber();
 
         foreach ($this->getPendingMigrations() as $file) {
+
             $status = $this->runMigration($file, $batch);
             if ($status['success']) {
                 $results['applied'][] = $status['file'];
@@ -238,7 +241,9 @@ class MigrationManager
     private function getNextBatchNumber(): int
     {
         $result = $this->db
-        ->select(self::VERSION_TABLE, ['MAX(batch) as max_batch'])
+        ->select(self::VERSION_TABLE, [
+            $this->db->raw("MAX(batch) AS max_batch")
+        ])
         ->get();
         
         return (int)($result[0]['max_batch'] ?? 0) + 1;

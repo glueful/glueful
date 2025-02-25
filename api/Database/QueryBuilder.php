@@ -152,14 +152,19 @@ class QueryBuilder
      * 
      * Rolls back transaction or to savepoint based on nesting.
      */
-    public function rollback(): void
-    {
+    public function rollback(): bool {
+        if ($this->transactionLevel <= 0) {
+            return false; // No active transaction
+        }
+        
         if ($this->transactionLevel === 1) {
             $this->pdo->rollBack();
-        } else {
+        } else if ($this->transactionLevel > 1) {
             $this->pdo->exec("ROLLBACK TO SAVEPOINT trans_" . ($this->transactionLevel - 1));
         }
+        
         $this->transactionLevel = max(0, $this->transactionLevel - 1);
+        return true;
     }
 
     /**
@@ -245,7 +250,13 @@ class QueryBuilder
         bool $applySoftDeletes = false
     ): self {
         $this->bindings = []; // Reset bindings
-        $columnList = implode(", ", array_map([$this->driver, 'wrapIdentifier'], $columns));
+        $columnList = implode(", ", array_map(function ($column) {
+            // Check if it's an instance of RawExpression
+            if ($column instanceof RawExpression) {
+                return (string) $column; // Use raw SQL directly
+            }
+            return $this->driver->wrapIdentifier($column);
+        }, $columns));
         $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
 
         // Add JOIN clauses if any
@@ -523,5 +534,72 @@ class QueryBuilder
         $stmt = $this->pdo->prepare($this->query);
         $stmt->execute($this->bindings);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Create a raw SQL expression that will be injected into the query without escaping
+     * 
+     * WARNING: Only use this method with trusted input as it can lead to SQL injection if misused
+     * 
+     * Use cases:
+     * - Complex SQL functions: MAX(), COUNT(), etc
+     * - Database-specific features
+     * - Custom SQL expressions
+     * 
+     * @param string $expression Raw SQL expression
+     * @return RawExpression Wrapper for raw SQL
+     * 
+     * @example
+     * ```php
+     * $query->select('users', [$query->raw('COUNT(*) as total')]);
+     * $query->select('orders', [$query->raw('DATE_FORMAT(created_at, "%Y-%m-%d") as date')]);
+     * ```
+     */
+    public function raw(string $expression): RawExpression {
+        return new RawExpression($expression);
+    }
+}
+
+/**
+ * Raw SQL Expression Container
+ * 
+ * Wraps raw SQL expressions to prevent automatic escaping when used in queries.
+ * This class helps distinguish between regular strings that should be escaped
+ * and raw SQL expressions that should be used as-is.
+ * 
+ * Security note:
+ * Only use with trusted input as raw SQL expressions bypass normal escaping
+ * 
+ * @internal Used internally by QueryBuilder
+ */
+class RawExpression {
+    /** @var string The raw SQL expression */
+    protected string $expression;
+
+    /**
+     * Create new raw SQL expression
+     * 
+     * @param string $expression Raw SQL to be used without escaping
+     */
+    public function __construct(string $expression) {
+        $this->expression = $expression;
+    }
+
+    /**
+     * Get the raw expression string
+     * 
+     * @return string The raw SQL expression
+     */
+    public function getExpression(): string {
+        return $this->expression;
+    }
+
+    /**
+     * Convert to string when used in string context
+     * 
+     * @return string The raw SQL expression
+     */
+    public function __toString(): string {
+        return $this->expression;
     }
 }

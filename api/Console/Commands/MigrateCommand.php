@@ -161,6 +161,7 @@ class MigrateCommand extends Command
                 $this->displayMigrationResult($result);
             }
         } catch (\Exception $e) {
+            error_log("Migration failed: " . $e);
             $this->error("Migration failed: " . $e->getMessage());
         }
     }
