@@ -1,6 +1,6 @@
 <?php
 
-namespace Glueful\Api\Extensions\Uploader\Storage;
+namespace Glueful\Extensions\Uploader\Storage;
 
 interface StorageInterface {
     public function store(string $sourcePath, string $destinationPath): string;

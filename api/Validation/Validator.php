@@ -13,6 +13,38 @@ use Glueful\Validation\Attributes\{Rules, Sanitize};
  * 
  * Provides attribute-based validation and sanitization for DTOs.
  * Supports multiple validation rules and sanitization filters.
+ * 
+ * Example usage:
+ * 
+ * ```php
+ * use Glueful\Validation\Validator;
+ * 
+ * class UserDTO {
+ *     #[Sanitize(['trim', 'strip_tags'])]
+ *     #[Rules(['required', 'string', 'min:3', 'max:50'])]
+ *     public string $name;
+ * 
+ *     #[Sanitize(['intval'])]
+ *     #[Rules(['required', 'int', 'min:18', 'max:99'])]
+ *     public int $age;
+ * 
+ *     #[Sanitize(['trim', 'sanitize_email'])]
+ *     #[Rules(['required', 'email'])]
+ *     public string $email;
+ * }
+ * 
+ * $user = new UserDTO();
+ * $user->name = ' John Doe ';
+ * $user->age = '25';
+ * $user->email = 'john.doe@example.com';
+ * 
+ * $validator = new Validator();
+ * if ($validator->validate($user)) {
+ *     echo "Validation passed!";
+ * } else {
+ *     print_r($validator->errors());
+ * }
+ * ```
  */
 class Validator
 {
@@ -32,8 +64,11 @@ class Validator
         $reflection = new ReflectionClass($dto);
 
         foreach ($reflection->getProperties() as $property) {
+            if (!$property->isInitialized($dto)) {
+                $this->errors[$property->getName()][] = "{$property->getName()} is not initialized.";
+                continue;
+            }
             $value = $property->getValue($dto);
-
             // Apply Sanitization First
             $value = $this->sanitize($property, $value);
             $value = $property->getValue($dto);
@@ -62,6 +97,7 @@ class Validator
                     'strip_tags' => strip_tags($value),
                     'intval' => intval($value),
                     'sanitize_email' => filter_var($value, FILTER_SANITIZE_EMAIL),
+                    'sanitize_string' => htmlspecialchars($value, ENT_QUOTES, 'UTF-8'),
                     default => $value,
                 };
             }
@@ -110,6 +146,7 @@ class Validator
             'max' => $this->validateMax($property, $value, (int)$params[0]),
             'between' => $this->validateBetween($property, $value, (int)$params[0], (int)$params[1]),
             'email' => $this->validateEmail($property, $value),
+            'in' => $this->validateIn($property, $value, $params),
             default => throw new \Exception("Unknown validation rule: $ruleName"),
         };
     }
@@ -238,6 +275,22 @@ class Validator
         if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
             $this->errors[$property->getName()][] = "{$property->getName()} must be a valid email.";
         }
+    }
+
+     /**
+    * Validate value is in a list of values
+   * 
+    * Ensures value is one of the specified options.
+     * 
+    * @param ReflectionProperty $property Property to check
+     * @param mixed $value Value to validate
+    * @param array $options Allowed values
+    */
+    private function validateIn(ReflectionProperty $property, mixed $value, array $options): void
+    {
+       if (!in_array($value, $options)) {
+           $this->errors[$property->getName()][] = "{$property->getName()} must be one of: " . implode(', ', $options);
+       }
     }
 
     /**
