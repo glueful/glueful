@@ -3,12 +3,9 @@ declare(strict_types=1);
 
 namespace Glueful;
 
-use Glueful\{ Auth\TokenManager, Security\EmailVerification};
-use Glueful\Permissions\{Permissions, Permission};
-use Glueful\APIEngine;
 use Glueful\Http\{Response,Router};
-use Glueful\Api\Extensions\Uploader\FileUploader;
-use Glueful\Identity\Auth;
+use Glueful\Helpers\{FileHandler, Request, ExtensionsManager};
+use Glueful\Controllers\{ResourceController, AuthController};
 
 /**
  * Main API Router and Request Handler
@@ -42,9 +39,9 @@ class API
     public static function init(): void
     {
         if (!self::$routesInitialized) {
-        // Load extensions before main routes
-        // This allows extensions to register their routes first
-        self::loadExtensions();
+            // Load extensions before main routes
+            // This allows extensions to register their routes first
+            ExtensionsManager::loadExtensions();
             self::initializeRoutes();
             self::$routesInitialized = true;
         }
@@ -60,57 +57,32 @@ class API
     {
         
         $router = Router::getInstance();
+        $resourceController = new ResourceController();
+        $request = new Request();
+        $authController = new AuthController();
+        $fileHandler = new FileHandler();
         
         // Public routes - using relative paths
-        $router->addRoute('POST', 'auth/login', function($params) {
-            $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-            $postData = [];
-            
-            if (strpos($contentType, 'application/json') !== false) {
-                $input = file_get_contents('php://input');
-                $postData = json_decode($input, true) ?? [];
-            } else {
-                $postData = $_POST;
+        $router->addRoute('POST', 'auth/login', function($params)use ($authController) {
+            try {
+                
+                // Get the Response object
+                $response = $authController->login();
+                return $response->send();
+                
+            } catch (\Exception $e) {
+                return Response::error(
+                    'Login failed: ' . $e->getMessage(),
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
             }
-            
-            // self::prepareDatabaseResource(null);
-            $response = Auth::login($postData);
-            return $response;
         }, true); // Mark as public
 
-        $router->addRoute('POST', 'auth/verify-email', function($params) {
+        $router->addRoute('POST', 'auth/verify-email', function($params) use ($authController) {
 
             try {
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $postData = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $input = file_get_contents('php://input');
-                    $postData = json_decode($input, true) ?? [];
-                } else {
-                    $postData = $_POST;
-                }
-
-                if (!isset($postData['email'])) {
-                    return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                $verifier = new EmailVerification();
-                $otp = $verifier->generateOTP();
-                
-                // Send verification email
-                $result = $verifier->sendVerificationEmail($postData['email'], $otp);
-                
-                if (!$result) {
-                    return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                return Response::ok([
-                    'data' => [
-                        'email' => $postData['email'],
-                        'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-                    ]
-                ], 'Verification code has been sent to your email')->send();
+                $response = $authController->verifyEmail();
+                return $response->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -120,37 +92,11 @@ class API
             }
         }, true);
 
-        $router->addRoute('POST', 'auth/verify-otp', function($params) {
-
+        $router->addRoute('POST', 'auth/verify-otp', function($params) use ($authController) {
             try {
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $postData = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $input = file_get_contents('php://input');
-                    $postData = json_decode($input, true) ?? [];
-                } else {
-                    $postData = $_POST;
-                }
 
-                if (!isset($postData['email']) || !isset($postData['otp'])) {
-                    return Response::error('Email and OTP are required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                $verifier = new EmailVerification();
-                $isValid = $verifier->verifyOTP($postData['email'], $postData['otp']);
-                
-                if (!$isValid) {
-                    return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                return Response::ok([
-                    'data' => [
-                        'email' => $postData['email'],
-                        'verified' => true,
-                        'verified_at' => date('Y-m-d\TH:i:s\Z')
-                    ]
-                ], 'OTP verified successfully')->send();
+               $response = $authController->verifyOtp();
+               return $response->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -160,36 +106,11 @@ class API
             }
         }, true);
 
-        $router->addRoute('POST', 'auth/forgot-password', function($params) {
+        $router->addRoute('POST', 'auth/forgot-password', function($params)use ($authController) {
 
             try {
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $postData = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $input = file_get_contents('php://input');
-                    $postData = json_decode($input, true) ?? [];
-                } else {
-                    $postData = $_POST;
-                }
-
-                if (!isset($postData['email'])) {
-                    return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                $email = $postData['email'];
-                $result = EmailVerification::sendPasswordResetEmail($email);
-                
-                if (!$result['success']) {
-                    return Response::error($result['message'] ?? 'Failed to send reset email', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                return Response::ok([
-                    'data' => [
-                        'email' => $postData['email'],
-                        'expires_in' =>  EmailVerification::OTP_EXPIRY_MINUTES * 60
-                    ]
-                ], 'Password reset instructions have been sent to your email')->send();
+                $response = $authController->forgotPassword();
+                return $response->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -199,40 +120,10 @@ class API
             }
         }, true);
 
-        $router->addRoute('POST', 'auth/reset-password', function($params) {
+        $router->addRoute('POST', 'auth/reset-password', function($params)use ($authController) {
             try {
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $postData = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $input = file_get_contents('php://input');
-                    $postData = json_decode($input, true) ?? [];
-                } else {
-                    $postData = $_POST;
-                }
-
-                if (!isset($postData['email']) || !isset($postData['new_password'])) {
-                    return Response::error('Email, new password are required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                // Update password
-                $updateParams = [
-                    'password' => password_hash($postData['new_password'], PASSWORD_DEFAULT),
-                    'email' => $postData['email']
-                ];
-
-                $result = APIEngine::saveData('users', 'update', $updateParams);
-                
-                if (!isset($result['affected']) || $result['affected'] === 0) {
-                    throw new \RuntimeException('Failed to update password');
-                }
-
-                return Response::ok([
-                    'data' => [
-                        'email' => $postData['email'],
-                        'updated_at' => date('Y-m-d\TH:i:s\Z')
-                    ]
-                ], 'Password has been reset successfully')->send();
+                $response = $authController->resetPassword();
+                return $response->send();
 
             } catch (\Exception $e) {
                 return Response::error(
@@ -242,44 +133,21 @@ class API
             }
         }, true);
 
-        $router->addRoute('POST', 'auth/validate-token', function($params) {
+        $router->addRoute('POST', 'auth/validate-token', function($params)use ($authController) {
 
             try {
-                $result = Auth::validateToken();
-                return Response::ok($result)->send();
+                $result = $authController->validateToken();
+                return $result->send();
 
             } catch (\Exception $e) {
                 return Response::unauthorized('Invalid or expired token')->send();
             }
         }); // Not public, requires token
 
-        $router->addRoute('POST', 'auth/refresh-token', function($params) {
+        $router->addRoute('POST', 'auth/refresh-token', function($params)use ($authController) {
             try {
-                // Check request body for refresh token
-                $input = file_get_contents('php://input');
-                $postData = json_decode($input, true) ?? [];
-                if (isset($postData['refresh_token'])) {
-                    $refreshToken = $postData['refresh_token'];
-                }
-                
-                if (!$refreshToken) {
-                    return Response::unauthorized('Refresh token required')->send();
-                }
-        
-                $tokens = TokenManager::refreshTokens($refreshToken);
-                
-                if (!$tokens || !isset($tokens['access_token'])) {
-                    return Response::unauthorized('Invalid or expired refresh token')->send();
-                }
-                
-                return Response::ok([
-                    'tokens' => [
-                        'access_token' => $tokens['access_token'],
-                        'refresh_token' => $tokens['refresh_token'],
-                        'token_type' => 'Bearer',
-                        'expires_in' => config('session.access_token_lifetime')
-                    ]
-                ], 'Token refreshed successfully')->send();
+               $response = $authController->refreshToken();
+               return $response->send();
         
             } catch (\Exception $e) {
                 return Response::error(
@@ -289,24 +157,37 @@ class API
             }
         }, true);
 
-        $router->addRoute('GET', 'files/{uuid}', function($params) {
-            Auth::validateToken();
-            
+        $router->addRoute('GET', 'files/{uuid}', function($params)use ($authController, $request, $fileHandler) {
+            $authController->validateToken();
+            $requestData = $request->getQueryParams();
+
+             // Get parameters from request
+            $uuid = $requestData['uuid'] ?? null;
+            $type = $requestData['type'] ?? 'info';
+
             try {
-                $result = APIEngine::getBlob('blobs', 'retrieve', $params);
-                
-                if (!isset($result['content'])) {
-                    return Response::error('Blob not found', Response::HTTP_NOT_FOUND)->send();
+                // $result = APIEngine::getBlob('blobs', 'retrieve', $params);
+                if (!isset($fileData['uuid'])) {
+                    return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST);
                 }
-                
-                if (isset($result['mime_type'])) {
-                    header('Content-Type: ' . $result['mime_type']);
+                // Process image parameters if needed
+                $params = [];
+                if ($type === 'image') {
+                    $params = [
+                        'w' => $requestData['w'] ?? null,
+                        'h' => $requestData['h'] ?? null,
+                        'q' => $requestData['q'] ?? 80,
+                        'z' => $requestData['z'] ?? null
+                    ];
                 }
-                if (isset($result['filename'])) {
-                    header('Content-Disposition: inline; filename="' . $result['filename'] . '"');
-                }
-                
-                echo base64_decode($result['content']);
+                 // Process image parameters if needed
+                 $result = $fileHandler->getBlob($uuid, $type, $params);
+               
+                // Note: For download and inline types, the method will automatically
+                // set headers and stream the file, so this return is only reached for
+                // info and image types, or if there was an error
+                return Response::ok($result, 'File retrieved successfully');
+                // echo base64_decode($result['content']);
                 exit;
                 
             } catch (\Exception $e) {
@@ -317,33 +198,27 @@ class API
             }
         });
 
-        $router->addRoute('POST', 'files', function($params) {
-            
-            Auth::validateToken();
-            
+        $router->addRoute('POST', 'files', function($params) use ($request, $authController, $fileHandler) {
+            $authController->validateToken();
             try {
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                
+                $contentType = $request->getContentType();
                 // Handle multipart form data (regular file upload)
                 if (strpos($contentType, 'multipart/form-data') !== false) {
-                    if (empty($_FILES)) {
+                    if (empty($request->getFiles())) {
                         return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST)->send();
                     }
-                    $response = self::handleFileUpload($_GET, $_FILES);
+                    
+                    return  $fileHandler->handleFileUpload($request->getQueryParams(), $request->getFiles());      
                 } 
+        
                 // Handle JSON/base64 upload
                 else {
-                    $input = file_get_contents('php://input');
-                    $postData = json_decode($input, true) ?? [];
-                    
+                    $postData = Request::getPostData() ?? [];
                     if (!isset($postData['base64'])) {
                         return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();
                     }
-                    
-                    $response = self::handleBase64Upload($_GET, $postData);
+                    return $fileHandler->handleBase64Upload($request->getQueryParams(), $postData);
                 }
-                
-                return $response;
                 
             } catch (\Exception $e) {
                 return Response::error(
@@ -355,117 +230,33 @@ class API
 
         // Protected routes (require token)
         // List all resources
-        $router->addRoute('GET', '{resource}', function($params) {
-           
-            Auth::validateToken();
-            
+        $router->addRoute('GET', '{resource}', function($params) use ($resourceController, $request) {
             try {
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                // Verify permissions
-                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
-
-                // Handle query parameters
-                $queryParams = array_merge($_GET, [
-                    'fields' => $_GET['fields'] ?? '*',
-                    'sort' => $_GET['sort'] ?? 'created_at',
-                    'page' => $_GET['page'] ?? 1,
-                    'per_page' => $_GET['per_page'] ?? 25,
-                    'order' => $_GET['order'] ?? 'desc'
-                ]);
-                
-                // Direct call to getData without legacy conversion
-                $result = APIEngine::getData(
-                    $params['resource'],
-                    'list',
-                    $queryParams
-                );
-                
-                return Response::ok($result)->send();
-                
+                $queryParams = $request->getQueryParams();
+                return $resourceController->get($params, $queryParams);
+            
             } catch (\Exception $e) {
                 return Response::error('Failed to retrieve data: ' . $e->getMessage())->send();
             }
         });
         
         // Get single resource by UUID
-        $router->addRoute('GET', '{resource}/{uuid}', function($params) {
-            
-            Auth::validateToken();
+        $router->addRoute('GET', '{resource}/{uuid}', function($params) use ($resourceController, $request){
             
             try {
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                // Verify permissions
-                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
-
-                // Set up parameters for single record retrieval
-                $queryParams = array_merge($_GET, [
-                    'fields' => $_GET['fields'] ?? '*',
-                    'uuid' => $params['id'],
-                    'paginate' => false
-                ]);
-                
-                // Direct call to getData without legacy conversion
-                $result = APIEngine::getData(
-                    $params['resource'],
-                    'list',
-                    $queryParams
-                );
-                
-                if (empty($result)) {
-                    return Response::error('Resource not found', Response::HTTP_NOT_FOUND)->send();
-                }
-
-                return Response::ok($result[0])->send();
+                $queryParams = $request->getQueryParams();
+                return $resourceController->getSingle($params, $queryParams);
                 
             } catch (\Exception $e) {
                 return Response::error('Failed to retrieve data: ' . $e->getMessage())->send();
             }
         });
         
-        $router->addRoute('POST', '{resource}', function($params) {
-            // Validate authentication
-            Auth::validateToken();
-            
+        $router->addRoute('POST', '{resource}', function($params) use ($resourceController){
             try {
                 // Get content type and parse body
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $data = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $data = json_decode(file_get_contents('php://input'), true) ?? [];
-                } else {
-                    $data = $_POST;
-                }
-
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                // Verify permissions
-                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
-        
-                // Direct API call without legacy conversion
-                $response = APIEngine::saveData(
-                    $params['resource'],  // resource name
-                    'save',              // action
-                    $data                // data to save
-                );
-                
-                // Handle auditing if enabled
-                if (config('app.enable_audit')) {
-                    self::auditChanges($params['resource'], $_GET, $data, $response);
-                }
-        
-                return Response::ok($response)->send();
+                $postData = Request::getPostData();
+                return $resourceController->post($params, $postData);
                 
             } catch (\Exception $e) {
                 return Response::error('Save failed: ' . $e->getMessage())->send();
@@ -473,43 +264,13 @@ class API
         });
         
         // PUT Route (Update)
-        $router->addRoute('PUT', '{resource}/{uuid}', function($params) {
-            Auth::validateToken();
-            
+        $router->addRoute('PUT', '{resource}/{uuid}', function($params) use ($resourceController){
             try {
                 // Get request body
-                $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-                $putData = [];
-                
-                if (strpos($contentType, 'application/json') !== false) {
-                    $putData = json_decode(file_get_contents('php://input'), true) ?? [];
-                } else {
-                    parse_str(file_get_contents('php://input'), $putData);
-                }
-                
+                $putData = Request::getPostData();
                 // Add UUID to data
                 $putData['id'] = $params['uuid'];
-                
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                // Verify permissions
-                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
-                
-                $response = APIEngine::saveData(
-                    $params['resource'],
-                    'update',
-                    $putData
-                );
-                
-                // Handle audit if enabled
-                if (config('app.enable_audit')) {
-                    self::auditChanges($params['resource'], [], $putData, $response);
-                }
-                
-                return Response::ok($response)->send();
+                return $resourceController->put($params, $putData);
                 
             } catch (\Exception $e) {
                 return Response::error('Update failed: ' . $e->getMessage())->send();
@@ -517,45 +278,22 @@ class API
         });
         
         // DELETE Route
-        $router->addRoute('DELETE', '{resource}/{uuid}', function($params) {
-            Auth::validateToken();
+        $router->addRoute('DELETE', '{resource}/{uuid}', function($params) use ($resourceController, $authController){
+            $authController->validateToken();
             
             try {
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                // Verify permissions
-                if (!Permissions::hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
-                
-                // Direct delete without legacy conversion
-                $response = APIEngine::saveData(
-                    $params['resource'],
-                    'delete',
-                    ['uuid' => $params['uuid'], 'status' => 'D']
-                );
-                
-                return Response::ok($response)->send();
-                
+
+                return $resourceController->delete($params);
+
             } catch (\Exception $e) {
                 return Response::error('Delete failed: ' . $e->getMessage())->send();
             }
         });
         
-        $router->addRoute('POST', 'auth/logout', function($params) {
-            // Validate token
-            Auth::validateToken();
-            
+        $router->addRoute('POST', 'auth/logout', function($params)use ($authController) {
             try {
-                // Get token from request
-                $token = $_GET['token'] ?? null;
-                
-                if (!$token) {
-                    return Response::unauthorized('Token required')->send();
-                }
-                
-                return Auth::logout($token);
+               
+                return $authController->logout();
                 
             } catch (\Exception $e) {
                 return Response::error(
@@ -565,225 +303,6 @@ class API
             }
         });
     }
-
-
-    /**
-     * Process base64 encoded file upload
-     * 
-     * @param array $getParams Query parameters
-     * @param array $postParams Post data with base64 content
-     * @return array Upload response
-     */
-    private static function handleBase64Upload(array $getParams, array $postParams): array 
-    {
-        try {
-            $uploader = new FileUploader();
-
-            $token = Auth::getAuthAuthorizationToken();
-            if (!$token) {
-                echo json_encode(Response::unauthorized('Authentication required')->send());
-                exit;
-            }
-            
-            $_GET['token'] = $token; // Store token for downstream use
-            
-            // Convert base64 to temp file
-            $tmpFile = $uploader->handleBase64Upload($postParams['base64']);
-            
-            $fileParams = [
-                'name' => $getParams['name'] ?? 'upload.jpg',
-                'type' => $getParams['mime_type'] ?? 'image/jpeg',
-                'tmp_name' => $tmpFile,
-                'error' => 0,
-                'size' => filesize($tmpFile)
-            ];
-            $response = $uploader->handleUpload(
-                $getParams['token'],
-                $getParams,
-                ['file' => $fileParams]
-            );
-
-            return $response;
-
-        } catch (\Exception $e) {
-
-            return Response::error('Base64 upload failed: ' . $e->getMessage())->send();
-        }
-    }
-
-    /**
-     * Process regular file upload
-     * 
-     * @param array $getParams Query parameters
-     * @param array $fileParams File upload data
-     * @return array Upload response
-     */
-    private static function handleFileUpload(array $getParams, array $fileParams): array 
-    {
-        try {
-            $uploader = new FileUploader();
-
-            $token = Auth::getAuthAuthorizationToken();
-        
-            if (!$token) {
-                echo json_encode(Response::unauthorized('Authentication required')->send());
-                exit;
-            }
-            
-            $_GET['token'] = $token; // Store token for downstream use
-
-            $response = $uploader->handleUpload($getParams['token'], $getParams, $fileParams);
-
-            return $response;
-
-        } catch (\Exception $e) {
-            return Response::error('File upload failed: ' . $e->getMessage())->send();
-        }
-    }
-
-    /**
-     * Record changes for auditing
-     * 
-     * Tracks data modifications for audit logging.
-     * 
-     * @param string $function Modified entity
-     * @param array $getParams Query parameters
-     * @param array $postParams Modified data
-     * @param array $response Operation response
-     */
-    private static function auditChanges(
-        string $function,
-        array $getParams,
-        array $postParams,
-        array $response
-    ): void {
-        if ($function === 'sysaudit') {
-            return;
-        }
-
-        $sessionData = APIEngine::validateSession(null, null, $getParams);
-        $auditGet = [
-            'fields' => implode(',', array_keys($postParams)),
-            'id' => $postParams['id'] ?? null,
-            'token' => $getParams['token'],
-            'dbres' => $getParams['dbres']
-        ];
-
-        $existingData = APIEngine::getData($function, 'list', $auditGet, null);
-        $changeset = self::detectChanges($existingData[0] ?? [], $postParams);
-
-        if (empty($changeset)) {
-            return;
-        }
-
-        self::recordAudit($function, $changeset, $sessionData, $response['id']);
-    }
-
-    private static function detectChanges(array $oldData, array $newData): array 
-    {
-        $changes = [];
-        foreach ($newData as $key => $newValue) {
-            $oldValue = $oldData[$key] ?? '';
-            if ($oldValue !== $newValue) {
-                $changes[$key] = [
-                    'old_value' => $oldValue,
-                    'new_value' => $newValue
-                ];
-            }
-        }
-        return $changes;
-    }
-
-    private static function recordAudit(
-        string $entity,
-        array $changeset,
-        array $sessionData,
-        string|int $recordId
-    ): void {
-        $auditPost = [
-            'changeset' => json_encode($changeset),
-            'session_user_id' => $sessionData['info'][0]['id'],
-            'session_fullname' => sprintf(
-                '%s %s',
-                $sessionData['info'][0]['first_name'],
-                $sessionData['info'][0]['last_name']
-            ),
-            'entity' => $entity,
-            'record_id' => $recordId,
-            'ip' => $_SERVER['REMOTE_ADDR'],
-            'user_agent' => $_SERVER['HTTP_USER_AGENT']
-        ];
-
-        $currentDb = $GLOBALS['databaseResource'];
-        // self::prepareDatabaseResource('audit');
-        APIEngine::saveData('sysaudit', 'save', $auditPost);
-        // self::prepareDatabaseResource($currentDb);
-    }
-
-    /**
-     * Load API Extensions
-     * 
-     * Dynamically loads API extension modules:
-     * - Scans extension directories
-     * - Loads extension classes
-     * - Initializes extension routes
-     * - Handles extension dependencies
-     * 
-     * @return void
-     */
-    private static function loadExtensions(): void 
-{
-    $extensionsMap = [
-        'api/api-extensions/' => 'Glueful\\Api\\Extensions\\',
-        'extensions/' => 'Glueful\\Extensions\\'
-    ];
-    
-    foreach ($extensionsMap as $directory => $namespace) {
-        self::scanExtensionsDirectory(
-            dirname(__DIR__) . '/' . $directory, 
-            $namespace, 
-            Router::getInstance()
-        );
-    }
-}
-
-private static function scanExtensionsDirectory(string $dir, string $namespace, Router $router): void 
-{
-    if (!is_dir($dir)) {
-        return;
-    }
-
-    $iterator = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
-    );
-
-    foreach ($iterator as $file) {
-        if ($file->isFile() && $file->getExtension() === 'php') {
-            $relativePath = substr($file->getPathname(), strlen($dir));
-            $className = str_replace(
-                ['/', '.php'],
-                ['\\', ''],
-                $relativePath
-            );
-            $fullClassName = $namespace . $className;
-
-            // Check if class exists and extends Extensions
-            if (class_exists($fullClassName)) {
-                $reflection = new \ReflectionClass($fullClassName);
-                if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                    try {
-                        // Check if class has initializeRoutes method
-                        if ($reflection->hasMethod('initializeRoutes')) {
-                            // Initialize routes for this extension
-                            $fullClassName::initializeRoutes($router);
-                        }
-                    } catch (\Exception $e) {
-                    }
-                }
-            }
-        }
-    }
-}
 
     /**
      * Process API Request

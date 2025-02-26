@@ -116,9 +116,9 @@ class Response
      * @param int $statusCode HTTP error status code
      * @return self
      */
-    public static function error(string $message, int $statusCode = self::HTTP_BAD_REQUEST): self
+    public static function error(string $message, int $statusCode = self::HTTP_BAD_REQUEST, mixed $error = null): self
     {
-        return new self(null, $statusCode, $message, false);
+        return new self($error, $statusCode, $message, false);
     }
 
     /**
