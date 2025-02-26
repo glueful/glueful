@@ -12,7 +12,6 @@ return [
     
     // API related paths
     'api_base_directory' => dirname(__DIR__) . '/api/',        // API root directory
-    'api_base_url' => env('API_BASE_URL', 'http://localhost/glueful/api/'), // API base URL
     'api_library' => dirname(__DIR__) . '/api/api-library/',   // API library classes
     'api_extensions' => dirname(__DIR__) . '/api/api-extensions/', // API extensions
     'api_docs' => dirname(__DIR__) . '/docs/',                 // API documentation
@@ -20,6 +19,7 @@ return [
     // Content delivery paths
     'cdn' => env('CDN_BASE_URL', 'http://localhost/cdn/'),    // CDN base URL
     'domain' => env('WEBSITE_DOMAIN', 'http://localhost/glueful/'), // Website domain
+    'api_base_url' => env('API_BASE_URL', 'http://localhost/glueful/api/'), // API base URL
     'uploads' => dirname(__DIR__) . '/cdn/',                   // File upload directory
     
     // System paths

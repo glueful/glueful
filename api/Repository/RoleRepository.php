@@ -1,0 +1,274 @@
+<?php
+declare(strict_types=1);
+
+namespace Glueful\Repository;
+
+use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
+use Glueful\Helpers\Utils;
+
+/**
+ * Role Repository
+ * 
+ * Handles all database operations related to roles and role assignments:
+ * - Role creation, retrieval, update and deletion
+ * - User-role association management
+ * - Role permission mapping
+ * 
+ * This repository implements the repository pattern to abstract
+ * database operations for role management and provide a clean API
+ * for role data access and manipulation.
+ * 
+ * @package Glueful\Repository
+ */
+class RoleRepository
+{
+    /** @var QueryBuilder Database query builder instance */
+    private QueryBuilder $db;
+
+    /**
+     * Initialize repository
+     * 
+     * Sets up database connection and query builder
+     * for role management operations.
+     */
+    public function __construct()
+    {
+        $connection = new Connection();
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+    }
+
+    /**
+     * Get all roles
+     * 
+     * Retrieves a complete list of available roles in the system.
+     * Returns basic role information including identifiers and descriptions.
+     * 
+     * @return array List of all roles in the system
+     */
+    public function getRoles(): array
+    {
+       return $this->db->select('roles', ['uuid', 'name', 'description'])->get();
+    }
+
+    /**
+     * Get role by UUID
+     * 
+     * Retrieves detailed information about a specific role.
+     * 
+     * @param string $uuid Role UUID
+     * @return array|null Role data or null if not found
+     */
+    public function getRoleByUUID(string $uuid): ?array
+    {
+        $role = $this->db->select('roles', ['uuid', 'name', 'description'])
+            ->where(['uuid' => $uuid])
+            ->limit(1)
+            ->get();
+            
+        return $role ? $role[0] : null;
+    }
+
+    /**
+     * Get roles assigned to a user
+     * 
+     * Retrieves all roles assigned to the specified user.
+     * Includes role details through a join with the roles table.
+     * 
+     * @param string $uuid User UUID to check
+     * @return array List of roles assigned to the user
+     */
+    public function getUserRoles(string $uuid): array
+    {
+        return $this->db->select('user_roles_lookup', [
+            'user_roles_lookup.role_uuid',
+            'user_roles_lookup.user_uuid',
+            'roles.name AS role_name',
+            'roles.description'
+        ])
+        ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+        ->where(['user_roles_lookup.user_uuid' => $uuid])
+        ->get(); 
+    }
+
+    /**
+     * Create new role
+     * 
+     * Creates a new role in the system with the specified attributes.
+     * Automatically generates a UUID if not provided.
+     * 
+     * @param array $data Role data (name, description, etc.)
+     * @return string|bool Role UUID if successful, false on failure
+     */
+    public function addRole(array $data): string|bool
+    {
+        // Generate UUID if not provided
+        if (!isset($data['uuid'])) {
+            $data['uuid'] = Utils::generateNanoID();
+        }
+        
+        // Insert role record
+        $success = $this->db->insert('roles', $data);
+        
+        return $success ? $data['uuid'] : false;
+    }
+
+    /**
+     * Update existing role
+     * 
+     * Modifies an existing role's attributes.
+     * Uses upsert to ensure the role exists.
+     * 
+     * @param string $uuid Role UUID to update
+     * @param array $data Updated role data
+     * @return bool Success status
+     */
+    public function updateRole(string $uuid, array $data): bool
+    {
+        // Ensure UUID is included
+        $data['uuid'] = $uuid;
+        
+        // Format data for upsert
+        $formattedData = [$data];
+        
+        // Update role
+        $affected = $this->db->upsert('roles', $formattedData, array_keys($data));
+        
+        return $affected > 0;
+    }
+
+    /**
+     * Delete role
+     * 
+     * Removes a role from the system.
+     * This operation may affect users assigned to this role.
+     * 
+     * @param string $uuid Role UUID to delete
+     * @return bool Success status
+     */
+    public function deleteRole(string $uuid): bool
+    {
+        return $this->db->delete('roles', ['uuid' => $uuid]);
+    }
+
+    /**
+     * Assign role to user
+     * 
+     * Creates an association between a user and a role.
+     * Checks for existing assignments to prevent duplicates.
+     * 
+     * @param string $userUuid User UUID to assign role to
+     * @param string $roleUuid Role UUID to assign
+     * @return bool|string True if successful, error message if already assigned
+     */
+    public function assignRole(string $userUuid, string $roleUuid): bool
+    {
+        // Check if assignment already exists
+        $exists = $this->db->select('user_roles_lookup', ['role_uuid'])
+            ->where(['user_uuid' => $userUuid, 'role_uuid' => $roleUuid])
+            ->get();
+    
+        if ($exists) {
+            return false;
+        }
+    
+        // Create assignment
+        $data = [
+            'user_uuid' => $userUuid, 
+            'role_uuid' => $roleUuid,
+        ];
+        
+        $result = $this->db->insert('user_roles_lookup', $data);
+        
+        return $result ? true : false;
+    }
+
+    /**
+     * Remove role from user
+     * 
+     * Revokes a role assignment from a user.
+     * 
+     * @param string $userUuid User UUID to remove role from
+     * @param string $roleUuid Role UUID to remove
+     * @return bool Success status
+     */
+    public function unassignRole(string $userUuid, string $roleUuid): bool
+    {
+        return $this->db->delete('user_roles_lookup', [
+            'user_uuid' => $userUuid, 
+            'role_uuid' => $roleUuid
+        ]);
+    }
+    
+    /**
+     * Get users assigned to role
+     * 
+     * Retrieves all users that have been assigned a specific role.
+     * 
+     * @param string $roleUuid Role UUID to check
+     * @return array List of users with this role
+     */
+    public function getUsersWithRole(string $roleUuid): array
+    {
+        return $this->db->select('user_roles_lookup', [
+                'user_roles_lookup.user_uuid',
+                'users.username',
+                'users.email',
+                'users.status'
+            ])
+            ->join('users', 'user_roles_lookup.user_uuid = users.uuid', 'LEFT')
+            ->where(['user_roles_lookup.role_uuid' => $roleUuid])
+            ->get();
+    }
+    
+    /**
+     * Check if user has role
+     * 
+     * Verifies if a specific user has been assigned a particular role.
+     * 
+     * @param string $userUuid User UUID to check
+     * @param string $roleName Role name to check for
+     * @return bool True if user has the role
+     */
+    public function hasRole(string $userUuid, string $roleName): bool
+    {
+        $result = $this->db->select('user_roles_lookup', ['user_roles_lookup.role_uuid'])
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+            ->where([
+                'user_roles_lookup.user_uuid' => $userUuid,
+                'roles.name' => $roleName
+            ])
+            ->limit(1)
+            ->get();
+            
+        return !empty($result);
+    }
+    
+    /**
+     * Get role permissions
+     * 
+     * Retrieves all permissions associated with a specific role.
+     * 
+     * @param string $roleUuid Role UUID to get permissions for
+     * @return array List of permissions for the role
+     */
+    public function getRolePermissions(string $roleUuid): array
+    {
+        $permissions = $this->db->select('role_permissions', ['model', 'permissions'])
+            ->where(['role_uuid' => $roleUuid])
+            ->get();
+            
+        // Format permissions
+        $formattedPermissions = [];
+        foreach ($permissions as $permission) {
+            $model = $permission['model'];
+            $perms = is_string($permission['permissions']) ? 
+                json_decode($permission['permissions'], true) : 
+                $permission['permissions'];
+                
+            $formattedPermissions[$model] = $perms;
+        }
+        
+        return $formattedPermissions;
+    }
+}

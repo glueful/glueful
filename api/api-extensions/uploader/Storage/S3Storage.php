@@ -1,10 +1,10 @@
 <?php
 
-namespace Glueful\Api\Extensions\Uploader\Storage;
+namespace Glueful\Extensions\Uploader\Storage;
 
 use Aws\S3\S3Client;
 use Aws\Exception\AwsException;
-use Glueful\Api\Extensions\Uploader\UploadException;
+use Glueful\Extensions\Uploader\UploadException;
 
 class S3Storage implements StorageInterface {
     private S3Client $client;

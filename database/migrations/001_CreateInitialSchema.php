@@ -163,9 +163,9 @@ class CreateInitialSchema implements MigrationInterface
             'user_uuid' => 'CHAR(12) NOT NULL',
             'role_uuid' => 'CHAR(12) NOT NULL'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'user_uuid', 'table' => 'user_roles_lookup'],
-            ['type' => 'UNIQUE', 'column' => 'role_uuid', 'table' => 'user_roles_lookup'],
-            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
+            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'user_roles_lookup'],
+            ['type' => 'INDEX', 'column' => 'role_uuid', 'table' => 'user_roles_lookup'],
+            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'user_roles_lookup', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
             ['type' => 'FOREIGN KEY', 'column' => 'role_uuid', 'table' => 'user_roles_lookup', 'references' => 'uuid', 'on' => 'roles', 'onDelete' => 'CASCADE']
         ]);
 

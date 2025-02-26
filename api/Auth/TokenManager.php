@@ -3,278 +3,357 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
+use Glueful\Cache\CacheEngine;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
+
 /**
  * Token Management System
  * 
- * Handles JWT token generation, validation, and refresh operations.
- * Manages both access tokens and refresh tokens for user sessions.
+ * Handles all aspects of authentication tokens:
+ * - Token generation and validation
+ * - Token-session mapping
+ * - Token refresh operations
+ * - Token fingerprinting and security
+ * - Token invalidation and cleanup
+ * 
+ * Security Features:
+ * - Token pair management (access + refresh)
+ * - Token fingerprinting
+ * - Expiration control
+ * - Revocation tracking
  */
 class TokenManager 
-{   
-    private static Connection $connection;
-    private static QueryBuilder $queryBuilder;
+{
+    private const TOKEN_PREFIX = 'token:';
+    private const DEFAULT_TTL = 3600; // 1 hour
+    private static ?int $ttl = null;
+    private static ?CacheEngine $cache = null;
 
-    public function __construct() {
-        self::$connection = new Connection();
-        self::$queryBuilder = new QueryBuilder(self::$connection->getPDO(), self::$connection->getDriver());
-    }
     /**
-     * Generate new token pair
+     * Initialize token manager
      * 
-     * Creates both access and refresh tokens for a user session.
-     * 
-     * @param array $userData User session data
-     * @return array{access_token: string, refresh_token: string} Token pair
+     * Sets up caching and loads configuration.
      */
-    public static function generateTokenPair(array $userData): array 
+    public static function initialize(): void
     {
-        $accessToken = JWTService::generate($userData, config('session.access_token_lifetime'));
-        $refreshToken = self::generateRefreshToken();
+        if (!defined('CACHE_ENGINE')) {
+            define('CACHE_ENGINE', true);
+        }
         
-        return [
-            'access_token' => $accessToken,
-            'refresh_token' => $refreshToken
-        ];
+        CacheEngine::initialize('glueful:', 'redis');
+        
+        // Cast the config value to int
+        self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+    }
+
+   /**
+ * Generate token pair with custom lifetimes
+ * 
+ * Creates access and refresh tokens for authentication.
+ * 
+ * @param array $userData User data to encode in tokens
+ * @param int $accessTokenLifetime Access token lifetime in seconds
+ * @param int $refreshTokenLifetime Refresh token lifetime in seconds
+ * @return array Token pair with access_token and refresh_token
+ */
+public static function generateTokenPair(
+    array $userData, 
+    int $accessTokenLifetime = null,
+    int $refreshTokenLifetime = null
+): array
+{
+    self::initialize();
+    
+    // Use provided lifetimes or defaults
+    $accessTokenLifetime = $accessTokenLifetime ?? self::$ttl;
+    $refreshTokenLifetime = $refreshTokenLifetime ?? 
+        config('session.refresh_token_lifetime', 30 * 24 * 3600); // Default 30 days
+    
+    // Add remember-me indicator to token payload if applicable
+    $tokenPayload = $userData;
+    if (isset($userData['remember_me']) && $userData['remember_me']) {
+        $tokenPayload['persistent'] = true;
+    }
+    
+    $accessToken = JWTService::generate($tokenPayload, $accessTokenLifetime);
+    $refreshToken = bin2hex(random_bytes(32)); // 64 character random string
+    
+    return [
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_in' => $accessTokenLifetime
+    ];
+}
+    /**
+     * Store token-session mapping
+     * 
+     * Creates mapping between token and session ID.
+     * 
+     * @param string $token Authentication token
+     * @param string $sessionId Session identifier
+     * @return bool Success status
+     */
+    public static function mapTokenToSession(string $token, string $sessionId): bool
+    {
+        self::initialize();
+        return CacheEngine::set(
+            self::TOKEN_PREFIX . $token,
+            $sessionId,
+            self::$ttl
+        );
     }
 
     /**
-     * Generate token fingerprint
+     * Get session ID from token
      * 
-     * Creates unique identifier for token validation.
+     * Retrieves the session ID associated with a token.
      * 
-     * @param string $token JWT token
-     * @return string Binary hash fingerprint
+     * @param string $token Authentication token
+     * @return string|null Session ID or null if not found
      */
-    public static function generateTokenFingerprint(string $token): string 
+    public static function getSessionIdFromToken(string $token): ?string
     {
-        // Generate a unique fingerprint based on token and server-specific salt
-        $salt = config('session.token_salt', '');
-        return hash('sha256', $token . $salt, true); // Returns binary hash
+        self::initialize();
+        return CacheEngine::get(self::TOKEN_PREFIX . $token);
+    }
+
+    /**
+     * Remove token mapping
+     * 
+     * Deletes the token-session mapping.
+     * 
+     * @param string $token Authentication token
+     * @return bool Success status
+     */
+    public static function removeTokenMapping(string $token): bool
+    {
+        self::initialize();
+        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
     }
 
     /**
      * Validate access token
      * 
-     * Verifies token authenticity and expiration.
+     * Checks if token is valid, not expired, and not revoked.
      * 
-     * @param string $token JWT access token
-     * @return bool True if token is valid
+     * @param string $token Access token
+     * @return bool Validity status
      */
-    public static function validateAccessToken(string $token): bool 
+    public static function validateAccessToken(string $token): bool
     {
-        try {
-            $tokenData = JWTService::decode($token);
-            if (!$tokenData) {
-                return false;
-            }
-
-            // Execute query using QueryBuilder
-            $result = self::$queryBuilder->select(
-                'auth_sessions',
-                ['status'],
-                [
-                    'access_token' => $token,
-                    'token_fingerprint' => self::generateTokenFingerprint($token),
-                    'status' => 'active',
-                    'access_expires_at > NOW()' => null
-                ],
-            );
-
-            return !empty($result) && $result[0]['status'] === 'active';
-        } catch (\Exception $e) {
-            error_log("Token validation error: " . $e->getMessage());
-            return false;
-        }
+        return JWTService::verify($token) && !self::isTokenRevoked($token);
     }
 
     /**
-     * Validate refresh token
-     * 
-     * Verifies refresh token validity and retrieves associated data.
-     * 
-     * @param string $refreshToken Refresh token
-     * @return array|null User data if valid, null if invalid
-     */
-    public static function validateRefreshToken(string $refreshToken): ?array 
-    {
-        try {
-            // Execute query using QueryBuilder
-            $result = self::$queryBuilder->select(
-                'auth_sessions',
-                ['user_uuid', 'refresh_token', 'status'],
-                [
-                    'refresh_token' =>  $refreshToken,
-                    'status' => 'active',
-                    'refresh_expires_at > NOW()' => null
-                ]
-            );
-
-            return !empty($result) ? $result[0] : null;
-        } catch (\Exception $e) {
-            error_log("Refresh token validation error: " . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Refresh token pair
+     * Refresh authentication tokens
      * 
      * Generates new token pair using refresh token.
      * 
      * @param string $refreshToken Current refresh token
      * @return array|null New token pair or null if invalid
      */
-    public static function refreshTokens(string $refreshToken): ?array 
+    public static function refreshTokens(string $refreshToken): ?array
     {
-        $tokenData = self::validateRefreshToken($refreshToken);
-        if (!$tokenData) {
+        // Get session data from refresh token
+        $sessionData = self::getSessionFromRefreshToken($refreshToken);
+        if (!$sessionData) {
             return null;
         }
-
-        // Generate new token pair
-        $userSession = SessionManager::get($refreshToken);
-        if (!$userSession) {
-            return null;
-        }
-
-        $newTokens = self::generateTokenPair($userSession);
         
-        // Update session with new tokens
-        self::updateSessionTokens($refreshToken, $newTokens);
-
-        return $newTokens;
+        // Generate new token pair
+        return self::generateTokenPair($sessionData);
     }
 
     /**
-     * Store session data
+     * Get session from refresh token
      * 
-     * Saves token data and session information to database.
+     * Retrieves session data using refresh token.
+     * 
+     * @param string $refreshToken Refresh token
+     * @return array|null Session data or null if invalid
+     */
+    private static function getSessionFromRefreshToken(string $refreshToken): ?array
+    {
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        $result = $queryBuilder->select('auth_sessions', ['user_uuid', 'access_token', 'created_at'])
+            ->where(['refresh_token' => $refreshToken, 'status' => 'active'])
+            ->get();
+            
+        if (empty($result)) {
+            return null;
+        }
+        
+        return json_decode($result[0]['user_uuid'], true);
+    }
+
+     /**
+     * Create user session
+     * 
+     * Handles user authentication and session creation.
+     * 
+     * @param string $function Authentication function
+     * @param string $action Auth action type
+     * @param array $param Credentials and options
+     * @return array Session data or error
+     */
+    public static function createUserSession(array $user): array 
+    {      
+            // Add validation to ensure we have valid user data
+            if (empty($user) || !isset($user['uuid'])) {
+                return [];  // Return empty array that will be caught as failure
+            }
+            // Adjust token lifetime based on remember-me preference
+            $accessTokenLifetime = $user['remember_me'] 
+                ? config('session.remember_expiration', 30 * 24 * 3600) // 30 days
+                : config('session.access_token_lifetime', 3600);          // 1 hour
+                
+            $refreshTokenLifetime = $user['remember_me'] 
+                ? config('session.remember_expiration', 60 * 24 * 3600) // 60 days
+                : config('session.refresh_token_lifetime', 7 * 24 * 3600); // 7 days
+
+           // Generate token pair
+
+           $tokens = TokenManager::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
+
+            // Store session
+            $user['refresh_token'] = $tokens['refresh_token'];
+
+            SessionCacheManager::storeSession($user, $tokens['access_token']);
+
+
+            self::storeSession(
+                $user['uuid'],
+                [
+                    'access_token' => $tokens['access_token'],
+                    'refresh_token' => $tokens['refresh_token'],
+                    'token_fingerprint' => TokenManager::generateTokenFingerprint($tokens['access_token']),
+                    'remember_me' => $user['remember_me']
+                ],
+                $refreshTokenLifetime
+            );
+
+            return [
+                'tokens' => [
+                    'access_token' => $tokens['access_token'],
+                    'refresh_token' => $tokens['refresh_token'],
+                    'expires_in' => $accessTokenLifetime,
+                    'token_type' => 'Bearer'
+                ],
+                'user' => $user
+            ];
+       
+    }
+
+    /**
+     * Store session in database
+     * 
+     * Persists session for refresh token operations.
      * 
      * @param string $userUuid User identifier
-     * @param array $tokenData Token and session data
-     * @return bool True if stored successfully
+     * @param array $tokens Token data
+     * @return bool Success status
      */
-    public static function storeSession(string $userUuid, array $tokenData): bool 
+    public static function storeSession(string $userUuid, array $tokens): int
     {
-        try {
-            $definition = [
-                'fields' => [
-                    'uuid' => Utils::generateNanoID(12),
-                    'user_uuid' => $userUuid,
-                    'access_token' => $tokenData['access_token'],
-                    'refresh_token' => $tokenData['refresh_token'],
-                    'token_fingerprint' => $tokenData['token_fingerprint'],
-                    'ip_address' => $_SERVER['REMOTE_ADDR'],
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL'.config('session.access_token_lifetime').' SECOND)'],
-                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.refresh_token_lifetime').' SECOND)']
-                ]
-            ];
-            
-            // Convert definition fields to data array
-            $data = [];
-            foreach ($definition['fields'] as $field => $value) {
-                if (is_array($value) && isset($value['EXPR'])) {
-                    // Handle expressions separately if needed
-                    $data[$field] = $value['EXPR'];
-                } else {
-                    $data[$field] = $value;
-                }
-            }
-            
-            // Execute insert using QueryBuilder
-            return self::$queryBuilder->insert('auth_sessions', $data) > 0;
-        } catch (\Exception $e) {
-            error_log("Failed to store session: " . $e->getMessage());
-            return false;
-        }
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $uuid = Utils::generateNanoID(12);
+        return $queryBuilder->insert('auth_sessions', [
+            'uuid'=> $uuid,
+            'user_uuid' => $userUuid,
+            'access_token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token'],
+            'token_fingerprint' => $tokens['token_fingerprint'],
+            'access_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600)),
+            'refresh_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.refresh_token_lifetime', 7 * 24 * 3600)),
+            'status' => 'active',
+            'ip_address' => $_SERVER['REMOTE_ADDR'],
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'],
+            'last_token_refresh' => date('Y-m-d H:i:s'),
+        ]);
     }
 
     /**
-     * Revoke user session
+     * Revoke session
      * 
-     * Invalidates access token and associated session.
+     * Invalidates session tokens.
      * 
      * @param string $token Access token to revoke
-     * @return bool True if revoked successfully
+     * @return bool Success status
      */
-    public static function revokeSession(string $token): bool 
+    public static function revokeSession(string $token): int
     {
-        try {
-            return self::$queryBuilder->upsert(
-                'auth_sessions',
-                [array_merge(
-                    ['access_token' => $token],
-                    ['status' => 'revoked']
-                )],
-                ['status']
-            ) > 0;
-        } catch (\Exception $e) {
-            error_log("Failed to revoke session: " . $e->getMessage());
-            return false;
-        }
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        return $queryBuilder->upsert('auth_sessions',
+            ['status' => 'revoked'],
+            ['access_token' => $token]
+        );
     }
 
     /**
-     * Generate refresh token
+     * Check if token is revoked
      * 
-     * Creates cryptographically secure refresh token.
+     * Verifies token against revocation list.
      * 
-     * @return string Generated refresh token
+     * @param string $token Authentication token
+     * @return bool True if revoked
      */
-    private static function generateRefreshToken(): string 
+    public static function isTokenRevoked(string $token): bool
     {
-        return bin2hex(random_bytes(32));
-    }
-
-    /**
-     * Update session tokens
-     * 
-     * Updates stored tokens during refresh operation.
-     * 
-     * @param string $oldRefreshToken Current refresh token
-     * @param array $newTokens New token pair
-     * @return bool True if update successful
-     */
-    private static function updateSessionTokens(string $oldRefreshToken, array $newTokens): bool 
-    {
-        try {
-            $definition = [
-                'fields' => [
-                    'access_token' => $newTokens['access_token'],
-                    'refresh_token' => $newTokens['refresh_token'],
-                    'token_fingerprint' => self::generateTokenFingerprint($newTokens['access_token']),
-                    'last_token_refresh' => ['EXPR' => 'NOW()'],
-                    'access_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.access_token_lifetime').'SECOND)'],
-                    'refresh_expires_at' => ['EXPR' => 'DATE_ADD(NOW(), INTERVAL '.config('session.refresh_token_lifetime').' SECOND)']
-                ],
-                'conditions' => [
-                    'refresh_token' => $oldRefreshToken,
-                    'status' => 'active'
-                ]
-            ];
-
-            $data = array_merge(
-                ['refresh_token' => $oldRefreshToken],
-                array_map(function($value) {
-                    return is_array($value) && isset($value['EXPR']) ? 
-                        $value['EXPR'] : 
-                        $value;
-                }, $definition['fields'])
-            );
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        $result = $queryBuilder->select('auth_sessions', ['status'])
+            ->where(['access_token' => $token])
+            ->get();
             
-            // Execute update using QueryBuilder's upsert
-            return self::$queryBuilder->upsert(
-                'auth_sessions',
-                [$data],
-                array_keys($definition['fields'])
-            ) > 0;
-        } catch (\Exception $e) {
-            error_log("Failed to update session tokens: " . $e->getMessage());
-            return false;
+        return !empty($result) && (int)$result[0]['status'] === "revoked";
+    }
+
+    /**
+     * Generate token fingerprint
+     * 
+     * Creates unique identifier for token security.
+     * 
+     * @param string $token Authentication token
+     * @return string Fingerprint hash
+     */
+    public static function generateTokenFingerprint(string $token): string
+    {
+        return hash('sha256', $token . config('session.fingerprint_salt', ''));
+    }
+
+    /**
+     * Extract token from request
+     * 
+     * Gets token from various request sources.
+     * 
+     * @return string|null Authentication token or null if not found
+     */
+    public static function extractTokenFromRequest(): ?string
+    {
+        $headers = getallheaders();
+        $token = null;
+        
+        // Check Authorization header
+        if (isset($headers['Authorization'])) {
+            $auth = $headers['Authorization'];
+            if (strpos($auth, 'Bearer ') === 0) {
+                $token = substr($auth, 7);
+            }
         }
+        
+        // Check query parameter if no header
+        if (!$token && isset($_GET['token'])) {
+            $token = $_GET['token'];
+        }
+
+        return $token;
     }
 }
