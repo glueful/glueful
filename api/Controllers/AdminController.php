@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful;
+namespace Glueful\Controllers;
 
 use Glueful\Http\{Response,Router};
 use Glueful\Identity\Auth;
