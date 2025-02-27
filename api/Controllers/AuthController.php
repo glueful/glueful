@@ -22,18 +22,25 @@ class AuthController {
      * 
      * Authenticates user with credentials and returns tokens.
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function login(): Response
+    public function login()
     {
-        $credentials = Request::getPostData();
-        $result = $this->authService->authenticate($credentials);
-        
-        if (!$result) {
-            return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED);
+        try {
+            $credentials = Request::getPostData();
+            $result = $this->authService->authenticate($credentials);
+            
+            if (!$result) {
+                return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            return Response::ok($result, 'Login successful')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Login failed: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
-        
-        return Response::ok($result, 'Login successful');
     }
     
     /**
@@ -41,108 +48,136 @@ class AuthController {
      * 
      * Terminates user session and invalidates tokens.
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function logout(): Response
+    public function logout()
     {
-        $token = $this->authService->extractTokenFromRequest();
-        
-        if (!$token) {
-            return Response::error('No token provided', Response::HTTP_BAD_REQUEST);
+        try {
+            $token = $this->authService->extractTokenFromRequest();
+            
+            if (!$token) {
+                return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $success = $this->authService->terminateSession($token);
+            
+            if ($success) {
+                return Response::ok(null, 'Logged out successfully')->send();
+            }
+            
+            return Response::error('Logout failed', Response::HTTP_BAD_REQUEST)->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Logout failed: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
-        
-        $success = $this->authService->terminateSession($token);
-        
-        if ($success) {
-            return Response::ok(null, 'Logged out successfully');
-        }
-        
-        return Response::error('Logout failed', Response::HTTP_BAD_REQUEST);
     }
     
     /**
      * Verify email for registration/password reset
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function verifyEmail(): Response
+    public function verifyEmail()
     {
-        $postData = Request::getPostData();
-        if (!isset($postData['email'])) {
-            return Response::error('Email address is required', Response::HTTP_BAD_REQUEST);
+        try {
+            $postData = Request::getPostData();
+            if (!isset($postData['email'])) {
+                return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $otp = $this->verifier->generateOTP();
+
+            // Send verification email
+            $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
+                
+            if (!$result) {
+                return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            return Response::ok([
+                'data' => [
+                    'email' => $postData['email'],
+                    'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+                ]
+            ], 'Verification code has been sent to your email')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to send verification email: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
-
-        $otp = $this->verifier->generateOTP();
-
-        // Send verification email
-        $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
-            
-        if (!$result) {
-            return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST);
-        }
-
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Verification code has been sent to your email');
     }
 
     /**
      * Verify OTP code
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function verifyOtp(): Response
+    public function verifyOtp()
     {
-        $postData = Request::getPostData();
-        if (!isset($postData['email']) || !isset($postData['otp'])) {
-            return Response::error('Email and OTP are required', Response::HTTP_BAD_REQUEST);
-        }
-       
-        $isValid = $this->verifier->verifyOTP($postData['email'], $postData['otp']);
-                
-        if (!$isValid) {
-            return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST);
-        }
+        try {
+            $postData = Request::getPostData();
+            if (!isset($postData['email']) || !isset($postData['otp'])) {
+                return Response::error('Email and OTP are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+        
+            $isValid = $this->verifier->verifyOTP($postData['email'], $postData['otp']);
+                    
+            if (!$isValid) {
+                return Response::error('Invalid or expired OTP', Response::HTTP_BAD_REQUEST)->send();
+            }
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'verified' => true,
-                'verified_at' => date('Y-m-d\TH:i:s\Z')
-            ]
-        ], 'OTP verified successfully');
+            return Response::ok([
+                'data' => [
+                    'email' => $postData['email'],
+                    'verified' => true,
+                    'verified_at' => date('Y-m-d\TH:i:s\Z')
+                ]
+            ], 'OTP verified successfully')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to verify OTP: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
     }
 
     /**
      * Resend OTP code
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function resendOtp(): Response
+    public function resendOtp()
     {
-        $postData = Request::getPostData();
-        if (!isset($postData['email'])) {
-            return Response::error('Email address is required', Response::HTTP_BAD_REQUEST);
+        try {
+            $postData = Request::getPostData();
+            if (!isset($postData['email'])) {
+                return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $otp = $this->verifier->generateOTP();
+
+            // Send verification email
+            $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
+                
+            if (!$result) {
+                return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            return Response::ok([
+                'data' => [
+                    'email' => $postData['email'],
+                    'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+                ]
+            ], 'Verification code has been resent to your email')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to send verification email: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
-
-        $otp = $this->verifier->generateOTP();
-
-        // Send verification email
-        $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
-            
-        if (!$result) {
-            return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST);
-        }
-
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Verification code has been resent to your email');
     }
 
     /**
@@ -151,107 +186,106 @@ class AuthController {
      * Updates the session with fresh user permissions and returns a new token.
      * This endpoint is useful after role/permission changes for a user.
      * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function refreshPermissions(): Response
+    public function refreshPermissions()
     {
-        $token = $this->authService->extractTokenFromRequest();
-        
-        if (!$token) {
-            return Response::error('No token provided', Response::HTTP_BAD_REQUEST);
-        }
-        
-        $result = $this->authService->refreshPermissions($token);
-
-        if (!$result) {
-            return Response::error('Failed to refresh permissions', Response::HTTP_BAD_REQUEST);
-        }
-        
-        return Response::ok($result, 'Permissions refreshed successfully');
-    }
-
-    public function validateToken(): Response
-    {
-        $token = $this->authService->extractTokenFromRequest();
-        
-        if (!$token) {
-            return Response::error('No token provided', Response::HTTP_BAD_REQUEST);
-        }
-        
-        $result = $this->authService->validateAccessToken($token);
-
-        if (!$result) {
-            return Response::error('Invalid token', Response::HTTP_UNAUTHORIZED);
-        }
-        
-        return Response::ok($result, 'Token is valid');
-    }
-
-    public function forgotPassword(): Response
-    {
-        $postData = Request::getPostData();
-        if (!isset($postData['email'])) {
-            return Response::error('Email address is required', Response::HTTP_BAD_REQUEST);
-        }
-
-         // Check if user exists before attempting password reset
-         if (!$this->authService->userExists($postData['email'], 'email')) {
-            return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND);
-        }
-
-        // Send verification email
-        $result = $this->verifier->sendPasswordResetEmail($postData['email']);
+        try {
+            $token = $this->authService->extractTokenFromRequest();
             
-        if (!$result['success']) {
-            return Response::error($result['message'] ?? 'Failed to send reset email', Response::HTTP_BAD_REQUEST);
-        }
+            if (!$token) {
+                return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $result = $this->authService->refreshPermissions($token);
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Password reset instructions have been sent to your email');
+            if (!$result) {
+                return Response::error('Failed to refresh permissions', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            return Response::ok($result, 'Permissions refreshed successfully')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to refresh permissions: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    public function validateToken()
+    {
+        try {
+            $token = $this->authService->extractTokenFromRequest();
+            
+            if (!$token) {
+                return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $result = $this->authService->validateAccessToken($token);
+
+            if (!$result) {
+                return Response::error('Invalid token', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            return Response::ok($result, 'Token is valid')->send();
+        } catch (\Exception $e) {
+            return Response::unauthorized('Invalid or expired token')->send();
+        }
+    }
+
+    public function forgotPassword()
+    {
+        try {
+            $postData = Request::getPostData();
+            if (!isset($postData['email'])) {
+                return Response::error('Email address is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Check if user exists before attempting password reset
+            if (!$this->authService->userExists($postData['email'], 'email')) {
+                return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Send verification email
+            $result = $this->verifier->sendPasswordResetEmail($postData['email']);
+                
+            if (!$result['success']) {
+                return Response::error($result['message'] ?? 'Failed to send reset email', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            return Response::ok([
+                'data' => [
+                    'email' => $postData['email'],
+                    'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+                ]
+            ], 'Password reset instructions have been sent to your email')->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to process password reset request: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
     }
 
     /**
      * Reset user password
      * 
      * Securely changes a user's password after verification.
-     * This endpoint:
-     * - Validates the required input (email and new password)
-     * - Checks that the user exists before attempting password change
-     * - Securely hashes the new password using PHP's password_hash()
-     * - Updates the password in the database
-     * - Returns appropriate success or error messages
      * 
-     * Request parameters:
-     * - email: User's email address
-     * - new_password: New password (plaintext, will be hashed)
-     * - uuid: (Optional) User's UUID if email is not provided
-     * 
-     * Success response:
-     * - 200 OK with confirmation message and timestamp
-     * 
-     * Error responses:
-     * - 400 Bad Request if parameters are missing or invalid
-     * - 404 Not Found if user doesn't exist
-     * - 500 Internal Server Error for other failures
-     * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function resetPassword(): Response
+    public function resetPassword()
     {
         try {
             $postData = Request::getPostData();
 
             if (!isset($postData['email']) || !isset($postData['new_password'])) {
-                return Response::error('Email and new password are required', Response::HTTP_BAD_REQUEST);
+                return Response::error('Email and new password are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             // Check if user exists before attempting password reset
             if (!$this->authService->userExists($postData['email'], 'email')) {
-                return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND);
+                return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND)->send();
             }
 
             // Hash the new password
@@ -264,20 +298,20 @@ class AuthController {
             );
             
             if (!$success) {
-                return Response::error('Failed to update password', Response::HTTP_INTERNAL_SERVER_ERROR);
+                return Response::error('Failed to update password', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
             return Response::ok([
                 'data' => [
                     'updated_at' => date('Y-m-d\TH:i:s\Z')
                 ]
-            ], 'Password has been reset successfully');
+            ], 'Password has been reset successfully')->send();
             
         } catch (\Exception $e) {
             return Response::error(
                 'Password reset failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
-            );
+            )->send();
         }
         
     }
@@ -286,45 +320,32 @@ class AuthController {
      * Refresh authentication token
      * 
      * Generates a new access token using a valid refresh token.
-     * This endpoint allows clients to obtain a new access token without
-     * requiring the user to re-authenticate when their current token expires.
      * 
-     * Request parameters:
-     * - refresh_token: The refresh token provided during login or previous refresh
-     * 
-     * Success response:
-     * - 200 OK with new access token and refresh token pair
-     * 
-     * Error responses:
-     * - 400 Bad Request if refresh token is missing
-     * - 401 Unauthorized if refresh token is invalid or expired
-     * - 500 Internal Server Error for other failures
-     * 
-     * @return Response HTTP response
+     * @return mixed HTTP response
      */
-    public function refreshToken(): Response
+    public function refreshToken()
     {
         try {
             $postData = Request::getPostData();
             
             if (!isset($postData['refresh_token'])) {
-                return Response::error('Refresh token is required', Response::HTTP_BAD_REQUEST);
+                return Response::error('Refresh token is required', Response::HTTP_BAD_REQUEST)->send();
             }
             
             $refreshToken = $postData['refresh_token'];
             $result = $this->authService->refreshTokens($refreshToken);
             
             if (!$result) {
-                return Response::error('Invalid or expired refresh token', Response::HTTP_UNAUTHORIZED);
+                return Response::error('Invalid or expired refresh token', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            return Response::ok($result, 'Token refreshed successfully');
+            return Response::ok($result, 'Token refreshed successfully')->send();
             
         } catch (\Exception $e) {
             return Response::error(
                 'Token refresh failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
-            );
+            )->send();
         }
     }
 }

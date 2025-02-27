@@ -237,7 +237,7 @@ class APIEngine{
                 'count' => [['total' => $queryBuilder
                     ->count($definition['table']['name'], $params['where'] ?? [])]],
                     
-                'insert' => [
+                'save' => [
                     'uuid' => $queryBuilder->insert($definition['table']['name'], $params) ? 
                         self::getLastInsertedUUID(self::$db, $definition['table']['name']) : 
                         null

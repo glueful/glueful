@@ -1,73 +1,332 @@
 <?php
+declare(strict_types=1);
+
 namespace Glueful\Helpers;
 
-use Glueful\Http\Router;
-
+/**
+ * Extensions Manager
+ * 
+ * Handles the dynamic loading and initialization of API extensions:
+ * - Scans configured extension directories
+ * - Loads extension classes
+ * - Registers extension components
+ * - Manages extension lifecycle
+ * 
+ * @package Glueful\Helpers
+ */
 class ExtensionsManager {
+    /** @var array Loaded extension instances */
+    private static array $loadedExtensions = [];
+    
+    /** @var array Extension namespaces and their directories */
+    private static array $extensionNamespaces = [
+        'Glueful\\Extensions\\' => ['extensions','api/api-extensions']
+    ];
 
     /**
      * Load API Extensions
      * 
-     * Dynamically loads API extension modules:
-     * - Scans extension directories
-     * - Loads extension classes
-     * - Initializes extension routes
-     * - Handles extension dependencies
+     * Dynamically discovers and loads all API extensions:
+     * - Scans configured extension directories
+     * - Autoloads extension classes
+     * - Initializes extensions that implement standard interfaces
+     * - Registers extension services in the container
      * 
      * @return void
      */
     public static function loadExtensions(): void 
-    {
-        $extensionsNamespaces = [
-            'Glueful\\Extensions\\' => ['api/api-extensions/','extensions/'],
-        ];
-        
-        foreach ($extensionsNamespaces as $namespace => $directories) {
-            foreach($directories as $directory){
-                 self::scanExtensionsDirectory(
-                    dirname(__DIR__) . '/' . $directory, 
-                    $namespace, 
-                    Router::getInstance()
-                );
+    {   
+        foreach (self::$extensionNamespaces as $namespace => $directories) {
+            foreach($directories as $directory) {
+                $dir = dirname(__DIR__,2) . '/' . $directory;
+                self::scanAndLoadExtensions($dir, $namespace);
             }
         }
+        
+        // Initialize all loaded extensions
+        self::initializeExtensions();
+    }
+    
+    /**
+     * Register a new extension namespace
+     * 
+     * Allows plugins to register additional extension namespaces
+     * 
+     * @param string $namespace Base namespace for extensions
+     * @param array $directories Directories to scan for extensions
+     * @return void
+     */
+    public static function registerExtensionNamespace(string $namespace, array $directories): void
+    {
+        self::$extensionNamespaces[$namespace] = $directories;
     }
 
-    public static function scanExtensionsDirectory(string $dir, string $namespace, Router $router): void 
+    /**
+     * Scan directory and load extension classes
+     * 
+     * Recursively scans directory for PHP files and loads any
+     * classes that extend the Extensions base class.
+     * 
+     * @param string $dir Directory to scan
+     * @param string $namespace Base namespace for discovered classes
+     * @return void
+     */
+    private static function scanAndLoadExtensions(string $dir, string $namespace): void 
     {
         if (!is_dir($dir)) {
+            error_log("Directory does not exist: $dir");
             return;
         }
 
+        // error_log("Scanning directory: $dir");
+    
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
-
         foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php') {
+            if ($file->isFile() && $file->getExtension() === 'php'){
                 $relativePath = substr($file->getPathname(), strlen($dir));
-                $className = str_replace(
-                    ['/', '.php'],
-                    ['\\', ''],
-                    $relativePath
-                );
+                $filename = basename($relativePath);
+                $className = str_replace('.php', '', $filename);
                 $fullClassName = $namespace . $className;
 
-                // Check if class exists and extends Extensions
-                if (class_exists($fullClassName)) {
-                    $reflection = new \ReflectionClass($fullClassName);
-                    if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                        try {
-                            // Check if class has initializeRoutes method
-                            if ($reflection->hasMethod('initializeRoutes')) {
-                                // Initialize routes for this extension
-                                $fullClassName::initializeRoutes($router);
-                            }
-                        } catch (\Exception $e) {
-                        }
+                if (!class_exists($fullClassName, false)) {
+                    // error_log("Class not autoloaded, trying to include file directly");
+                    try {
+                        include_once $file->getPathname();
+                    } catch (\Throwable $e) {
+                        error_log("Error including file: " . $e->getMessage());
                     }
                 }
+
+                // Check if class exists now
+            if (class_exists($fullClassName, false)) {
+                    $reflection = new \ReflectionClass($fullClassName);
+                    // Check if this is an extension class
+                    if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
+
+                        try {
+                            // Store the extension class name for later initialization
+                            self::$loadedExtensions[] = $fullClassName;
+                        } catch (\Exception $e) {
+                            // Log error but continue loading other extensions
+                            error_log("Failed to load extension {$fullClassName}: " . $e->getMessage());
+                        }
+                    } else {
+                        error_log("Class does not extend Extensions");
+                    }
+            } else {
+                error_log("Class still doesn't exist: $fullClassName");
+                
+                // Debug namespace in file
+                $content = file_get_contents($file->getPathname());
+                if (preg_match('/namespace\s+([^;]+);/i', $content, $matches)) {
+                    error_log("File declares namespace: " . $matches[1]);
+                } else {
+                    error_log("No namespace declaration found in file");
+                }
+                
+                if (preg_match('/class\s+(\w+)/i', $content, $matches)) {
+                    error_log("File declares class: " . $matches[1]);
+                } else {
+                    error_log("No class declaration found in file");
+                }
+            }
             }
         }
+    }
+    
+    /**
+     * Initialize all loaded extensions
+     * 
+     * Calls appropriate lifecycle methods on extensions based on
+     * what interfaces they implement:
+     * - For service providers: registerServices()
+     * - For middleware providers: registerMiddleware()
+     * - For all extensions: initialize()
+     * 
+     * @return void
+     */
+    private static function initializeExtensions(): void
+    {
+        foreach (self::$loadedExtensions as $extensionClass) {
+            try {
+                $reflection = new \ReflectionClass($extensionClass);
+                
+                // Call general initialize method if it exists
+                if ($reflection->hasMethod('initialize')) {
+                    $extensionClass::initialize();
+                }
+                
+                // Register services if method exists
+                if ($reflection->hasMethod('registerServices')) {
+                    $extensionClass::registerServices();
+                }
+                
+                // Register middleware if method exists
+                if ($reflection->hasMethod('registerMiddleware')) {
+                    $extensionClass::registerMiddleware();
+                }
+                
+            } catch (\Exception $e) {
+                error_log("Error initializing extension {$extensionClass}: " . $e->getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Get all loaded extensions
+     * 
+     * @return array List of loaded extension class names
+     */
+    public static function getLoadedExtensions(): array
+    {
+        self::loadExtensions();
+        return self::$loadedExtensions;
+    }
+
+    /**
+     * Check if extension is enabled
+     * 
+     * @param string $extensionName Extension name
+     * @return bool True if extension is enabled
+     */
+    public static function isExtensionEnabled(string $extensionName): bool
+    {
+        $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        if (!file_exists($configFile)) {
+            return false;
+        }
+        
+        $config = include $configFile;
+        return in_array($extensionName, $config['enabled'] ?? []);
+    }
+
+    /**
+     * Enable an extension
+     * 
+     * @param string $extensionName Extension name
+     * @return bool Success status
+     */
+    public static function enableExtension(string $extensionName): bool
+    {
+        $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        $config = file_exists($configFile) ? include $configFile : ['enabled' => []];
+        
+        if (in_array($extensionName, $config['enabled'] ?? [])) {
+            return true; // Already enabled
+        }
+        
+        $config['enabled'][] = $extensionName;
+        return self::saveConfig($configFile, $config);
+    }
+
+    /**
+     * Disable an extension
+     * 
+     * @param string $extensionName Extension name
+     * @return bool Success status
+     */
+    public static function disableExtension(string $extensionName): bool
+    {
+        $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        
+        if (!file_exists($configFile)) {
+            return true; // Nothing to disable
+        }
+        
+        $config = include $configFile;
+        $enabledExtensions = $config['enabled'] ?? [];
+        
+        if (!in_array($extensionName, $enabledExtensions)) {
+            return true; // Already disabled
+        }
+        
+        $config['enabled'] = array_diff($enabledExtensions, [$extensionName]);
+        return self::saveConfig($configFile, $config);
+    }
+
+    /**
+     * Save configuration to file
+     * 
+     * @param string $file Config file path
+     * @param array $config Configuration array
+     * @return bool Success status
+     */
+    private static function saveConfig(string $file, array $config): bool
+    {
+        $content = "<?php\nreturn " . var_export($config, true) . ";\n";
+        return file_put_contents($file, $content) !== false;
+    }
+
+    /**
+     * Find extension by name
+     * 
+     * @param string $extensionName Extension name
+     * @return string|null Full class name or null if not found
+     */
+    public static function findExtension(string $extensionName): ?string
+    {
+        foreach (self::$loadedExtensions as $extensionClass) {
+            $reflection = new \ReflectionClass($extensionClass);
+            if ($reflection->getShortName() === $extensionName) {
+                return $extensionClass;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get extension metadata
+     * 
+     * @param string $extensionName Extension name
+     * @param string $metadataKey Metadata key to retrieve
+     * @param mixed $default Default value if not found
+     * @return mixed Metadata value
+     */
+    public static function getExtensionMetadata(string $extensionName, string $metadataKey, $default = null)
+    {
+        $extensionClass = self::findExtension($extensionName);
+        if (!$extensionClass) {
+            return $default;
+        }
+        
+        $reflection = new \ReflectionClass($extensionClass);
+        $docComment = $reflection->getDocComment();
+        
+        if ($docComment) {
+            preg_match('/@' . $metadataKey . '\s+(.*)\s*$/m', $docComment, $matches);
+            return $matches[1] ?? $default;
+        }
+        
+        return $default;
+    }
+    
+    /**
+     * Get all enabled extensions
+     * 
+     * @return array List of enabled extension names
+     */
+    public static function getEnabledExtensions(): array
+    {
+        $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        if (!file_exists($configFile)) {
+            return [];
+        }
+        
+        $config = include $configFile;
+        return $config['enabled'] ?? [];
+    }
+    
+    /**
+     * Check if an extension exists
+     * 
+     * @param string $extensionName Extension name to check
+     * @return bool True if extension exists
+     */
+    public static function extensionExists(string $extensionName): bool
+    {
+        return self::findExtension($extensionName) !== null;
     }
 }
