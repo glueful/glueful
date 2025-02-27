@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Api\Extensions\Push\Email;
+use Glueful\Extensions\Email;
 use Glueful\Cache\CacheEngine;
 use Glueful\{APIEngine};
 

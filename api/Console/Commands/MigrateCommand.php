@@ -118,9 +118,9 @@ class MigrateCommand extends Command
      * 
      * @param array $args Command arguments
      * @throws \RuntimeException If migration fails
-     * @return void
+     * @return int Exit code
      */
-    public function execute(array $args = []): void
+    public function execute(array $args = []): int
     {
         $force = in_array('--force', $args);
         $dryRun = in_array('--dry-run', $args);
@@ -133,17 +133,17 @@ class MigrateCommand extends Command
             $pendingMigrations = $this->migrationManager->getPendingMigrations();
             if (empty($pendingMigrations)) {
                 $this->info("No pending migrations.");
-                return;
+                return Command::SUCCESS;
             }
             foreach ($pendingMigrations as $migration) {
                 $this->info(" • " . basename($migration));
             }
-            return;
+            return Command::SUCCESS;
         }
 
         if (!$force && $this->isProduction()) {
             $this->error("You're in production! Use --force to proceed.");
-            return;
+            return Command::FAILURE;
         }
 
         try {
@@ -151,7 +151,7 @@ class MigrateCommand extends Command
                 $fullPath = __DIR__ . '/../../../database/migrations/' . $specificFile;
                 if (!file_exists($fullPath)) {
                     $this->error("Migration file not found: $specificFile");
-                    return;
+                    return Command::FAILURE;
                 }
                 
                 $result = $this->migrationManager->migrate($fullPath);
@@ -161,9 +161,11 @@ class MigrateCommand extends Command
                 $this->displayMigrationResult($result);
             }
         } catch (\Exception $e) {
-            error_log("Migration failed: " . $e);
             $this->error("Migration failed: " . $e->getMessage());
+            return Command::FAILURE;
         }
+        
+        return Command::SUCCESS;
     }
 
     /**

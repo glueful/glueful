@@ -1,11 +1,13 @@
 <?php
+declare(strict_types=1);
+
 namespace Glueful\Helpers;
 
-use Glueful\Extensions\Uploader\FileUploader;
+use Glueful\Uploader\FileUploader;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Http\Response;
 use Glueful\APIEngine;
-use Glueful\Extensions\Uploader\Storage\StorageInterface;
+use Glueful\Uploader\Storage\StorageInterface;
 
 class FileHandler {
     private AuthenticationService $auth;
@@ -127,7 +129,7 @@ class FileHandler {
     {
         try {
             // Get file information from files table
-            $fileData = APIEngine::getData('files', 'view', [
+            $fileData = APIEngine::getData('blobs', 'view', [
                 'fields' => 'uuid,filename,filepath,mime_type,file_size,storage_type,created_at,updated_at,status',
                 'uuid' => $uuid
             ]);
@@ -219,7 +221,7 @@ class FileHandler {
         }
         
         // For remote storage (like S3), redirect to signed URL
-        if ($storage instanceof \Glueful\Extensions\Uploader\Storage\S3Storage) {
+        if ($storage instanceof \Glueful\Uploader\Storage\S3Storage) {
             $url = $storage->getSignedUrl($fileInfo['filepath'], 300); // 5 min expiry
             header('Location: ' . $url);
             exit;
@@ -257,7 +259,7 @@ class FileHandler {
         }
         
         // For remote storage (like S3), redirect to signed URL
-        if ($storage instanceof \Glueful\Extensions\Uploader\Storage\S3Storage) {
+        if ($storage instanceof \Glueful\Uploader\Storage\S3Storage) {
             $url = $storage->getSignedUrl($fileInfo['filepath'], 300); // 5 min expiry
             header('Location: ' . $url);
             exit;
@@ -364,12 +366,111 @@ class FileHandler {
         }
     }
     
-    private static function getStorageDriver(): StorageInterface 
+    /**
+     * Check if a file exists by UUID
+     * 
+     * Verifies if a file exists in the database and optionally on disk
+     * 
+     * @param string $uuid File UUID to check
+     * @param bool $checkDisk Whether to also check if file exists on disk/storage
+     * @return bool True if file exists, false otherwise
+     */
+    public function fileExists(string $uuid, bool $checkDisk = false): bool
     {
-        $storageDriver = config('storage.driver');
-        return match($storageDriver) {
-            's3' => new \Glueful\Extensions\Uploader\Storage\S3Storage(),
-            default => new \Glueful\Extensions\Uploader\Storage\LocalStorage(
+        try {
+            // Get file info from database
+            $fileInfo = $this->getBlobInfo($uuid);
+            
+            // If file not found in database, return false
+            if (!$fileInfo) {
+                return false;
+            }
+            
+            // If we don't need to check disk, return true as file exists in DB
+            if (!$checkDisk) {
+                return true;
+            }
+            
+            // Get storage driver based on file storage type
+            $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
+            
+            // Check if file exists in storage
+            return $storage->exists($fileInfo['filepath']);
+            
+        } catch (\Exception $e) {
+            error_log("Error checking file existence: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Delete a file
+     * 
+     * Removes a file from storage and updates database record
+     * 
+     * @param string $uuid UUID of file to delete
+     * @return bool True if file was successfully deleted, false otherwise
+     */
+    public function deleteFile(string $uuid): bool
+    {
+        try {
+            // First check if file exists
+            if (!$this->fileExists($uuid)) {
+                return false;
+            }
+            
+            // Get file info from database
+            $fileInfo = $this->getBlobInfo($uuid);
+            
+            // Get storage driver based on file storage type
+            $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
+            
+            // Try to delete the physical file
+            $fileDeleted = $storage->delete($fileInfo['filepath']);
+            
+            // Update the file status in the database to deleted
+            $dbUpdated = APIEngine::saveData(
+                'blobs',
+                'update',
+                [
+                    'uuid' => $uuid,
+                    'status' => 'deleted',
+                ]
+            );
+            
+            // Return true if either operation succeeded
+            // We consider it successful if we update the DB even if physical delete fails
+            return $dbUpdated || $fileDeleted;
+            
+        } catch (\Exception $e) {
+            error_log("Error deleting file: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get storage driver instance
+     * 
+     * Returns the appropriate storage driver based on configuration
+     * or the specified storage type
+     * 
+     * @param string $storageType Storage type (local, s3, etc.)
+     * @return StorageInterface Storage driver instance
+     */
+    private function getStorageDriver(string $storageType = null): StorageInterface 
+    {
+        // If no storage type is specified, use the configured default
+        $storageType = $storageType ?? config('storage.driver', 'local');
+        
+        return match($storageType) {
+            's3' => new \Glueful\Uploader\Storage\S3Storage(
+                config('storage.s3.key'),
+                config('storage.s3.secret'),
+                config('storage.s3.region'),
+                config('storage.s3.bucket'),
+                config('storage.s3.endpoint')
+            ),
+            default => new \Glueful\Uploader\Storage\LocalStorage(
                 config('paths.uploads'),
                 config('paths.cdn')
             )
