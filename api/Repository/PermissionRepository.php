@@ -50,7 +50,7 @@ class PermissionRepository {
     public function getPermissionsByRoleName(string $roleName = "superuser"): array
     {
         return $this->db->select('role_permissions', [
-                'role_permissions.model AS permission_model',
+                'role_permissions.model',
                 'role_permissions.permissions',
                 'roles.name AS role_name'
             ])
