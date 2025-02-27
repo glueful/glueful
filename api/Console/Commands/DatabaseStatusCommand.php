@@ -97,9 +97,9 @@ HELP;
      * 
      * @param array $args Command line arguments
      * @throws \RuntimeException If database connection fails
-     * @return void
+     * @return int Exit code (0 for success)
      */
-    public function execute(array $args = []): void
+    public function execute(array $args = []): int
     {
         try {
             $connection = new Connection();
@@ -155,6 +155,9 @@ HELP;
             
         } catch (\Exception $e) {
             $this->error("Database Connection Failed: " . $e->getMessage());
+            return Command::FAILURE; // Return error code
         }
+        
+        return Command::SUCCESS; // Return success code
     }
 }

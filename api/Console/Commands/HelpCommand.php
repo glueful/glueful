@@ -94,9 +94,9 @@ HELP;
      * - Shows usage examples
      * 
      * @param array $args Command line arguments
-     * @return void
+     * @return int Exit code
      */
-    public function execute(array $args = []): void
+    public function execute(array $args = []): int
     {
         $kernel = new Kernel();
         $commands = $kernel->getCommands();
@@ -104,13 +104,15 @@ HELP;
         // Show help for specific command if provided
         if (!empty($args) && isset($commands[$args[0]])) {
             $this->showCommandHelp($commands[$args[0]]);
-            return;
+            return Command::SUCCESS;
         }
 
         // Show general help
         $this->showHeader();
         $this->showCommandList($commands);
         $this->showFooter();
+        
+        return Command::SUCCESS;
     }
 
     /**

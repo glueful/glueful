@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Api\Extensions\Push;
+namespace Glueful\Extensions;
 
 use Glueful\Extensions;
 use PHPMailer\PHPMailer\{PHPMailer, SMTP, Exception as PHPMailerException};

@@ -2,15 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Extensions\Uploader;
-
-require_once __DIR__ . '/../../bootstrap.php';
+namespace Glueful\Uploader;
 
 use Glueful\APIEngine;
 use Glueful\Helpers\Utils;
 use RuntimeException;
 use InvalidArgumentException;
-use Glueful\Extensions\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
+use Glueful\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
 
 
 

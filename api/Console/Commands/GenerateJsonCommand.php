@@ -99,14 +99,14 @@ HELP;
      * 
      * @param array $args Command line arguments
      * @throws \RuntimeException If generation fails
-     * @return void
+     * @return int Exit code (0 for success, non-zero for error)
      */
-    public function execute(array $args = []): void
+    public function execute(array $args = []): int
     {
         // Show help if requested
         if (in_array('-h', $args) || in_array('--help', $args)) {
             $this->info($this->getHelp());
-            return;
+            return Command::SUCCESS;
         }
 
         // Parse arguments
@@ -120,7 +120,7 @@ HELP;
         if (!isset($options['type'])) {
             $this->error("Missing type argument or option (-t, --type)");
             $this->info($this->getHelp());
-            return;
+            return Command::FAILURE;
         }
 
         $generator = new ApiDefinitionGenerator(true);

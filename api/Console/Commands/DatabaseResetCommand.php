@@ -98,13 +98,13 @@ HELP;
      * 
      * @param array $args Command line arguments
      * @throws \RuntimeException If reset operation fails
-     * @return void
+     * @return int Status code, 0 for success, non-zero for errors
      */
-    public function execute(array $args = []): void
+    public function execute(array $args = []): int
     {
         if (!in_array('--force', $args)) {
             $this->error("This will delete all data! Use --force to confirm.");
-            return;
+            return Command::FAILURE;
         }
 
         try {
@@ -117,7 +117,7 @@ HELP;
             
             if (empty($tables)) {
                 $this->info("No tables found to drop.");
-                return;
+                return Command::SUCCESS;
             }
 
             $this->info("Found " . count($tables) . " tables to drop...\n");
@@ -144,8 +144,10 @@ HELP;
             $this->success("\nDatabase reset complete!");
             $this->info("Run migrations to rebuild the database structure.");
             
+            return Command::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Reset failed: " . $e->getMessage());
+            return Command::FAILURE;
         }
     }
 }

@@ -125,6 +125,7 @@ class CreateInitialSchema implements MigrationInterface
             'mime_type' => 'VARCHAR(127) NOT NULL',
             'size' => 'BIGINT NOT NULL',
             'url' => 'VARCHAR(2048) NOT NULL',
+            'storage_type' => "VARCHAR(20) NOT NULL CHECK (storage_type IN ('local', 's3'))",
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_by' => 'CHAR(12) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',

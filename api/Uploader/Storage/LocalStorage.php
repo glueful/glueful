@@ -1,8 +1,8 @@
 <?php
 
-namespace Glueful\Extensions\Uploader\Storage;
+namespace Glueful\Uploader\Storage;
 
-use Glueful\Extensions\Uploader\UploadException;
+use Glueful\Uploader\UploadException;
 
 class LocalStorage implements StorageInterface 
 {
