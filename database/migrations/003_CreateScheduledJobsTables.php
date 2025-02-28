@@ -66,7 +66,7 @@ class CreateScheduledJobsTables implements MigrationInterface
             'execution_time' => 'FLOAT NULL',
             'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'job_id', 'table' => 'job_executions'],
+            ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
             ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
             ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
             ['type' => 'FOREIGN KEY', 'column' => 'job_uuid', 'table' => 'job_executions', 'references' => 'uuid', 'on' => 'scheduled_jobs', 'onDelete' => 'CASCADE']

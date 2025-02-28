@@ -75,7 +75,66 @@ class JobScheduler
     {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        
+        // Ensure required database tables exist before trying to use them
+        $this->ensureTablesExist();
+        
         $this->loadJobsFromDatabase();
+    }
+
+    /**
+     * Ensure scheduler database tables exist
+     * 
+     * Creates required tables for job scheduling if they don't exist yet:
+     * - scheduled_jobs: Stores job definitions and schedules
+     * - job_executions: Tracks job execution history
+     */
+    protected function ensureTablesExist(): void
+    {
+        try {
+            $connection = new Connection();
+            $schema = $connection->getSchemaManager();
+            
+            // Create Scheduled Jobs Table
+            $schema->createTable('scheduled_jobs', [
+                'id' => 'VARCHAR(36) PRIMARY KEY',
+                'uuid' => 'CHAR(12) NOT NULL',
+                'name' => 'VARCHAR(255) NOT NULL',
+                'schedule' => 'VARCHAR(100) NOT NULL',
+                'handler_class' => 'VARCHAR(255) NOT NULL',
+                'parameters' => 'JSON',
+                'is_enabled' => 'TINYINT(1) DEFAULT 1',
+                'last_run' => 'DATETIME NULL',
+                'next_run' => 'DATETIME NULL',
+                'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+                'updated_at' => 'DATETIME NULL'
+            ])->addIndex([
+                ['type' => 'INDEX', 'column' => 'name', 'table' => 'scheduled_jobs'],
+                ['type' => 'INDEX', 'column' => 'next_run', 'table' => 'scheduled_jobs'],
+                ['type' => 'INDEX', 'column' => 'is_enabled', 'table' => 'scheduled_jobs']
+            ]);
+
+            // Create Job Executions Table
+            $schema->createTable('job_executions', [
+                'id' => 'VARCHAR(36) PRIMARY KEY',
+                'uuid' => 'CHAR(12) NOT NULL',
+                'job_uuid' => 'CHAR(12) NOT NULL',
+                'status' => "ENUM('success', 'failure', 'running') NOT NULL",
+                'started_at' => 'DATETIME NOT NULL',
+                'completed_at' => 'DATETIME NULL',
+                'result' => 'TEXT NULL',
+                'error_message' => 'TEXT NULL',
+                'execution_time' => 'FLOAT NULL',
+                'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
+            ])->addIndex([
+                ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
+                ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
+                ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
+                ['type' => 'FOREIGN KEY', 'column' => 'job_uuid', 'table' => 'job_executions', 'references' => 'uuid', 'on' => 'scheduled_jobs', 'onDelete' => 'CASCADE']
+            ]);
+        } catch (\Exception $e) {
+            $this->log("Failed to ensure table existence: " . $e->getMessage(), 'error');
+        }
     }
 
     /**

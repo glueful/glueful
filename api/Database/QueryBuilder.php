@@ -251,11 +251,10 @@ class QueryBuilder
     ): self {
         $this->bindings = []; // Reset bindings
         $columnList = implode(", ", array_map(function ($column) {
-            // Check if it's an instance of RawExpression
             if ($column instanceof RawExpression) {
-                return (string) $column; // Use raw SQL directly
+                return (string) $column; // Keep raw SQL expressions as-is
             }
-            return $this->driver->wrapIdentifier($column);
+            return $column === '*' ? '*' : $this->driver->wrapIdentifier($column);
         }, $columns));
         $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
 
