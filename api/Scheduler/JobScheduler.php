@@ -76,13 +76,14 @@ class JobScheduler
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-        // Register core jobs from config file
-        $this->loadCoreJobsFromConfig();
         
         // Ensure required database tables exist before trying to use them
         $this->ensureTablesExist();
         
         $this->loadJobsFromDatabase();
+
+         // Register core jobs from config file
+         $this->loadCoreJobsFromConfig();
     }
 
     /**
@@ -100,7 +101,7 @@ class JobScheduler
             
             // Create Scheduled Jobs Table
             $schema->createTable('scheduled_jobs', [
-                'id' => 'VARCHAR(36) PRIMARY KEY',
+                'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
                 'uuid' => 'CHAR(12) NOT NULL',
                 'name' => 'VARCHAR(255) NOT NULL',
                 'schedule' => 'VARCHAR(100) NOT NULL',
@@ -119,7 +120,7 @@ class JobScheduler
 
             // Create Job Executions Table
             $schema->createTable('job_executions', [
-                'id' => 'VARCHAR(36) PRIMARY KEY',
+                'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
                 'uuid' => 'CHAR(12) NOT NULL',
                 'job_uuid' => 'CHAR(12) NOT NULL',
                 'status' => "ENUM('success', 'failure', 'running') NOT NULL",
@@ -383,7 +384,7 @@ class JobScheduler
                 $isPersistent = $job['persistence'] ?? false;
                 if ($isPersistent) {
                     $this->registerInDatabase($job['name'], $job['schedule'], $job['handler_class'], $job['parameters'] ?? []);
-                    $this->log("Registered persistent job: {$job['name']}", 'info');
+                    // $this->log("Registered persistent job: {$job['name']}", 'info');
                 } else {
                     $this->register($job['schedule'], function() use ($job) {
                         $handler = new $job['handler_class']();
@@ -391,7 +392,7 @@ class JobScheduler
                             $handler->handle($job['parameters'] ?? []) : 
                             false;
                     }, $job['name']);
-                    $this->log("Registered in-memory job: {$job['name']}", 'info');
+                    // $this->log("Registered in-memory job: {$job['name']}", 'info');
                 }
             }
         } catch (\Exception $e) {
