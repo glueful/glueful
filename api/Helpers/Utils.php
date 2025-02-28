@@ -8,7 +8,7 @@ use Glueful\Cache\CacheEngine;
 use PDO;
 use PDOException;
 
-use Glueful\Auth\SessionManager;
+use Glueful\Auth\SessionCacheManager;
 use Glueful\Auth\JWTService;
 
 /**
@@ -107,7 +107,7 @@ class Utils
 
         // Remove 'Bearer ' if present
         $token = str_replace('Bearer ', '', $token);
-        return SessionManager::get($token);
+        return SessionCacheManager::getSession($token);
     }
 
     public static function getCurrentUser(): ?array 
@@ -200,6 +200,18 @@ class Utils
         );
 
         return $dbConfig['role'] ?? 'primary';
+    }
+
+     /**
+     * Pad column text for table output
+     * 
+     * @param string $text Text to pad
+     * @param int $length Column length
+     * @return string Padded text
+     */
+    public static function padColumn(string $text, int $length): string
+    {
+        return str_pad($text, $length);
     }
 }
 

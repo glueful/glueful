@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Helpers\{ExtensionsManager, Utils};
 use Glueful\Extensions;
 
 /**
@@ -38,6 +38,20 @@ class ExtensionsCommand extends Command
     public function getName(): string
     {
         return $this->name;
+    }
+    /**
+     * Get Command Description
+     * 
+     * Provides command summary:
+     * - Shows in command lists
+     * - Single line description
+     * - Explains primary purpose
+     * 
+     * @return string Brief description
+     */
+    public function getDescription(): string
+    {
+        return $this->description;
     }
     
     /**
@@ -152,8 +166,8 @@ class ExtensionsCommand extends Command
         
         // Create a table header
         $this->line(
-            $this->padColumn('Name', 30) . 
-            $this->padColumn('Status', 15) 
+            Utils::padColumn('Name', 30) . 
+            Utils::padColumn('Status', 15) 
         );
         $this->line(str_repeat('-', 80));
         
@@ -168,8 +182,8 @@ class ExtensionsCommand extends Command
             $description = $this->getExtensionMetadata($reflection, 'description');
             
             $this->line(
-                $this->padColumn($shortName, 30) . 
-                $this->padColumn($status, 15)
+                Utils::padColumn($shortName, 30) . 
+                Utils::padColumn($status, 15)
                 
             );
         }
@@ -506,18 +520,6 @@ class ExtensionsCommand extends Command
     {
         $content = "<?php\nreturn " . var_export($config, true) . ";\n";
         return file_put_contents($file, $content) !== false;
-    }
-
-    /**
-     * Pad column text for table output
-     * 
-     * @param string $text Text to pad
-     * @param int $length Column length
-     * @return string Padded text
-     */
-    protected function padColumn(string $text, int $length): string
-    {
-        return str_pad($text, $length);
     }
 
     /**
