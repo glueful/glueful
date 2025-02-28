@@ -329,4 +329,40 @@ class ExtensionsManager {
     {
         return self::findExtension($extensionName) !== null;
     }
+
+    public static function getConfigPath(): string
+    {
+        $configDir = dirname(__DIR__) . '/../../config';
+        
+        // Ensure config directory exists
+        if (!is_dir($configDir)) {
+            // Only attempt to create if it doesn't exist
+            if (!mkdir($configDir, 0755, true) && !is_dir($configDir)) {
+                // This is a more robust check: try to create it, and if that fails, check again if it exists
+                throw new \RuntimeException("Failed to create config directory: $configDir");
+            }
+        }
+        
+        $configFile = $configDir . '/extensions.php';
+        
+        // Create the extensions.php file if it doesn't exist
+        if (!file_exists($configFile)) {
+            self::createConfigFile($configFile);
+        }
+        
+        return $configFile;
+    }
+
+    private static function createConfigFile(string $configFile): bool
+    {
+        $defaultConfig = [
+            'enabled' => [],
+            'paths' => [
+                'extensions' => config('paths.project_extensions'),
+                'api-extensions' => config('paths.api_extensions'),
+            ]
+        ];
+        // Create the config file with default values
+        return self::saveConfig($configFile, $defaultConfig);
+    }
 }

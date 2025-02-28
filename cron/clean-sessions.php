@@ -6,6 +6,9 @@ require_once __DIR__ . '/../bootstrap.php';
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 
+// @schedule:  0 0 * * * 
+// This job runs every 6 hours
+
 class SessionCleaner
 {
     private \PDO $db;

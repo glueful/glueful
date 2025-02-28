@@ -64,6 +64,7 @@
         "phpmailer/phpmailer": "^6.9",
         "monolog/monolog": "^3.8",
         "nyholm/psr7": "^1.8",
-        "nyholm/psr7-server": "^1.1"
+        "nyholm/psr7-server": "^1.1",
+        "dragonmantank/cron-expression": "^3.4"
     }
 }
