@@ -75,6 +75,9 @@ class JobScheduler
     {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+
+        // Register core jobs from config file
+        $this->loadCoreJobsFromConfig();
         
         // Ensure required database tables exist before trying to use them
         $this->ensureTablesExist();
@@ -344,6 +347,58 @@ class JobScheduler
         }
     }
 
+    protected function loadCoreJobsFromConfig(): void
+    {
+        $configFile = dirname(__DIR__, 2) . '/config/schedule.php';
+        if (!file_exists($configFile)) {
+            return;
+        }
+
+        try {
+            $coreJobs = require $configFile;
+            if (!isset($coreJobs['jobs']) || !is_array($coreJobs['jobs'])) {
+                $this->log('Invalid schedule configuration format', 'warning');
+                return;
+            }
+
+            foreach ($coreJobs['jobs'] as $job) {
+                // Skip disabled jobs
+                if (isset($job['enabled']) && !$job['enabled']) {
+                    continue;
+                }
+
+                // Skip jobs with missing required fields
+                if (!isset($job['name']) || !isset($job['schedule']) || !isset($job['handler_class'])) {
+                    $this->log('Skipping job with missing required fields: ' . ($job['name'] ?? 'unnamed'), 'warning');
+                    continue;
+                }
+
+                // Validate handler class existence
+                if (!class_exists($job['handler_class'])) {
+                    $this->log("Skipping job '{$job['name']}': Handler class not found", 'warning');
+                    continue;
+                }
+
+                // Register based on persistence flag
+                $isPersistent = $job['persistence'] ?? false;
+                if ($isPersistent) {
+                    $this->registerInDatabase($job['name'], $job['schedule'], $job['handler_class'], $job['parameters'] ?? []);
+                    $this->log("Registered persistent job: {$job['name']}", 'info');
+                } else {
+                    $this->register($job['schedule'], function() use ($job) {
+                        $handler = new $job['handler_class']();
+                        return method_exists($handler, 'handle') ? 
+                            $handler->handle($job['parameters'] ?? []) : 
+                            false;
+                    }, $job['name']);
+                    $this->log("Registered in-memory job: {$job['name']}", 'info');
+                }
+            }
+        } catch (\Exception $e) {
+            $this->log('Failed to load jobs from config: ' . $e->getMessage(), 'error');
+        }
+    }
+
     /**
      * Get all registered jobs.
      * 
@@ -381,5 +436,14 @@ class JobScheduler
     {
         $timestamp = (new DateTime())->format('Y-m-d H:i:s');
         echo "[$timestamp] [$level] $message" . PHP_EOL;
+    }
+
+    public static function getInstance(): JobScheduler
+    {
+        static $instance = null;
+        if ($instance === null) {
+            $instance = new JobScheduler();
+        }
+        return $instance;
     }
 }

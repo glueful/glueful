@@ -5,7 +5,7 @@ namespace Glueful;
 
 use Glueful\Http\{Router};
 use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
-use Glueful\Controllers\{ResourceController, AuthController, FilesController};
+use Glueful\Scheduler\JobScheduler;
 
 /**
  * Main API Initialization and Request Handler
@@ -45,6 +45,11 @@ class API
     {
         ExtensionsManager::loadExtensions();
         RoutesManager::loadRoutes();
+        // Initialize scheduler for appropriate request types
+        if (PHP_SAPI === 'cli' || Request::isAdminRequest()) {
+            // Initialize scheduler only when needed
+            JobScheduler::getInstance();
+        }
     }
 
     /**
