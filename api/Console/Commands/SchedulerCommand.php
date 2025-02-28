@@ -162,7 +162,8 @@ class SchedulerCommand extends Command
     {
         $this->info('Registered Scheduled Tasks');
         $this->line('========================');
-
+        
+        $this->scheduler::getInstance();
         $jobs = $this->scheduler->getJobs();
         
         if (empty($jobs)) {

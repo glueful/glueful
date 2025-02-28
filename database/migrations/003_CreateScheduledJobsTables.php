@@ -36,7 +36,7 @@ class CreateScheduledJobsTables implements MigrationInterface
     {
         // Create Scheduled Jobs Table
         $schema->createTable('scheduled_jobs', [
-            'id' => 'VARCHAR(36) PRIMARY KEY',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'name' => 'VARCHAR(255) NOT NULL',
             'schedule' => 'VARCHAR(100) NOT NULL',
@@ -55,7 +55,7 @@ class CreateScheduledJobsTables implements MigrationInterface
 
         // Create Job Executions Table
         $schema->createTable('job_executions', [
-            'id' => 'VARCHAR(36) PRIMARY KEY',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'job_uuid' => 'CHAR(12) NOT NULL',
             'status' => "ENUM('success', 'failure', 'running') NOT NULL",

@@ -10,7 +10,7 @@ return [
             'parameters' => [],
             'description' => 'Cleans up expired access and refresh tokens from the database.',
             'enabled' => true,
-            'persistence' => true,
+            'persistence' => false,
         ]
     ]
 ];
