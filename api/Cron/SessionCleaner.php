@@ -1,17 +1,15 @@
 <?php
-declare(strict_types=1);
 
-require_once __DIR__ . '/../bootstrap.php';
+namespace Glueful\Cron;
 
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 
 // @schedule:  0 0 * * * 
-// This job runs every 6 hours
+// This job runs Daily at midnight
 
 class SessionCleaner
 {
-    private \PDO $db;
     private array $stats = [
         'expired_access' => 0,
         'expired_refresh' => 0,
@@ -118,11 +116,13 @@ class SessionCleaner
         $this->cleanOldRevokedSessions();
         $this->logResults();
     }
-}
 
-// Run the cleaner
-$cleaner = new SessionCleaner();
-$cleaner->run();
+    public function handle(array $parameters = []): mixed
+    {
+        $this->run();
+        return $this->stats;
+    }
+}
 
 // chmod +x /Users/michaeltawiahsowah/Sites/localhost/glueful/cron/clean-sessions.php
 

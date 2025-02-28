@@ -54,7 +54,7 @@ class SchedulerCommand extends Command
     public function __construct()
     {
         $this->scheduler = new JobScheduler();
-        $this->registerDefaultJobs();
+        // $this->registerDefaultJobs();
     }
     
     /**
@@ -223,36 +223,36 @@ class SchedulerCommand extends Command
      * Each job is registered with a default daily schedule that can be overridden 
      * with schedule comments in the file.
      */
-    private function registerDefaultJobs(): void
-    {
-        $cronDir = dirname(__DIR__, 3) . '/cron';
+    // private function registerDefaultJobs(): void
+    // {
+    //     $cronDir = dirname(__DIR__, 3) . '/cron';
         
-        // Skip if directory doesn't exist
-        if (!is_dir($cronDir)) {
-            $this->warning("Cron directory not found: $cronDir");
-            return;
-        }
+    //     // Skip if directory doesn't exist
+    //     if (!is_dir($cronDir)) {
+    //         $this->warning("Cron directory not found: $cronDir");
+    //         return;
+    //     }
         
-        // Scan for PHP files
-        $files = glob("$cronDir/*.php");
+    //     // Scan for PHP files
+    //     $files = glob("$cronDir/*.php");
         
-        if (empty($files)) {
-            $this->info("No cron jobs found in: $cronDir");
-            return;
-        }
+    //     if (empty($files)) {
+    //         $this->info("No cron jobs found in: $cronDir");
+    //         return;
+    //     }
         
-        foreach ($files as $file) {
-            $jobName = pathinfo($file, PATHINFO_FILENAME);
-            $schedule = $this->extractScheduleFromFile($file) ?? '@daily';
+    //     foreach ($files as $file) {
+    //         $jobName = pathinfo($file, PATHINFO_FILENAME);
+    //         $schedule = $this->extractScheduleFromFile($file) ?? '@daily';
             
-            // Register job with the scheduler
-            $this->scheduler->register($schedule, function() use ($file) {
-                require_once $file;
-            }, $jobName);
+    //         // Register job with the scheduler
+    //         $this->scheduler->register($schedule, function() use ($file) {
+    //             require_once $file;
+    //         }, $jobName);
             
-            $this->info("Registered job: $jobName ($schedule)");
-        }
-    }
+    //         $this->info("Registered job: $jobName ($schedule)");
+    //     }
+    // }
     
     /**
      * Extract schedule from file comments
@@ -263,17 +263,17 @@ class SchedulerCommand extends Command
      * @param string $filePath Path to cron job file
      * @return string|null Extracted schedule or null if not found
      */
-    private function extractScheduleFromFile(string $filePath): ?string
-    {
-        $content = file_get_contents($filePath);
+    // private function extractScheduleFromFile(string $filePath): ?string
+    // {
+    //     $content = file_get_contents($filePath);
         
-        // Look for schedule definition in file comments
-        if (preg_match('/@schedule:\s*([^\n]+)/i', $content, $matches)) {
-            return trim($matches[1]);
-        }
+    //     // Look for schedule definition in file comments
+    //     if (preg_match('/@schedule:\s*([^\n]+)/i', $content, $matches)) {
+    //         return trim($matches[1]);
+    //     }
         
-        return null;
-    }
+    //     return null;
+    // }
 
     /**
      * Get Command Help

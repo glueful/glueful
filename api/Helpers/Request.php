@@ -54,4 +54,43 @@ class Request {
     public function getFiles() : array {
         return $this->files;
     }
+    
+    /**
+     * Check if the current request is for the admin panel/endpoints
+     * 
+     * Determines if the request is accessing admin functionality by:
+     * - Checking request path for '/admin' prefix
+     * - Verifying admin-specific URL pattern
+     * - Examining request headers for admin indicators
+     * 
+     * @return bool True if this is an admin request
+     */
+    public static function isAdminRequest(): bool
+    {
+        // Get the current request URI
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        
+        // Check if URL path contains /admin segment
+        if (strpos($requestUri, '/admin') !== false) {
+            return true;
+        }
+        
+        // Check for admin API endpoints
+        if (strpos($requestUri, '/api/admin') !== false) {
+            return true;
+        }
+        
+        // Check for admin-specific query parameter
+        if (isset($_GET['admin']) && $_GET['admin'] === 'true') {
+            return true;
+        }
+        
+        // Check for requests with admin token in header
+        $headers = getallheaders();
+        if (isset($headers['X-Admin-Access']) || isset($headers['X-ADMIN-ACCESS'])) {
+            return true;
+        }
+        
+        return false;
+    }
 }
