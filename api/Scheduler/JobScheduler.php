@@ -337,6 +337,7 @@ class JobScheduler
                 if (isset($job['uuid'])) {
                     $this->recordJobExecution($job['uuid'], true, $result);
                 }
+
             } catch (\Throwable $e) {
                 $this->log("Error in job '{$job['name']}': " . $e->getMessage(), 'error');
                 
@@ -346,6 +347,42 @@ class JobScheduler
                 }
             }
         }
+    }
+
+    /**
+     * Run a single job by name or UUID
+     * 
+     * @param string $identifier Job name or UUID
+     * @return mixed|null Result of job execution or null if job not found
+     */
+    public function runJob(string $identifier): mixed
+    {
+        // Find the job by name or UUID
+        foreach ($this->jobs as $job) {
+            if ($job['name'] === $identifier || ($job['uuid'] ?? '') === $identifier) {
+                try {
+                    $result = call_user_func($job['callback']);
+                    
+                    // Record execution in database if job has a UUID
+                    if (isset($job['uuid'])) {
+                        $this->recordJobExecution($job['uuid'], true, $result);
+                    }
+                    
+                    return $result;
+                } catch (\Throwable $e) {
+                    $this->log("Error in job '{$job['name']}': " . $e->getMessage(), 'error');
+                    
+                    // Record execution error in database if job has a UUID
+                    if (isset($job['uuid'])) {
+                        $this->recordJobExecution($job['uuid'], false, $e->getMessage());
+                    }
+                    
+                    throw $e; // Re-throw for higher-level handling
+                }
+            }
+        }
+        
+        return null; // Job not found
     }
 
     protected function loadCoreJobsFromConfig(): void

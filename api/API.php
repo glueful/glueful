@@ -6,6 +6,8 @@ namespace Glueful;
 use Glueful\Http\{Router};
 use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
+use Glueful\Exceptions\{ValidationException, AuthenticationException};
+use Throwable;
 
 /**
  * Main API Initialization and Request Handler
@@ -44,7 +46,7 @@ class API
     public static function init(): void
     {
         ExtensionsManager::loadExtensions();
-        RoutesManager::loadRoutes();
+         RoutesManager::loadRoutes();
         // Initialize scheduler for appropriate request types
         if (PHP_SAPI === 'cli' || Request::isAdminRequest()) {
             // Initialize scheduler only when needed
@@ -68,19 +70,38 @@ class API
      * @return array API response with status and data
      * @throws \RuntimeException If request processing fails catastrophically
      */
-    public static function processRequest(): array 
-    {
-        // Set JSON response headers
-        header('Content-Type: application/json');
-        
-        // Initialize API
-        self::init();
-        
-        // Get router instance
-        $router = Router::getInstance();
-        
-        // Let router handle the request
-        return $router->handleRequest();
+    public static function processRequest(): void {
+        try {
+            // Set JSON response headers
+            header('Content-Type: application/json');
+            
+            Router::init();
+            // Initialize API
+            self::init();
+            
+            // Get router instance
+            $router = Router::getInstance();
+            
+            // Let router handle the request
+            $response = $router->handleRequest();
+            
+            // Output the response
+            echo json_encode($response);
+            
+        } catch (ValidationException $e) {
+            header('Content-Type: application/json');
+            http_response_code(400);
+            echo json_encode(['error' => 'validation_error', 'message' => $e->getMessage()]);
+        } catch (AuthenticationException $e) {
+            header('Content-Type: application/json');
+            http_response_code(401);
+            echo json_encode(['error' => 'authentication_error', 'message' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            header('Content-Type: application/json');
+            http_response_code(500);
+            echo json_encode(['error' => 'server_error', 'message' => 'An internal server error occurred']);
+            // Log the actual error details
+        }
     }
 }
 ?>

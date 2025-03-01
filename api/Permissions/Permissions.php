@@ -52,7 +52,7 @@ class Permissions
             return false;
         }
 
-        if (!defined('ENABLE_PERMISSIONS') || config('security.permissions_enabled') !== true) {
+        if (config('security.enabled_permissions') !== true) {
             return true;
         }
 

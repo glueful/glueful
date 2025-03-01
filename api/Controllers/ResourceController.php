@@ -9,6 +9,7 @@ use Glueful\Permissions\{Permissions, Permission};
 use Glueful\Validation\Validator;
 use Glueful\DTOs\{UsernameDTO, EmailDTO, PasswordDTO, ListResourceRequestDTO};
 
+//TODO: Add the persistence layer
 class ResourceController {
     private AuthController $auth;
     private Permissions $permissions;
@@ -27,24 +28,30 @@ class ResourceController {
      */
     public function get(array $params, array $queryParams) {
         try {
-            $this->auth->validateToken();
-            $token = $_GET['token'] ?? null;
-            
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-            }
-            
-            // Validate the list request
-            $listRequest = $this->validateListRequest($queryParams);
-            $queryParams = array_merge($listRequest, [
-                'fields' => $listRequest['fields'] ?? '*',
-                'sort' => $listRequest['sort'] ?? 'created_at',
-                'page' => $listRequest['page'] ?? 1,
-                'per_page' => $listRequest['per_page'] ?? 25,
-                'order' => $listRequest['order'] ?? 'desc'
-            ]);
 
+            
+            // $this->auth->validateToken();
+            // $token = $_GET['token'] ?? null;
+            
+            // if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
+            //     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // }
+           
+            // Validate the list request
+            // $listRequest = $this->validateListRequest($queryParams);
+            // var_dump($listRequest);
+            // exit;
+
+            $queryParams = array_merge($queryParams, [
+                'fields' => $queryParams['fields'] ?? '*',
+                'sort' => $queryParams['sort'] ?? 'created_at',
+                'page' => $queryParams['page'] ?? 1,
+                'per_page' => $queryParams['per_page'] ?? 25,
+                'order' => $queryParams['order'] ?? 'desc'
+            ]);
+           
             $result = APIEngine::getData($params['resource'], 'list', $queryParams);
+            // return $result;
             return Response::ok($result)->send();
         
         } catch (\Exception $e) {
@@ -174,7 +181,7 @@ class ResourceController {
                 ['uuid' => $params['uuid'], 'status' => 'D']
             );
                     
-            return Response::ok($result)->send();
+            return Response::ok($result,'Users retrieved successfully')->send();
             
         } catch (\Exception $e) {
             return Response::error(

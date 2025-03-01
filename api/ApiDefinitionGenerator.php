@@ -103,10 +103,8 @@ class ApiDefinitionGenerator {
             $this->setupAdministratorRole();
         }
 
-        if (\config('app.docs_enabled')) {
-            $this->log("Step 3: Starting API docs generation...");
-            $this->generateApiDocs();
-        }
+        $this->log("Step 3: Starting API docs generation...");
+        $this->generateApiDocs();
     }
 
     /**
@@ -467,7 +465,6 @@ class ApiDefinitionGenerator {
      * 
      * @param string|int $roleId Administrator role ID
      */
-    //TODO: Create version for SQLite and other databases
     private function updateAdminPermissions(string $roleUuid): void 
 {
     $this->log("--- Assigning/Updating Superuser Permissions ---");

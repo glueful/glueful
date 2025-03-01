@@ -91,6 +91,36 @@ if (!function_exists('config')) {
     }
 }
 
+if (!function_exists('parseConfigString')) {
+    /**
+     * Parses a config string in the format "key1:value1,key2:value2,..."
+     *
+     * @param string $configString The configuration string to parse.
+     * @return array An associative array of key-value pairs.
+     */
+
+    function parseConfigString(string $configString): array {
+        $config = [];
+        $items = explode(',', $configString);
+        foreach ($items as $item) {
+            [$key, $value] = explode(':', $item, 2);
+            $key = trim($key);
+            $value = trim($value);
+
+            // Handle boolean values
+            if (strtolower($value) === 'true') {
+                $value = true;
+            } elseif (strtolower($value) === 'false') {
+                $value = false;
+            } elseif (is_numeric($value)) {
+            $value = (int) $value;
+            }
+
+            $config[$key] = $value;
+        }
+        return $config;
+    }
+}
 /**
  * Additional helper functions can be added below.
  * Each function should have proper documentation and

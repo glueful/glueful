@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Aws\Token\Token;
 use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
@@ -185,7 +184,7 @@ class AuthenticationService
      * @param string $token Current authentication token
      * @return array Response with new token and updated permissions
      */
-    public function refreshPermissions(string $token): array 
+    public function refreshPermissions(string $token): mixed 
     {
         // Get current session
         $session = SessionCacheManager::getSession($token);

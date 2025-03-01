@@ -7,32 +7,22 @@ use Glueful\Helpers\Request;
 $resourceController = new ResourceController();
 $request = new Request();
 
- // Resource routes
- Router::addRoute('GET', '{resource}', function($params) use ($resourceController, $request) {
+// Resource routes
+Router::get('/{resource}', function(array $params) use ($resourceController, $request) {
     $queryParams = $request->getQueryParams();
     return $resourceController->get($params, $queryParams);
 });
-
-// Get single resource by UUID
-Router::addRoute('GET', '{resource}/{uuid}', function($params) use ($resourceController, $request) {
-    $queryParams = $request->getQueryParams();
-    return $resourceController->getSingle($params, $queryParams);
-});
-
-Router::addRoute('POST', '{resource}', function($params) use ($resourceController) {
+Router::post('/{resource}', function(array $params) use ($resourceController, $request) {
     $postData = Request::getPostData();
     return $resourceController->post($params, $postData);
 });
 
-// PUT Route (Update)
-Router::addRoute('PUT', '{resource}/{uuid}', function($params) use ($resourceController) {
+Router::put('/{resource}/{uuid}', function(array $params) use ($resourceController, $request) {
     $putData = Request::getPostData();
-    // Add UUID to data
-    $putData['id'] = $params['uuid'];
+    $putData['uuid'] = $params['uuid'];
     return $resourceController->put($params, $putData);
 });
 
-// DELETE Route
-Router::addRoute('DELETE', '{resource}/{uuid}', function($params) use ($resourceController) {
+Router::delete('/{resource}/{uuid}', function(array $params) use ($resourceController, $request) {
     return $resourceController->delete($params);
 });

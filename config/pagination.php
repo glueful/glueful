@@ -15,4 +15,6 @@ return [
 
     // Maximum allowed items per page
     'max_size' => env('PAGINATION_MAX_SIZE', 100),     // Upper limit for page size
+
+    'list_limit'=> env('PAGINATION_LIST_LIMIT', 1000), // Maximum number of items in a list
 ];
