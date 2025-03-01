@@ -395,38 +395,41 @@ class QueryBuilder
      * @return array Pagination result set
      */
     public function paginate(int $page = 1, int $perPage = 10): array
-    {
-        $offset = ($page - 1) * $perPage;
+{
+    $offset = ($page - 1) * $perPage;
 
-        // Modify query to include pagination
-        $paginatedQuery = $this->query . " LIMIT ? OFFSET ?";
-        $bindings = [...$this->bindings, $perPage, $offset];
+    // Remove existing LIMIT/OFFSET before adding a new one
+    $paginatedQuery = preg_replace('/\sLIMIT\s\d+(\sOFFSET\s\d+)?/i', '', $this->query);
+    $paginatedQuery .= " LIMIT ? OFFSET ?";
 
-        // Execute the paginated query
-        $stmt = $this->pdo->prepare($paginatedQuery);
-        $stmt->execute($bindings);
-        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Execute paginated query
+    $stmt = $this->pdo->prepare($paginatedQuery);
+    $stmt->execute([...$this->bindings, $perPage, $offset]);
+    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get total count
-        $countQuery = "SELECT COUNT(*) as total FROM (" . $this->query . ") as subquery";
-        $countStmt = $this->pdo->prepare($countQuery);
-        $countStmt->execute($this->bindings);
-        $totalRecords = $countStmt->fetchColumn();
-        $lastPage = (int) ceil($totalRecords / $perPage);
-        $from = $totalRecords > 0 ? $offset + 1 : 0;
-        $to = min($offset + $perPage, $totalRecords);
+    // **Fix COUNT Query**
+    $countQuery = preg_replace('/^SELECT\s.*?\sFROM/i', 'SELECT COUNT(*) as total FROM', $this->query);
+    $countQuery = preg_replace('/\sORDER BY .*/i', '', $countQuery); // Remove ORDER BY
 
-        return [
-            'data' => $data,
-            'current_page' => $page,
-            'per_page' => $perPage,
-            'total' => $totalRecords,
-            'last_page' => $lastPage,
-            'has_more' => $page < $lastPage,
-            'from' => $from,
-            'to' => $to,
-        ];
-    }
+    $countStmt = $this->pdo->prepare($countQuery);
+    $countStmt->execute($this->bindings);
+    $totalRecords = $countStmt->fetchColumn();
+
+    $lastPage = (int) ceil($totalRecords / $perPage);
+    $from = $totalRecords > 0 ? $offset + 1 : 0;
+    $to = min($offset + $perPage, $totalRecords);
+
+    return [
+        'data' => $data,
+        'current_page' => $page,
+        'per_page' => $perPage,
+        'total' => $totalRecords,
+        'last_page' => $lastPage,
+        'has_more' => $page < $lastPage,
+        'from' => $from,
+        'to' => $to,
+    ];
+}
 
     /**
      * Get identifier of last inserted record
@@ -502,12 +505,17 @@ class QueryBuilder
     }
 
     public function orderBy(array $orderBy): self {
-        $orderByClauses = [];
-        foreach ($orderBy as $key => $value) {
-            $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
-            $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+        if (!empty($orderBy)) {
+            $orderByClauses = [];
+            foreach ($orderBy as $key => $value) {
+                $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
+                $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+            }
+            // Only add ORDER BY if there are valid clauses
+            if (!empty($orderByClauses)) {
+                $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
+            }
         }
-        $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
         return $this;
     }
 

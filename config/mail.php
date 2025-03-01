@@ -12,8 +12,8 @@ return [
 
     // Global "From" address settings
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'noreply@example.com'),
-        'name' => env('MAIL_FROM_NAME', 'Glueful System'),
+        'address' => env('MAIL_FROM', 'noreply@glueful.com'),
+        'name' => env('MAIL_FROM_NAME', 'Glueful'),
     ],
 
     // SMTP configuration
@@ -25,11 +25,6 @@ return [
         'password' => env('MAIL_PASSWORD'),                 // SMTP authentication password
         'timeout' => 30,                                    // Connection timeout in seconds
         'auth_mode' => null,                               // Optional authentication mode
-    ],
-
-    // Sendmail configuration
-    'sendmail' => [
-        'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs'),
     ],
 
     // Email retry settings

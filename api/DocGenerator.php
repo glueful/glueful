@@ -72,7 +72,7 @@ class DocGenerator
         $swagger = [
             'openapi' => '3.0.0',
             'info' => [
-                'title' => config('app.title'),
+                'title' => config('app.name'),
                 'version' => config('app.api_version'),
                 'description' => 'Auto-generated API documentation',
                 'contact' => [

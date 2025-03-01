@@ -5,7 +5,6 @@ namespace Glueful\Helpers;
 
 use Glueful\Uploader\FileUploader;
 use Glueful\Auth\AuthenticationService;
-use Glueful\Http\Response;
 use Glueful\APIEngine;
 use Glueful\Uploader\Storage\StorageInterface;
 
@@ -24,28 +23,37 @@ class FileHandler {
             $token = $this->auth->extractTokenFromRequest();
         
             if (!$token) {
-                echo json_encode(Response::unauthorized('Authentication required')->send());
-                exit;
+                return [
+                    'success' => false,
+                    'message' => 'Authentication required',
+                    'code' => 401
+                ];
             }
 
-            return  $this->uploader->handleUpload($token, $getParams, $fileParams);
+            return $this->uploader->handleUpload($token, $getParams, $fileParams);
 
         } catch (\Exception $e) {
-            return Response::error('File upload failed: ' . $e->getMessage())->send();
+            return [
+                'success' => false,
+                'message' => 'File upload failed: ' . $e->getMessage(),
+                'code' => 500
+            ];
         }
     }
 
     public function handleBase64Upload(array $getParams, array $postParams): array 
     {
         try {
-
             $token = $this->auth->extractTokenFromRequest();
             if (!$token) {
-                echo json_encode(Response::unauthorized('Authentication required')->send());
-                exit;
+                return [
+                    'success' => false,
+                    'message' => 'Authentication required',
+                    'code' => 401
+                ];
             }
             
-            $_GET['token'] = $token; // Store token for downstream use
+            $_GET['token'] = $token;
             
             // Convert base64 to temp file
             $tmpFile = $this->uploader->handleBase64Upload($postParams['base64']);
@@ -64,8 +72,11 @@ class FileHandler {
             );
 
         } catch (\Exception $e) {
-
-            return Response::error('Base64 upload failed: ' . $e->getMessage())->send();
+            return [
+                'success' => false,
+                'message' => 'Base64 upload failed: ' . $e->getMessage(),
+                'code' => 500
+            ];
         }
     }
 
@@ -89,13 +100,21 @@ class FileHandler {
         try {
             // Validate parameters
             if (empty($uuid)) {
-                return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
+                return [
+                    'success' => false,
+                    'message' => 'File UUID is required',
+                    'code' => 400
+                ];
             }
             
             // Get file information from database
             $fileInfo = $this->getBlobInfo($uuid);
             if (!$fileInfo) {
-                return Response::notFound('File not found')->send();
+                return [
+                    'success' => false,
+                    'message' => 'File not found',
+                    'code' => 404
+                ];
             }
             
             // Get storage driver based on file storage type
@@ -106,16 +125,32 @@ class FileHandler {
             
             // Process based on requested type
             return match($type) {
-                'info' => Response::ok($this->getBlobAsFile($storage, $fileInfo), 'File information retrieved')->send(),
+                'info' => [
+                    'success' => true,
+                    'data' => $this->getBlobAsFile($storage, $fileInfo),
+                    'message' => 'File information retrieved'
+                ],
                 'download' => $this->downloadBlob($storage, $fileInfo),
                 'inline' => $this->serveFileInline($fileInfo, $storage),
-                'image' => Response::ok($this->processImageBlob($fullUrl, $params), 'Image processed successfully')->send(),
-                default => Response::error('Invalid file retrieval type', Response::HTTP_BAD_REQUEST)->send()
+                'image' => [
+                    'success' => true,
+                    'data' => $this->processImageBlob($fullUrl, $params),
+                    'message' => 'Image processed successfully'
+                ],
+                default => [
+                    'success' => false,
+                    'message' => 'Invalid file retrieval type',
+                    'code' => 400
+                ]
             };
             
         } catch (\Exception $e) {
             error_log("Blob processing error: " . $e->getMessage());
-            return Response::error('File retrieval failed: ' . $e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return [
+                'success' => false,
+                'message' => 'File retrieval failed: ' . $e->getMessage(),
+                'code' => 500
+            ];
         }
     }
     
@@ -217,7 +252,11 @@ class FileHandler {
         
         // Check if file status is active
         if (isset($fileInfo['status']) && $fileInfo['status'] !== 'active') {
-            return Response::error('File is not available', Response::HTTP_FORBIDDEN)->send();
+            return [
+                'success' => false,
+                'message' => 'File is not available',
+                'code' => 403
+            ];
         }
         
         // For remote storage (like S3), redirect to signed URL
@@ -238,7 +277,11 @@ class FileHandler {
             exit;
         }
         
-        return Response::error('File not found on storage', Response::HTTP_NOT_FOUND)->send();
+        return [
+            'success' => false,
+            'message' => 'File not found on storage',
+            'code' => 404
+        ];
     }
     
     /**
@@ -255,7 +298,11 @@ class FileHandler {
         
         // Check if file status is active
         if (isset($fileInfo['status']) && $fileInfo['status'] !== 'active') {
-            return Response::error('File is not available', Response::HTTP_FORBIDDEN)->send();
+            return [
+                'success' => false,
+                'message' => 'File is not available',
+                'code' => 403
+            ];
         }
         
         // For remote storage (like S3), redirect to signed URL
@@ -276,7 +323,11 @@ class FileHandler {
             exit;
         }
         
-        return Response::error('File not found on storage', Response::HTTP_NOT_FOUND)->send();
+        return [
+            'success' => false,
+            'message' => 'File not found on storage',
+            'code' => 404
+        ];
     }
     
     /**
@@ -457,7 +508,7 @@ class FileHandler {
      * @param string $storageType Storage type (local, s3, etc.)
      * @return StorageInterface Storage driver instance
      */
-    private function getStorageDriver(string $storageType = null): StorageInterface 
+    private function getStorageDriver(?string $storageType = null): StorageInterface 
     {
         // If no storage type is specified, use the configured default
         $storageType = $storageType ?? config('storage.driver', 'local');

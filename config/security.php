@@ -18,5 +18,5 @@ return [
     'default_level' => env('DEFAULT_SECURITY_LEVEL', 1),  // Use flexible by default
 
     // Permission system settings
-    'permissions_enabled' => env('ENABLE_PERMISSIONS', true),  // Enable role-based access control
+    'enabled_permissions' => env('ENABLE_PERMISSIONS', true),  // Enable role-based access control
 ];

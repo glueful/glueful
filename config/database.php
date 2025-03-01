@@ -22,8 +22,8 @@ return [
         'collation' => 'utf8mb4_unicode_ci',          // Collation
         'prefix' => env('DB_PREFIX', ''),             // Table prefix
         'strict' => true,                             // Strict mode
-        'engine' => 'InnoDB',  
-        'role' => 'primary', // Defines the role of this database connection
+        'engine' => 'InnoDB',
+        'role' => env('DB_MYSQL_ROLE', 'primary'),    // Role of this database connection
     ],
 
     // PostgreSQL configuration
@@ -39,21 +39,14 @@ return [
         'prefix' => env('DB_PGSQL_PREFIX', ''),
         'sslmode' => env('DB_PGSQL_SSL_MODE', 'prefer'),
         'timezone' => env('DB_PGSQL_TIMEZONE', 'UTC'),
-        'role' => '',
+        'role' => env('DB_PGSQL_ROLE', ''), // Defines the role of this database connection
     ],
 
     // SQLite configuration
     'sqlite' => [
         'primary' => env('DB_SQLITE_DATABASE', dirname(__DIR__) . '/database/primary.sqlite'),
         'testing' => env('DB_SQLITE_TESTING', dirname(__DIR__) . '/database/testing.sqlite'),
-        'role' => '',
-    ],
-
-    // Connection pool settings
-    'pool' => [
-        'min_connections' => env('DB_POOL_MIN', 1),   // Minimum connections
-        'max_connections' => env('DB_POOL_MAX', 10),  // Maximum connections
-        'idle_timeout' => env('DB_POOL_IDLE', 60),   // Idle timeout in seconds
+        'role' => env('DB_SQLITE_ROLE', 'backup') // Defines the role of this database connection
     ],
 
     // Query logging options
@@ -67,14 +60,5 @@ return [
     'migrations' => [
         'table' => 'migrations',                      // Migrations table name
         'path' => dirname(__DIR__) . '/database/migrations', // Migrations directory
-    ],
-
-    // Backup configuration
-    'backup' => [
-        'enabled' => env('DB_BACKUP_ENABLED', false), // Enable auto-backups
-        'schedule' => '0 0 * * *',                    // Backup schedule (cron)
-        'path' => dirname(__DIR__) . '/storage/backups',            // Backup storage path
-        'compress' => true,                           // Compress backups
-        'retention_days' => 7,                        // Backup retention period
     ],
 ];
