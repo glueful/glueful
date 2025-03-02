@@ -10,7 +10,48 @@ use Glueful\Auth\AuthenticationService;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{Connection, QueryBuilder};
 use Glueful\Database\Migrations\MigrationManager;
+use Glueful\Scheduler\JobScheduler;
 
+// // Get all configs
+// GET /admin/configs
+
+// // Get single config
+// POST /admin/config
+// {
+//     "filename": "app.php"
+// }
+
+// // Update config
+// POST /admin/config/update
+// {
+//     "filename": "app.php",
+//     "config": {
+//         "key": "value"
+//     }
+// }
+
+// // Create config
+// POST /admin/config/create
+// {
+//     "filename": "newconfig.php",
+//     "config": {
+//         "key": "value"
+//     }
+// }
+// // Get all jobs
+// POST /admin/jobs
+// {
+//     "page": 1,
+//     "per_page": 25
+// }
+
+// // Get filtered jobs
+// POST /admin/jobs
+// {
+//     "page": 1,
+//     "per_page": 25,
+//     "status": "reserved"  // or "available" or "pending"
+// }
 class AdminController {
     private AuthenticationService $authService;
     private RoleRepository $roleRepo;
@@ -20,6 +61,9 @@ class AdminController {
     private SchemaManager $schemaManager;
     private QueryBuilder $queryBuilder;
     private MigrationManager $migrationManager;
+    private ConfigController $configController;
+    private JobScheduler $scheduler;
+
 
     public function __construct() {
         $this->userRepository = new UserRepository();
@@ -32,6 +76,11 @@ class AdminController {
         $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
         $this->migrationManager = new MigrationManager();
+        $this->configController = new ConfigController();
+
+         $this->scheduler = new JobScheduler();
+        $this->scheduler::getInstance();
+       
     }
 
     /**
@@ -45,18 +94,22 @@ class AdminController {
     {
         try {
             $credentials = Request::getPostData();
-            
-            // Basic validation
-            if (!isset($credentials['email']) || !isset($credentials['password'])) {
-                return Response::error('Email and password are required', Response::HTTP_BAD_REQUEST)->send();
+
+            if (!isset($credentials['username']) || !isset($credentials['password'])) {
+                return Response::error('Username and password are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-           
-            $user = $this->userRepository->findByEmail($credentials['username']);
+            if (filter_var($credentials['username'], FILTER_VALIDATE_EMAIL)) {
+                return Response::error('Email login not supported', Response::HTTP_BAD_REQUEST)->send();
+                $user = $this->userRepository->findByEmail($credentials['username']);
+            } else {
+                $user = $this->userRepository->findByUsername($credentials['username']);
+            }
+
             // Check if user has superuser role
             $userId = $user['uuid'];
             if (!$userId) {
-                return Response::error('User not found', Response::HTTP_NOT_FOUND)->send();
+                return Response::error('User does not exist', Response::HTTP_NOT_FOUND)->send();
             }
             // Check if user has superuser role
             if (!$this->roleRepo->userHasRole($userId, 'superuser')) {
@@ -64,7 +117,6 @@ class AdminController {
                 error_log("Unauthorized  access attempt by user ID: $userId");
                 return Response::error('Insufficient privileges', Response::HTTP_FORBIDDEN)->send();
             }
-
              // First authenticate the user
              $authResult = $this->authService->authenticate($credentials);
              if (!$authResult) {
@@ -519,4 +571,221 @@ class AdminController {
             )->send();
         }
     }
+
+    /**
+     * Get all configurations
+     */
+    public function getAllConfigs(): mixed
+    {
+        try {
+            $configs = $this->configController->getConfigs();
+            return Response::ok($configs, 'Configurations retrieved successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Get configs error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get configurations: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Get configuration by filename
+     */
+    public function getConfig($filename): mixed
+    {
+        try {
+            if (!isset($filename)) {
+                return Response::error('Filename is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $config = $this->configController->getConfigByFile($filename);
+            
+            if ($config === null) {
+                return Response::error('Configuration file not found', Response::HTTP_NOT_FOUND)->send();
+            }
+
+            return Response::ok(['config' => $config], 'Configuration retrieved successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Get config error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get configuration: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Update configuration
+     */
+    public function updateConfig(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['filename']) || !isset($data['config'])) {
+                return Response::error('Filename and configuration data are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $success = $this->configController->updateConfig($data['filename'], $data['config']);
+            
+            if (!$success) {
+                return Response::error('Failed to update configuration', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            return Response::ok(null, 'Configuration updated successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Update config error: " . $e->getMessage());
+            return Response::error(
+                'Failed to update configuration: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Create new configuration
+     */
+    public function createConfig(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['filename']) || !isset($data['config'])) {
+                return Response::error('Filename and configuration data are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $success = $this->configController->createConfig($data['filename'], $data['config']);
+            
+            if (!$success) {
+                return Response::error('Failed to create configuration', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            return Response::ok(null, 'Configuration created successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Create config error: " . $e->getMessage());
+            return Response::error(
+                'Failed to create configuration: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Get all jobs with pagination and filtering
+     * 
+     * @return mixed HTTP response
+     */
+    public function getScheduledJobs(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            // Set default values for pagination and filtering
+            $page = (int)($data['page'] ?? 1);
+            $perPage = (int)($data['per_page'] ?? 25);
+            $status = $data['status'] ?? null;
+            
+            // Build base query
+            $jobs = $this->scheduler->getJobs();
+
+            if (empty($jobs)) {
+                return Response::ok([], 'No jobs found')->send();
+            }
+           
+
+            return Response::ok($jobs, 'Jobs retrieved successfully')->send();
+
+        } catch (\Exception $e) {
+            error_log("Get jobs error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get jobs: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Run all due jobs
+     * 
+     * @return mixed HTTP response
+     */
+    public function runDueJobs(): mixed
+    {
+        try {
+            $this->scheduler->runDueJobs();
+            return Response::ok(null, 'Scheduled tasks completed')->send();
+        } catch (\Exception $e) {
+            error_log("Run due jobs error: " . $e->getMessage());
+            return Response::error(
+                'Failed to run due jobs: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+
+    public function runAllJobs(): mixed
+    {
+        try {
+            $this->scheduler->runAllJobs();
+            return Response::ok(null, 'All scheduled tasks completed')->send();
+        } catch (\Exception $e) {
+            error_log("Run all jobs error: " . $e->getMessage());
+            return Response::error(
+                'Failed to run all jobs: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+
+    public function runJob($jobName): mixed
+    {
+        try {
+            $this->scheduler->runJob($jobName);
+            return Response::ok(null, 'Scheduled task completed')->send();
+        } catch (\Exception $e) {
+            error_log("Run job error: " . $e->getMessage());
+            return Response::error(
+                'Failed to run job: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    public function createJob(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['job_name']) || !isset($data['job_data'])) {
+                return Response::error('Job name and data are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $this->scheduler->register($data['job_name'], $data['job_data']);
+            return Response::ok(null, 'Scheduled task created')->send();
+        } catch (\Exception $e) {
+            error_log("Create job error: " . $e->getMessage());
+            return Response::error(
+                'Failed to create job: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    public function getRoles (): mixed
+    {
+        try {
+            $roles = $this->roleRepo->getRoles();
+            return Response::ok($roles, 'Roles retrieved successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Get roles error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get roles: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
 }

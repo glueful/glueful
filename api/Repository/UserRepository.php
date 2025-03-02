@@ -70,7 +70,7 @@ class UserRepository {
             ->get();
 
         if ($query) {
-            return $query;
+            return $query[0];
         }
 
         return null;
@@ -100,7 +100,7 @@ class UserRepository {
             ->get();
 
         if ($query) {
-            return $query;
+            return $query[0];
         }
 
         return null;
@@ -122,7 +122,7 @@ class UserRepository {
             ->get();
 
         if ($query) {
-            return $query;
+            return $query[0];
         }
 
         return null;
@@ -144,7 +144,7 @@ class UserRepository {
             ->get();
 
         if ($query) {
-            return $query;
+            return $query[0];
         }
 
         return null;
@@ -160,10 +160,16 @@ class UserRepository {
      * @return array|null Role data or null if none found
      */
     public function getRoles(string $uuid): ?array {
-        $query = $this->queryBuilder->select('user_roles_lookup', ['roles.name'])
-            ->where(['user_uuid' => $uuid])
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
-            ->get();
+        $query = $this->queryBuilder
+        ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN first
+        ->select('user_roles_lookup', [
+            'user_roles_lookup.user_uuid',
+            'user_roles_lookup.role_uuid',
+            'roles.uuid AS role_id',
+            'roles.name AS role_name'
+        ])
+        ->where(['user_uuid' => $uuid]) // Ensure column exists
+        ->get();
 
         if ($query) {
             return $query;
@@ -335,7 +341,7 @@ class UserRepository {
         } else {
             // Create new profile
             $profileData['created_at'] = date('Y-m-d H:i:s');
-            return $this->queryBuilder->insert('profiles', $profileData);
+            return $this->queryBuilder->insert('profiles', $profileData) > 0;
         }
     }
 }

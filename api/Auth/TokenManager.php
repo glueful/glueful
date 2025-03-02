@@ -60,8 +60,8 @@ class TokenManager
  */
 public static function generateTokenPair(
     array $userData, 
-    int $accessTokenLifetime = null,
-    int $refreshTokenLifetime = null
+    ?int $accessTokenLifetime = null,
+    ?int $refreshTokenLifetime = null
 ): array
 {
     self::initialize();
@@ -206,6 +206,8 @@ public static function generateTokenPair(
             if (empty($user) || !isset($user['uuid'])) {
                 return [];  // Return empty array that will be caught as failure
             }
+
+            $user['remember_me'] = $user['remember_me'] ?? false;
             // Adjust token lifetime based on remember-me preference
             $accessTokenLifetime = $user['remember_me'] 
                 ? config('session.remember_expiration', 30 * 24 * 3600) // 30 days

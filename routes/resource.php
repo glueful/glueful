@@ -8,6 +8,7 @@ $resourceController = new ResourceController();
 $request = new Request();
 
 // Resource routes
+// TODO: Add middleware to check if user is authenticated (requiresAuth in Router)
 Router::get('/{resource}', function(array $params) use ($resourceController, $request) {
     $queryParams = $request->getQueryParams();
     return $resourceController->get($params, $queryParams);

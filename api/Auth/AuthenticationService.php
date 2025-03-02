@@ -46,7 +46,7 @@ class AuthenticationService
      * @return array|null Authentication result or null if failed
      */
     public function authenticate(array $credentials): ?array
-    {
+    {   
         // Validate required fields
         if (!$this->validateCredentials($credentials)) {
             return null;
@@ -64,30 +64,36 @@ class AuthenticationService
         }
         
         // If user not found or is an array of error messages
-        if (!$user || (is_array($user) && isset($user['username']))) {
+        if (!$user) {
             return null;
         }
 
         // Validate password
         $passwordDTO = new PasswordDTO();
         $passwordDTO->password = $credentials['password'];
+
         
         if (!$this->validator->validate($passwordDTO)) {
             return null;
         }
-        
         // Verify password against hash
-        if (!isset($user[0]['password']) || !$this->passwordHasher->verify($credentials['password'], $user[0]['password'])) {
+        if (!isset($user['password']) || !$this->passwordHasher->verify($credentials['password'], $user['password'])) {
             return null;
         }
         
         // Format user data
-        $userData = $this->formatUserData($user[0]);
+        $userData = $this->formatUserData($user);
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
-        $userRole = $this->userRepository->getRoles($userData['uuid']);
+        $userRoles = $this->userRepository->getRoles($userData['uuid']);
+
+        // return $userRole;
  
-        $userData['roles'] = $userRole;
-        $userData['profile'][] = $userProfile;
+        // $userData['roles'] = $userRole;
+        foreach ($userRoles as $userRole) {
+            $userData['roles'] = [$userRole['role_name']];
+        }
+        
+        $userData['profile'] = $userProfile;
         $userData['last_login'] = date('Y-m-d H:i:s');
         $userSession = TokenManager::createUserSession($userData);
        

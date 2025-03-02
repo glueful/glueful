@@ -99,7 +99,7 @@ class API
         } catch (Throwable $e) {
             header('Content-Type: application/json');
             http_response_code(500);
-            echo json_encode(['error' => 'server_error', 'message' => 'An internal server error occurred']);
+            echo json_encode(['error' => 'server_error', 'message' => $e->getMessage()]);
             // Log the actual error details
         }
     }
