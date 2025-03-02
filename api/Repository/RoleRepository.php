@@ -281,15 +281,15 @@ class RoleRepository
      */
     public function userHasRole(string $userId, string $roleName): bool
     {
-        $result = $this->db->select('user_roles_lookup', ['COUNT(*) AS has_role'])
+        $result = $this->db->select('user_roles_lookup', [''])
             ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
             ->where([
                 'user_roles_lookup.user_uuid' => $userId,
                 'roles.name' => $roleName
             ])
-            ->limit(1)
-            ->get();
-        
-       return (bool)($result[0]['has_role'] ?? 0);
+            ->count('user_roles_lookup');
+
+        return $result > 0;
+    //    return (bool)($result[0]['has_role'] ?? 0);
     }
 }

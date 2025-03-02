@@ -15,36 +15,106 @@
  * and require superuser permissions.
  */
 
-// use Glueful\Http\Router;
-// use Glueful\Controllers\AdminController;
+use Glueful\Http\Router;
+use Glueful\Controllers\AdminController;
+use Symfony\Component\HttpFoundation\Request;
 
-// $controller = new AdminController();
+$controller = new AdminController();
+//TODO: Add middleware to check if user is authenticated (requiresAuth in Router)
+Router::group('/admin',function() use ($controller) {
+    Router::post('/login', function (Request $request) use ($controller){
+        return $controller->login($request);
+    });
 
-// // Admin Authentication
-// Router::post('/api/admin/login', [AdminController::class, 'login']);
+    Router::group('/db', function() use ($controller) {
+        Router::get('/tables', function (Request $request) use ($controller){
+            return $controller->getTables($request);
+        });
 
-// // Database Management
-// Router::post('/api/admin/db/tables', [AdminController::class, 'getTables']);
-// Router::post('/api/admin/db/table/create', [AdminController::class, 'createTable']);
-// Router::post('/api/admin/db/table/drop', [AdminController::class, 'dropTable']);
-// Router::post('/api/admin/db/table/size', [AdminController::class, 'getTableSize']);
-// Router::post('/api/admin/db/table/data', [AdminController::class, 'getTableData']);
-// Router::post('/api/admin/db/table/column/add', [AdminController::class, 'addColumn']);
-// Router::post('/api/admin/db/table/column/drop', [AdminController::class, 'dropColumn']);
+        Router::post('/table/create', function (Request $request) use ($controller){
+            return $controller->createTable($request);
+        });
 
-// // Permissions Management
-// Router::post('/api/admin/permissions', [AdminController::class, 'getPermissions']);
+        Router::post('/table/drop', function (Request $request) use ($controller){
+            return $controller->dropTable($request);
+        });
 
-// // Extension Management
-// Router::post('/api/admin/extensions', [AdminController::class, 'getExtensions']);
-// Router::post('/api/admin/extension/enable', [AdminController::class, 'enableExtension']);
-// Router::post('/api/admin/extension/disable', [AdminController::class, 'disableExtension']);
+        Router::get('/table/size', function (Request $request) use ($controller){
+            return $controller->getTableSize($request);
+        });
 
-// // Migration Management
-// Router::post('/api/admin/migrations', [AdminController::class, 'getMigrations']);
-// Router::post('/api/admin/migrations/pending', [AdminController::class, 'getPendingMigrations']);
+        Router::get('/table/data', function (Request $request) use ($controller){
+            return $controller->getTableData($request);
+        });
 
-// // Scheduled Jobs Management
-// Router::post('/api/admin/jobs', [AdminController::class, 'getScheduledJobs']);
-// Router::post('/api/admin/jobs/run-due', [AdminController::class, 'runDueJobs']);
-// Router::post('/api/admin/jobs/run', [AdminController::class, 'runJob']);
+        Router::post('/table/column/add', function (Request $request) use ($controller){
+            return $controller->addColumn($request);
+        });
+
+        Router::post('/table/column/drop', function (Request $request) use ($controller){
+            return $controller->dropColumn($request);
+        });
+    });
+
+    Router::get('/permissions', function (Request $request) use ($controller){
+        return $controller->getPermissions($request);
+    });
+
+    Router::get('/extensions', function (Request $request) use ($controller){
+        return $controller->getExtensions($request);
+    });
+
+    Router::post('/extension/enable', function (Request $request) use ($controller){
+        return $controller->enableExtension($request);
+    });
+
+    Router::post('/extension/disable', function (Request $request) use ($controller){
+        return $controller->disableExtension($request);
+    });
+
+    Router::get('/migrations', function (Request $request) use ($controller){
+        return $controller->getMigrations($request);
+    });
+
+    Router::get('/migrations/pending', function (Request $request) use ($controller){
+        return $controller->getPendingMigrations($request);
+    });
+
+    Router::get('/jobs', function (Request $request) use ($controller){
+        return $controller->getScheduledJobs($request);
+    });
+
+    Router::post('/jobs/run-due', function (Request $request) use ($controller){
+        return $controller->runDueJobs($request);
+    });
+
+    Router::post('/jobs/run-all', function (Request $request) use ($controller){
+        return $controller->runAllJobs($request);
+    });
+    
+    Router::post('/job/run', function (Request $request) use ($controller){
+        return $controller->runJob($request);
+    });
+
+    Router::post('/job/create-job', function (Request $request) use ($controller){
+        return $controller->createJob($request);
+    });
+
+    Router::get('/configs', function (Request $request) use ($controller){
+        return $controller->getAllConfigs($request);
+    });
+
+    Router::get('/configs/{filename}', function (Request $request) use ($controller){
+        return $controller->getConfig($request);
+    });
+
+    Router::put('/configs/{filename}', function (Request $request) use ($controller){
+        return $controller->updateConfig($request);
+    });
+
+    Router::post('/configs/create', function (Request $request) use ($controller){
+        return $controller->createConfig($request);
+    });
+
+});
+

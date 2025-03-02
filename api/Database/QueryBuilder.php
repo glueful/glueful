@@ -250,49 +250,75 @@ class QueryBuilder
         bool $applySoftDeletes = false
     ): self {
         $this->bindings = []; // Reset bindings
+    
         $columnList = implode(", ", array_map(function ($column) {
             if ($column instanceof RawExpression) {
                 return (string) $column; // Keep raw SQL expressions as-is
             }
+            if (strpos($column, ' AS ') !== false) {
+                // Handle aliasing (e.g., roles.uuid AS role_id)
+                [$columnName, $alias] = explode(' AS ', $column, 2);
+                if (strpos($columnName, '.') !== false) {
+                    [$table, $col] = explode('.', $columnName, 2);
+                    return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col) . " AS " . $this->driver->wrapIdentifier($alias);
+                }
+                return $this->driver->wrapIdentifier($columnName) . " AS " . $this->driver->wrapIdentifier($alias);
+            }
+            if (strpos($column, '.') !== false) {
+                [$table, $col] = explode('.', $column, 2);
+                return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+            }
             return $column === '*' ? '*' : $this->driver->wrapIdentifier($column);
         }, $columns));
+    
         $sql = "SELECT $columnList FROM " . $this->driver->wrapIdentifier($table);
-
+    
         // Add JOIN clauses if any
         if (!empty($this->joins)) {
             $sql .= " " . implode(" ", $this->joins);
         }
-
+    
         $whereClauses = [];
         foreach ($conditions as $col => $value) {
-            $whereClauses[] = "{$this->driver->wrapIdentifier($col)} = ?";
+            if (strpos($col, '.') !== false) {
+                [$table, $column] = explode('.', $col, 2);
+                $wrappedCol = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($column);
+            } else {
+                $wrappedCol = $this->driver->wrapIdentifier($col);
+            }
+            $whereClauses[] = "$wrappedCol = ?";
             $this->bindings[] = $value;
         }
-
+    
         if ($this->softDeletes && !$withTrashed && $applySoftDeletes) {
             $whereClauses[] = "deleted_at IS NULL";
         }
-
+    
         if (!empty($whereClauses)) {
             $sql .= " WHERE " . implode(" AND ", $whereClauses);
         }
-
+    
         if (!empty($orderBy)) {
             $orderByClauses = [];
             foreach ($orderBy as $key => $value) {
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
-                $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+                if (strpos($key, '.') !== false) {
+                    [$table, $column] = explode('.', $key, 2);
+                    $orderByClauses[] = "{$this->driver->wrapIdentifier($table)}.{$this->driver->wrapIdentifier($column)} $direction";
+                } else {
+                    $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
+                }
             }
             $sql .= " ORDER BY " . implode(", ", $orderByClauses);
         }
-
+    
         $this->query = $sql;
-
+    
         if ($limit !== null) {
             $this->query .= " LIMIT ?";
             $this->bindings[] = $limit;
         }
-
+    
         return $this;
     }
 

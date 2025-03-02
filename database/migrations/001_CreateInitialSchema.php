@@ -175,9 +175,9 @@ class CreateInitialSchema implements MigrationInterface
             'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
             'user_uuid' => 'CHAR(12) NOT NULL',
-            'access_token' => 'VARCHAR(255) NOT NULL',
-            'refresh_token' => 'VARCHAR(255) NULL',
-            'token_fingerprint' => 'BINARY(32) NOT NULL',
+            'access_token' => 'TEXT NOT NULL',
+            'refresh_token' => 'TEXT NULL',
+            'token_fingerprint' => 'TEXT NOT NULL',
             'ip_address' => 'VARCHAR(45) NULL',
             'user_agent' => 'TEXT NULL',
             'last_token_refresh' => 'TIMESTAMP NULL',
@@ -190,9 +190,6 @@ class CreateInitialSchema implements MigrationInterface
             ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'auth_sessions'],
             ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'auth_sessions'],
             ['type' => 'INDEX', 'column' => 'status', 'table' => 'auth_sessions'],
-            ['type' => 'INDEX', 'column' => 'access_token', 'table' => 'auth_sessions'],
-            ['type' => 'INDEX', 'column' => 'refresh_token', 'table' => 'auth_sessions'],
-            ['type' => 'INDEX', 'column' => 'token_fingerprint', 'table' => 'auth_sessions'],
             ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'auth_sessions', 'references' => 'uuid', 'on' => 'users']
         ]);
 
