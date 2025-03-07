@@ -114,7 +114,7 @@ class AdminController {
             // Check if user has superuser role
             if (!$this->roleRepo->userHasRole($userId, 'superuser')) {
                 // Log unauthorized admin access attempt
-                error_log("Unauthorized  access attempt by user ID: $userId");
+                error_log("Unauthorized access attempt by user ID: $userId");
                 return Response::error('Insufficient privileges', Response::HTTP_FORBIDDEN)->send();
             }
              // First authenticate the user
@@ -130,6 +130,37 @@ class AdminController {
             error_log("Login error: " . $e->getMessage());
             return Response::error(
                 'Login failed: ' . ($e->getMessage()),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+     /**
+     * User logout
+     * 
+     * Terminates user session and invalidates tokens.
+     * 
+     * @return mixed HTTP response
+     */
+    public function logout()
+    {
+        try {
+            $token = $this->authService->extractTokenFromRequest();
+            
+            if (!$token) {
+                return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $success = $this->authService->terminateSession($token);
+            
+            if ($success) {
+                return Response::ok(null, 'Logged out successfully')->send();
+            }
+            
+            return Response::error('Logout failed', Response::HTTP_BAD_REQUEST)->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'Logout failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
@@ -366,14 +397,14 @@ class AdminController {
             $perPage = (int)($data['per_page'] ?? 25);
             
             // Build query for permissions
-            $results =$this->queryBuilder->select('role_permissions', [
+            $results = $this->queryBuilder
+            ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'INNER') // Ensure the JOIN is applied
+            ->select('role_permissions', [
                 'role_permissions.model',
                 'role_permissions.permissions',
+                'roles.name'
             ])
-            ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'LEFT')
-            ->where(['roles.name' => 'superuser'])
             ->paginate($page, $perPage);
-
 
             return Response::ok($results, 'Permissions retrieved successfully')->send();
 
@@ -520,11 +551,11 @@ class AdminController {
                 'migrations.id',
                 'migrations.migration',
                 'migrations.batch',
-                'migrations.executed_at',
-                'migrations.status',
+                'migrations.applied_at',
+                'migrations.checksum',
                 'migrations.description'
             ])
-            ->orderBy(['executed_at' => 'DESC'])
+            ->orderBy(['applied_at' => 'DESC'])
             ->paginate($page, $perPage);
 
             return Response::ok($results, 'Migrations retrieved successfully')->send();
@@ -579,7 +610,7 @@ class AdminController {
     {
         try {
             $configs = $this->configController->getConfigs();
-            return Response::ok($configs, 'Configurations retrieved successfully')->send();
+            return Response::ok($configs,'Configurations retrieved successfully')->send();
         } catch (\Exception $e) {
             error_log("Get configs error: " . $e->getMessage());
             return Response::error(
@@ -680,11 +711,6 @@ class AdminController {
     {
         try {
             $data = Request::getPostData();
-            
-            // Set default values for pagination and filtering
-            $page = (int)($data['page'] ?? 1);
-            $perPage = (int)($data['per_page'] ?? 25);
-            $status = $data['status'] ?? null;
             
             // Build base query
             $jobs = $this->scheduler->getJobs();
@@ -788,4 +814,173 @@ class AdminController {
         }
     }
 
+    public function getBaseUrl(): mixed
+    {
+        try {
+            $baseUrl = config('paths.api_base_url');
+            $cdn = config('paths.cdn');
+
+            $result = [
+                'base_url' => $baseUrl,
+                'cdn' => $cdn
+            ];
+
+            return Response::ok($result, 'Base URL retrieved successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Get base URL error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get base URL: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Create a new permission
+     */
+    public function createPermission(): mixed 
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['model']) || !isset($data['permissions']) || !is_array($data['permissions'])) {
+                return Response::error('Model name and permissions array are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $result = $this->permissionRepo->createPermission(
+                $data['model'],
+                $data['permissions'],
+                $data['description'] ?? null
+            );
+
+            return Response::ok($result, 'Permission created successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Create permission error: " . $e->getMessage());
+            return Response::error(
+                'Failed to create permission: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Update an existing permission
+     */
+    public function updatePermission():mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['model']) || !isset($data['permissions']) ) {
+                return Response::error('Model name and permissions are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $result = $this->permissionRepo->updatePermission(
+                $data['uuid'],
+                $data
+            );
+
+            return Response::ok($result, 'Permission updated successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Update permission error: " . $e->getMessage());
+            return Response::error(
+                'Failed to update permission: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Assign permissions to a role
+     */
+    public function assignPermissionsToRole(): mixed
+    {
+      try {
+        $data = Request::getPostData();
+        $result = $this->permissionRepo->assignRolePermission($data['role_uuid'],$data['model'], $data['permissions']);
+        return Response::ok($result, 'Permissions assigned to role successfully')->send();
+      } catch (\Exception $e) {
+        error_log("Assing permissions to role error: " . $e->getMessage());
+        return Response::error(
+            'Assing permissions to role error: ' . $e->getMessage(),
+            Response::HTTP_INTERNAL_SERVER_ERROR
+        )->send();
+      }
+    }
+
+    public function updateRolePermission(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            $result = $this->permissionRepo->updateRolePermission($data['role_uuid'], $data['model'], $data['permissions'],);
+            return Response::ok($result, 'Role permissions updated successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Update role permissions error: " . $e->getMessage());
+            return Response::error(
+                'Update role permissions error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    public function removeRolePermission(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            $roleUuid = $data['role_uuid'];
+            $model = $data['model'];
+            $result = $this->permissionRepo->removeRolePermission($roleUuid, $model);
+            return Response::ok($result, 'Role permissions removed successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Remove role permissions error: " . $e->getMessage());
+            return Response::error(
+                'Remove role permissions error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Assign roles to a user
+     */
+    public function assignRolesToUser():mixed
+    {
+        try {
+            $data = Request::getPostData();
+            $result = $this->roleRepo->assignRole($data['user_uuid'], $data['role_uuid']);
+            return Response::ok($result, 'Role assigned to user successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Assign roles to user error: " . $e->getMessage());
+            return Response::error(
+                'Assign roles to user error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Update user's roles
+     */
+    public function removeUserRole():mixed
+    {
+        try {
+            $data = Request::getPostData();
+            $result = $this->roleRepo->unassignRole($data['user_uuid'], $data['role_uuid']);
+            return Response::ok($result, 'Role removed from user successfully')->send();
+        } catch (\Exception $e) {
+            error_log("Remove user role error: " . $e->getMessage());
+            return Response::error(
+                'Remove user role error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Update role's permissions
+     */
+    public function updateRolePermissions():mixed
+    {
+        return[];
+    }
 }

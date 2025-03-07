@@ -16,12 +16,9 @@ return [
             'name' => 'backup',
             'parameters' => [],
             'enabled' => env('DB_BACKUP_ENABLED', false), // Enable auto-backups
-            'handler_class' =>'', 
+            'handler_class' =>'Glueful\\Cron\\SessionCleaner', 
             'schedule' => '0 0 * * *',                    // Backup schedule (cron)
-            'path' => dirname(__DIR__) . '/storage/backups', // Backup storage path
-            'compress' => true,                           // Compress backups
-            'retention_days' => 7,  
-            'description' => '',                          // Backup retention period
+            'description' => 'Database backup',                          // Backup retention period
             'persistence' => false,                   // Backup retention period
         ],
     ]

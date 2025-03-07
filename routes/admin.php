@@ -20,10 +20,19 @@ use Glueful\Controllers\AdminController;
 use Symfony\Component\HttpFoundation\Request;
 
 $controller = new AdminController();
-//TODO: Add middleware to check if user is authenticated (requiresAuth in Router)
-Router::group('/admin',function() use ($controller) {
+
+Router::group('/admin', function() use ($controller) {
+    // Public routes - outside of any middleware
     Router::post('/login', function (Request $request) use ($controller){
         return $controller->login($request);
+    });
+
+    Router::get('/', function (Request $request) use ($controller){
+        return $controller->getBaseUrl($request);
+    });
+
+    Router::post('/logout', function (Request $request) use ($controller){
+        return $controller->logout($request);
     });
 
     Router::group('/db', function() use ($controller) {
@@ -54,67 +63,104 @@ Router::group('/admin',function() use ($controller) {
         Router::post('/table/column/drop', function (Request $request) use ($controller){
             return $controller->dropColumn($request);
         });
-    });
+    }, requiresAdminAuth: true);
 
-    Router::get('/permissions', function (Request $request) use ($controller){
-        return $controller->getPermissions($request);
-    });
-
-    Router::get('/extensions', function (Request $request) use ($controller){
-        return $controller->getExtensions($request);
-    });
-
-    Router::post('/extension/enable', function (Request $request) use ($controller){
-        return $controller->enableExtension($request);
-    });
-
-    Router::post('/extension/disable', function (Request $request) use ($controller){
-        return $controller->disableExtension($request);
-    });
-
-    Router::get('/migrations', function (Request $request) use ($controller){
-        return $controller->getMigrations($request);
-    });
-
-    Router::get('/migrations/pending', function (Request $request) use ($controller){
-        return $controller->getPendingMigrations($request);
-    });
-
-    Router::get('/jobs', function (Request $request) use ($controller){
-        return $controller->getScheduledJobs($request);
-    });
-
-    Router::post('/jobs/run-due', function (Request $request) use ($controller){
-        return $controller->runDueJobs($request);
-    });
-
-    Router::post('/jobs/run-all', function (Request $request) use ($controller){
-        return $controller->runAllJobs($request);
-    });
     
-    Router::post('/job/run', function (Request $request) use ($controller){
-        return $controller->runJob($request);
-    });
+    Router::group('/extensions', function() use ($controller) {
+        Router::get('/', function (Request $request) use ($controller){
+            return $controller->getExtensions($request);
+        });
 
-    Router::post('/job/create-job', function (Request $request) use ($controller){
-        return $controller->createJob($request);
-    });
+        Router::post('/enable', function (Request $request) use ($controller){
+            return $controller->enableExtension($request);
+        });
 
-    Router::get('/configs', function (Request $request) use ($controller){
-        return $controller->getAllConfigs($request);
-    });
+        Router::post('/disable', function (Request $request) use ($controller){
+            return $controller->disableExtension($request);
+        });
+    }, requiresAdminAuth: true);
 
-    Router::get('/configs/{filename}', function (Request $request) use ($controller){
-        return $controller->getConfig($request);
-    });
+    Router::group('/migrations', function() use ($controller) {
+        Router::get('/', function (Request $request) use ($controller){
+            return $controller->getMigrations($request);
+        });
 
-    Router::put('/configs/{filename}', function (Request $request) use ($controller){
-        return $controller->updateConfig($request);
-    });
+        Router::get('/pending', function (Request $request) use ($controller){
+            return $controller->getPendingMigrations($request);
+        });
+    }, requiresAdminAuth: true);
 
-    Router::post('/configs/create', function (Request $request) use ($controller){
-        return $controller->createConfig($request);
-    });
+    Router::group('/jobs', function() use ($controller) {
+        Router::get('/', function (Request $request) use ($controller){
+            return $controller->getScheduledJobs($request);
+        });
 
+        Router::post('/run-due', function (Request $request) use ($controller){
+            return $controller->runDueJobs($request);
+        });
+
+        Router::post('/run-all', function (Request $request) use ($controller){
+            return $controller->runAllJobs($request);
+        });
+
+        Router::post('/run', function (Request $request) use ($controller){
+            return $controller->runJob($request);
+        });
+
+        Router::post('/create-job', function (Request $request) use ($controller){
+            return $controller->createJob($request);
+        });
+    }, requiresAdminAuth: true);
+
+    Router::group('/configs', function() use ($controller) {
+        Router::get('/', function (Request $request) use ($controller){
+            return $controller->getAllConfigs($request);
+        });
+
+        Router::get('/{filename}', function (Request $request) use ($controller){
+            return $controller->getConfig($request);
+        });
+
+        Router::put('/{filename}', function (Request $request) use ($controller){
+            return $controller->updateConfig($request);
+        });
+
+        Router::post('/create', function (Request $request) use ($controller){
+            return $controller->createConfig($request);
+        });
+    }, requiresAdminAuth: true);
+
+    Router::group('/permissions', function() use ($controller) {
+        Router::get('/', function (Request $request) use ($controller){
+            return $controller->getPermissions($request);
+        });
+
+        Router::post('/create', function (Request $request) use ($controller) {
+            return $controller->createPermission($request);
+        });
+        
+        Router::put('/update', function (Request $request) use ($controller) {
+            return $controller->updatePermission($request);
+        });
+        
+        Router::post('/assign-to-role', function (Request $request) use ($controller) {
+            return $controller->assignPermissionsToRole($request);
+        });
+        
+        Router::put('/update-role-permissions', function (Request $request) use ($controller) {
+            return $controller->updateRolePermissions($request);
+        });
+    }, requiresAdminAuth: true);
+
+    Router::group('/roles', function() use ($controller) {
+        Router::post('/assign-to-user', function (Request $request) use ($controller) {
+            return $controller->assignRolesToUser($request);
+        });
+        
+        Router::put('/remove-user-roles', function (Request $request) use ($controller) {
+            return $controller->removeUserRole($request);
+        });
+    }, requiresAdminAuth: true);
+    
 });
 

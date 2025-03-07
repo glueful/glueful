@@ -6,6 +6,8 @@ namespace Glueful\Auth;
 use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
+use Glueful\Helpers\Utils;
+use ParagonIE\Sodium\Core\Util;
 
 /**
  * Authentication Service
@@ -366,5 +368,50 @@ class AuthenticationService
         $userData['profile'][] = $userProfile;
         
         return $userData;
+    }
+
+    public static function checkAuth($request): bool
+    {
+    
+        $token = self::extractTokenFromRequest($request);
+        if (!$token) {
+            return false;
+        }
+        return self::validateToken($token);
+    }
+
+    public static function checkAdminAuth($request): bool
+    {
+        $token = self::extractTokenFromRequest($request);
+        if (!$token) {
+            return false;
+        }
+
+        $session = self::validateAccessToken($token);
+        if (!$session) {
+            return false;
+        }
+        
+        $user = Utils::getUser($token);
+        if (!$user) {
+            return false;
+        }
+
+        if (!in_array('superuser', $user['roles'])) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static function validateToken(string $token): bool
+    {   
+        $result = self::validateAccessToken($token);
+
+        if (!$result) {
+            return false;
+        }
+        
+        return true;
     }
 }

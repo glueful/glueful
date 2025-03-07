@@ -80,13 +80,14 @@ class RoleRepository
      */
     public function getUserRoles(string $uuid): array
     {
-        return $this->db->select('user_roles_lookup', [
+        return $this->db
+        ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+        ->select('user_roles_lookup', [
             'user_roles_lookup.role_uuid',
             'user_roles_lookup.user_uuid',
             'roles.name AS role_name',
             'roles.description'
         ])
-        ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
         ->where(['user_roles_lookup.user_uuid' => $uuid])
         ->get(); 
     }
@@ -210,13 +211,14 @@ class RoleRepository
      */
     public function getUsersWithRole(string $roleUuid): array
     {
-        return $this->db->select('user_roles_lookup', [
+        return $this->db
+            ->join('users', 'user_roles_lookup.user_uuid = users.uuid', 'LEFT')
+            ->select('user_roles_lookup', [
                 'user_roles_lookup.user_uuid',
                 'users.username',
                 'users.email',
                 'users.status'
             ])
-            ->join('users', 'user_roles_lookup.user_uuid = users.uuid', 'LEFT')
             ->where(['user_roles_lookup.role_uuid' => $roleUuid])
             ->get();
     }
@@ -232,8 +234,9 @@ class RoleRepository
      */
     public function hasRole(string $userUuid, string $roleName): bool
     {
-        $result = $this->db->select('user_roles_lookup', ['user_roles_lookup.role_uuid'])
+        $result = $this->db
             ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+            ->select('user_roles_lookup', ['user_roles_lookup.role_uuid'])
             ->where([
                 'user_roles_lookup.user_uuid' => $userUuid,
                 'roles.name' => $roleName

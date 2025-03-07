@@ -78,20 +78,18 @@ class ExtensionsManager {
             return;
         }
 
-        // error_log("Scanning directory: $dir");
-    
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
+
         foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php'){
+            if ($file->isFile() && $file->getExtension() === 'php') {
                 $relativePath = substr($file->getPathname(), strlen($dir));
                 $filename = basename($relativePath);
                 $className = str_replace('.php', '', $filename);
                 $fullClassName = $namespace . $className;
 
                 if (!class_exists($fullClassName, false)) {
-                    // error_log("Class not autoloaded, trying to include file directly");
                     try {
                         include_once $file->getPathname();
                     } catch (\Throwable $e) {
@@ -99,40 +97,47 @@ class ExtensionsManager {
                     }
                 }
 
-                // Check if class exists now
-            if (class_exists($fullClassName, false)) {
+                // Check if class exists and is not already loaded
+                if (class_exists($fullClassName, false)) {
                     $reflection = new \ReflectionClass($fullClassName);
-                    // Check if this is an extension class
+                    
                     if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-
-                        try {
-                            // Store the extension class name for later initialization
-                            self::$loadedExtensions[] = $fullClassName;
-                        } catch (\Exception $e) {
-                            // Log error but continue loading other extensions
-                            error_log("Failed to load extension {$fullClassName}: " . $e->getMessage());
+                        if (!in_array($fullClassName, self::$loadedExtensions, true)) {
+                            try {
+                                self::$loadedExtensions[] = $fullClassName;
+                            } catch (\Exception $e) {
+                                error_log("Failed to load extension {$fullClassName}: " . $e->getMessage());
+                            }
+                        } else {
+                            error_log("Skipping duplicate extension: {$fullClassName}");
                         }
                     } else {
-                        error_log("Class does not extend Extensions");
+                        error_log("Class does not extend Extensions: {$fullClassName}");
                     }
-            } else {
-                error_log("Class still doesn't exist: $fullClassName");
-                
-                // Debug namespace in file
-                $content = file_get_contents($file->getPathname());
-                if (preg_match('/namespace\s+([^;]+);/i', $content, $matches)) {
-                    error_log("File declares namespace: " . $matches[1]);
                 } else {
-                    error_log("No namespace declaration found in file");
-                }
-                
-                if (preg_match('/class\s+(\w+)/i', $content, $matches)) {
-                    error_log("File declares class: " . $matches[1]);
-                } else {
-                    error_log("No class declaration found in file");
+                    error_log("Class still doesn't exist: $fullClassName");
+                    // self::debugFileNamespace($file->getPathname());
                 }
             }
-            }
+        }
+    }
+
+    /**
+     * Debug function to check namespace and class declarations in files.
+     */
+    private static function debugFileNamespace(string $filePath): void
+    {
+        $content = file_get_contents($filePath);
+        if (preg_match('/namespace\s+([^;]+);/i', $content, $matches)) {
+            error_log("File declares namespace: " . $matches[1]);
+        } else {
+            error_log("No namespace declaration found in file");
+        }
+
+        if (preg_match('/class\s+(\w+)/i', $content, $matches)) {
+            error_log("File declares class: " . $matches[1]);
+        } else {
+            error_log("No class declaration found in file");
         }
     }
     

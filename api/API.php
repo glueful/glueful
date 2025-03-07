@@ -75,12 +75,12 @@ class API
             // Set JSON response headers
             header('Content-Type: application/json');
             
-            Router::init();
+            // Get router instance
+            $router = Router::getInstance();
             // Initialize API
             self::init();
             
-            // Get router instance
-            $router = Router::getInstance();
+            
             
             // Let router handle the request
             $response = $router->handleRequest();
@@ -97,6 +97,7 @@ class API
             http_response_code(401);
             echo json_encode(['error' => 'authentication_error', 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
+            error_log($e->getMessage());
             header('Content-Type: application/json');
             http_response_code(500);
             echo json_encode(['error' => 'server_error', 'message' => $e->getMessage()]);
