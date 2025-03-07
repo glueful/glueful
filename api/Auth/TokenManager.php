@@ -332,30 +332,70 @@ public static function generateTokenPair(
     }
 
     /**
-     * Extract token from request
+     * Extract authentication token from HTTP request
      * 
-     * Gets token from various request sources.
+     * Attempts to locate and extract the bearer token from multiple possible locations
+     * in the request headers, following a fallback chain:
      * 
-     * @return string|null Authentication token or null if not found
+     * 1. Standard Authorization header
+     * 2. Apache specific REDIRECT_HTTP_AUTHORIZATION header
+     * 3. Custom Authorization header from getallheaders()
+     * 4. Apache request headers
+     * 5. Query parameter 'token' as last resort
+     * 
+     * Supported header formats:
+     * - "Authorization: Bearer <token>"
+     * - "Authorization: BEARER <token>"
+     * - "Authorization: bearer <token>"
+     * 
+     * @return string|null The extracted token or null if not found
+     * 
+     * @example
+     * ```php
+     * $token = TokenManager::extractTokenFromRequest();
+     * if ($token) {
+     *     $userData = TokenManager::validateAccessToken($token);
+     * }
+     * ```
      */
     public static function extractTokenFromRequest(): ?string
     {
-        $headers = getallheaders();
-        $token = null;
-        
-        // Check Authorization header
-        if (isset($headers['Authorization'])) {
-            $auth = $headers['Authorization'];
-            if (strpos($auth, 'Bearer ') === 0) {
-                $token = substr($auth, 7);
+        $authorization_header = null;
+    
+        // Check multiple possible locations in $_SERVER
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'Authorization'] as $key) {
+            if (isset($_SERVER[$key])) {
+                $authorization_header = $_SERVER[$key];
+                break;
             }
         }
-        
-        // Check query parameter if no header
-        if (!$token && isset($_GET['token'])) {
-            $token = $_GET['token'];
+    
+        // Fallback to getallheaders() (case-insensitive)
+        if (!$authorization_header && function_exists('getallheaders')) {
+            foreach (getallheaders() as $name => $value) {
+                if (strcasecmp($name, 'Authorization') === 0) {
+                    $authorization_header = $value;
+                    break;
+                }
+            }
         }
-
-        return $token;
+    
+        // Fallback to apache_request_headers() (case-insensitive)
+        if (!$authorization_header && function_exists('apache_request_headers')) {
+            foreach (apache_request_headers() as $name => $value) {
+                if (strcasecmp($name, 'Authorization') === 0) {
+                    $authorization_header = $value;
+                    break;
+                }
+            }
+        }
+    
+        // Extract Bearer token using preg_match (handles extra spaces)
+        if ($authorization_header && preg_match('/Bearer\s+(.+)/i', $authorization_header, $matches)) {
+            return trim($matches[1]);
+        }
+    
+        // Last fallback: Check query parameter `token`
+        return $_GET['token'] ?? null;
     }
 }

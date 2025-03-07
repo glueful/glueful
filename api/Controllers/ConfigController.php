@@ -5,22 +5,35 @@ namespace Glueful\Controllers;
 
 class ConfigController
 {
+   
+
+
     public function getConfigs(): array
     {
         $configPath = __DIR__ . '/../../config';
         $configFiles = array_diff(scandir($configPath), ['.', '..', 'schedule.php']);
-        
-        $mergedConfig = [];
+    
+        $groupedConfig = [];
+    
         foreach ($configFiles as $file) {
-            if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                $config = require $configPath . '/' . $file;
+            $filePath = $configPath . '/' . $file;
+    
+            if (pathinfo($file, PATHINFO_EXTENSION) === 'php' && file_exists($filePath)) {
+                $config = require $filePath; // Load the config file
+    
+                // Only add if it's an array
                 if (is_array($config)) {
-                    $mergedConfig = array_merge($mergedConfig, $config);
+                    $groupedConfig[] = [
+                        'name' => pathinfo($file, PATHINFO_FILENAME),
+                        'config' => $config,
+                    ];
+                } else {
+                    error_log("Skipping invalid config file: $file");
                 }
             }
         }
-        
-        return $mergedConfig;
+    
+        return $groupedConfig;
     }
 
     public function getConfigByFile(string $filename): ?array

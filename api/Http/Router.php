@@ -50,6 +50,8 @@ class Router
     private static array $middlewares = [];
     private static array $protectedRoutes = []; // Routes that require authentication
     private static array $currentGroups = [];
+    private static array $currentGroupAuth = [];
+    private static array $adminProtectedRoutes = []; // Routes that require admin authentication
 
     /**
      * Initialize the Router
@@ -62,30 +64,31 @@ class Router
      * Router::init();
      * ```
      */
-    public static function init()
+    private function __construct()
     {
         self::$routes = new RouteCollection();
         self::$context = new RequestContext();
     }
 
-    public static function get(string $path, callable $handler, bool $requiresAuth = false)
+
+    public static function get(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
     {
-        self::addRoute($path, ['GET'], $handler, $requiresAuth);
+        self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function post(string $path, callable $handler, bool $requiresAuth = false)
+    public static function post(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
     {
-        self::addRoute($path, ['POST'], $handler, $requiresAuth);
+        self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function put(string $path, callable $handler, bool $requiresAuth = false)
+    public static function put(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
     {
-        self::addRoute($path, ['PUT'], $handler, $requiresAuth);
+        self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function delete(string $path, callable $handler, bool $requiresAuth = false)
+    public static function delete(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
     {
-        self::addRoute($path, ['DELETE'], $handler, $requiresAuth);
+        self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
     /**
@@ -93,7 +96,7 @@ class Router
      * 
      * Groups related routes under a common URL prefix.
      * Routes defined within the callback will have the prefix prepended.
-     * Supports nested groups.
+     * Supports nested groups and optional authentication.
      * 
      * Example:
      * ```php
@@ -102,43 +105,56 @@ class Router
      *     
      *     Router::group('/admin', function() {
      *         Router::get('/stats', [AdminController::class, 'stats']);
-     *     });
+     *     }, requiresAuth: true, requiresAdminAuth: true);
      * });
      * ```
      * 
      * @param string $prefix URL prefix for all routes in group
      * @param callable $callback Function containing route definitions
      * @param array $middleware Optional middleware for all routes in group
+     * @param bool $requiresAuth Apply authentication to all routes in this group
+     * @param bool $requiresAdminAuth Apply admin authentication to all routes in this group
      */
-    public static function group(string $prefix, callable $callback, array $middleware = []): void
+    public static function group(string $prefix, callable $callback, array $middleware = [], bool $requiresAuth = false, bool $requiresAdminAuth = false): void
     {
         // Normalize prefix
         $prefix = '/' . trim($prefix, '/');
-        
+
+        // Store the current group's authentication requirements
+        self::$currentGroupAuth[] = ['auth' => $requiresAuth, 'admin' => $requiresAdminAuth];
+
         // Add prefix to current group stack
         self::$currentGroups[] = $prefix;
-        
+
         // Execute the group callback
         $callback();
-        
-        // Remove this group's prefix
+
+        // Remove this group's prefix and auth settings after execution
         array_pop(self::$currentGroups);
+        array_pop(self::$currentGroupAuth);
     }
 
-    /**
-     * Get current group prefix
+   /**
+     * Get current group prefix and authentication settings
      * 
-     * Combines all active group prefixes into a single path.
+     * Combines all active group prefixes into a single path and retrieves 
+     * authentication settings for the deepest active group.
      * 
-     * @return string Combined prefix from all active groups
+     * @return array Contains 'prefix' (string) and 'auth' settings (array with 'auth' and 'admin' keys)
      */
-    private static function getCurrentGroupPrefix(): string
+    private static function getCurrentGroupContext(): array
     {
-        if (empty(self::$currentGroups)) {
-            return '';
-        }
+        $prefix = empty(self::$currentGroups) ? '' : implode('', self::$currentGroups);
         
-        return implode('', self::$currentGroups);
+        // Get the latest auth settings or use default values
+        $authSettings = !empty(self::$currentGroupAuth) 
+            ? end(self::$currentGroupAuth) 
+            : ['auth' => false, 'admin' => false];
+
+        return [
+            'prefix' => $prefix,
+            'auth' => $authSettings
+        ];
     }
 
     /**
@@ -152,18 +168,28 @@ class Router
      * @param callable|array $handler Route handler (closure or [Controller::class, 'method'])
      * @param array $options Additional route options (middleware, public access, etc.)
      */
-    private static function addRoute(string $path, array $methods, callable $handler, bool $requiresAuth)
+    private static function addRoute(string $path, array $methods, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
     {
-        // Apply group prefix if any exists
-        $fullPath = self::getCurrentGroupPrefix() . '/' . trim($path, '/');
+        // Get the current group context
+        $groupContext = self::getCurrentGroupContext();
+        $fullPath = $groupContext['prefix'] . '/' . trim($path, '/');
         $fullPath = '/' . trim($fullPath, '/');
+
+        // Check if group context auth settings exist and are arrays
+        $groupAuth = is_array($groupContext['auth']) ? $groupContext['auth'] : ['auth' => false, 'admin' => false];
         
+        // Inherit authentication settings from the group if not explicitly set
+        $requiresAuth = $requiresAuth || ($groupAuth['auth'] ?? false);
+        $requiresAdminAuth = $requiresAdminAuth || ($groupAuth['admin'] ?? false);
+
         $routeName = md5($fullPath . implode('|', $methods));
         $route = new Route($fullPath, ['_controller' => $handler], [], [], '', [], $methods);
         self::$routes->add($routeName, $route);
 
-        if ($requiresAuth) {
-            self::$protectedRoutes[] = $routeName;
+        if ($requiresAdminAuth) {
+            self::$adminProtectedRoutes[] = $routeName; // Admin-only routes
+        } elseif ($requiresAuth) {
+            self::$protectedRoutes[] = $routeName; // General authentication
         }
     }
 
@@ -186,18 +212,10 @@ class Router
      */
     public static function dispatch(Request $request): array
     {
-        // exit;
-        // var_dump($request);
         self::$context->fromRequest($request);
         self::$matcher = new UrlMatcher(self::$routes, self::$context);
 
-
-        // $scriptName = dirname($request->server->get('SCRIPT_NAME')); // "/glueful/api"
         $pathInfo = $request->getPathInfo();
-        // $basePath = dirname($scriptName);
-        // $routePath = substr($pathInfo, strlen($basePath));
-        // var_dump($pathInfo);
-        // exit;
 
         try {
             $parameters = self::$matcher->match($pathInfo);
@@ -214,7 +232,18 @@ class Router
 
             // Apply authentication check if required
             if (in_array($routeName, self::$protectedRoutes)) {
-                if (!self::checkAuth($request)) {
+                if (!AuthenticationService::checkAuth($request)) {
+                    return [
+                        'success' => false,
+                        'message' => 'Unauthorized access, invalid or expired token',
+                        'code' => 401
+                    ];
+                }
+            }
+
+            // Apply authentication check if required
+            if (in_array($routeName, self::$adminProtectedRoutes)) {
+                if (!AuthenticationService::checkAdminAuth($request)) {
                     return [
                         'success' => false,
                         'message' => 'Unauthorized access, invalid or expired token',
@@ -226,17 +255,12 @@ class Router
             $reflection = new \ReflectionFunction($controller);
             $parametersInfo = $reflection->getParameters();
 
-            // var_dump($parametersInfo[0]->getType()->getName() === Request::class);
-            // exit;
-
             if ($parametersInfo[0]->getType()->getName() === Request::class) {
                 $result = call_user_func($controller, $request);
             } else {
                 $result = call_user_func($controller, $parameters);
             }
 
-
-            // $result = call_user_func($controller, $request);
             if (is_array($result)) {
                 return $result;
             }
@@ -258,29 +282,6 @@ class Router
                 'code' => 500
             ];
         }
-    }
-
-    private static function checkAuth(Request $request): bool
-    {
-        $authHeader = $request->headers->get('Authorization');
-        if (!$authHeader || !preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
-            return false;
-        }
-
-        $token = $matches[1];
-        return self::validateToken($token);
-    }
-
-    private static function validateToken(string $token): bool
-    {   
-        $authService = new AuthenticationService();
-        $result = $authService->validateAccessToken($token);
-
-        if (!$result) {
-            return false;
-        }
-        
-        return true;
     }
 
     public static function getInstance(): Router 

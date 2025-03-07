@@ -7,6 +7,7 @@ use Glueful\Controllers\FilesController;
 $filesController = new FilesController();
 
  // File routes
+ // TODO: Add middleware to check if user is authenticated (requiresAuth in Router)
 Router::get('files/{uuid}', function() use ($filesController) {
     return $filesController->getFile();
 });

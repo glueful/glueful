@@ -49,12 +49,13 @@ class PermissionRepository {
      */
     public function getPermissionsByRoleName(string $roleName = "superuser"): array
     {
-        return $this->db->select('role_permissions', [
+        return $this->db
+            ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'LEFT')
+            ->select('role_permissions', [
                 'role_permissions.model',
                 'role_permissions.permissions',
                 'roles.name AS role_name'
             ])
-            ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'LEFT')
             ->where(['roles.name' => $roleName])
             ->get();
     }
@@ -206,18 +207,18 @@ class PermissionRepository {
         $uuid = Utils::generateNanoID();
         
         // Format permissions based on input type
-        if (is_array($permissions)) {
-            $permissionsData = json_encode($permissions);
-        } else {
-            $permissionsData = json_encode(explode(',', $permissions));
-        }
+        // if (is_array($permissions)) {
+        //     $permissionsData = json_encode($permissions);
+        // } else {
+        //     $permissionsData = json_encode(explode(',', $permissions));
+        // }
         
         // Insert permission record
         $success = $this->db->insert('role_permissions', [
             'uuid' => $uuid,
             'role_uuid' => $roleUuid,
             'model' => $model,
-            'permissions' => $permissionsData,
+            'permissions' => $permissions,
         ]);
 
         return $success ? $uuid : false;
@@ -368,4 +369,40 @@ class PermissionRepository {
         
         return $effectivePerms;
     }
+
+    /**
+     * Create a new permission for a model
+     * 
+     * @param string $model The model/resource name (e.g., 'users', 'posts')
+     * @param array $permissions Array of permission actions (e.g., ['read', 'write', 'delete'])
+     * @param string|null $description Optional description of the permission set
+     * @return array The created permission record
+     * @throws \Exception If permission creation fails
+     */
+    public function createPermission(string $model, array $permissions, $roleUuid): mixed 
+    {
+        // Generate UUID for new permission record
+        $uuid = Utils::generateNanoID();
+        $success = $this->db->insert('role_permissions', [
+            'uuid' => $uuid,
+            'role_uuid' => $roleUuid,
+            'model' => $model,
+            'permissions' => $permissions,
+        ]);
+
+        return $success ? $uuid : false;
+    }
+
+    /**
+     * Update a permission record
+     * 
+     * @param string $uuid The UUID of the permission record
+     * @param array $data The updated permission data
+     * @return bool True if the permission was updated successfully
+     */
+    public function updatePermission(string $uuid, array $data): bool
+    {
+        return $this->db->upsert('role_permissions', $data, ['uuid' => $uuid]) > 0;
+    }
+
 }

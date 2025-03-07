@@ -385,7 +385,7 @@ class JobScheduler
         return null; // Job not found
     }
 
-    protected function loadCoreJobsFromConfig(): void
+    public function loadCoreJobsFromConfig(): void
     {
         $configFile = dirname(__DIR__, 2) . '/config/schedule.php';
         if (!file_exists($configFile)) {
@@ -398,12 +398,13 @@ class JobScheduler
                 $this->log('Invalid schedule configuration format', 'warning');
                 return;
             }
-
+            // error_log('Core jobs: ' . json_encode($coreJobs['jobs']));
             foreach ($coreJobs['jobs'] as $job) {
                 // Skip disabled jobs
-                if (isset($job['enabled']) && !$job['enabled']) {
-                    continue;
-                }
+
+                // if (isset($job['enabled']) && !$job['enabled']) {
+                //     continue;
+                // }
 
                 // Skip jobs with missing required fields
                 if (!isset($job['name']) || !isset($job['schedule']) || !isset($job['handler_class'])) {
@@ -423,15 +424,22 @@ class JobScheduler
                     $this->registerInDatabase($job['name'], $job['schedule'], $job['handler_class'], $job['parameters'] ?? []);
                     // $this->log("Registered persistent job: {$job['name']}", 'info');
                 } else {
+                    // $this->register($job['schedule'], function() use ($job) {
+                    //     $handler = new $job['handler_class']();
+                    //     return method_exists($handler, 'handle') ? 
+                    //         $handler->handle($job['parameters'] ?? []) : 
+                    //         false;
+                    // }, $job['name']);
                     $this->register($job['schedule'], function() use ($job) {
-                        $handler = new $job['handler_class']();
-                        return method_exists($handler, 'handle') ? 
-                            $handler->handle($job['parameters'] ?? []) : 
-                            false;
+                        return [
+                            'handler_class' => $job['handler_class'],
+                            'parameters' => $job['parameters'] ?? [],
+                        ];
                     }, $job['name']);
                     // $this->log("Registered in-memory job: {$job['name']}", 'info');
                 }
             }
+            // error_log('Core jobs loaded successfully:'.json_encode($coreJobs['jobs']));
         } catch (\Exception $e) {
             $this->log('Failed to load jobs from config: ' . $e->getMessage(), 'error');
         }

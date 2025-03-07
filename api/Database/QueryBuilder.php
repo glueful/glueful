@@ -498,7 +498,7 @@ class QueryBuilder
      * - Custom join conditions
      * - Multiple joins
      * - Aliased tables
-     * 
+     * Join must be called before select if using joins.
      * @param string $table Table to join
      * @param string $on Join condition
      * @param string $type Join type (INNER, LEFT, etc)
