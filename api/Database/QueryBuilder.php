@@ -47,7 +47,7 @@ class QueryBuilder
 
     /** @var array Group by clauses */
     protected array $groupBy = [];
-    
+        
     /** @var array Order by clauses */
     protected array $orderBy = [];
 
@@ -56,22 +56,38 @@ class QueryBuilder
 
     /** @var array Stores query parameter bindings */
     protected array $bindings = [];
+    
+    /** @var array Stores having clauses */
+    protected array $having = [];
+    
+    /** @var array Stores raw where conditions */
+    protected array $whereRaw = [];
 
+    /** @var string Query string */
     private string $query = '';
+
+    /** @var bool Enable debug mode */
+    private bool $debugMode = false;  // Default: Off
+   
+    /** @var QueryLogger Logger for queries and database operations */
+        protected QueryLogger $logger;
 
     /**
      * Initialize query builder
      * 
      * @param PDO $pdo Active database connection
      * @param DatabaseDriver $driver Database-specific driver
+     * @param QueryLogger|null $logger Query logger
+     * 
      */
-    public function __construct(PDO $pdo, DatabaseDriver $driver)
+    public function __construct(PDO $pdo, DatabaseDriver $driver, ?QueryLogger $logger = null)
     {
         $this->pdo = $pdo;
         $this->driver = $driver;
+        $this->logger = $logger ?? new QueryLogger();
     }
 
-    /**
+   /**
      * Execute callback within database transaction
      * 
      * Features:
@@ -88,23 +104,52 @@ class QueryBuilder
     {
         $retryCount = 0;
 
+        $this->logger->logEvent("Starting transaction", ['retries_allowed' => $this->maxRetries]);
+
         while ($retryCount < $this->maxRetries) {
-            $this->beginTransaction();
+            $this->manageTransactionBegin();  // Use centralized method
             try {
                 $result = $callback($this);
-                $this->commit();
+                $this->manageTransactionEnd(true);  // Commit using centralized method
+
+                // Log successful transaction
+                $this->logger->logEvent("Transaction completed successfully", [
+                    'retries' => $retryCount
+                ], 'info');
+
                 return $result;
             } catch (Exception $e) {
                 if ($this->isDeadlock($e)) {
-                    $this->rollback();
+                    $this->manageTransactionEnd(false);  // Rollback using centralized method
                     $retryCount++;
+
+                     // Log deadlock and retry
+                    $this->logger->logEvent("Transaction deadlock detected, retrying", [
+                        'retry' => $retryCount,
+                        'max_retries' => $this->maxRetries,
+                        'error' => $e->getMessage()
+                    ], 'warning');
+
                     usleep(500000);
                 } else {
-                    $this->rollback();
+                    $this->manageTransactionEnd(false);  // Rollback using centralized method
+
+                     // Log transaction failure
+                    $this->logger->logEvent("Transaction failed", [
+                        'error' => $e->getMessage(),
+                        'code' => $e->getCode()
+                    ], 'error');
+
                     throw $e;
                 }
             }
         }
+
+        $this->logger->logEvent("Transaction failed after maximum retries", [
+            'max_retries' => $this->maxRetries
+        ], 'error');
+
+
         throw new Exception("Transaction failed after {$this->maxRetries} retries due to deadlock.");
     }
 
@@ -126,12 +171,7 @@ class QueryBuilder
      */
     public function beginTransaction(): void
     {
-        if ($this->transactionLevel === 0) {
-            $this->pdo->beginTransaction();
-        } else {
-            $this->pdo->exec("SAVEPOINT trans_{$this->transactionLevel}");
-        }
-        $this->transactionLevel++;
+        $this->manageTransactionBegin();
     }
 
     /**
@@ -141,10 +181,7 @@ class QueryBuilder
      */
     public function commit(): void
     {
-        if ($this->transactionLevel === 1) {
-            $this->pdo->commit();
-        }
-        $this->transactionLevel = max(0, $this->transactionLevel - 1);
+        $this->manageTransactionEnd(true);
     }
 
     /**
@@ -152,18 +189,12 @@ class QueryBuilder
      * 
      * Rolls back transaction or to savepoint based on nesting.
      */
-    public function rollback(): bool {
+    public function rollback(): bool
+    {
         if ($this->transactionLevel <= 0) {
-            return false; // No active transaction
+            return false;
         }
-        
-        if ($this->transactionLevel === 1) {
-            $this->pdo->rollBack();
-        } else if ($this->transactionLevel > 1) {
-            $this->pdo->exec("ROLLBACK TO SAVEPOINT trans_" . ($this->transactionLevel - 1));
-        }
-        
-        $this->transactionLevel = max(0, $this->transactionLevel - 1);
+        $this->manageTransactionEnd(false);
         return true;
     }
 
@@ -189,7 +220,7 @@ class QueryBuilder
         
         $sql = "INSERT INTO {$this->driver->wrapIdentifier($table)} ($columns) VALUES ($placeholders)";
         
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->prepareAndExecute($sql, array_values($data));
         return $stmt->execute(array_values($data)) ? $stmt->rowCount() : 0;
     }
     
@@ -221,7 +252,7 @@ class QueryBuilder
         return $insertCount;
     }
 
-    /**
+     /**
      * Select records with advanced filtering
      * 
      * Supports:
@@ -229,6 +260,9 @@ class QueryBuilder
      * - WHERE conditions
      * - JOIN clauses
      * - ORDER BY
+     * - GROUP BY
+     * - HAVING
+     * - Raw WHERE conditions
      * - LIMIT/OFFSET
      * - Soft delete filtering
      * 
@@ -250,6 +284,9 @@ class QueryBuilder
         bool $applySoftDeletes = false
     ): self {
         $this->bindings = []; // Reset bindings
+        $this->groupBy = []; // Reset group by
+        $this->having = []; // Reset having
+        $this->whereRaw = []; // Reset raw where conditions
     
         $columnList = implode(", ", array_map(function ($column) {
             if ($column instanceof RawExpression) {
@@ -278,24 +315,53 @@ class QueryBuilder
             $sql .= " " . implode(" ", $this->joins);
         }
     
-        $whereClauses = [];
-        foreach ($conditions as $col => $value) {
-            if (strpos($col, '.') !== false) {
-                [$table, $column] = explode('.', $col, 2);
-                $wrappedCol = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($column);
-            } else {
-                $wrappedCol = $this->driver->wrapIdentifier($col);
-            }
-            $whereClauses[] = "$wrappedCol = ?";
-            $this->bindings[] = $value;
-        }
-    
+        // Build WHERE clause with new helper
+        $whereClauses = empty($conditions) ? [] : 
+        [ltrim($this->buildClause('', $conditions), ' ')];
+
         if ($this->softDeletes && !$withTrashed && $applySoftDeletes) {
             $whereClauses[] = "deleted_at IS NULL";
         }
     
-        if (!empty($whereClauses)) {
-            $sql .= " WHERE " . implode(" AND ", $whereClauses);
+        // Build the complete WHERE clause combining standard and raw conditions
+        $allWhereClauses = array_merge($whereClauses, array_column($this->whereRaw, 'condition'));
+        
+        if (!empty($allWhereClauses)) {
+            $sql .= " WHERE " . implode(" AND ", $allWhereClauses);
+        }
+        
+        // Add GROUP BY if specified
+        if (!empty($this->groupBy)) {
+            $groupByColumns = array_map(function($column) {
+                if ($column instanceof RawExpression) {
+                    return (string) $column;
+                }
+                if (strpos($column, '.') !== false) {
+                    [$table, $col] = explode('.', $column, 2);
+                    return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+                }
+                return $this->driver->wrapIdentifier($column);
+            }, $this->groupBy);
+            
+            $sql .= " GROUP BY " . implode(", ", $groupByColumns);
+        }
+        
+        // Add HAVING if specified
+        if (!empty($this->having)) {
+            $havingClauses = [];
+            foreach ($this->having as $item) {
+                if ($item instanceof RawExpression) {
+                    $havingClauses[] = (string) $item;
+                } else {
+                    foreach ($item as $col => $value) {
+                        $havingClauses[] = $this->driver->wrapIdentifier($col) . " = ?";
+                        $this->bindings[] = $value;
+                    }
+                }
+            }
+            if (!empty($havingClauses)) {
+                $sql .= " HAVING " . implode(" AND ", $havingClauses);
+            }
         }
     
         if (!empty($orderBy)) {
@@ -320,6 +386,241 @@ class QueryBuilder
         }
     
         return $this;
+    }
+
+    /**
+     * Add raw WHERE condition to the query
+     * 
+     * Allows for complex WHERE conditions like OR, LIKE, IN, etc.
+     * 
+     * @param string $condition Raw SQL condition
+     * @param array $bindings Parameter bindings for the condition
+     * @return self Builder instance for chaining
+     */
+    public function whereRaw(string $condition, array $bindings = []): self
+    {
+        $this->whereRaw[] = [
+            'condition' => $condition,
+            'bindings' => $bindings
+        ];
+        
+        // Add bindings to the main bindings array
+        foreach ($bindings as $binding) {
+            $this->bindings[] = $binding;
+        }
+        
+        // If query is already built, append the raw condition
+        if (!empty($this->query)) {
+            $this->query .= (strpos($this->query, 'WHERE') === false ? " WHERE " : " AND ") . $condition;
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Add GROUP BY clause to the query
+     * 
+     * @param array $columns Columns to group by
+     * @return self Builder instance for chaining
+     */
+    public function groupBy(array $columns): self
+    {
+        $this->groupBy = array_merge($this->groupBy, $columns);
+        
+        // If query is already built, append the GROUP BY clause
+        if (!empty($this->query) && strpos($this->query, 'GROUP BY') === false) {
+            $groupByColumns = array_map(function($column) {
+                if ($column instanceof RawExpression) {
+                    return (string) $column;
+                }
+                if (strpos($column, '.') !== false) {
+                    [$table, $col] = explode('.', $column, 2);
+                    return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+                }
+                return $this->driver->wrapIdentifier($column);
+            }, $columns);
+            
+            $this->query .= " GROUP BY " . implode(", ", $groupByColumns);
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Add HAVING clause to the query
+     * 
+     * @param array $conditions HAVING conditions
+     * @return self Builder instance for chaining
+     */
+    public function having(array $conditions): self
+    {
+        $this->having[] = $conditions;
+        
+        // If query is already built, append the HAVING clause
+        if (!empty($this->query)) {
+            $havingClauses = [];
+            foreach ($conditions as $col => $value) {
+                $havingClauses[] = $this->driver->wrapIdentifier($col) . " = ?";
+                $this->bindings[] = $value;
+            }
+            
+            if (!empty($havingClauses)) {
+                $this->query .= (strpos($this->query, 'HAVING') === false ? " HAVING " : " AND ") . 
+                    implode(" AND ", $havingClauses);
+            }
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Add raw HAVING clause to the query
+     * 
+     * @param string $condition Raw SQL HAVING condition
+     * @param array $bindings Parameter bindings for the condition
+     * @return self Builder instance for chaining
+     */
+    public function havingRaw(string $condition, array $bindings = []): self
+    {
+        $rawExpression = new RawExpression($condition);
+        $this->having[] = $rawExpression;
+        
+        // Add bindings to the main bindings array
+        foreach ($bindings as $binding) {
+            $this->bindings[] = $binding;
+        }
+        
+        // If query is already built, append the raw HAVING condition
+        if (!empty($this->query)) {
+            $this->query .= (strpos($this->query, 'HAVING') === false ? " HAVING " : " AND ") . $condition;
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Add WHERE IN condition to the query
+     * 
+     * @param string $column Column name
+     * @param array $values Array of values to match against
+     * @return self Builder instance for chaining
+     */
+    public function whereIn(string $column, array $values): self
+    {
+        if (empty($values)) {
+            return $this->whereRaw('1 = 0'); // Always false if empty array
+        }
+        
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+        
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn IN ($placeholders)", $values);
+    }
+    
+    /**
+     * Add WHERE NOT IN condition to the query
+     * 
+     * @param string $column Column name
+     * @param array $values Array of values to exclude
+     * @return self Builder instance for chaining
+     */
+    public function whereNotIn(string $column, array $values): self
+    {
+        if (empty($values)) {
+            return $this; // Always true if empty array, so no condition needed
+        }
+        
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+        
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn NOT IN ($placeholders)", $values);
+    }
+    
+    /**
+     * Add WHERE BETWEEN condition to the query
+     * 
+     * @param string $column Column name
+     * @param mixed $min Minimum value
+     * @param mixed $max Maximum value
+     * @return self Builder instance for chaining
+     */
+    public function whereBetween(string $column, $min, $max): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn BETWEEN ? AND ?", [$min, $max]);
+    }
+    
+    /**
+     * Add WHERE NULL condition to the query
+     * 
+     * @param string $column Column name
+     * @return self Builder instance for chaining
+     */
+    public function whereNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn IS NULL");
+    }
+    
+    /**
+     * Add WHERE NOT NULL condition to the query
+     * 
+     * @param string $column Column name
+     * @return self Builder instance for chaining
+     */
+    public function whereNotNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn IS NOT NULL");
+    }
+    
+    /**
+     * Add WHERE LIKE condition to the query
+     * 
+     * @param string $column Column name
+     * @param string $pattern LIKE pattern
+     * @return self Builder instance for chaining
+     */
+    public function whereLike(string $column, string $pattern): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+        
+        return $this->whereRaw("$wrappedColumn LIKE ?", [$pattern]);
     }
 
     /**
@@ -389,7 +690,7 @@ class QueryBuilder
      */
     public function rawQuery(string $sql, array $params = []): array
     {
-        $stmt = $this->executeQuery($sql, $params);
+        $stmt = $this->prepareAndExecute($sql, $params); // Use here
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -402,11 +703,8 @@ class QueryBuilder
      */
     public function executeQuery(string $sql, array $params = [])
     {
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt;
+        return $this->prepareAndExecute($sql, $params); // Replace entire method
     }
-
     /**
      * Paginate query results
      * 
@@ -421,41 +719,60 @@ class QueryBuilder
      * @return array Pagination result set
      */
     public function paginate(int $page = 1, int $perPage = 10): array
-{
-    $offset = ($page - 1) * $perPage;
+    {
+        $timerId = $this->logger->startTiming('pagination');
+    
+        $this->logger->logEvent("Executing paginated query", [
+            'page' => $page,
+            'per_page' => $perPage,
+            'query' => substr($this->query, 0, 100) . '...'
+        ], 'debug');
 
-    // Remove existing LIMIT/OFFSET before adding a new one
-    $paginatedQuery = preg_replace('/\sLIMIT\s\d+(\sOFFSET\s\d+)?/i', '', $this->query);
-    $paginatedQuery .= " LIMIT ? OFFSET ?";
+        $offset = ($page - 1) * $perPage;
 
-    // Execute paginated query
-    $stmt = $this->pdo->prepare($paginatedQuery);
-    $stmt->execute([...$this->bindings, $perPage, $offset]);
-    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Remove existing LIMIT/OFFSET before adding a new one
+        $paginatedQuery = preg_replace('/\sLIMIT\s\d+(\sOFFSET\s\d+)?/i', '', $this->query);
+        $paginatedQuery .= " LIMIT ? OFFSET ?";
 
-    // **Fix COUNT Query**
-    $countQuery = preg_replace('/^SELECT\s.*?\sFROM/i', 'SELECT COUNT(*) as total FROM', $this->query);
-    $countQuery = preg_replace('/\sORDER BY .*/i', '', $countQuery); // Remove ORDER BY
+        // Execute paginated query
+        $stmt = $this->prepareAndExecute($paginatedQuery, [...$this->bindings, $perPage, $offset]);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $countStmt = $this->pdo->prepare($countQuery);
-    $countStmt->execute($this->bindings);
-    $totalRecords = $countStmt->fetchColumn();
+        // **Fix COUNT Query**
+        $countQuery = preg_replace('/^SELECT\s.*?\sFROM/i', 'SELECT COUNT(*) as total FROM', $this->query);
+        $countQuery = preg_replace('/\sORDER BY .*/i', '', $countQuery); // Remove ORDER BY
 
-    $lastPage = (int) ceil($totalRecords / $perPage);
-    $from = $totalRecords > 0 ? $offset + 1 : 0;
-    $to = min($offset + $perPage, $totalRecords);
+        // Use the optimized count query method here
+        $countQuery = $this->getOptimizedCountQuery($this->query);
+        $countStmt = $this->prepareAndExecute($countQuery, $this->bindings);
+        $totalRecords = $countStmt->fetchColumn();
 
-    return [
-        'data' => $data,
-        'current_page' => $page,
-        'per_page' => $perPage,
-        'total' => $totalRecords,
-        'last_page' => $lastPage,
-        'has_more' => $page < $lastPage,
-        'from' => $from,
-        'to' => $to,
-    ];
-}
+        $lastPage = (int) ceil($totalRecords / $perPage);
+        $from = $totalRecords > 0 ? $offset + 1 : 0;
+        $to = min($offset + $perPage, $totalRecords);
+
+        $executionTime = $this->logger->endTiming($timerId);
+
+        $this->logger->logEvent("Pagination complete", [
+            'total_records' => $totalRecords,
+            'total_pages' => $lastPage,
+            'page' => $page,
+            'record_count' => count($data)
+        ], 'debug');
+
+        return [
+            'data' => $data,
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalRecords,
+            'last_page' => $lastPage,
+            'has_more' => $page < $lastPage,
+            'from' => $from,
+            'to' => $to,
+            // Optionally include execution time for debugging
+            'execution_time_ms' => $executionTime
+        ];
+    }
 
     /**
      * Get identifier of last inserted record
@@ -498,7 +815,7 @@ class QueryBuilder
      * - Custom join conditions
      * - Multiple joins
      * - Aliased tables
-     * Join must be called before select if using joins.
+     * 
      * @param string $table Table to join
      * @param string $on Join condition
      * @param string $type Join type (INNER, LEFT, etc)
@@ -522,11 +839,19 @@ class QueryBuilder
      * @param array $conditions Column-value pairs
      * @return self Builder instance for chaining
      */
-    public function where(array $conditions): self {
+    public function where(array $conditions): self 
+    {
+        if (empty($conditions)) return $this;
+        
+        // Add bindings
         foreach ($conditions as $col => $value) {
-            $this->query .= (strpos($this->query, 'WHERE') === false ? " WHERE " : " AND ") . "{$this->driver->wrapIdentifier($col)} = ?";
             $this->bindings[] = $value;
         }
+        
+        // Build and append WHERE clause
+        $whereClause = ltrim($this->buildClause('', $conditions), ' ');
+        $this->query .= (strpos($this->query, 'WHERE') === false ? " WHERE " : " AND ") . $whereClause;
+        
         return $this;
     }
 
@@ -548,6 +873,21 @@ class QueryBuilder
     public function limit(int $limit): self {
         $this->query .= " LIMIT ?";
         $this->bindings[] = $limit;
+        return $this;
+    }
+
+    /**
+     * Add OFFSET clause to the query
+     * 
+     * @param int $offset Number of rows to skip
+     * @return self Builder instance for chaining
+     */
+    public function offset(int $offset): self {
+        // Only add OFFSET if positive
+        if ($offset > 0) {
+            $this->query .= " OFFSET ?";
+            $this->bindings[] = $offset;
+        }
         return $this;
     }
 
@@ -591,48 +931,126 @@ class QueryBuilder
     public function raw(string $expression): RawExpression {
         return new RawExpression($expression);
     }
-}
-
-/**
- * Raw SQL Expression Container
- * 
- * Wraps raw SQL expressions to prevent automatic escaping when used in queries.
- * This class helps distinguish between regular strings that should be escaped
- * and raw SQL expressions that should be used as-is.
- * 
- * Security note:
- * Only use with trusted input as raw SQL expressions bypass normal escaping
- * 
- * @internal Used internally by QueryBuilder
- */
-class RawExpression {
-    /** @var string The raw SQL expression */
-    protected string $expression;
 
     /**
-     * Create new raw SQL expression
+     * Build a SQL clause with conditions
      * 
-     * @param string $expression Raw SQL to be used without escaping
+     * @param string $keyword SQL keyword (WHERE, HAVING, etc.)
+     * @param array $conditions Key-value pairs of conditions
+     * @param string $separator Condition separator (AND, OR, etc.)
+     * @return string Constructed clause or empty string if no conditions
      */
-    public function __construct(string $expression) {
-        $this->expression = $expression;
+    private function buildClause(string $keyword, array $conditions, string $separator = ' AND '): string {
+        if (empty($conditions)) return '';
+        
+        return $keyword . ' ' . implode($separator, array_map(function($col) {
+            if (strpos($col, '.') !== false) {
+                [$table, $column] = explode('.', $col, 2);
+                return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($column) . " = ?";
+            }
+            return $this->driver->wrapIdentifier($col) . " = ?";
+        }, array_keys($conditions)));
+    }
+
+
+    private function manageTransactionBegin(): void 
+    {
+        if ($this->transactionLevel === 0) {
+            $this->pdo->beginTransaction();
+        } else {
+            $this->pdo->exec("SAVEPOINT trans_{$this->transactionLevel}");
+        }
+        $this->transactionLevel++;
+    }
+
+    private function manageTransactionEnd(bool $commit = true): void
+    {
+        if ($this->transactionLevel <= 0) {
+            return; // No active transaction
+        }
+        
+        if ($this->transactionLevel === 1) {
+            $commit ? $this->pdo->commit() : $this->pdo->rollBack();
+        } else if (!$commit) {
+            // Only need to handle rollback for nested transactions
+            $this->pdo->exec("ROLLBACK TO SAVEPOINT trans_" . ($this->transactionLevel - 1));
+        }
+        
+        $this->transactionLevel = max(0, $this->transactionLevel - 1);
     }
 
     /**
-     * Get the raw expression string
-     * 
-     * @return string The raw SQL expression
+     * Centralized method for preparing and executing queries
      */
-    public function getExpression(): string {
-        return $this->expression;
+    private function prepareAndExecute(string $sql, array $params = []): \PDOStatement
+    {
+        // Start timing the query
+        $timerId = $this->logger->startTiming();
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+             // Log successful query
+            $this->logger->logQuery($sql, $params, $timerId);
+            return $stmt;
+        } catch (PDOException $e) {
+            // Log failed query
+            $this->logger->logQuery($sql, $params, $timerId, $e);
+            throw $e;
+        }
+
+    }
+
+    // Optimization for count query in pagination
+    private function getOptimizedCountQuery(string $query): string
+    {
+        // Remove unnecessary parts that don't affect count
+        $countQuery = preg_replace('/SELECT\s.*?\sFROM/is', 'SELECT COUNT(*) as total FROM', $query);
+        $countQuery = preg_replace('/\sORDER BY\s.*$/is', '', $countQuery);
+        $countQuery = preg_replace('/\sLIMIT\s.*$/is', '', $countQuery);
+        
+        // If there's a GROUP BY, we need to count differently
+        if (strpos($countQuery, 'GROUP BY') !== false) {
+            return "SELECT COUNT(*) as total FROM ($query) as count_table";
+        }
+        
+        return $countQuery;
     }
 
     /**
-     * Convert to string when used in string context
+     * Enable or disable debug mode
      * 
-     * @return string The raw SQL expression
+     * @param bool $debug Whether to enable debug mode
+     * @return self Builder instance for chaining
      */
-    public function __toString(): string {
-        return $this->expression;
+    public function enableDebug(bool $debug = true): self
+    {
+        $this->debugMode = $debug;
+        
+        // Configure logger accordingly
+        $this->logger->configure($debug, $debug);
+        
+        return $this;
+    }
+
+    /**
+     * Set query logger instance
+     * 
+     * @param QueryLogger $logger Logger instance
+     * @return self Builder instance for chaining
+     */
+    public function setLogger(QueryLogger $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
+    }
+
+    /**
+     * Get the current query logger
+     * 
+     * @return QueryLogger Current logger instance
+     */
+    public function getLogger(): QueryLogger
+    {
+        return $this->logger;
     }
 }
