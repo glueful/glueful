@@ -7,6 +7,7 @@ use Glueful\Http\{Router};
 use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Exceptions\{ValidationException, AuthenticationException};
+use Glueful\Logging\LogManager;
 use Throwable;
 
 /**
@@ -29,6 +30,9 @@ use Throwable;
  */
 class API 
 {    
+    /** @var LogManager Central logger instance */
+    private static LogManager $logger;
+
     /**
      * Initialize the API Framework
      * 
@@ -53,6 +57,20 @@ class API
             JobScheduler::getInstance();
         }
     }
+    
+     /**
+      * Get logger instance
+      * 
+      * @return LogManager
+      */
+     public static function getLogger(): LogManager
+     {
+         if (!isset(self::$logger)) {
+             self::$logger = $GLOBALS['logger'] ?? new LogManager('api');
+         }
+         
+         return self::$logger;
+     }
 
     /**
      * Process API Request
@@ -71,7 +89,18 @@ class API
      * @throws \RuntimeException If request processing fails catastrophically
      */
     public static function processRequest(): void {
+        $startTime = microtime(true);
+        $requestId = uniqid('req-');
+
         try {
+
+            // Log request start
+            self::getLogger()->info("API request started", [
+                'request_id' => $requestId,
+                'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
+                'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
+            ]);
+
             // Set JSON response headers
             header('Content-Type: application/json');
             
@@ -87,17 +116,53 @@ class API
             
             // Output the response
             echo json_encode($response);
+
+            // Log successful response
+            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+            self::getLogger()->info("API request completed", [
+                'request_id' => $requestId,
+                'time_ms' => $totalTime,
+                'status' => $response['code'] ?? 200
+            ]);
             
         } catch (ValidationException $e) {
+
+             // Log validation error
+             self::getLogger()->notice("Validation error", [
+                'request_id' => $requestId,
+                'error' => $e->getMessage()
+            ]);
+
             header('Content-Type: application/json');
             http_response_code(400);
             echo json_encode(['error' => 'validation_error', 'message' => $e->getMessage()]);
         } catch (AuthenticationException $e) {
+
+             // Log authentication error
+             self::getLogger()->warning("Authentication error", [
+                'request_id' => $requestId,
+                'error' => $e->getMessage(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? null
+            ]);
+
             header('Content-Type: application/json');
             http_response_code(401);
             echo json_encode(['error' => 'authentication_error', 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
+
+            // Log server error
+            self::getLogger()->error("Server error", [
+                'request_id' => $requestId,
+                'error' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             error_log($e->getMessage());
+
+            
             header('Content-Type: application/json');
             http_response_code(500);
             echo json_encode(['error' => 'server_error', 'message' => $e->getMessage()]);
