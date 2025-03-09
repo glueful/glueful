@@ -1,0 +1,7 @@
+[2025-03-09 22:28:56] app.DEBUG: Request received {"method":"GET","uri":"/favicon.ico","channel":"app","request_id":"req-67ce1628bc99b","environment":"production"} []
+[2025-03-09 22:29:01] app.DEBUG: Request received {"method":"OPTIONS","uri":"/auth_sessions","channel":"app","request_id":"req-67ce162d30757","environment":"production"} []
+[2025-03-09 22:29:01] app.DEBUG: Request received {"method":"GET","uri":"/auth_sessions","channel":"app","request_id":"req-67ce162d3309b","environment":"production"} []
+[2025-03-09 22:29:09] app.DEBUG: Request received {"method":"OPTIONS","uri":"/auth/login","channel":"app","request_id":"req-67ce16350f78b","environment":"production"} []
+[2025-03-09 22:29:09] app.DEBUG: Request received {"method":"POST","uri":"/auth/login","channel":"app","request_id":"req-67ce163512db4","environment":"production"} []
+[2025-03-09 22:29:14] app.DEBUG: Request received {"method":"OPTIONS","uri":"/users","channel":"app","request_id":"req-67ce163aebe8f","environment":"production"} []
+[2025-03-09 22:29:14] app.DEBUG: Request received {"method":"GET","uri":"/users","channel":"app","request_id":"req-67ce163aef589","environment":"production"} []

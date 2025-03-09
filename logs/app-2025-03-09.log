@@ -1,0 +1,4 @@
+[2025-03-09 22:28:56] app.INFO: API request started {"request_id":"req-67ce1628be89b","method":"GET","uri":"/favicon.ico","channel":"app","environment":"production"} []
+[2025-03-09 22:29:01] app.INFO: API request started {"request_id":"req-67ce162d33210","method":"GET","uri":"/auth_sessions","channel":"app","environment":"production"} []
+[2025-03-09 22:29:09] app.INFO: API request started {"request_id":"req-67ce163513380","method":"POST","uri":"/auth/login","channel":"app","environment":"production"} []
+[2025-03-09 22:29:14] app.INFO: API request started {"request_id":"req-67ce163aef769","method":"GET","uri":"/users","channel":"app","environment":"production"} []
