@@ -31,6 +31,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 {
     private SchemaManager $schema;
     private QueryBuilder $db;
+    protected string $table = 'app_logs';
 
     /**
      * Initialize database log handler
@@ -40,16 +41,35 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      *
      * @param int $level Minimum logging level (defaults to DEBUG)
      */
-    public function __construct(Level $level = Level::Debug) 
+    public function __construct(array $options = []) 
     {
-        parent::__construct($level);
+        parent::__construct($options['level'] ?? Level::Debug);
         $connection = new Connection();
         $this->schema = $connection->getSchemaManager();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         
         // Ensure logs table exists
+        if (isset($options['table'])) {
+            $this->table = $options['table'];
+        }
         $this->ensureLogsTable();
+        
+        
     }
+
+
+    /**
+     * Set the database table name for storing log entries
+     * 
+     * @param string $table Table name
+     * @return self
+     */
+    public function setTable(string $table): self
+    {
+        $this->table = $table;
+        return $this;
+    }
+    
 
     /**
      * Write log record to database
