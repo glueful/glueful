@@ -60,7 +60,7 @@ class QueryLogger
         }
         
         // Default configuration based on application settings
-        $this->debugMode = config('app.debug', false);
+        $this->debugMode = config('app.debug');
         $this->enableTiming = $this->debugMode;
     }
     
