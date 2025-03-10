@@ -263,7 +263,7 @@ public static function generateTokenPair(
     {
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        $uuid = Utils::generateNanoID(12);
+        $uuid = Utils::generateNanoID();
         return $queryBuilder->insert('auth_sessions', [
             'uuid'=> $uuid,
             'user_uuid' => $userUuid,

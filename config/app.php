@@ -24,7 +24,7 @@ return [
         'log_level' => env('LOG_LEVEL', 'debug'),  // Minimum log level
         'log_to_file' => env('LOG_TO_FILE',true),    // Enable/Disable file logging
         'log_to_db' => env('LOG_TO_DB',true),      // Enable/Disable database logging
-        'log_file_path' => dirname(__DIR__) . '/logs/', // Log file path
+        'log_file_path' => dirname(__DIR__) . '/storage/logs/', // Log file path
         'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
         'log_rotation_days' => 30, // Automatically delete logs older than 30 days
     ],

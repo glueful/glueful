@@ -89,7 +89,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         try {
             // Insert log entry using SchemaManager
             $this->db->insert('app_logs', [
-                'uuid' => Utils::generateNanoID(12),
+                'uuid' => Utils::generateNanoID(),
                 'channel' => $record->channel,
                 'level' => $record->level,
                 'message' => $record->message,

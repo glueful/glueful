@@ -19,4 +19,5 @@ return [
 
     // Permission system settings
     'enabled_permissions' => env('ENABLE_PERMISSIONS', true),  // Enable role-based access control
+    'nanoid_length'=> env('NANOID_LENGTH', 12),  // Default length for NanoID generation
 ];
