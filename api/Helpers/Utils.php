@@ -124,10 +124,13 @@ class Utils
      * @param int $size Length of ID to generate
      * @return string Generated NanoID
      */
-    public static function generateNanoID(int $length = 12): string {
+    public static function generateNanoID(?int $length = null): string {
+
+        if (!$length) {
+            $length = (int)config('security.nanoid_length', 12);
+        }
         return RandomStringGenerator::generate(
-            length: $length,
-            charset: RandomStringGenerator::CHARSET_ALPHANUMERIC
+            length: $length
         );
     }
 

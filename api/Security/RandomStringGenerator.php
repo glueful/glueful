@@ -12,7 +12,7 @@ namespace Glueful\Security;
 class RandomStringGenerator 
 {
     /** @var string Character set for NanoID-compatible strings */
-    public const CHARSET_NANOID = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    public const CHARSET_NANOID = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
     
     /** @var string Alias for NanoID charset */
     public const CHARSET_ALPHANUMERIC = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -33,9 +33,10 @@ class RandomStringGenerator
     private const MASK = 63; // 0b00111111
 
     /**
-     * Generate random string
+     * Generate random string with improved efficiency
      * 
      * Creates cryptographically secure random string using specified charset.
+     * This method is optimized for maximum entropy using bit masking.
      * 
      * @param int $length Desired string length
      * @param string $charset Character set to use
@@ -52,12 +53,35 @@ class RandomStringGenerator
         }
 
         $result = '';
-        $bytes = random_bytes($length);
         $charsetLength = strlen($charset);
         
+        // Find the largest mask that fits within charset length
+        $mask = 1;
+        while ($mask < $charsetLength) {
+            $mask = ($mask << 1) | 1;
+        }
+        
+        // Determine how many random bytes we need
+        $bytes = random_bytes(max(32, $length * 2));
+        $pos = 0;
+        
         for ($i = 0; $i < $length; $i++) {
-            $index = (int) (ord($bytes[$i]) % $charsetLength);
-            $result .= $charset[$index];
+            // If we've used most of our bytes, generate more
+            if ($pos >= strlen($bytes) - 4) {
+                $bytes .= random_bytes(32);
+            }
+            
+            // Get a random index using bit masking for maximum efficiency
+            $idx = ord($bytes[$pos]) & $mask;
+            $pos++;
+            
+            // If index is beyond charset length, get another one
+            while ($idx >= $charsetLength) {
+                $idx = ord($bytes[$pos]) & $mask;
+                $pos++;
+            }
+            
+            $result .= $charset[$idx];
         }
         
         return $result;

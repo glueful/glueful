@@ -220,8 +220,11 @@ class QueryBuilder
         
         $sql = "INSERT INTO {$this->driver->wrapIdentifier($table)} ($columns) VALUES ($placeholders)";
         
+        // This line already prepares AND executes the statement
         $stmt = $this->prepareAndExecute($sql, array_values($data));
-        return $stmt->execute(array_values($data)) ? $stmt->rowCount() : 0;
+        
+        // We just need to return the row count, without executing again
+        return $stmt->rowCount();
     }
     
     /**
@@ -240,12 +243,17 @@ class QueryBuilder
 
         $keys = array_keys($data[0]);
         $sql = $this->driver->upsert($table, $keys, $updateColumns);
-        $stmt = $this->pdo->prepare($sql);
-
+        
+        // Use your consistent prepareAndExecute pattern for consistency and logging
         $insertCount = 0;
         foreach ($data as $row) {
-            if ($stmt->execute(array_values($row))) {
-                $insertCount++;
+            try {
+                $stmt = $this->prepareAndExecute($sql, array_values($row));
+                $insertCount += $stmt->rowCount();
+            } catch (\PDOException $e) {
+                // Your prepareAndExecute already logs errors and rethrows them
+                // You might want to handle specific errors here instead of rethrowing all
+                throw $e;
             }
         }
 
@@ -639,7 +647,9 @@ class QueryBuilder
 
         $sql .= implode(" AND ", array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions)));
 
-        return $this->executeQuery($sql, array_values($conditions))->rowCount() > 0;
+        $stmt = $this->executeQuery($sql, array_values($conditions));
+        
+        return $stmt->rowCount() > 0;
     }
 
     /**

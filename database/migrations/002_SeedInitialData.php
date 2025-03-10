@@ -59,7 +59,7 @@ class SeedInitialData implements MigrationInterface
 
         try {
             // First create superuser role
-            $superuserRoleUuid = Utils::generateNanoID(12);
+            $superuserRoleUuid = Utils::generateNanoID();
             $superuserId = $this->db->insert('roles', [
                 'uuid' => $superuserRoleUuid,
                 'name' => 'superuser',
@@ -72,7 +72,7 @@ class SeedInitialData implements MigrationInterface
             }
 
             // Create user role
-            $userRoleUuid = Utils::generateNanoID(12);
+            $userRoleUuid = Utils::generateNanoID();
             $userId=$this->db->insert('roles', [
                 'uuid' => $userRoleUuid,
                 'name' => 'user',
@@ -85,7 +85,7 @@ class SeedInitialData implements MigrationInterface
             }
 
             // Then create "superuser" user
-            $superuserUuid = Utils::generateNanoID(12);
+            $superuserUuid = Utils::generateNanoID();
             $superuserId = $this->db->insert('users', [
                 'uuid' => $superuserUuid,
                 'username' => 'superuser',
@@ -99,7 +99,7 @@ class SeedInitialData implements MigrationInterface
             }
 
             // Then create profile for "superuser" user
-            $profileUuid = Utils::generateNanoID(12);
+            $profileUuid = Utils::generateNanoID();
             $profileId = $this->db->insert('profiles', [
                 'uuid' => $profileUuid,
                 'user_uuid' => $superuserUuid,

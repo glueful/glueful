@@ -138,7 +138,7 @@ class LogManager implements LoggerInterface
         $this->minimumLevel = Level::Debug;
 
         // Get log directory from config
-        $logDirectory = config('app.logging.log_file_path') ?: dirname(dirname(__FILE__)) . '/logs/';
+        $logDirectory = config('app.logging.log_file_path') ?: dirname(dirname(__FILE__)) . '/storage/logs/';
         
         // Create logs directory if it doesn't exist
         if (!is_dir($logDirectory) && !mkdir($logDirectory, 0755, true)) {

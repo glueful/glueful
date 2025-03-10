@@ -425,7 +425,7 @@ class ApiDefinitionGenerator {
     private function createAdminRole(): string|int {
         try {
             // Generate UUID for new role
-            $roleUuid = Utils::generateNanoID(12);
+            $roleUuid = Utils::generateNanoID();
             
             // Insert role using SchemaManager
             $result = $this->db->insert(
@@ -532,7 +532,7 @@ class ApiDefinitionGenerator {
             $model = "api.{$parts[0]}.{$parts[1]}";
             if (!$this->permissionExists($roleUuid, $model)) {
                 $permissions[] = [
-                    'uuid' => Utils::generateNanoID(12),
+                    'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
                     'permissions' => implode('', Permission::getAll())
@@ -565,7 +565,7 @@ class ApiDefinitionGenerator {
             $model = "api.ext.$action.$function";
             if (!$this->permissionExists($roleUuid, $model)) {
                 $permissions[] = [
-                    'uuid' => Utils::generateNanoID(12),
+                    'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
                     'permissions' => implode('', Permission::getAll())
@@ -588,7 +588,7 @@ class ApiDefinitionGenerator {
                 $model = "ui.$view";
                 if (!$this->permissionExists($roleUuid, $model)) {
                     $permissions[] = [
-                        'uuid' => Utils::generateNanoID(12),
+                        'uuid' => Utils::generateNanoID(),
                         'role_uuid' => $roleUuid,
                         'model' => $model,
                         'permissions' => implode('', Permission::getAll())
