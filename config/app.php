@@ -9,7 +9,8 @@ use Glueful\Helpers\Config;
  */
 return [
     // Application Environment (development, staging, production)
-    'env' => env('APP_ENV', 'development'),
+    'env' => env('APP_ENV', 'production'),
+    'debug' => (bool) env('APP_DEBUG', false),
     
     // API Information
     'version' => env('API_VERSION', '1.0.0'),    // API version number

@@ -1119,7 +1119,7 @@ class LogManager implements LoggerInterface
         
         // Add environment info
         if (!isset($context['environment'])) {
-            $context['environment'] = config('app.environment') ?? 'production';
+            $context['environment'] = config('app.env') ?? 'production';
         }
         
         // Add user info if available and not sensitive
