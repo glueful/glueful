@@ -3,4 +3,4 @@
 vendor
 .env
 docs/swagger.json
-admin/
+admin
