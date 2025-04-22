@@ -344,4 +344,27 @@ class UserRepository {
             return $this->queryBuilder->insert('profiles', $profileData) > 0;
         }
     }
+
+    /**
+     * Find user by API key
+     * 
+     * Retrieves user record using the API key identifier.
+     * Used for API key-based authentication.
+     * 
+     * @param string $apiKey API key to search for
+     * @return array|null User data or null if not found
+     */
+    public function findByApiKey(string $apiKey): ?array {
+        // Query database for user with this API key
+        $query = $this->queryBuilder->select('users', array_merge($this->userFields, ['api_key', 'api_key_expires_at']))
+            ->where(['api_key' => $apiKey])
+            ->limit(1)
+            ->get();
+
+        if ($query) {
+            return $query[0];
+        }
+
+        return null;
+    }
 }

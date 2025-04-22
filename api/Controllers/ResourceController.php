@@ -4,19 +4,22 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\{APIEngine, Http\Response};
-use Glueful\Controllers\AuthController;
+use Glueful\Auth\AuthBootstrap;
 use Glueful\Permissions\{Permissions, Permission};
 use Glueful\Validation\Validator;
 use Glueful\DTOs\{UsernameDTO, EmailDTO, PasswordDTO, ListResourceRequestDTO};
+use Symfony\Component\HttpFoundation\Request;
 
-//TODO: Add the persistence layer
 class ResourceController {
-    private AuthController $auth;
     private Permissions $permissions;
+    private $authManager;
 
     public function __construct() {
-        $this->auth = new AuthController();
         $this->permissions = new Permissions();
+        
+        // Initialize auth system
+        AuthBootstrap::initialize();
+        $this->authManager = AuthBootstrap::getManager();
     }
 
     /**
@@ -28,20 +31,26 @@ class ResourceController {
      */
     public function get(array $params, array $queryParams) {
         try {
-
+            // Authenticate using the new abstraction layer
+            $request = Request::createFromGlobals();
+            $userData = $this->authenticate($request);
             
-            // $this->auth->validateToken();
-            // $token = $_GET['token'] ?? null;
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
             
-            // if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-            //     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-            // }
+            // Extract token for permission check
+            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Check permissions using token
+            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
+                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            }
            
-            // Validate the list request
-            // $listRequest = $this->validateListRequest($queryParams);
-            // var_dump($listRequest);
-            // exit;
-
             $queryParams = array_merge($queryParams, [
                 'fields' => $queryParams['fields'] ?? '*',
                 'sort' => $queryParams['sort'] ?? 'created_at',
@@ -51,7 +60,6 @@ class ResourceController {
             ]);
            
             $result = APIEngine::getData($params['resource'], 'list', $queryParams);
-            // return $result;
             return Response::ok($result)->send();
         
         } catch (\Exception $e) {
@@ -71,9 +79,22 @@ class ResourceController {
      */
     public function getSingle(array $params, array $queryParams) {
         try {
-            $this->auth->validateToken();
-            $token = $_GET['token'] ?? null;
+            // Authenticate using the new abstraction layer
+            $request = Request::createFromGlobals();
+            $userData = $this->authenticate($request);
             
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Check permissions using token
             if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
                 return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
             }
@@ -104,9 +125,22 @@ class ResourceController {
      */
     public function post(array $params, array $postData) {
         try {
-            $this->auth->validateToken();
-            $token = $_GET['token'] ?? null;
-
+            // Authenticate using the new abstraction layer
+            $request = Request::createFromGlobals();
+            $userData = $this->authenticate($request);
+            
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Check permissions using token
             if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
                 return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
             }
@@ -136,9 +170,22 @@ class ResourceController {
      */
     public function put(array $params, array $putData) {
         try {
-            $this->auth->validateToken();
-            $token = $_GET['token'] ?? null;
-
+            // Authenticate using the new abstraction layer
+            $request = Request::createFromGlobals();
+            $userData = $this->authenticate($request);
+            
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Check permissions using token
             if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::EDIT, $token)) {
                 return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
             }
@@ -168,9 +215,22 @@ class ResourceController {
      */
     public function delete(array $params) {
         try {
-            $this->auth->validateToken();
-            $token = $_GET['token'] ?? null;
-
+            // Authenticate using the new abstraction layer
+            $request = Request::createFromGlobals();
+            $userData = $this->authenticate($request);
+            
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Check permissions using token
             if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::DELETE, $token)) {
                 return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
             }
@@ -181,7 +241,7 @@ class ResourceController {
                 ['uuid' => $params['uuid'], 'status' => 'D']
             );
                     
-            return Response::ok($result,'Users retrieved successfully')->send();
+            return Response::ok($result,'Resource deleted successfully')->send();
             
         } catch (\Exception $e) {
             return Response::error(
@@ -213,5 +273,17 @@ class ResourceController {
         }
         
         return (array)$listRequest;
+    }
+    
+    /**
+     * Authenticate a request using multiple authentication methods
+     *
+     * @param Request $request The HTTP request to authenticate
+     * @return array|null User data if authenticated, null otherwise
+     */
+    private function authenticate(Request $request): ?array
+    {
+        // Try to authenticate with all available methods
+        return $this->authManager->authenticateWithProviders(['jwt', 'api_key'], $request);
     }
 }

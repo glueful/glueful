@@ -12,6 +12,7 @@ use Glueful\Cache\CacheEngine;
  * - Session data storage and retrieval
  * - Session expiration handling
  * - Session data structure
+ * - Multi-provider authentication support
  * 
  * This class focuses purely on session data management,
  * delegating all token operations to TokenManager.
@@ -19,8 +20,10 @@ use Glueful\Cache\CacheEngine;
 class SessionCacheManager 
 {
     private const SESSION_PREFIX = 'session:';
+    private const PROVIDER_INDEX_PREFIX = 'provider:';
     private const DEFAULT_TTL = 3600; // 1 hour
     private static ?int $ttl = null;
+    private static ?array $providerConfigs = null;
 
     /**
      * Initialize session cache manager
@@ -37,38 +40,56 @@ class SessionCacheManager
         
         // Cast the config value to int
         self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+        
+        // Load provider-specific configurations
+        self::$providerConfigs = config('security.authentication_providers', []);
     }
 
     /**
      * Store new session
      * 
      * Creates and stores session data in cache.
+     * Supports multiple authentication providers.
      * 
      * @param array $userData User and permission data
      * @param string $token Access token for the session
+     * @param string|null $provider Authentication provider (jwt, apikey, etc.)
+     * @param int|null $ttl Custom time-to-live in seconds
      * @return bool Success status
      */
-    public static function storeSession(array $userData, string $token): bool
+    public static function storeSession(
+        array $userData, 
+        string $token, 
+        ?string $provider = 'jwt',
+        ?int $ttl = null
+    ): bool
     {
         self::initialize();
         $sessionId = self::generateSessionId();
+        
+        // Use custom TTL if provided, or provider-specific TTL if available
+        $sessionTtl = $ttl ?? self::getProviderTtl($provider);
         
         $sessionData = [
             'id' => $sessionId,
             'token' => $token,
             'user' => $userData,
             'created_at' => time(),
-            'last_activity' => time()
+            'last_activity' => time(),
+            'provider' => $provider ?? 'jwt' // Store the provider used
         ];
 
         // Store session data
         $success = CacheEngine::set(
             self::SESSION_PREFIX . $sessionId, 
             $sessionData, 
-            self::$ttl
+            $sessionTtl
         );
         
         if ($success) {
+            // Index this session by provider for easier management
+            self::indexSessionByProvider($provider ?? 'jwt', $sessionId, $sessionTtl);
+            
             // Have TokenManager map the token to this session
             return TokenManager::mapTokenToSession($token, $sessionId);
         }
@@ -77,14 +98,66 @@ class SessionCacheManager
     }
 
     /**
+     * Index session by provider type
+     * 
+     * Creates a secondary index of sessions organized by provider.
+     * Useful for provider-specific session operations.
+     * 
+     * @param string $provider Provider name (jwt, apikey, etc.)
+     * @param string $sessionId Session identifier
+     * @param int $ttl Time-to-live in seconds
+     * @return bool Success status
+     */
+    private static function indexSessionByProvider(string $provider, string $sessionId, int $ttl): bool
+    {
+        $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+        $sessions = CacheEngine::get($indexKey) ?? [];
+        
+        // Add session to the provider's index
+        $sessions[] = $sessionId;
+        
+        // Remove any duplicates
+        $sessions = array_unique($sessions);
+        
+        return CacheEngine::set($indexKey, $sessions, $ttl);
+    }
+
+    /**
+     * Get sessions by provider
+     * 
+     * Retrieves all sessions for a specific authentication provider.
+     * 
+     * @param string $provider Provider name (jwt, apikey, etc.)
+     * @return array Array of session data
+     */
+    public static function getSessionsByProvider(string $provider): array
+    {
+        self::initialize();
+        
+        $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+        $sessionIds = CacheEngine::get($indexKey) ?? [];
+        
+        $sessions = [];
+        foreach ($sessionIds as $sessionId) {
+            $session = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
+            if ($session) {
+                $sessions[] = $session;
+            }
+        }
+        
+        return $sessions;
+    }
+
+    /**
      * Get session by token
      * 
      * Retrieves and refreshes session data.
      * 
      * @param string $token Authentication token
+     * @param string|null $provider Optional provider hint
      * @return array|null Session data or null if invalid
      */
-    public static function getSession(string $token): ?array
+    public static function getSession(string $token, ?string $provider = null): ?array
     {
         self::initialize();
         
@@ -97,22 +170,47 @@ class SessionCacheManager
         if (!$session) {
             return null;
         }
+        
+        // If provider is specified, validate it matches the session's provider
+        if ($provider && isset($session['provider']) && $session['provider'] !== $provider) {
+            return null;
+        }
 
+        // Get the TTL for this provider type
+        $ttl = self::getProviderTtl($session['provider'] ?? 'jwt');
+        
         // Update last activity
         $session['last_activity'] = time();
         CacheEngine::set(
             self::SESSION_PREFIX . $sessionId,
             $session,
-            self::$ttl
+            $ttl
         );
 
         return $session;
     }
 
     /**
+     * Get provider-specific TTL value
+     * 
+     * Returns the correct TTL value based on provider type and configuration.
+     * 
+     * @param string $provider Provider name (jwt, apikey, etc.)
+     * @return int Time-to-live in seconds
+     */
+    private static function getProviderTtl(string $provider): int
+    {
+        if (isset(self::$providerConfigs[$provider]['session_ttl'])) {
+            return (int)self::$providerConfigs[$provider]['session_ttl'];
+        }
+        
+        return self::$ttl;
+    }
+
+    /**
      * Remove session
      * 
-     * Deletes session data from cache.
+     * Deletes session data from cache and provider index.
      * 
      * @param string $sessionId Session identifier
      * @return bool Success status
@@ -120,7 +218,39 @@ class SessionCacheManager
     public static function removeSession(string $sessionId): bool
     {
         self::initialize();
+        
+        // Get session to find its provider
+        $session = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
+        
+        // Remove from provider index if provider information is available
+        if ($session && isset($session['provider'])) {
+            self::removeSessionFromProviderIndex($session['provider'], $sessionId);
+        }
+        
         return CacheEngine::delete(self::SESSION_PREFIX . $sessionId);
+    }
+
+    /**
+     * Remove session from provider index
+     * 
+     * Removes a session ID from a provider's index list.
+     * 
+     * @param string $provider Provider name
+     * @param string $sessionId Session ID to remove
+     * @return bool Success status
+     */
+    private static function removeSessionFromProviderIndex(string $provider, string $sessionId): bool
+    {
+        $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+        $sessions = CacheEngine::get($indexKey) ?? [];
+        
+        // Remove session from the index
+        $sessions = array_diff($sessions, [$sessionId]);
+        
+        // Get the TTL for this provider type
+        $ttl = self::getProviderTtl($provider);
+        
+        return CacheEngine::set($indexKey, $sessions, $ttl);
     }
 
     /**
@@ -129,15 +259,23 @@ class SessionCacheManager
      * Removes both session data and token mapping.
      * 
      * @param string $token Authentication token
+     * @param string|null $provider Optional provider hint
      * @return bool Success status
      */
-    public static function destroySession(string $token): bool
+    public static function destroySession(string $token, ?string $provider = null): bool
     {
         self::initialize();
         
         // Get session ID from token
         $sessionId = TokenManager::getSessionIdFromToken($token);
         if (!$sessionId) {
+            return false;
+        }
+        
+        // Get session to find its provider
+        $session = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
+        if ($session && $provider && isset($session['provider']) && $session['provider'] !== $provider) {
+            // If provider is specified and doesn't match, don't destroy the session
             return false;
         }
         
@@ -161,9 +299,15 @@ class SessionCacheManager
      * @param string $oldToken Current token
      * @param array $newData Updated session data
      * @param string $newToken New authentication token
+     * @param string|null $provider Provider name (optional)
      * @return bool Success status
      */
-    public static function updateSession(string $oldToken, array $newData, string $newToken): bool
+    public static function updateSession(
+        string $oldToken, 
+        array $newData, 
+        string $newToken,
+        ?string $provider = null
+    ): bool
     {
         self::initialize();
         
@@ -173,6 +317,16 @@ class SessionCacheManager
             return false;
         }
         
+        // Get current session to determine provider
+        $currentSession = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
+        $sessionProvider = $provider ?? ($currentSession['provider'] ?? 'jwt');
+        
+        // Make sure provider is set in updated data
+        $newData['provider'] = $sessionProvider;
+        
+        // Get the TTL for this provider type
+        $ttl = self::getProviderTtl($sessionProvider);
+        
         // Remove old token mapping
         TokenManager::removeTokenMapping($oldToken);
         
@@ -180,7 +334,7 @@ class SessionCacheManager
         $success = CacheEngine::set(
             self::SESSION_PREFIX . $sessionId, 
             $newData, 
-            self::$ttl
+            $ttl
         );
         
         if ($success) {
@@ -196,16 +350,17 @@ class SessionCacheManager
      * 
      * Retrieves session for current request.
      * 
+     * @param string|null $provider Optional provider hint
      * @return array|null Session data or null if not authenticated
      */
-    public static function getCurrentSession(): ?array
+    public static function getCurrentSession(?string $provider = null): ?array
     {
         $token = TokenManager::extractTokenFromRequest();
         if (!$token) {
             return null;
         }
         
-        return self::getSession($token);
+        return self::getSession($token, $provider);
     }
 
     /**
@@ -216,5 +371,37 @@ class SessionCacheManager
     private static function generateSessionId(): string
     {
         return bin2hex(random_bytes(16));
+    }
+    
+    /**
+     * Invalidate all sessions for a provider
+     * 
+     * Removes all sessions associated with a specific authentication provider.
+     * Useful for security events or when changing provider configuration.
+     * 
+     * @param string $provider Provider name (jwt, apikey, etc.)
+     * @return bool Success status
+     */
+    public static function invalidateProviderSessions(string $provider): bool
+    {
+        self::initialize();
+        
+        $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+        $sessionIds = CacheEngine::get($indexKey) ?? [];
+        
+        $success = true;
+        foreach ($sessionIds as $sessionId) {
+            $session = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
+            if ($session && isset($session['token'])) {
+                // Use destroySession to properly clean up token mappings as well
+                $result = self::destroySession($session['token'], $provider);
+                $success = $success && $result;
+            }
+        }
+        
+        // Clear the provider index
+        CacheEngine::delete($indexKey);
+        
+        return $success;
     }
 }

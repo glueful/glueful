@@ -7,7 +7,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
 use Glueful\Helpers\Utils;
-use ParagonIE\Sodium\Core\Util;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Authentication Service
@@ -20,12 +20,16 @@ use ParagonIE\Sodium\Core\Util;
  * 
  * Coordinates between repositories and managers to implement
  * authentication flows in a clean, maintainable way.
+ * 
+ * Now leverages the AuthenticationManager for request authentication
+ * while maintaining backward compatibility.
  */
 class AuthenticationService
 {
     private UserRepository $userRepository;
     private Validator $validator;
     private PasswordHasher $passwordHasher;
+    private AuthenticationManager $authManager;
     
     /**
      * Constructor
@@ -37,18 +41,51 @@ class AuthenticationService
         $this->userRepository = new UserRepository();
         $this->validator = new Validator();
         $this->passwordHasher = new PasswordHasher();
+        
+        // Ensure authentication system is initialized
+        AuthBootstrap::initialize();
+        
+        // Get the authentication manager instance
+        $this->authManager = AuthBootstrap::getManager();
     }
     
     /**
      * Authenticate user
      * 
      * Validates credentials and creates user session.
+     * Can work with different authentication providers depending on
+     * the format of credentials provided.
      * 
      * @param array $credentials User credentials
+     * @param string|null $providerName Optional name of the provider to use
      * @return array|null Authentication result or null if failed
      */
-    public function authenticate(array $credentials): ?array
+    public function authenticate(array $credentials, ?string $providerName = null): ?array
     {   
+        // If a specific provider is requested, try to use it
+        if ($providerName) {
+            $provider = $this->authManager->getProvider($providerName);
+            if (!$provider) {
+                // Provider not found
+                return null;
+            }
+            
+            // For token-based providers, convert credentials to a request
+            if (isset($credentials['token'])) {
+                $request = new Request();
+                $request->headers->set('Authorization', 'Bearer ' . $credentials['token']);
+                return $this->authManager->authenticateWithProvider($providerName, $request);
+            }
+            
+            // For API key providers
+            if (isset($credentials['api_key'])) {
+                $request = new Request();
+                $request->headers->set('X-API-Key', $credentials['api_key']);
+                return $this->authManager->authenticateWithProvider($providerName, $request);
+            }
+        }
+        
+        // Default flow for username/password authentication
         // Validate required fields
         if (!$this->validateCredentials($credentials)) {
             return null;
@@ -73,11 +110,11 @@ class AuthenticationService
         // Validate password
         $passwordDTO = new PasswordDTO();
         $passwordDTO->password = $credentials['password'];
-
         
         if (!$this->validator->validate($passwordDTO)) {
             return null;
         }
+        
         // Verify password against hash
         if (!isset($user['password']) || !$this->passwordHasher->verify($credentials['password'], $user['password'])) {
             return null;
@@ -88,16 +125,19 @@ class AuthenticationService
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
         $userRoles = $this->userRepository->getRoles($userData['uuid']);
 
-        // return $userRole;
- 
-        // $userData['roles'] = $userRole;
+        // Assign roles to user data
         foreach ($userRoles as $userRole) {
             $userData['roles'] = [$userRole['role_name']];
         }
         
         $userData['profile'] = $userProfile;
         $userData['last_login'] = date('Y-m-d H:i:s');
-        $userSession = TokenManager::createUserSession($userData);
+        
+        // Add any custom provider preference from credentials 
+        $preferredProvider = $providerName ?? ($credentials['provider'] ?? 'jwt');
+        
+        // Create user session with the appropriate provider
+        $userSession = TokenManager::createUserSession($userData, $preferredProvider);
        
         // Return authentication result
         return $userSession;
@@ -128,7 +168,7 @@ class AuthenticationService
      * @param string $token Authentication token
      * @return array|null Session data if valid
      */
-    public function validateAccessToken(string $token): ?array
+    public static function validateAccessToken(string $token): ?array
     {
         if (!TokenManager::validateAccessToken($token)) {
             return null;
@@ -156,13 +196,31 @@ class AuthenticationService
     /**
      * Extract token from request
      * 
-     * Gets authentication token from current request.
+     * Gets authentication token from request.
      * 
+     * @param Request|null $request The request object
      * @return string|null Authentication token
      */
-    public function extractTokenFromRequest(): ?string
+    public static function extractTokenFromRequest(Request $request = null): ?string
     {
-        return TokenManager::extractTokenFromRequest();
+        // If no request is provided, use TokenManager directly
+        if ($request === null) {
+            return TokenManager::extractTokenFromRequest();
+        }
+        
+        // Extract token from Authorization header
+        $authHeader = $request->headers->get('Authorization');
+        
+        if (!$authHeader) {
+            return null;
+        }
+        
+        // Remove 'Bearer ' prefix if present
+        if (strpos($authHeader, 'Bearer ') === 0) {
+            return substr($authHeader, 7);
+        }
+        
+        return $authHeader;
     }
     
     /**
@@ -188,11 +246,12 @@ class AuthenticationService
      * 
      * Updates permissions in the user session and generates a new token.
      * Used when user permissions change during an active session.
+     * Works with any authentication provider.
      * 
      * @param string $token Current authentication token
-     * @return array Response with new token and updated permissions
+     * @return array|null Response with new token and updated permissions or null if failed
      */
-    public function refreshPermissions(string $token): mixed 
+    public function refreshPermissions(string $token): ?array 
     {
         // Get current session
         $session = SessionCacheManager::getSession($token);
@@ -212,17 +271,49 @@ class AuthenticationService
         // Update session with new roles
         $session['user']['roles'] = $userRoles;
         
-        // Generate new token with updated session data
-        $tokenLifetime = (int)config('session.access_token_lifetime');
-        $newToken = JWTService::generate($session, $tokenLifetime);
+        // Identify which provider was used for this token
+        $provider = $session['provider'] ?? 'jwt';
         
-        // Update session storage
-        SessionCacheManager::updateSession($token, $session, $newToken);
-
-        return [
-            'token' => $newToken,
-            'permissions' => $userRoles
-        ];
+        // Use appropriate provider to generate a new token
+        $authProvider = $this->authManager->getProvider($provider);
+        
+        if ($authProvider) {
+            // Generate new token using the same provider that created the original token
+            $tokenLifetime = (int)config('session.access_token_lifetime');
+            
+            // Create a minimal user data array with permissions
+            $userData = [
+                'uuid' => $userUuid,
+                'roles' => $userRoles,
+                // Copy any other essential user data from the session
+                'username' => $session['user']['username'] ?? null,
+                'email' => $session['user']['email'] ?? null
+            ];
+            
+            // Generate new token pair
+            $tokens = $authProvider->generateTokens($userData, $tokenLifetime);
+            $newToken = $tokens['access_token'];
+            
+            // Update session storage with new token
+            SessionCacheManager::updateSession($token, $session, $newToken, $provider);
+            
+            return [
+                'token' => $newToken,
+                'permissions' => $userRoles
+            ];
+        } else {
+            // Fall back to default JWT method if provider not found
+            $tokenLifetime = (int)config('session.access_token_lifetime');
+            $newToken = JWTService::generate($session, $tokenLifetime);
+            
+            // Update session storage
+            SessionCacheManager::updateSession($token, $session, $newToken);
+            
+            return [
+                'token' => $newToken,
+                'permissions' => $userRoles
+            ];
+        }
     }
 
     /**
@@ -370,48 +461,82 @@ class AuthenticationService
         return $userData;
     }
 
+    /**
+     * Check if user is authenticated
+     * 
+     * Uses the AuthenticationManager to verify if the request is authenticated.
+     * 
+     * @param Request|mixed $request The request to check
+     * @return bool True if authenticated, false otherwise
+     */
     public static function checkAuth($request): bool
     {
-    
-        $token = self::extractTokenFromRequest($request);
-        if (!$token) {
-            return false;
+        // Ensure we're working with a Request object
+        if (!$request instanceof Request) {
+            // Convert global variables to a Request object
+            $request = Request::createFromGlobals();
         }
-        return self::validateToken($token);
+        
+        // Use the authentication manager
+        $authManager = AuthBootstrap::getManager();
+        $userData = $authManager->authenticate($request);
+        
+        return $userData !== null;
     }
 
+    /**
+     * Check if user is authenticated and has admin privileges
+     * 
+     * Uses the AuthenticationManager to verify admin authentication.
+     * 
+     * @param Request|mixed $request The request to check
+     * @return bool True if authenticated as admin, false otherwise
+     */
     public static function checkAdminAuth($request): bool
     {
-        $token = self::extractTokenFromRequest($request);
-        if (!$token) {
-            return false;
+        // Ensure we're working with a Request object
+        if (!$request instanceof Request) {
+            // Convert global variables to a Request object
+            $request = Request::createFromGlobals();
         }
-
-        $session = self::validateAccessToken($token);
-        if (!$session) {
+        
+        // Use the authentication manager
+        $authManager = AuthBootstrap::getManager();
+        $userData = $authManager->authenticate($request);
+        
+        if (!$userData) {
             return false;
         }
         
-        $user = Utils::getUser($token);
-        if (!$user) {
-            return false;
-        }
-
-        if (!in_array('superuser', $user['roles'])) {
-            return false;
-        }
-
-        return true;
+        return $authManager->isAdmin($userData);
     }
 
+    /**
+     * Validate a token
+     * 
+     * @param string $token The token to validate
+     * @return bool True if token is valid
+     */
     private static function validateToken(string $token): bool
     {   
         $result = self::validateAccessToken($token);
-
-        if (!$result) {
-            return false;
-        }
-        
-        return true;
+        return $result !== null;
+    }
+    
+    /**
+     * Authenticate with multiple providers
+     * 
+     * Tries multiple authentication methods in sequence.
+     * This is useful for APIs that support multiple authentication methods
+     * like JWT tokens, API keys, OAuth, etc.
+     * 
+     * @param Request $request The request to authenticate
+     * @param array $providers Names of providers to try (e.g. 'jwt', 'api_key')
+     * @return array|null User data if authenticated, null otherwise
+     */
+    public static function authenticateWithProviders(Request $request, array $providers = ['jwt', 'api_key']): ?array
+    {
+        $authManager = AuthBootstrap::getManager();
+        return $authManager->authenticateWithProviders($providers, $request);
     }
 }

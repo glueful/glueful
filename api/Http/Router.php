@@ -8,18 +8,25 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Routing\RequestContext;
 use Symfony\Component\Routing\Matcher\UrlMatcher;
 use Symfony\Component\HttpFoundation\Request;
-use Glueful\Auth\AuthenticationService;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Glueful\Http\Middleware\MiddlewareInterface;
+use Glueful\Http\Middleware\RequestHandlerInterface;
+use Glueful\Http\Middleware\MiddlewareDispatcher;
+use Glueful\Http\Middleware\AuthenticationMiddleware;
 
 /**
- * Advanced Router Implementation using Symfony's Routing Component
+ * Advanced Router Implementation using Symfony's Routing Component with PSR-15 Middleware
  * 
- * This router provides robust routing capabilities by leveraging Symfony's routing system.
+ * This router provides robust routing capabilities by leveraging Symfony's routing system
+ * and PSR-15 compatible middleware architecture.
+ * 
  * Key features include:
  * - Route registration with method constraints (GET, POST, PUT, DELETE)
  * - Route grouping with shared prefixes
  * - Dynamic parameter extraction from URLs
- * - Support for middleware
- * - Public route designation
+ * - PSR-15 compatible middleware pipeline
+ * - Authentication middleware integration
  * - Request context handling
  * 
  * Usage Example:
@@ -28,11 +35,13 @@ use Glueful\Auth\AuthenticationService;
  * Router::get('/users', [UserController::class, 'list']);
  * Router::post('/users', [UserController::class, 'create']);
  * 
+ * // Add middleware
+ * Router::addMiddleware(new CorsMiddleware());
+ * 
  * // Group related routes
  * Router::group('/admin', function() {
  *     Router::get('/stats', [AdminController::class, 'stats']);
- *     Router::post('/settings', [AdminController::class, 'updateSettings']);
- * });
+ * }, requiresAuth: true, requiresAdminAuth: true);
  * 
  * // Handle the request
  * $router = Router::getInstance();
@@ -47,7 +56,13 @@ class Router
     private static RouteCollection $routes;
     private static RequestContext $context;
     private static UrlMatcher $matcher;
-    private static array $middlewares = [];
+    
+    /** @var MiddlewareInterface[] PSR-15 middleware stack */
+    private static array $middlewareStack = [];
+    
+    /** @var callable[] Legacy middleware functions (for backward compatibility) */
+    private static array $legacyMiddlewares = [];
+    
     private static array $protectedRoutes = []; // Routes that require authentication
     private static array $currentGroups = [];
     private static array $currentGroupAuth = [];
@@ -58,11 +73,6 @@ class Router
      * 
      * Sets up the router with a fresh RouteCollection and empty group stack.
      * Should be called before any route registration.
-     * 
-     * Usage:
-     * ```php
-     * Router::init();
-     * ```
      */
     private function __construct()
     {
@@ -193,21 +203,103 @@ class Router
         }
     }
 
+    /**
+     * Add a middleware using the legacy interface (for backward compatibility)
+     * 
+     * @param callable $middleware The middleware function
+     */
     public static function middleware(callable $middleware)
     {
-        self::$middlewares[] = $middleware;
+        self::$legacyMiddlewares[] = $middleware;
+    }
+    
+    /**
+     * Add a PSR-15 compatible middleware to the stack
+     * 
+     * @param MiddlewareInterface $middleware The middleware to add
+     */
+    public static function addMiddleware(MiddlewareInterface $middleware): void
+    {
+        self::$middlewareStack[] = $middleware;
+    }
+    
+    /**
+     * Add multiple PSR-15 compatible middleware to the stack
+     * 
+     * @param array $middlewareList The list of middleware to add
+     */
+    public static function addMiddlewares(array $middlewareList): void
+    {
+        foreach ($middlewareList as $middleware) {
+            if ($middleware instanceof MiddlewareInterface) {
+                self::addMiddleware($middleware);
+            }
+        }
+    }
+    
+    /**
+     * Convert legacy middleware functions to PSR-15 compatible middleware
+     * 
+     * This allows for easy migration from the old middleware system to the new PSR-15 compatible one.
+     * 
+     * @return void
+     */
+    public static function convertLegacyMiddleware(): void
+    {
+        foreach (self::$legacyMiddlewares as $middleware) {
+            self::$middlewareStack[] = self::convertToMiddleware($middleware);
+        }
+        
+        // Clear legacy middleware since they've been converted
+        self::$legacyMiddlewares = [];
+    }
+    
+    /**
+     * Convert a callable to a PSR-15 compatible middleware
+     * 
+     * This allows for smooth transition from the old middleware system
+     * to the new PSR-15 compatible one.
+     * 
+     * @param callable $callable The callable to convert
+     * @return MiddlewareInterface The converted middleware
+     */
+    public static function convertToMiddleware(callable $callable): MiddlewareInterface
+    {
+        return new class($callable) implements MiddlewareInterface {
+            private $callable;
+            
+            public function __construct(callable $callable)
+            {
+                $this->callable = $callable;
+            }
+            
+            public function process(Request $request, RequestHandlerInterface $handler): Response
+            {
+                // Call the middleware
+                $result = call_user_func($this->callable, $request);
+                
+                // If it returns a response, return it
+                if ($result instanceof Response) {
+                    return $result;
+                }
+                
+                // Otherwise, continue to the next middleware
+                return $handler->handle($request);
+            }
+        };
     }
 
     /**
      * Handle an incoming HTTP request
      * 
-     * Main entry point for processing requests through the router:
+     * Main entry point for processing requests through the router and middleware:
      * 1. Creates request context from current HTTP request
      * 2. Matches request against registered routes
-     * 3. Executes appropriate handler with parameters
-     * 4. Returns formatted response
+     * 3. Processes through middleware pipeline
+     * 4. Executes appropriate handler with parameters
+     * 5. Returns formatted response
      * 
-     * @param Request|null $request Optional Symfony Request object
+     * @param Request $request The request to handle
      * @return array API response array with success/error information
      */
     public static function dispatch(Request $request): array
@@ -218,70 +310,142 @@ class Router
         $pathInfo = $request->getPathInfo();
 
         try {
+            // Match the route
             $parameters = self::$matcher->match($pathInfo);
             $routeName = md5($request->getPathInfo() . $request->getMethod());
             $controller = $parameters['_controller'];
-
-
-        
             
-            // Apply global middlewares
-            foreach (self::$middlewares as $middleware) {
-                $middleware($request);
-            }
-
-            // Apply authentication check if required
-            if (in_array($routeName, self::$protectedRoutes)) {
-                if (!AuthenticationService::checkAuth($request)) {
-                    return [
-                        'success' => false,
-                        'message' => 'Unauthorized access, invalid or expired token',
-                        'code' => 401
-                    ];
+            // Set up middleware pipeline
+            $dispatcher = new MiddlewareDispatcher(function(Request $request) use ($controller, $parameters) {
+                // Remove internal routing parameters
+                unset($parameters['_controller']);
+                unset($parameters['_route']);
+                
+                // Execute controller
+                $reflection = new \ReflectionFunction($controller);
+                $parametersInfo = $reflection->getParameters();
+                
+                if ($parametersInfo[0]->getType()->getName() === Request::class) {
+                    $result = call_user_func($controller, $request);
+                } else {
+                    $result = call_user_func($controller, $parameters);
                 }
-            }
-
-            // Apply authentication check if required
+                
+                // Convert the result to a Response object
+                if ($result instanceof Response) {
+                    return $result;
+                }
+                
+                if (is_array($result)) {
+                    $statusCode = $result['code'] ?? ($result['success'] ?? true ? 200 : 500);
+                    return new JsonResponse($result, $statusCode);
+                }
+                
+                return new JsonResponse([
+                    'success' => true,
+                    'data' => $result
+                ], 200);
+            });
+            
+            // Add authentication middleware if required, using our new abstraction
+            $authManager = \Glueful\Auth\AuthBootstrap::getManager();
+            
             if (in_array($routeName, self::$adminProtectedRoutes)) {
-                if (!AuthenticationService::checkAdminAuth($request)) {
-                    return [
-                        'success' => false,
-                        'message' => 'Unauthorized access, invalid or expired token',
-                        'code' => 401
-                    ];
-                }
+                $dispatcher->pipe(new AuthenticationMiddleware(
+                    true, // requires admin
+                    $authManager, // using our new authentication manager
+                    ['jwt', 'api_key'] // try multiple auth methods in sequence
+                ));
+            } elseif (in_array($routeName, self::$protectedRoutes)) {
+                $dispatcher->pipe(new AuthenticationMiddleware(
+                    false, // standard authentication
+                    $authManager, // using our new authentication manager
+                    ['jwt', 'api_key'] // try multiple auth methods in sequence
+                ));
             }
-
-            $reflection = new \ReflectionFunction($controller);
-            $parametersInfo = $reflection->getParameters();
-
-            if ($parametersInfo[0]->getType()->getName() === Request::class) {
-                $result = call_user_func($controller, $request);
-            } else {
-                $result = call_user_func($controller, $parameters);
+            
+            // Add PSR-15 middleware to the pipeline
+            foreach (self::$middlewareStack as $middleware) {
+                $dispatcher->pipe($middleware);
             }
-
-            if (is_array($result)) {
-                return $result;
+            
+            // Convert and add legacy middleware to the pipeline
+            foreach (self::$legacyMiddlewares as $middleware) {
+                $dispatcher->pipe(self::convertToMiddleware($middleware));
+            }
+            
+            // Process the request through the middleware pipeline
+            $response = $dispatcher->handle($request);
+            
+            // Convert the response to an array
+            if ($response instanceof JsonResponse) {
+                return json_decode($response->getContent(), true);
             }
             
             return [
                 'success' => true,
-                'data' => $result
+                'data' => $response->getContent(),
+                'code' => $response->getStatusCode()
             ];
-        } catch (\Exception $e) {
+        } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException $e) {
+            return [
+                'success' => false,
+                'message' => 'Route not found',
+                'code' => 404
+            ];
+        } catch (\Throwable $e) {
+            // Consolidated exception handling for all other exceptions
+            // Log the exception with detailed context
+            self::logException($e);
+            
+            // Return a consistent error response
             return [
                 'success' => false,
                 'message' => 'Internal server error: ' . $e->getMessage(),
-                'code' => 500
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Internal server error: ' . $e->getMessage(),
-                'code' => 500
+                'code' => $e->getCode() ?: 500,
+                'type' => get_class($e)
             ];
         }
+    }
+    
+    /**
+     * Log exception details for debugging
+     * 
+     * Logs exception information to help with troubleshooting.
+     * Delegates to the main ExceptionHandler if possible, otherwise falls back
+     * to basic error logging.
+     * 
+     * @param \Throwable $exception The exception to log
+     */
+    private static function logException(\Throwable $exception): void
+    {
+        // Create context for logging
+        $context = [
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
+            'trace' => $exception->getTraceAsString(),
+            'type' => get_class($exception)
+        ];
+        
+        // Try to use the framework's exception handler if available
+        if (class_exists('\\Glueful\\Exceptions\\ExceptionHandler')) {
+            try {
+                // Call the framework's exception handler's logging method
+                call_user_func(['\\Glueful\\Exceptions\\ExceptionHandler', 'logError'], $exception, $context);
+                return;
+            } catch (\Throwable $e) {
+                // Fall back to error_log if the exception handler fails
+            }
+        }
+        
+        // Fall back to basic error logging
+        error_log(sprintf(
+            "Exception: %s, Message: %s, File: %s, Line: %d", 
+            get_class($exception),
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        ));
     }
 
     public static function getInstance(): Router 
@@ -310,6 +474,7 @@ class Router
         $response = self::dispatch($request);
         return $response;
     }
+    
     /**
      * Get all registered routes
      * 

@@ -9,7 +9,7 @@ $authController = new AuthController();
 // Auth routes
 Router::group('/auth',function() use ($authController) {
     Router::post('/login', function (Request $request) use ($authController){
-        return $authController->login($request);
+        return $authController->login();
     });
     Router::post('/verify-email', function() use ($authController) {
         return $authController->verifyEmail();

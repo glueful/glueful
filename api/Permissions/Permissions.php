@@ -37,6 +37,7 @@ class Permissions
      * 
      * Validates user's permission for a given model based on their session token.
      * Handles both UI and API permission checks with appropriate strictness levels.
+     * Updated to use the new authentication system with provider support.
      * 
      * @param string $model Resource model name (e.g., 'ui.dashboard' or 'api.users')
      * @param Permission $permission Permission type to check
@@ -45,28 +46,37 @@ class Permissions
      */
     public static function hasPermission(string $model, Permission $permission, string $token): bool 
     {
-        // Use null for function and action parameters that aren't needed for validation
-        $sessionInfo = APIEngine::validateSession(null, null, ['token' => $token]);
-        
-        if (!$sessionInfo || isset($sessionInfo['ERR'])) {
-            return false;
-        }
-
+        // Skip permission check if system-wide permissions are disabled
         if (config('security.enabled_permissions') !== true) {
             return true;
         }
+        
+        // Validate session using the new authentication system
+        $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+        
+        if (!$session || !isset($session['user'])) {
+            return false;
+        }
 
+        // Extract user data from session
+        $userData = $session['user'];
+        
+        // Check if user has role for this model
+        if (!isset($userData['roles']) || !is_array($userData['roles']) || empty($userData['roles'])) {
+            return false;
+        }
+        
         // Check if role exists for the model
-        if (!isset($sessionInfo['role'][$model])) {
+        if (!isset($userData['roles'][$model])) {
             return false;
         }
 
         // Implement strict permissions when accessing the API via REST
         if (str_contains($model, 'ui.')) {
-            return self::checkUiPermissions($model, $permission, $sessionInfo);
+            return self::checkUiPermissions($model, $permission, $userData);
         }
 
-        return self::checkApiPermissions($model, $permission, $sessionInfo);
+        return self::checkApiPermissions($model, $permission, $userData);
     }
 
     /**
