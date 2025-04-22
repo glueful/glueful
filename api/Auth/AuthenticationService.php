@@ -6,7 +6,6 @@ namespace Glueful\Auth;
 use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
-use Glueful\Helpers\Utils;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -204,7 +203,7 @@ class AuthenticationService
      * @param Request|null $request The request object
      * @return string|null Authentication token
      */
-    public static function extractTokenFromRequest(Request $request = null): ?string
+    public static function extractTokenFromRequest(?Request $request = null): ?string
     {
         // If no request is provided, use TokenManager directly
         if ($request === null) {

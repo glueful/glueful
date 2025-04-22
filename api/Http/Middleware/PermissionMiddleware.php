@@ -10,7 +10,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Repository\RoleRepository;
 use Glueful\Auth\SessionCacheManager;
 use Glueful\Auth\AuthenticationService;
-use Glueful\Permissions\Permission;
 use Glueful\Permissions\PermissionManager;
 
 /**
