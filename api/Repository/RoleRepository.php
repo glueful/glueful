@@ -157,6 +157,7 @@ class RoleRepository
      * 
      * Creates an association between a user and a role.
      * Checks for existing assignments to prevent duplicates.
+     * Also invalidates the user's permission cache.
      * 
      * @param string $userUuid User UUID to assign role to
      * @param string $roleUuid Role UUID to assign
@@ -181,6 +182,11 @@ class RoleRepository
         
         $result = $this->db->insert('user_roles_lookup', $data);
         
+        // Invalidate the user's permission cache
+        if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
+            \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
+        }
+        
         return $result ? true : false;
     }
 
@@ -188,6 +194,7 @@ class RoleRepository
      * Remove role from user
      * 
      * Revokes a role assignment from a user.
+     * Also invalidates the user's permission cache.
      * 
      * @param string $userUuid User UUID to remove role from
      * @param string $roleUuid Role UUID to remove
@@ -195,10 +202,17 @@ class RoleRepository
      */
     public function unassignRole(string $userUuid, string $roleUuid): bool
     {
-        return $this->db->delete('user_roles_lookup', [
+        $result = $this->db->delete('user_roles_lookup', [
             'user_uuid' => $userUuid, 
             'role_uuid' => $roleUuid
         ]);
+        
+        // Invalidate the user's permission cache
+        if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
+            \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
+        }
+        
+        return $result;
     }
     
     /**
@@ -294,5 +308,23 @@ class RoleRepository
 
         return $result > 0;
     //    return (bool)($result[0]['has_role'] ?? 0);
+    }
+    
+    /**
+     * Get role name by UUID
+     * 
+     * Retrieves the name of a role given its UUID.
+     * 
+     * @param string $roleUuid Role UUID to look up
+     * @return string|null Role name if found, null otherwise
+     */
+    public function getRoleName(string $roleUuid): ?string
+    {
+        $role = $this->db->select('roles', ['name'])
+            ->where(['uuid' => $roleUuid])
+            ->limit(1)
+            ->get();
+            
+        return $role ? $role[0]['name'] : null;
     }
 }

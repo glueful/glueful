@@ -101,6 +101,7 @@ class PermissionRepository {
      * 
      * Creates or updates user-specific permissions for a resource.
      * These permissions override role-based permissions.
+     * Also invalidates the user's permission cache.
      * 
      * @param string $userUuid Target user's UUID
      * @param string $model Permission model/resource name
@@ -127,6 +128,11 @@ class PermissionRepository {
             'permissions' => $permissionsData,
             'created_at' => date('Y-m-d H:i:s')
         ]);
+        
+        // Invalidate permission cache if successful
+        if ($success) {
+            $this->invalidatePermissionCache($userUuid);
+        }
 
         return $success ? $uuid : false;
     }
@@ -136,6 +142,7 @@ class PermissionRepository {
      * 
      * Deletes user permission records for a specific resource.
      * This restores the default role-based permissions for the user.
+     * Also invalidates the user's permission cache.
      * 
      * @param string $userUuid Target user's UUID
      * @param string $model Permission model/resource to remove
@@ -143,11 +150,18 @@ class PermissionRepository {
      */
     public function removeUserPermission(string $userUuid, string $model): bool
     {
-        return $this->db->delete(
+        $result = $this->db->delete(
             'user_permissions', 
             ['user_uuid' => $userUuid, 'model' => $model], 
             false
         );
+        
+        // Invalidate permission cache if successful
+        if ($result) {
+            $this->invalidatePermissionCache($userUuid);
+        }
+        
+        return $result;
     }
 
     /**
@@ -405,4 +419,139 @@ class PermissionRepository {
         return $this->db->upsert('role_permissions', $data, ['uuid' => $uuid]) > 0;
     }
 
+    /**
+     * Check if user has permission with detailed debug information
+     * 
+     * Enhanced version of hasPermission that returns detailed information about
+     * why a permission check succeeded or failed. Useful for troubleshooting
+     * permission issues and providing more informative error messages.
+     * 
+     * @param string $userUuid User UUID to check
+     * @param string $model Permission model/resource name 
+     * @param string $permission Permission to check for
+     * @return array Detailed permission check results
+     */
+    public function hasPermissionDebug(string $userUuid, string $model, string $permission): array
+    {
+        $result = [
+            'has_permission' => false,
+            'reason' => '',
+            'user' => ['uuid' => $userUuid],
+            'model' => $model,
+            'permission' => $permission,
+            'user_permissions' => [],
+            'role_permissions' => []
+        ];
+        
+        // First check user-specific permissions (override)
+        $userPerms = $this->getUserPermissions($userUuid);
+        $result['user_permissions'] = $userPerms;
+        
+        if (isset($userPerms[$model])) {
+            if (in_array($permission, $userPerms[$model])) {
+                $result['has_permission'] = true;
+                $result['reason'] = "User has direct permission for this action";
+                return $result;
+            } else {
+                $result['reason'] = "User has permissions for this model but not the required action";
+                // Continue checking roles anyway, for complete debug info
+            }
+        }
+        
+        // Check role permissions
+        $roleRepo = new RoleRepository();
+        $roles = $roleRepo->getUserRoles($userUuid);
+        $result['user']['roles'] = $roles;
+        
+        if (empty($roles)) {
+            $result['reason'] = "User has no roles assigned";
+            return $result;
+        }
+        
+        $rolePermissions = [];
+        foreach ($roles as $role) {
+            $roleUuid = $role['role_uuid'];
+            $roleName = $role['role_name'] ?? $roleRepo->getRoleName($roleUuid);
+            
+            $rolePerms = $this->getRolePermissions($roleUuid);
+            $rolePermissions[$roleName] = $rolePerms;
+            
+            if (isset($rolePerms[$model]) && 
+                in_array($permission, $rolePerms[$model]['permissions'])) {
+                $result['has_permission'] = true;
+                $result['reason'] = "Permission granted via '{$roleName}' role";
+                $result['role_permissions'] = $rolePermissions;
+                return $result;
+            }
+        }
+        
+        $result['role_permissions'] = $rolePermissions;
+        $result['reason'] = "None of the user's roles grant the required permission";
+        
+        return $result;
+    }
+    
+    /**
+     * Get cached effective permissions for a user
+     * 
+     * Retrieves the user's effective permissions from cache if available,
+     * otherwise calculates them and caches the result.
+     * 
+     * @param string $userUuid User UUID
+     * @param int $ttl Cache time-to-live in seconds (default: 5 minutes)
+     * @return array Complete set of user's effective permissions
+     */
+    public function getCachedEffectivePermissions(string $userUuid, int $ttl = 300): array
+    {
+        // Initialize cache if not already done
+        if (!class_exists('\\Glueful\\Cache\\CacheEngine')) {
+            require_once __DIR__ . '/../Cache/CacheEngine.php';
+        }
+        
+        // Initialize the cache engine if needed
+        \Glueful\Cache\CacheEngine::initialize();
+        
+        $cacheKey = "user_permissions:{$userUuid}";
+        
+        // Try to get from cache first
+        $cachedPermissions = \Glueful\Cache\CacheEngine::get($cacheKey);
+        if ($cachedPermissions) {
+            return $cachedPermissions;
+        }
+        
+        // Not in cache, calculate permissions
+        $permissions = $this->getEffectivePermissions($userUuid);
+        
+        // Cache permissions
+        \Glueful\Cache\CacheEngine::set($cacheKey, $permissions, $ttl);
+        
+        return $permissions;
+    }
+    
+    /**
+     * Invalidate cached permissions for a user
+     * 
+     * Clears the cached permissions when user roles or permissions change.
+     * Should be called whenever:
+     * - User roles are changed
+     * - Role permissions are updated
+     * - Direct user permissions are modified
+     * 
+     * @param string $userUuid User UUID
+     * @return bool True if the cache was successfully invalidated
+     */
+    public function invalidatePermissionCache(string $userUuid): bool
+    {
+        // Initialize cache if not already done
+        if (!class_exists('\\Glueful\\Cache\\CacheEngine')) {
+            require_once __DIR__ . '/../Cache/CacheEngine.php';
+        }
+        
+        // Initialize the cache engine if needed
+        \Glueful\Cache\CacheEngine::initialize();
+        
+        $cacheKey = "user_permissions:{$userUuid}";
+        
+        return \Glueful\Cache\CacheEngine::delete($cacheKey);
+    }
 }

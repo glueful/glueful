@@ -216,6 +216,16 @@ class AuthController {
                 return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
             }
             
+            // Get session to extract user UUID
+            $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Invalidate the permission cache for this user
+            \Glueful\Permissions\PermissionManager::invalidateCache($session['user']['uuid']);
+            
+            // Refresh permissions in the session
             $result = $this->authService->refreshPermissions($token);
 
             if (!$result) {

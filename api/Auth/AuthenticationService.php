@@ -125,9 +125,12 @@ class AuthenticationService
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
         $userRoles = $this->userRepository->getRoles($userData['uuid']);
 
-        // Assign roles to user data
+        // Initialize roles array
+        $userData['roles'] = [];
+        
+        // Add each role to the roles array
         foreach ($userRoles as $userRole) {
-            $userData['roles'] = [$userRole['role_name']];
+            $userData['roles'][] = $userRole['role_name'];
         }
         
         $userData['profile'] = $userProfile;
