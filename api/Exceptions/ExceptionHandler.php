@@ -121,6 +121,52 @@ class ExceptionHandler
     }
 
     /**
+     * Log error details to the appropriate channel
+     *
+     * Centralizes error logging across the application.
+     * This method can be called from other parts of the application
+     * to ensure consistent error handling.
+     * 
+     * @param Throwable $exception The exception to log
+     * @param array $context Additional context information
+     * @return void
+     */
+    public static function logError(Throwable $exception, array $context = []): void
+    {
+        // Ensure we have at least basic context information
+        $context = array_merge([
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
+            'trace' => $exception->getTraceAsString(),
+            'type' => get_class($exception)
+        ], $context);
+
+        // Determine logging channel based on exception type
+        $channel = self::$channelMap[get_class($exception)] ?? self::$channelMap['default'];
+
+        // Log to application logger if available
+        if (class_exists('\\Glueful\\Logging\\LogManager')) {
+            try {
+                $logger = call_user_func(['\\Glueful\\Logging\\LogManager', 'getLogger'], $channel);
+                $logger->error($exception->getMessage(), $context);
+                return;
+            } catch (\Throwable $e) {
+                // Fall back to error_log if logger fails
+            }
+        }
+        
+        // Fall back to PHP's error log
+        error_log(sprintf(
+            "[%s] Exception: %s, Message: %s, File: %s, Line: %d", 
+            $channel,
+            get_class($exception),
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        ));
+    }
+
+    /**
      * Output a JSON formatted error response
      * 
      * Sets appropriate HTTP status code and headers, then outputs

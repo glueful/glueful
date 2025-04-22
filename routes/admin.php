@@ -27,10 +27,6 @@ Router::group('/admin', function() use ($controller) {
         return $controller->login($request);
     });
 
-    Router::get('/', function (Request $request) use ($controller){
-        return $controller->getBaseUrl($request);
-    });
-
     Router::post('/logout', function (Request $request) use ($controller){
         return $controller->logout($request);
     });
@@ -52,8 +48,9 @@ Router::group('/admin', function() use ($controller) {
             return $controller->getTableSize($request);
         });
 
-        Router::get('/table/data', function (Request $request) use ($controller){
-            return $controller->getTableData($request);
+        Router::get('/table/{name}', function (array $params) use ($controller){
+            // $params = $request->getRouteParams();
+            return $controller->getTableData($params);
         });
 
         Router::post('/table/column/add', function (Request $request) use ($controller){

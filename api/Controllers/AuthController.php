@@ -7,6 +7,8 @@ use Glueful\Http\Response;
 use Glueful\Helpers\Request;
 use Glueful\Security\EmailVerification;
 use Glueful\Auth\AuthenticationService;
+use Glueful\Auth\AuthBootstrap;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 class AuthController {
     private EmailVerification $verifier;
@@ -15,20 +17,33 @@ class AuthController {
     public function __construct() {
         $this->verifier = new EmailVerification();
         $this->authService = new AuthenticationService();
+        
+        // Initialize the authentication system
+        AuthBootstrap::initialize();
     }
 
     /**
      * User login
      * 
      * Authenticates user with credentials and returns tokens.
+     * Supports different authentication providers.
      * 
      * @return mixed HTTP response
      */
     public function login()
     {
         try {
+            // Get credentials using the getPostData method from our Helper Request class
             $credentials = Request::getPostData();
-            $result = $this->authService->authenticate($credentials);
+            
+            // Check if a specific provider was requested
+            $providerName = null;
+            if (isset($credentials['provider'])) {
+                $providerName = $credentials['provider'];
+            }
+            
+            // Authenticate with the specified provider or use default
+            $result = $this->authService->authenticate($credentials, $providerName);
             
             if (!$result) {
                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
@@ -53,7 +68,9 @@ class AuthController {
     public function logout()
     {
         try {
-            $token = $this->authService->extractTokenFromRequest();
+            // Convert globals to Symfony Request for compatibility with our new system
+            $request = SymfonyRequest::createFromGlobals();
+            $token = AuthenticationService::extractTokenFromRequest($request);
             
             if (!$token) {
                 return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
@@ -191,7 +208,9 @@ class AuthController {
     public function refreshPermissions()
     {
         try {
-            $token = $this->authService->extractTokenFromRequest();
+            // Convert globals to Symfony Request for compatibility with our new system
+            $request = SymfonyRequest::createFromGlobals();
+            $token = AuthenticationService::extractTokenFromRequest($request);
             
             if (!$token) {
                 return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
@@ -212,24 +231,40 @@ class AuthController {
         }
     }
 
+    /**
+     * Validate if a token is valid and active
+     * 
+     * Uses the authentication abstraction to verify token validity.
+     * 
+     * @return mixed HTTP response
+     */
     public function validateToken()
     {
         try {
-            $token = $this->authService->extractTokenFromRequest();
+            // Convert globals to Symfony Request for compatibility with our new system
+            $request = SymfonyRequest::createFromGlobals();
+            
+            // Get token from request
+            $token = AuthenticationService::extractTokenFromRequest($request);
             
             if (!$token) {
                 return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
             }
             
-            $result = $this->authService->validateAccessToken($token);
-
-            if (!$result) {
+            // Use our new authentication system to validate the token
+            $authManager = AuthBootstrap::getManager();
+            $userData = $authManager->authenticate($request);
+            
+            if (!$userData) {
                 return Response::error('Invalid token', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            return Response::ok($result, 'Token is valid')->send();
+            return Response::ok([
+                'user' => $userData,
+                'is_valid' => true
+            ], 'Token is valid')->send();
         } catch (\Exception $e) {
-            return Response::unauthorized('Invalid or expired token')->send();
+            return Response::unauthorized('Invalid or expired token: ' . $e->getMessage())->send();
         }
     }
 

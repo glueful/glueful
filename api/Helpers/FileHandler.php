@@ -20,7 +20,7 @@ class FileHandler {
     public function handleFileUpload(array $getParams, array $fileParams): array 
     {
         try {
-            $token = $this->auth->extractTokenFromRequest();
+            $token = AuthenticationService::extractTokenFromRequest();
         
             if (!$token) {
                 return [
@@ -44,7 +44,7 @@ class FileHandler {
     public function handleBase64Upload(array $getParams, array $postParams): array 
     {
         try {
-            $token = $this->auth->extractTokenFromRequest();
+            $token = AuthenticationService::extractTokenFromRequest();
             if (!$token) {
                 return [
                     'success' => false,

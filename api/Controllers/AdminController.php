@@ -6,11 +6,12 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Repository\{PermissionRepository, RoleRepository, UserRepository};
 use Glueful\Helpers\{Request, ExtensionsManager};
-use Glueful\Auth\AuthenticationService;
+use Glueful\Auth\{AuthBootstrap, TokenManager};
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{Connection, QueryBuilder};
 use Glueful\Database\Migrations\MigrationManager;
 use Glueful\Scheduler\JobScheduler;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 // // Get all configs
 // GET /admin/configs
@@ -53,21 +54,18 @@ use Glueful\Scheduler\JobScheduler;
 //     "status": "reserved"  // or "available" or "pending"
 // }
 class AdminController {
-    private AuthenticationService $authService;
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
     private UserRepository $userRepository;
-    private array $adminPermissions;
     private SchemaManager $schemaManager;
     private QueryBuilder $queryBuilder;
     private MigrationManager $migrationManager;
     private ConfigController $configController;
     private JobScheduler $scheduler;
-
+    private $authManager;
 
     public function __construct() {
         $this->userRepository = new UserRepository();
-        $this->authService = new AuthenticationService();
         $this->roleRepo = new RoleRepository();
         $this->permissionRepo = new PermissionRepository();
 
@@ -78,9 +76,12 @@ class AdminController {
         $this->migrationManager = new MigrationManager();
         $this->configController = new ConfigController();
 
-         $this->scheduler = new JobScheduler();
+        $this->scheduler = new JobScheduler();
         $this->scheduler::getInstance();
-       
+        
+        // Initialize auth system
+        AuthBootstrap::initialize();
+        $this->authManager = AuthBootstrap::getManager();
     }
 
     /**
@@ -117,14 +118,24 @@ class AdminController {
                 error_log("Unauthorized access attempt by user ID: $userId");
                 return Response::error('Insufficient privileges', Response::HTTP_FORBIDDEN)->send();
             }
-             // First authenticate the user
-             $authResult = $this->authService->authenticate($credentials);
-             if (!$authResult) {
-                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
-             }
+            
+            // Create a Symfony request with credentials for authentication
+            $request = new SymfonyRequest([], [], [], [], [], [], json_encode($credentials));
+            $request->headers->set('Content-Type', 'application/json');
+            
+            // Authenticate using the admin authentication provider
+            $userData = $this->authManager->authenticateWithProvider('admin', $request);
+            
+            if (!$userData) {
+                return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
+            }
 
-            $authResult['user']['is_admin'] = true;
-            return Response::ok($authResult, 'Login successful')->send();
+            $userData['is_admin'] = true;
+            
+            // Log the admin access
+            $this->authManager->logAccess($userData, $request);
+            
+            return Response::ok($userData, 'Login successful')->send();
 
         } catch (\Exception $e) {
             error_log("Login error: " . $e->getMessage());
@@ -145,13 +156,22 @@ class AdminController {
     public function logout()
     {
         try {
-            $token = $this->authService->extractTokenFromRequest();
+            $request = SymfonyRequest::createFromGlobals();
+            $userData = $this->authenticate($request);
             
-            if (!$token) {
-                return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
+            if (!$userData) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            $success = $this->authService->terminateSession($token);
+            // Extract token for terminating session
+            $token = $userData['token'] ?? null;
+            
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Use TokenManager to revoke the session instead of the non-existent invalidateToken method
+            $success = TokenManager::revokeSession($token);
             
             if ($success) {
                 return Response::ok(null, 'Logged out successfully')->send();
@@ -308,7 +328,7 @@ class AdminController {
     {
         try {
             $tables = $this->schemaManager->getTables();
-            return Response::ok(['tables' => $tables], 'Tables retrieved successfully')->send();
+            return Response::ok($tables, 'Tables retrieved successfully')->send();
 
         } catch (\Exception $e) {
             error_log("Get tables error: " . $e->getMessage());
@@ -352,12 +372,10 @@ class AdminController {
      * 
      * @return mixed HTTP response
      */
-    public function getTableData(): mixed
+    public function getTableData(?array $table): mixed
     {
         try {
-            $data = Request::getPostData();
-            
-            if (!isset($data['table_name'])) {
+            if (!isset($table['name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
@@ -366,7 +384,7 @@ class AdminController {
             $perPage = (int)($data['per_page'] ?? 25);
             
             // Build the query using QueryBuilder
-            $results = $this->queryBuilder->select($data['table_name'], ['*'])
+            $results = $this->queryBuilder->select($table['name'], ['*'])
                 ->orderBy(['created_at' => 'DESC'])
                 ->paginate($page, $perPage);
             
@@ -814,27 +832,6 @@ class AdminController {
         }
     }
 
-    public function getBaseUrl(): mixed
-    {
-        try {
-            $baseUrl = config('paths.api_base_url');
-            $cdn = config('paths.cdn');
-
-            $result = [
-                'base_url' => $baseUrl,
-                'cdn' => $cdn
-            ];
-
-            return Response::ok($result, 'Base URL retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get base URL error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get base URL: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
-    }
-
     /**
      * Create a new permission
      */
@@ -982,5 +979,34 @@ class AdminController {
     public function updateRolePermissions():mixed
     {
         return[];
+    }
+
+    /**
+     * Authenticate a request using multiple authentication methods
+     *
+     * @param SymfonyRequest $request The HTTP request to authenticate
+     * @return array|null User data if authenticated, null otherwise
+     */
+    private function authenticate(SymfonyRequest $request): ?array
+    {
+        // For admin routes, prefer admin-specific authentication
+        return $this->authManager->authenticateWithProviders(['admin', 'jwt'], $request);
+    }
+    
+    /**
+     * Check if user is authorized to perform admin actions
+     *
+     * @param array $userData User data from authentication
+     * @return bool True if user is authorized
+     */
+    private function isAuthorized(array $userData): bool
+    {
+        // Check if user is an admin
+        if (!isset($userData['uuid'])) {
+            return false;
+        }
+        
+        // Verify user has superuser role
+        return $this->roleRepo->userHasRole($userData['uuid'], 'superuser');
     }
 }

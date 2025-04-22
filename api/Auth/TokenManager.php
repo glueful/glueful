@@ -137,12 +137,38 @@ public static function generateTokenPair(
      * Validate access token
      * 
      * Checks if token is valid, not expired, and not revoked.
+     * Uses the appropriate authentication provider based on token type.
      * 
      * @param string $token Access token
+     * @param string|null $provider Optional provider name to use for validation
      * @return bool Validity status
      */
-    public static function validateAccessToken(string $token): bool
+    public static function validateAccessToken(string $token, ?string $provider = null): bool
     {
+        // Get the authentication manager instance
+        $authManager = self::getAuthManager();
+        
+        // If provider is explicitly specified, use it
+        if ($provider && $authManager) {
+            $authProvider = $authManager->getProvider($provider);
+            if ($authProvider) {
+                return $authProvider->validateToken($token) && !self::isTokenRevoked($token);
+            }
+        }
+        
+        // Try to detect token type and use appropriate provider
+        // Default to JWT validation for backward compatibility
+        if ($authManager) {
+            // We need to loop through the available providers
+            $providers = self::getAvailableProviders($authManager);
+            foreach ($providers as $authProvider) {
+                if ($authProvider->canHandleToken($token)) {
+                    return $authProvider->validateToken($token) && !self::isTokenRevoked($token);
+                }
+            }
+        }
+        
+        // Fallback to traditional JWT validation
         return JWTService::verify($token) && !self::isTokenRevoked($token);
     }
 
@@ -150,11 +176,13 @@ public static function generateTokenPair(
      * Refresh authentication tokens
      * 
      * Generates new token pair using refresh token.
+     * Supports multiple authentication providers.
      * 
      * @param string $refreshToken Current refresh token
+     * @param string|null $provider Optional provider name to use
      * @return array|null New token pair or null if invalid
      */
-    public static function refreshTokens(string $refreshToken): ?array
+    public static function refreshTokens(string $refreshToken, ?string $provider = null): ?array
     {
         // Get session data from refresh token
         $sessionData = self::getSessionFromRefreshToken($refreshToken);
@@ -162,7 +190,35 @@ public static function generateTokenPair(
             return null;
         }
         
-        // Generate new token pair
+        // Get the authentication manager instance
+        $authManager = self::getAuthManager();
+        
+        // If provider is explicitly specified, use it
+        if ($provider && $authManager) {
+            $authProvider = $authManager->getProvider($provider);
+            if ($authProvider) {
+                return $authProvider->refreshTokens($refreshToken, $sessionData);
+            }
+        }
+        
+        // If no explicit provider but we have stored provider in session
+        $connection = new Connection();
+        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $result = $queryBuilder->select('auth_sessions', ['provider'])
+            ->where(['refresh_token' => $refreshToken])
+            ->get();
+        
+        if (!empty($result) && isset($result[0]['provider']) && $result[0]['provider'] !== 'jwt') {
+            $storedProvider = $result[0]['provider'];
+            if ($authManager) {
+                $authProvider = $authManager->getProvider($storedProvider);
+                if ($authProvider) {
+                    return $authProvider->refreshTokens($refreshToken, $sessionData);
+                }
+            }
+        }
+        
+        // Default to standard JWT token generation for backward compatibility
         return self::generateTokenPair($sessionData);
     }
 
@@ -191,79 +247,94 @@ public static function generateTokenPair(
     }
 
      /**
-     * Create user session
+     * Create user session with provider support
      * 
-     * Handles user authentication and session creation.
+     * Handles user authentication and session creation with support for different authentication providers.
      * 
-     * @param string $function Authentication function
-     * @param string $action Auth action type
-     * @param array $param Credentials and options
+     * @param array $user User data
+     * @param string|null $provider Optional authentication provider to use
      * @return array Session data or error
      */
-    public static function createUserSession(array $user): array 
+    public static function createUserSession(array $user, ?string $provider = null): array 
     {      
-            // Add validation to ensure we have valid user data
-            if (empty($user) || !isset($user['uuid'])) {
-                return [];  // Return empty array that will be caught as failure
+        // Add validation to ensure we have valid user data
+        if (empty($user) || !isset($user['uuid'])) {
+            return [];  // Return empty array that will be caught as failure
+        }
+
+        $user['remember_me'] = $user['remember_me'] ?? false;
+        // Adjust token lifetime based on remember-me preference
+        $accessTokenLifetime = $user['remember_me'] 
+            ? (int)config('session.remember_expiration', 30 * 24 * 3600) // 30 days
+            : (int)config('session.access_token_lifetime', 3600);          // 1 hour
+            
+        $refreshTokenLifetime = $user['remember_me'] 
+            ? (int)config('session.remember_expiration', 60 * 24 * 3600) // 60 days
+            : (int)config('session.refresh_token_lifetime', 7 * 24 * 3600); // 7 days
+
+        // Use authentication provider if specified and available
+        $authManager = self::getAuthManager();
+        if ($provider && $authManager) {
+            $authProvider = $authManager->getProvider($provider);
+            if ($authProvider) {
+                $tokens = $authProvider->generateTokens($user, $accessTokenLifetime, $refreshTokenLifetime);
+            } else {
+                // Fall back to default token generation
+                $tokens = self::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
             }
+        } else {
+            // Default to JWT tokens for backward compatibility
+            $tokens = self::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
+        }
 
-            $user['remember_me'] = $user['remember_me'] ?? false;
-            // Adjust token lifetime based on remember-me preference
-            $accessTokenLifetime = $user['remember_me'] 
-                ? config('session.remember_expiration', 30 * 24 * 3600) // 30 days
-                : config('session.access_token_lifetime', 3600);          // 1 hour
-                
-            $refreshTokenLifetime = $user['remember_me'] 
-                ? config('session.remember_expiration', 60 * 24 * 3600) // 60 days
-                : config('session.refresh_token_lifetime', 7 * 24 * 3600); // 7 days
+        // Store session
+        $user['refresh_token'] = $tokens['refresh_token'];
+        SessionCacheManager::storeSession($user, $tokens['access_token']);
 
-           // Generate token pair
-
-           $tokens = TokenManager::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
-
-            // Store session
-            $user['refresh_token'] = $tokens['refresh_token'];
-
-            SessionCacheManager::storeSession($user, $tokens['access_token']);
-
-
-            self::storeSession(
-                $user['uuid'],
-                [
-                    'access_token' => $tokens['access_token'],
-                    'refresh_token' => $tokens['refresh_token'],
-                    'token_fingerprint' => TokenManager::generateTokenFingerprint($tokens['access_token']),
-                    'remember_me' => $user['remember_me']
-                ],
-                $refreshTokenLifetime
-            );
-
-            return [
-                'tokens' => [
-                    'access_token' => $tokens['access_token'],
-                    'refresh_token' => $tokens['refresh_token'],
-                    'expires_in' => $accessTokenLifetime,
-                    'token_type' => 'Bearer'
-                ],
-                'user' => $user
-            ];
-       
+        self::storeSession(
+            $user['uuid'],
+            [
+                'access_token' => $tokens['access_token'],
+                'refresh_token' => $tokens['refresh_token'],
+                'token_fingerprint' => self::generateTokenFingerprint($tokens['access_token']),
+                'remember_me' => $user['remember_me'],
+                'provider' => $provider ?? 'jwt' // Store the provider used
+            ],
+            $refreshTokenLifetime
+        );
+        unset($user['refresh_token']);
+        return [
+            'tokens' => [
+                'access_token' => $tokens['access_token'],
+                'refresh_token' => $tokens['refresh_token'],
+                'expires_in' => $accessTokenLifetime,
+                'token_type' => 'Bearer'
+            ],
+            'user' => $user
+        ];
     }
 
     /**
      * Store session in database
      * 
      * Persists session for refresh token operations.
+     * Supports storing the authentication provider used.
      * 
      * @param string $userUuid User identifier
      * @param array $tokens Token data
-     * @return bool Success status
+     * @param int|null $refreshTokenLifetime Optional refresh token lifetime
+     * @return int Number of rows affected
      */
-    public static function storeSession(string $userUuid, array $tokens): int
+    public static function storeSession(string $userUuid, array $tokens, ?int $refreshTokenLifetime = null): int
     {
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $uuid = Utils::generateNanoID();
+        
+        // Use provided refresh token lifetime or fall back to config
+        $refreshTokenLifetime = $refreshTokenLifetime ?? 
+            (int)config('session.refresh_token_lifetime', 7 * 24 * 3600);
+        
         return $queryBuilder->insert('auth_sessions', [
             'uuid'=> $uuid,
             'user_uuid' => $userUuid,
@@ -271,11 +342,12 @@ public static function generateTokenPair(
             'refresh_token' => $tokens['refresh_token'],
             'token_fingerprint' => $tokens['token_fingerprint'],
             'access_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600)),
-            'refresh_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.refresh_token_lifetime', 7 * 24 * 3600)),
+            'refresh_expires_at' => date('Y-m-d H:i:s', time() + $refreshTokenLifetime),
             'status' => 'active',
             'ip_address' => $_SERVER['REMOTE_ADDR'],
             'user_agent' => $_SERVER['HTTP_USER_AGENT'],
             'last_token_refresh' => date('Y-m-d H:i:s'),
+            'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
         ]);
     }
 
@@ -394,8 +466,100 @@ public static function generateTokenPair(
         if ($authorization_header && preg_match('/Bearer\s+(.+)/i', $authorization_header, $matches)) {
             return trim($matches[1]);
         }
-    
+        
         // Last fallback: Check query parameter `token`
         return $_GET['token'] ?? null;
+    }
+
+    /**
+     * Check if a token is compatible with a specific provider
+     * 
+     * Determines if a token can be handled by a specific authentication provider.
+     * Useful for routing authentication requests to the correct provider.
+     * 
+     * @param string $token The token to check
+     * @param string $providerName The name of the provider to check against
+     * @return bool True if the provider can handle this token
+     */
+    public static function isTokenCompatibleWithProvider(string $token, string $providerName): bool
+    {
+        $authManager = self::getAuthManager();
+        if (!$authManager) {
+            // If no authentication manager is active, only jwt tokens are supported
+            return $providerName === 'jwt';
+        }
+        
+        $provider = $authManager->getProvider($providerName);
+        if (!$provider) {
+            return false;
+        }
+        
+        return $provider->canHandleToken($token);
+    }
+
+    /**
+     * Get the AuthenticationManager instance
+     * 
+     * Helper method to safely retrieve the AuthenticationManager instance.
+     * 
+     * @return AuthenticationManager|null
+     */
+    private static function getAuthManager(): ?AuthenticationManager
+    {
+        // Check if the AuthenticationService class exists and has a static getInstance method
+        if (class_exists('\\Glueful\\Auth\\AuthenticationService')) {
+            try {
+                $authService = call_user_func(['\\Glueful\\Auth\\AuthenticationService', 'getInstance']);
+                if ($authService && method_exists($authService, 'getAuthManager')) {
+                    return $authService->getAuthManager();
+                }
+            } catch (\Throwable $e) {
+                // Silently fail and return null
+            }
+        }
+        
+        // Try direct instantiation of AuthenticationManager if the service is not available
+        try {
+            return new AuthenticationManager();
+        } catch (\Throwable $e) {
+            // Silently fail
+            return null;
+        }
+    }
+
+    /**
+     * Get all available authentication providers
+     * 
+     * Helper method to retrieve all registered providers from the AuthenticationManager.
+     * 
+     * @param AuthenticationManager $authManager The authentication manager instance
+     * @return array Array of AuthenticationProviderInterface instances
+     */
+    private static function getAvailableProviders(AuthenticationManager $authManager): array
+    {
+        $providers = [];
+        
+        // Try to call a method to get all providers if it exists
+        if (method_exists($authManager, 'getProviders')) {
+            try {
+                return $authManager->getProviders();
+            } catch (\Throwable $e) {
+                // Silently fail and continue with fallback
+            }
+        }
+        
+        // Fallback: try to get known providers individually
+        foreach (['jwt', 'api_key', 'oauth', 'saml'] as $providerName) {
+            try {
+                $provider = $authManager->getProvider($providerName);
+                if ($provider) {
+                    $providers[] = $provider;
+                }
+            } catch (\Throwable $e) {
+                // Skip this provider
+            }
+        }
+        
+        return $providers;
     }
 }
