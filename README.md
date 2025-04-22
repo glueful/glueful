@@ -210,6 +210,7 @@ API_DOCS_ENABLED=true
 ACCESS_TOKEN_LIFETIME=900
 REFRESH_TOKEN_LIFETIME=604800
 JWT_KEY=your-secure-jwt-key-here
+AUTH_GUARD_ENABLED=true
 
 # Database
 DB_DRIVER=mysql
@@ -221,12 +222,22 @@ ENABLE_PERMISSIONS=true
 API_DEBUG_MODE=true
 ```
 
+### Authentication Model
+Glueful implements a comprehensive authentication system:
+
+- **Public endpoints**: Authentication endpoints (login, token refresh, etc.)
+- **Protected endpoints**: All resource and file operations require authentication
+- **Admin endpoints**: Administrative functions require admin authentication
+- **Authentication guards**: Configurable per route group using `requiresAuth` and `requiresAdminAuth` parameters
+
 ### Security Notes
 - All passwords are hashed using bcrypt
 - Audit logging enabled for critical database operations
 - Uses prepared statements to prevent SQL injection
 - Implements role-based access control
 - Support for IP-based and user-based rate limiting
+- All resource and file operations are protected by authentication guards
+- JWT tokens used for stateless authentication
 
 ## Documentation
 
@@ -234,6 +245,7 @@ API_DEBUG_MODE=true
 - Database schema documentation in `/docs/SCHEMA.md`
 - Rate limiter documentation in `/docs/RATELIMITER.md`
 - Setup guide in `/docs/SETUP.md`
+- Middleware documentation in `/docs/MIDDLEWARE.md`
 
 ## Backup and Restore
 ```bash
