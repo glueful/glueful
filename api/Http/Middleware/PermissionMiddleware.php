@@ -7,10 +7,11 @@ namespace Glueful\Http\Middleware;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Glueful\Repository\PermissionRepository;
+use Glueful\Repository\RoleRepository;
 use Glueful\Auth\SessionCacheManager;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Permissions\Permission;
+use Glueful\Permissions\PermissionManager;
 
 /**
  * Permission Middleware
@@ -22,13 +23,11 @@ use Glueful\Permissions\Permission;
  * Features:
  * - Flexible permission checking by model and action
  * - Debug mode for detailed permission diagnostics
- * - Integration with the repository-based permission system
+ * - Automatic bypass for superuser roles
+ * - Integration with the centralized PermissionManager
  */
 class PermissionMiddleware implements MiddlewareInterface
 {
-    /** @var PermissionRepository Permission repository instance */
-    private PermissionRepository $permissionRepo;
-    
     /** @var string Model/resource name to check permissions for */
     private string $model;
     
@@ -50,10 +49,12 @@ class PermissionMiddleware implements MiddlewareInterface
         string $permission, 
         bool $debugMode = false
     ) {
-        $this->permissionRepo = new PermissionRepository();
         $this->model = $model;
         $this->permission = $permission;
         $this->debugMode = $debugMode;
+        
+        // Initialize PermissionManager
+        PermissionManager::initialize();
     }
     
     /**
@@ -89,10 +90,17 @@ class PermissionMiddleware implements MiddlewareInterface
         
         $userUuid = $session['user']['uuid'];
         
-        // Check permission
+        // Check if user has superuser role (bypass permission check)
+        $roleRepo = new RoleRepository();
+        if ($roleRepo->hasRole($userUuid, 'superuser')) {
+            // Superuser has access to everything - proceed with the request
+            return $handler->handle($request);
+        }
+        
+        // For non-superusers, check permission using PermissionManager
         if ($this->debugMode) {
             // In debug mode, get detailed permission information
-            $permDebug = $this->permissionRepo->hasPermissionDebug($userUuid, $this->model, $this->permission);
+            $permDebug = PermissionManager::debug($this->model, $this->permission, $token);
             
             if (!$permDebug['has_permission']) {
                 return new JsonResponse([
@@ -104,7 +112,7 @@ class PermissionMiddleware implements MiddlewareInterface
             }
         } else {
             // Standard permission check
-            if (!$this->permissionRepo->hasPermission($userUuid, $this->model, $this->permission)) {
+            if (!PermissionManager::can($this->model, $this->permission, $token)) {
                 return new JsonResponse([
                     'success' => false,
                     'message' => 'Forbidden - insufficient permissions',
