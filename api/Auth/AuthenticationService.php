@@ -6,7 +6,6 @@ namespace Glueful\Auth;
 use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
-use Glueful\Helpers\Utils;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -125,9 +124,12 @@ class AuthenticationService
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
         $userRoles = $this->userRepository->getRoles($userData['uuid']);
 
-        // Assign roles to user data
+        // Initialize roles array
+        $userData['roles'] = [];
+        
+        // Add each role to the roles array
         foreach ($userRoles as $userRole) {
-            $userData['roles'] = [$userRole['role_name']];
+            $userData['roles'][] = $userRole['role_name'];
         }
         
         $userData['profile'] = $userProfile;
@@ -201,7 +203,7 @@ class AuthenticationService
      * @param Request|null $request The request object
      * @return string|null Authentication token
      */
-    public static function extractTokenFromRequest(Request $request = null): ?string
+    public static function extractTokenFromRequest(?Request $request = null): ?string
     {
         // If no request is provided, use TokenManager directly
         if ($request === null) {

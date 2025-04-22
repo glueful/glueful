@@ -5,21 +5,24 @@ namespace Glueful\Controllers;
 
 use Glueful\{APIEngine, Http\Response};
 use Glueful\Auth\AuthBootstrap;
-use Glueful\Permissions\{Permissions, Permission};
+use Glueful\Auth\SessionCacheManager;
+use Glueful\Permissions\Permission;
+use Glueful\Permissions\PermissionManager;
+use Glueful\Repository\RoleRepository;
 use Glueful\Validation\Validator;
 use Glueful\DTOs\{UsernameDTO, EmailDTO, PasswordDTO, ListResourceRequestDTO};
 use Symfony\Component\HttpFoundation\Request;
 
 class ResourceController {
-    private Permissions $permissions;
     private $authManager;
 
     public function __construct() {
-        $this->permissions = new Permissions();
-        
         // Initialize auth system
         AuthBootstrap::initialize();
         $this->authManager = AuthBootstrap::getManager();
+        
+        // Initialize the permission manager
+        PermissionManager::initialize();
     }
 
     /**
@@ -46,9 +49,24 @@ class ResourceController {
                 return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Check permissions using token
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // Get session from token which contains user data
+            $session = SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Get user UUID from session
+            $userUuid = $session['user']['uuid'];
+            
+            // Check if user has superuser role
+            $roleRepo = new RoleRepository();
+            if ($roleRepo->hasRole($userUuid, 'superuser')) {
+                // Superuser has access to everything - skip permission check
+            } else {
+                // Check permissions using the PermissionManager for non-superusers
+                if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
             }
            
             $queryParams = array_merge($queryParams, [
@@ -94,9 +112,24 @@ class ResourceController {
                 return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Check permissions using token
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::VIEW, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // Get session from token which contains user data
+            $session = SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Get user UUID from session
+            $userUuid = $session['user']['uuid'];
+            
+            // Check if user has superuser role
+            $roleRepo = new RoleRepository();
+            if ($roleRepo->hasRole($userUuid, 'superuser')) {
+                // Superuser has access to everything - skip permission check
+            } else {
+                // Check permissions using the PermissionManager for non-superusers
+                if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
             }
 
             $queryParams = array_merge($queryParams, [
@@ -140,9 +173,24 @@ class ResourceController {
                 return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Check permissions using token
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::SAVE, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // Get session from token which contains user data
+            $session = SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Get user UUID from session
+            $userUuid = $session['user']['uuid'];
+            
+            // Check if user has superuser role
+            $roleRepo = new RoleRepository();
+            if ($roleRepo->hasRole($userUuid, 'superuser')) {
+                // Superuser has access to everything - skip permission check
+            } else {
+                // Check permissions using the PermissionManager for non-superusers
+                if (!PermissionManager::can($params['resource'], Permission::SAVE->value, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
             }
 
             $result = APIEngine::saveData(
@@ -185,9 +233,24 @@ class ResourceController {
                 return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Check permissions using token
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::EDIT, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // Get session from token which contains user data
+            $session = SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Get user UUID from session
+            $userUuid = $session['user']['uuid'];
+            
+            // Check if user has superuser role
+            $roleRepo = new RoleRepository();
+            if ($roleRepo->hasRole($userUuid, 'superuser')) {
+                // Superuser has access to everything - skip permission check
+            } else {
+                // Check permissions using the PermissionManager for non-superusers
+                if (!PermissionManager::can($params['resource'], Permission::EDIT->value, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
             }
 
             // Direct API call without legacy conversion
@@ -230,9 +293,24 @@ class ResourceController {
                 return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Check permissions using token
-            if (!$this->permissions->hasPermission("api.{$params['resource']}", Permission::DELETE, $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            // Get session from token which contains user data
+            $session = SessionCacheManager::getSession($token);
+            if (!$session || !isset($session['user']['uuid'])) {
+                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Get user UUID from session
+            $userUuid = $session['user']['uuid'];
+            
+            // Check if user has superuser role
+            $roleRepo = new RoleRepository();
+            if ($roleRepo->hasRole($userUuid, 'superuser')) {
+                // Superuser has access to everything - skip permission check
+            } else {
+                // Check permissions using the PermissionManager for non-superusers
+                if (!PermissionManager::can($params['resource'], Permission::DELETE->value, $token)) {
+                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+                }
             }
 
             $result = APIEngine::saveData(
