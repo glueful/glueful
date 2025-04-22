@@ -6,16 +6,17 @@ use Glueful\Controllers\FilesController;
 
 $filesController = new FilesController();
 
- // File routes
- // TODO: Add middleware to check if user is authenticated (requiresAuth in Router)
-Router::get('files/{uuid}', function() use ($filesController) {
-    return $filesController->getFile();
-});
+// File routes
+Router::group('/files', function() use ($filesController) {
+    Router::get('/{uuid}', function($params) use ($filesController) {
+        return $filesController->getFile($params);
+    });
 
-Router::post('files', function() use ($filesController) {
-    return $filesController->uploadFile();
-});
+    Router::post('/', function() use ($filesController) {
+        return $filesController->uploadFile();
+    });
 
-Router::delete('files/{uuid}', function($params) use ($filesController) {
-    return $filesController->deleteFile($params);
-});
+    Router::delete('/{uuid}', function($params) use ($filesController) {
+        return $filesController->deleteFile($params);
+    });
+}, requiresAuth: true);
