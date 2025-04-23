@@ -7,7 +7,7 @@
  */
 return [
     // General settings
-    'enabled_providers' => ['google', 'facebook', 'github'],
+    'enabled_providers' => ['google', 'facebook', 'github', 'apple'],
     'auto_register' => true,  // Automatically create user accounts for new social logins
     'link_accounts' => true,  // Allow linking social accounts to existing users
     'sync_profile' => true,   // Sync profile data from social providers
@@ -31,5 +31,14 @@ return [
         'client_id' => env('GITHUB_CLIENT_ID', ''),
         'client_secret' => env('GITHUB_CLIENT_SECRET', ''),
         'redirect_uri' => env('GITHUB_REDIRECT_URI', ''),
+    ],
+    
+    // Apple OAuth settings
+    'apple' => [
+        'client_id' => env('APPLE_CLIENT_ID', ''),
+        'client_secret' => env('APPLE_CLIENT_SECRET', ''),
+        'team_id' => env('APPLE_TEAM_ID', ''),
+        'key_id' => env('APPLE_KEY_ID', ''),
+        'redirect_uri' => env('APPLE_REDIRECT_URI', ''),
     ],
 ];
