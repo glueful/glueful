@@ -1,6 +1,0 @@
-release: v0.17.0 with Social Authentication and PSR-15 Middleware
-
-- Added Social Login with Apple, Google, Facebook, and GitHub support
-- Implemented centralized permission management with caching
-- Added PSR-15 compatible middleware system for CORS, logging, rate limiting
-- Improved documentation and code structure
