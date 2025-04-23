@@ -50,17 +50,26 @@ class GithubAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->clientId = $config['github']['client_id'] ?? 
-                          getenv('GITHUB_CLIENT_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['github']) || !is_array($config['github'])) {
+            $config = [
+                'github' => []
+            ];
+        }
         
-        $this->clientSecret = $config['github']['client_secret'] ?? 
-                              getenv('GITHUB_CLIENT_SECRET') ?? '';
+        $this->clientId = !empty($config['github']['client_id']) ? 
+                          $config['github']['client_id'] : 
+                          (getenv('GITHUB_CLIENT_ID') ?: '');
         
-        $this->redirectUri = $config['github']['redirect_uri'] ?? 
-                             getenv('GITHUB_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->clientSecret = !empty($config['github']['client_secret']) ? 
+                              $config['github']['client_secret'] : 
+                              (getenv('GITHUB_CLIENT_SECRET') ?: '');
+        
+        $this->redirectUri = !empty($config['github']['redirect_uri']) ? 
+                             $config['github']['redirect_uri'] : 
+                             (getenv('GITHUB_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**

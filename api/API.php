@@ -49,12 +49,81 @@ class API
      */
     public static function init(): void
     {
-        ExtensionsManager::loadExtensions();
-         RoutesManager::loadRoutes();
-        // Initialize scheduler for appropriate request types
-        if (PHP_SAPI === 'cli' || Request::isAdminRequest()) {
-            // Initialize scheduler only when needed
-            JobScheduler::getInstance();
+        try {
+            // Log initialization start
+            self::getLogger()->info("API initialization started");
+            
+            // Initialize core components
+            self::initializeCore();
+            
+            // Load extensions first - they may register routes
+            self::getLogger()->debug("Loading extensions...");
+            ExtensionsManager::loadExtensions();
+            
+            // Now load all route definitions
+            self::getLogger()->debug("Loading routes...");
+            RoutesManager::loadRoutes();
+            
+            // Initialize scheduler for appropriate request types
+            if (PHP_SAPI === 'cli' || Request::isAdminRequest()) {
+                self::getLogger()->debug("Initializing job scheduler...");
+                // Initialize scheduler only when needed
+                JobScheduler::getInstance();
+            }
+            
+            // Initialization complete
+            self::getLogger()->info("API initialization completed successfully");
+        } catch (\Throwable $e) {
+            // Log initialization failure
+            self::getLogger()->error("API initialization failed", [
+                'error' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            // Re-throw to be handled by the main error handler
+            throw new \RuntimeException("API initialization failed: " . $e->getMessage(), 0, $e);
+        }
+    }
+    
+    /**
+     * Initialize core API components
+     * 
+     * Sets up essential services that extensions and routes might depend on:
+     * - Authentication providers
+     * - Database connections
+     * - Cache services
+     * - Configuration
+     * 
+     * @return void
+     */
+    private static function initializeCore(): void
+    {
+        // Initialize configuration first
+        self::getLogger()->debug("Loading configuration...");
+        // Load critical configurations if not already loaded
+        if (!defined('CONFIG_LOADED')) {
+            // Ensure paths are configured
+            config('paths');
+            // Ensure database connection is ready
+            config('database');
+            // Load security settings
+            config('security');
+            
+            define('CONFIG_LOADED', true);
+        }
+        
+        // Initialize authentication providers
+        self::getLogger()->debug("Initializing authentication services...");
+        // This ensures auth services are available to routes and extensions
+        \Glueful\Auth\AuthBootstrap::initialize();
+        
+        // Initialize DB connection if it will be needed
+        if (!defined('SKIP_DB_INIT') && config('database.auto_connect', true)) {
+            self::getLogger()->debug("Initializing database connection...");
+            // Create a new Connection instance (which will be pooled internally)
+            new \Glueful\Database\Connection();
         }
     }
     

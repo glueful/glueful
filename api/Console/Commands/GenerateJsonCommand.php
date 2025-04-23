@@ -139,16 +139,20 @@ HELP;
                 $generator->generate();
                 $this->info("Generated JSON for all database(s)");
             }
+            return Command::SUCCESS;
         } else if ($options['type'] === 'doc') {
             if (\config('app.docs_enabled')) {
                 $generator->generateApiDocs();
                 $this->info("Generated API documentation");
+                return Command::SUCCESS;
             } else {
                 $this->error('API documentation generation is disabled in configuration');
+                return Command::FAILURE;
             }
         } else {
             $this->error("Invalid type. Must be 'api-definitions' or 'doc'");
             $this->info($this->getHelp());
+            return Command::FAILURE;
         }
     }
 

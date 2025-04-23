@@ -122,23 +122,34 @@ class AppleAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->clientId = $config['apple']['client_id'] ?? 
-                          getenv('APPLE_CLIENT_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['apple']) || !is_array($config['apple'])) {
+            $config = [
+                'apple' => []
+            ];
+        }
         
-        $this->clientSecret = $config['apple']['client_secret'] ?? 
-                              getenv('APPLE_CLIENT_SECRET') ?? '';
+        $this->clientId = !empty($config['apple']['client_id']) ? 
+                          $config['apple']['client_id'] : 
+                          (getenv('APPLE_CLIENT_ID') ?: '');
         
-        $this->teamId = $config['apple']['team_id'] ?? 
-                        getenv('APPLE_TEAM_ID') ?? '';
+        $this->clientSecret = !empty($config['apple']['client_secret']) ? 
+                              $config['apple']['client_secret'] : 
+                              (getenv('APPLE_CLIENT_SECRET') ?: '');
         
-        $this->keyId = $config['apple']['key_id'] ?? 
-                       getenv('APPLE_KEY_ID') ?? '';
+        $this->teamId = !empty($config['apple']['team_id']) ? 
+                        $config['apple']['team_id'] : 
+                        (getenv('APPLE_TEAM_ID') ?: '');
         
-        $this->redirectUri = $config['apple']['redirect_uri'] ?? 
-                             getenv('APPLE_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->keyId = !empty($config['apple']['key_id']) ? 
+                       $config['apple']['key_id'] : 
+                       (getenv('APPLE_KEY_ID') ?: '');
+        
+        $this->redirectUri = !empty($config['apple']['redirect_uri']) ? 
+                             $config['apple']['redirect_uri'] : 
+                             (getenv('APPLE_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**

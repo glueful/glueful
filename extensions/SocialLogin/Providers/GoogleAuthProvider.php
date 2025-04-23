@@ -53,17 +53,26 @@ class GoogleAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->clientId = $config['google']['client_id'] ?? 
-                          getenv('GOOGLE_CLIENT_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['google']) || !is_array($config['google'])) {
+            $config = [
+                'google' => []
+            ];
+        }
         
-        $this->clientSecret = $config['google']['client_secret'] ?? 
-                              getenv('GOOGLE_CLIENT_SECRET') ?? '';
+        $this->clientId = !empty($config['google']['client_id']) ? 
+                          $config['google']['client_id'] : 
+                          (getenv('GOOGLE_CLIENT_ID') ?: '');
         
-        $this->redirectUri = $config['google']['redirect_uri'] ?? 
-                             getenv('GOOGLE_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->clientSecret = !empty($config['google']['client_secret']) ? 
+                             $config['google']['client_secret'] : 
+                             (getenv('GOOGLE_CLIENT_SECRET') ?: '');
+        
+        $this->redirectUri = !empty($config['google']['redirect_uri']) ? 
+                            $config['google']['redirect_uri'] : 
+                            (getenv('GOOGLE_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**

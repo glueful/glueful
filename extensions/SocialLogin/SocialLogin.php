@@ -1,14 +1,13 @@
 <?php
 declare(strict_types=1);
 
-namespace Glueful\Extensions\SocialLogin;
+namespace Glueful\Extensions;
 
-use Glueful\Extensions;
+// Keep using statements
 use Glueful\Auth\AuthBootstrap;
 use Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider;
-use Glueful\Helpers\Utils;
 use Glueful\Helpers\ExtensionsManager;
 
 /**
@@ -27,9 +26,9 @@ use Glueful\Helpers\ExtensionsManager;
  * - Token generation and session management
  * - Configuration through admin interface
  *
- * @package Glueful\Extensions\SocialLogin
+ * @package Glueful\Extensions
  */
-class SocialLogin extends Extensions
+class SocialLogin extends \Glueful\Extensions
 {
     /** @var array Configuration for the extension */
     private static array $config = [];

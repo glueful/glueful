@@ -45,10 +45,6 @@
             "Glueful\\Database\\": [
                 "api/Database/",
                 "api/Database/Driver/"
-            ],
-            "Glueful\\Extensions\\": [
-                "api/api-extensions/",
-                "extensions/"
             ]
         }
     },

@@ -237,6 +237,34 @@ class ApiDefinitionGenerator {
             }
         }
 
+        // Dynamically generate documentation for extensions with route files
+        try {
+            $extensionDocsDir = config('paths.api_docs') . 'api-doc-json-definitions/extensions';
+            
+            // Create the extensions documentation directory if it doesn't exist
+            if (!is_dir($extensionDocsDir)) {
+                mkdir($extensionDocsDir, 0755, true);
+            }
+            
+            // Use the ExtensionDocGenerator to auto-generate docs from route files
+            $extDocGen = new ExtensionDocGenerator();
+            $generatedFiles = $extDocGen->generateAll();
+            
+            if (!empty($generatedFiles)) {
+                $this->log("Dynamically generated documentation for " . count($generatedFiles) . " extensions");
+                foreach ($generatedFiles as $file) {
+                    $this->log("Generated: " . basename($file));
+                }
+            } else {
+                $this->log("No extension route files found for documentation generation");
+            }
+            
+            // Process the generated extension documentation 
+            $docGenerator->generateFromExtensions($extensionDocsDir);
+            $this->log("Processed extension API documentation");
+        } catch (\Exception $e) {
+            $this->log("Error generating extension documentation: " . $e->getMessage());
+        }
 
         // Generate and save Swagger JSON
         $swaggerJson = $docGenerator->getSwaggerJson();

@@ -50,17 +50,26 @@ class FacebookAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->appId = $config['facebook']['app_id'] ?? 
-                       getenv('FACEBOOK_APP_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['facebook']) || !is_array($config['facebook'])) {
+            $config = [
+                'facebook' => []
+            ];
+        }
         
-        $this->appSecret = $config['facebook']['app_secret'] ?? 
-                           getenv('FACEBOOK_APP_SECRET') ?? '';
+        $this->appId = !empty($config['facebook']['app_id']) ? 
+                       $config['facebook']['app_id'] : 
+                       (getenv('FACEBOOK_APP_ID') ?: '');
         
-        $this->redirectUri = $config['facebook']['redirect_uri'] ?? 
-                             getenv('FACEBOOK_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->appSecret = !empty($config['facebook']['app_secret']) ? 
+                           $config['facebook']['app_secret'] : 
+                           (getenv('FACEBOOK_APP_SECRET') ?: '');
+        
+        $this->redirectUri = !empty($config['facebook']['redirect_uri']) ? 
+                             $config['facebook']['redirect_uri'] : 
+                             (getenv('FACEBOOK_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**
