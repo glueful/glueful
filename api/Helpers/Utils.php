@@ -135,6 +135,24 @@ class Utils
     }
 
     /**
+     * Generate secure random password
+     * 
+     * Creates a cryptographically secure random password with specified length
+     * and character set designed for security.
+     * 
+     * @param int $length Password length
+     * @return string Secure random password
+     */
+    public static function generateSecurePassword(int $length = 16): string {
+        // Use a character set that includes special characters for better security
+        $charset = RandomStringGenerator::CHARSET_ALPHANUMERIC . '!@#$%^&*()_-+=<>?';
+        return RandomStringGenerator::generate(
+            length: $length,
+            charset: $charset
+        );
+    }
+
+    /**
      * Get user information from JWT token
      * 
      * @param string|null $token JWT token
