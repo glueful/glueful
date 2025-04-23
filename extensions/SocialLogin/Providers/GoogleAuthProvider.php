@@ -307,4 +307,94 @@ class GoogleAuthProvider extends AbstractSocialProvider
             'raw' => $userProfile
         ];
     }
+    
+    /**
+     * Verify a token from a native mobile SDK
+     * 
+     * @param string $idToken ID token from Google Sign-In SDK
+     * @return array|null User data if verified, null otherwise
+     */
+    public function verifyNativeToken(string $idToken): ?array
+    {
+        // Validate configuration
+        if (empty($this->clientId)) {
+            $this->lastError = "Google OAuth configuration is missing";
+            return null;
+        }
+        
+        try {
+            // Verify the ID token with Google's API
+            $userProfile = $this->verifyGoogleIdToken($idToken);
+            
+            if (!isset($userProfile['id'])) {
+                $this->lastError = "Failed to verify ID token";
+                return null;
+            }
+            
+            // Find or create user from Google data
+            return $this->findOrCreateUser($userProfile);
+            
+        } catch (\Exception $e) {
+            $this->lastError = "Google token verification error: " . $e->getMessage();
+            return null;
+        }
+    }
+    
+    /**
+     * Verify Google ID token and get user info
+     * 
+     * @param string $idToken ID token from Google Sign-In
+     * @return array User profile data
+     * @throws \Exception If verification fails
+     */
+    private function verifyGoogleIdToken(string $idToken): array
+    {
+        // Google's token info endpoint
+        $tokenInfoUrl = 'https://oauth2.googleapis.com/tokeninfo';
+        
+        // Add ID token as query parameter
+        $url = $tokenInfoUrl . '?id_token=' . urlencode($idToken);
+        
+        // Make GET request to verify token
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($error) {
+            throw new \Exception("cURL error: $error");
+        }
+        
+        if ($httpCode !== 200) {
+            throw new \Exception("Invalid token, HTTP code: $httpCode, Response: $response");
+        }
+        
+        // Parse JSON response
+        $tokenInfo = json_decode($response, true);
+        
+        if (!is_array($tokenInfo)) {
+            throw new \Exception("Invalid token info response: $response");
+        }
+        
+        // Verify token was issued for our client
+        if (isset($tokenInfo['aud']) && $tokenInfo['aud'] !== $this->clientId) {
+            throw new \Exception("Token was not issued for this application");
+        }
+        
+        // Format profile data to our standard format
+        return [
+            'id' => $tokenInfo['sub'] ?? null,
+            'email' => $tokenInfo['email'] ?? null,
+            'name' => $tokenInfo['name'] ?? null,
+            'first_name' => $tokenInfo['given_name'] ?? null,
+            'last_name' => $tokenInfo['family_name'] ?? null,
+            'picture' => $tokenInfo['picture'] ?? null,
+            'locale' => $tokenInfo['locale'] ?? null,
+            'verified_email' => ($tokenInfo['email_verified'] ?? 'false') === 'true',
+            'raw' => $tokenInfo
+        ];
+    }
 }
