@@ -248,7 +248,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         }
         
         // No existing user found, try to create new user if auto-registration is enabled
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         if (!($config['auto_register'] ?? true)) {
             $this->lastError = "Auto-registration is disabled and no matching user found";
             return null;

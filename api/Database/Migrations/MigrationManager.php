@@ -61,7 +61,7 @@ class MigrationManager
      * @param string|null $migrationsPath Custom path to migrations directory
      * @throws RuntimeException If database connection fails
      */
-    public function __construct(string $migrationsPath = null)
+    public function __construct(?string $migrationsPath = null)
     {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
@@ -106,6 +106,7 @@ class MigrationManager
      * 
      * Returns list of migration files that haven't been executed:
      * - Scans migrations directory for .php files
+     * - Scans extensions migration directories
      * - Compares against applied migrations
      * - Returns array of pending migration paths
      * 
@@ -114,7 +115,25 @@ class MigrationManager
     public function getPendingMigrations(): array
     {
         $applied = $this->getAppliedMigrations();
+        
+        // Get migrations from main directory
         $files = glob($this->migrationsPath . '/*.php');
+        
+        // Get migrations from extensions
+        $extensionsDir = dirname(__DIR__, 3) . '/extensions';
+        if (is_dir($extensionsDir)) {
+            // Get all extension directories
+            $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
+            
+            foreach ($extensions as $extension) {
+                $migrationDir = $extension . '/migrations';
+                if (is_dir($migrationDir)) {
+                    $extensionFiles = glob($migrationDir . '/*.php');
+                    $files = array_merge($files, $extensionFiles);
+                }
+            }
+        }
+        
         return array_filter($files, fn($file) => !in_array(basename($file), $applied));
     }
 
@@ -185,20 +204,34 @@ class MigrationManager
      *     error?: string
      * } Migration result
      */
-    private function runMigration(string $file, int $batch = null): array
+    private function runMigration(string $file, ?int $batch = null): array
     {
         require_once $file;
 
-        $className = pathinfo($file, PATHINFO_FILENAME); // Gets "001_CreateInitialSchema"
+        $className = pathinfo($file, PATHINFO_FILENAME);
         $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
         
-        if (!class_exists($className)) {
-            throw new RuntimeException("Migration class $className not found in $file");
+        // Try to determine if the file contains a namespaced class
+        $fileContent = file_get_contents($file);
+        $namespace = '';
+        
+        if (preg_match('/namespace\s+([^;]+);/i', $fileContent, $matches)) {
+            $namespace = $matches[1] . '\\';
+        }
+        
+        $fullClassName = $namespace . $className;
+        
+        if (!class_exists($fullClassName)) {
+            // Fall back to non-namespaced class if namespace detection failed
+            if (!class_exists($className)) {
+                throw new RuntimeException("Migration class $className not found in $file");
+            }
+            $fullClassName = $className;
         }
   
-        $migration = new $className();
+        $migration = new $fullClassName();
         if (!$migration instanceof MigrationInterface) {
-            throw new RuntimeException("Migration $className must implement MigrationInterface");
+            throw new RuntimeException("Migration $fullClassName must implement MigrationInterface");
         }
 
         $filename = basename($file);
@@ -221,7 +254,7 @@ class MigrationManager
                     'checksum' => $checksum,
                     'description' => $migration->getDescription()
                 ]
-            ) > 0;
+            );
 
             $this->db->commit();
             return ['success' => true, 'file' => $filename];
@@ -323,17 +356,48 @@ class MigrationManager
      */
     private function rollbackMigration(string $filename): array
     {
+        // First check in main migrations directory
         $file = $this->migrationsPath . '/' . $filename;
+        
+        // If not found in main directory, check in extension directories
         if (!file_exists($file)) {
-            return ['success' => false, 'file' => $filename, 'error' => 'File not found'];
+            $extensionsDir = dirname(__DIR__, 3) . '/extensions';
+            $found = false;
+            
+            if (is_dir($extensionsDir)) {
+                $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
+                
+                foreach ($extensions as $extension) {
+                    $migrationDir = $extension . '/migrations';
+                    $extensionFile = $migrationDir . '/' . $filename;
+                    
+                    if (is_dir($migrationDir) && file_exists($extensionFile)) {
+                        $file = $extensionFile;
+                        $found = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$found) {
+                return ['success' => false, 'file' => $filename, 'error' => 'File not found'];
+            }
         }
 
         require_once $file;
         $className = pathinfo($file, PATHINFO_FILENAME);
+        $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
+        
+        if (!class_exists($className)) {
+            throw new RuntimeException("Migration class $className not found in $file");
+        }
+        
         $migration = new $className();
+        if (!$migration instanceof MigrationInterface) {
+            throw new RuntimeException("Migration $className must implement MigrationInterface");
+        }
 
         try {
-            
             $migration->down($this->schema);
             
             // Delete using schema manager

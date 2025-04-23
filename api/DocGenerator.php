@@ -16,6 +16,9 @@ class DocGenerator
     
     /** @var array OpenAPI schemas storage */
     private array $schemas = [];
+    
+    /** @var array Extension tags storage */
+    private array $extensionTags = [];
 
     /**
      * Generate documentation from table definition
@@ -58,6 +61,92 @@ class DocGenerator
         // Process the documentation definition
         $this->addPathsFromDocJson($definition);
         $this->addSchemaFromDocJson($definition);
+    }
+
+    /**
+     * Generate documentation from extension definitions
+     * 
+     * Finds and processes OpenAPI definition files in extensions directories.
+     * 
+     * @param string $extensionsPath Path to the extensions directory
+     */
+    public function generateFromExtensions(string $extensionsPath = null): void 
+    {
+        if ($extensionsPath === null) {
+            $extensionsPath = dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
+        }
+        
+        if (!is_dir($extensionsPath)) {
+            error_log("Extensions documentation directory not found: $extensionsPath");
+            return;
+        }
+        
+        // Scan extension directories
+        $extensionDirs = array_filter(glob($extensionsPath . '/*'), 'is_dir');
+        
+        foreach ($extensionDirs as $extDir) {
+            $extName = basename($extDir);
+            $extFiles = glob($extDir . '/*.json');
+            
+            foreach ($extFiles as $extFile) {
+                $this->mergeExtensionDefinition($extFile, $extName);
+            }
+        }
+    }
+    
+    /**
+     * Merge extension OpenAPI definition into main documentation
+     * 
+     * Processes an extension's OpenAPI definition file and merges 
+     * its components into the main API documentation.
+     * 
+     * @param string $filePath Path to extension definition file
+     * @param string $extName Extension name
+     */
+    private function mergeExtensionDefinition(string $filePath, string $extName): void 
+    {
+        $jsonContent = file_get_contents($filePath);
+        if (!$jsonContent) {
+            error_log("Could not read extension definition file: $filePath");
+            return;
+        }
+
+        $definition = json_decode($jsonContent, true);
+        if (!$definition) {
+            error_log("Invalid JSON in extension definition file: $filePath");
+            return;
+        }
+        
+        // Merge paths
+        if (isset($definition['paths']) && is_array($definition['paths'])) {
+            foreach ($definition['paths'] as $path => $methods) {
+                // Add extension name to tags for better organization
+                foreach ($methods as $method => $operation) {
+                    if (isset($operation['tags']) && is_array($operation['tags'])) {
+                        $methods[$method]['tags'] = array_map(
+                            fn($tag) => "$extName: $tag", 
+                            $operation['tags']
+                        );
+                    }
+                }
+                $this->paths[$path] = $methods;
+            }
+        }
+        
+        // Merge schemas
+        if (isset($definition['components']['schemas']) && is_array($definition['components']['schemas'])) {
+            foreach ($definition['components']['schemas'] as $name => $schema) {
+                $this->schemas[$extName . $name] = $schema;
+            }
+        }
+        
+        // Merge tags
+        if (isset($definition['tags']) && is_array($definition['tags'])) {
+            foreach ($definition['tags'] as $tag) {
+                $tag['name'] = "$extName: " . $tag['name'];
+                $this->extensionTags[] = $tag;
+            }
+        }
     }
 
     /**
@@ -748,16 +837,21 @@ class DocGenerator
     {
         $tags = [];
         foreach ($this->paths as $path => $methods) {
-            if (isset($methods['get'])) {
-                $tag = $methods['get']['tags'][0] ?? '';
-                if ($tag && !isset($tags[$tag])) {
-                    $tags[$tag] = [
-                        'name' => $tag,
-                        'description' => "Operations related to {$tag}"
-                    ];
+            foreach ($methods as $method => $operation) {
+                if (isset($operation['tags'])) {
+                    foreach ($operation['tags'] as $tag) {
+                        if (!isset($tags[$tag])) {
+                            $tags[$tag] = [
+                                'name' => $tag,
+                                'description' => "Operations related to {$tag}"
+                            ];
+                        }
+                    }
                 }
             }
         }
-        return array_values($tags);
+        
+        // Merge extension tags with auto-generated tags
+        return array_values(array_merge($tags, $this->extensionTags));
     }
 }

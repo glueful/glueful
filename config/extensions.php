@@ -1,0 +1,12 @@
+<?php
+return array (
+  'enabled' => 
+  array (
+    0 => 'SocialLogin',
+  ),
+  'paths' => 
+  array (
+    'extensions' => '/Users/michaeltawiahsowah/Sites/localhost/glueful/extensions/',
+    'api-extensions' => '/Users/michaeltawiahsowah/Sites/localhost/glueful/api/api-extensions/',
+  ),
+);

@@ -50,17 +50,26 @@ class FacebookAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->appId = $config['facebook']['app_id'] ?? 
-                       getenv('FACEBOOK_APP_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['facebook']) || !is_array($config['facebook'])) {
+            $config = [
+                'facebook' => []
+            ];
+        }
         
-        $this->appSecret = $config['facebook']['app_secret'] ?? 
-                           getenv('FACEBOOK_APP_SECRET') ?? '';
+        $this->appId = !empty($config['facebook']['app_id']) ? 
+                       $config['facebook']['app_id'] : 
+                       (getenv('FACEBOOK_APP_ID') ?: '');
         
-        $this->redirectUri = $config['facebook']['redirect_uri'] ?? 
-                             getenv('FACEBOOK_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->appSecret = !empty($config['facebook']['app_secret']) ? 
+                           $config['facebook']['app_secret'] : 
+                           (getenv('FACEBOOK_APP_SECRET') ?: '');
+        
+        $this->redirectUri = !empty($config['facebook']['redirect_uri']) ? 
+                             $config['facebook']['redirect_uri'] : 
+                             (getenv('FACEBOOK_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**
@@ -337,5 +346,88 @@ class FacebookAuthProvider extends AbstractSocialProvider
             $this->lastError = "Token refresh error: " . $e->getMessage();
             return null;
         }
+    }
+
+    /**
+     * Verify a token from a native mobile SDK
+     * 
+     * @param string $accessToken Access token from Facebook Login SDK
+     * @return array|null User data if verified, null otherwise
+     */
+    public function verifyNativeToken(string $accessToken): ?array
+    {
+        // Validate configuration
+        if (empty($this->appId) || empty($this->appSecret)) {
+            $this->lastError = "Facebook OAuth configuration is missing";
+            return null;
+        }
+        
+        try {
+            // Verify the access token with Facebook's API
+            $tokenData = $this->verifyFacebookAccessToken($accessToken);
+            
+            if (!$tokenData || !isset($tokenData['is_valid']) || !$tokenData['is_valid']) {
+                $this->lastError = "Invalid Facebook access token";
+                return null;
+            }
+            
+            // Check if the token was issued for our app
+            if (isset($tokenData['app_id']) && $tokenData['app_id'] !== $this->appId) {
+                $this->lastError = "Token was not issued for this application";
+                return null;
+            }
+            
+            // Get user profile with the access token
+            $userProfile = $this->getUserProfile($accessToken);
+            
+            if (!isset($userProfile['id'])) {
+                $this->lastError = "Failed to get user profile";
+                return null;
+            }
+            
+            // Find or create user from Facebook data
+            return $this->findOrCreateUser($userProfile);
+            
+        } catch (\Exception $e) {
+            $this->lastError = "Facebook token verification error: " . $e->getMessage();
+            return null;
+        }
+    }
+    
+    /**
+     * Verify Facebook access token with Facebook's API
+     * 
+     * @param string $accessToken Access token from Facebook
+     * @return array|null Token data if verified, null otherwise
+     */
+    private function verifyFacebookAccessToken(string $accessToken): ?array
+    {
+        // Facebook's debug token endpoint
+        $debugTokenUrl = "https://graph.facebook.com/debug_token";
+        $params = [
+            'input_token' => $accessToken,
+            'access_token' => $this->appId . '|' . $this->appSecret // App access token
+        ];
+        
+        // Make the request to Facebook
+        $ch = curl_init($debugTokenUrl . '?' . http_build_query($params));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        
+        $response = curl_exec($ch);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($error) {
+            throw new \Exception("cURL error: $error");
+        }
+        
+        // Parse JSON response
+        $data = json_decode($response, true);
+        
+        if (!is_array($data) || !isset($data['data'])) {
+            throw new \Exception("Invalid debug token response: $response");
+        }
+        
+        return $data['data'];
     }
 }

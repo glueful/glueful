@@ -50,17 +50,26 @@ class GithubAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin\SocialLogin::getConfig();
+        $config = \Glueful\Extensions\SocialLogin::getConfig();
         
-        $this->clientId = $config['github']['client_id'] ?? 
-                          getenv('GITHUB_CLIENT_ID') ?? '';
+        // Make sure the config has the expected structure
+        if (!is_array($config) || !isset($config['github']) || !is_array($config['github'])) {
+            $config = [
+                'github' => []
+            ];
+        }
         
-        $this->clientSecret = $config['github']['client_secret'] ?? 
-                              getenv('GITHUB_CLIENT_SECRET') ?? '';
+        $this->clientId = !empty($config['github']['client_id']) ? 
+                          $config['github']['client_id'] : 
+                          (getenv('GITHUB_CLIENT_ID') ?: '');
         
-        $this->redirectUri = $config['github']['redirect_uri'] ?? 
-                             getenv('GITHUB_REDIRECT_URI') ?? 
-                             $this->getDefaultRedirectUri();
+        $this->clientSecret = !empty($config['github']['client_secret']) ? 
+                              $config['github']['client_secret'] : 
+                              (getenv('GITHUB_CLIENT_SECRET') ?: '');
+        
+        $this->redirectUri = !empty($config['github']['redirect_uri']) ? 
+                             $config['github']['redirect_uri'] : 
+                             (getenv('GITHUB_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
     }
     
     /**
@@ -395,5 +404,63 @@ class GithubAuthProvider extends AbstractSocialProvider
         
         // Fall back to parent implementation
         return parent::generateUsername($socialData);
+    }
+
+    /**
+     * Verify a token from a native mobile SDK
+     * 
+     * @param string $accessToken Access token from GitHub OAuth
+     * @return array|null User data if verified, null otherwise
+     */
+    public function verifyNativeToken(string $accessToken): ?array
+    {
+        // Validate configuration
+        if (empty($this->clientId) || empty($this->clientSecret)) {
+            $this->lastError = "GitHub OAuth configuration is missing";
+            return null;
+        }
+        
+        try {
+            // Verify the access token by attempting to get user data
+            $userProfile = $this->getUserProfile($accessToken);
+            
+            if (!isset($userProfile['id'])) {
+                $this->lastError = "Failed to get user profile with provided token";
+                return null;
+            }
+            
+            // If email is not public, fetch email separately
+            if (empty($userProfile['email'])) {
+                $emails = $this->getUserEmails($accessToken);
+                if (!empty($emails)) {
+                    // Find primary and verified email
+                    foreach ($emails as $email) {
+                        if ($email['primary'] && $email['verified']) {
+                            $userProfile['email'] = $email['email'];
+                            $userProfile['verified_email'] = true;
+                            break;
+                        }
+                    }
+                    
+                    // If no primary+verified found, use the first verified
+                    if (empty($userProfile['email'])) {
+                        foreach ($emails as $email) {
+                            if ($email['verified']) {
+                                $userProfile['email'] = $email['email'];
+                                $userProfile['verified_email'] = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Find or create user from GitHub data
+            return $this->findOrCreateUser($userProfile);
+            
+        } catch (\Exception $e) {
+            $this->lastError = "GitHub token verification error: " . $e->getMessage();
+            return null;
+        }
     }
 }

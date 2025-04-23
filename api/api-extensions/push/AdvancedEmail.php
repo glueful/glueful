@@ -49,7 +49,8 @@ final class AdvancedEmail extends Extensions
 
     private static function sendEmail(array $data, ?array $attachment): array
     {
-        require_once config('path.api_extensions') . 'push/phpmailer/PHPMailerAutoload.php';
+        // Use the properly imported PHPMailer classes
+        // No need for require_once as we already imported the classes at the top
         
         $mailer = self::configureMailer($data);
         
@@ -161,13 +162,59 @@ final class AdvancedEmail extends Extensions
         return str_replace('{{content}}', $content, self::$template) . self::$footer;
     }
 
+    /**
+     * Format a successful response
+     *
+     * @param array $data Response data
+     * @return array Formatted response
+     */
+    private static function respond(array $data): array
+    {
+        return array_merge([
+            'success' => true,
+            'code' => 200
+        ], $data);
+    }
+
+    /**
+     * Format an error response
+     *
+     * @param string $message Error message
+     * @param int $code HTTP status code
+     * @return array Formatted error response
+     */
+    private static function error(string $message, int $code = 400): array
+    {
+        return [
+            'success' => false,
+            'message' => $message,
+            'code' => $code
+        ];
+    }
+
     public static function push(array $data): array
     {
         try {
-            // Advanced email sending logic here
-            return ['SUCCESS' => true];
+            // Ensure required fields are present
+            self::validateParams($data);
+            
+            // Process attachments if provided
+            $attachment = $data['attachment'] ?? null;
+            
+            // Use the main sendEmail method for consistency
+            $result = self::sendEmail($data, $attachment);
+            
+            return [
+                'success' => true,
+                'message' => 'Email sent successfully',
+                'details' => $result
+            ];
         } catch (\Exception $e) {
-            return ['ERR' => $e->getMessage()];
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'code' => $e instanceof PHPMailerException ? 500 : 400
+            ];
         }
     }
 }

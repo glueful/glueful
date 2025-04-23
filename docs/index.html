@@ -3,7 +3,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>Elements in HTML</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Glueful API Documentation</title>
   
     <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
@@ -39,7 +42,13 @@
     <script>
       async function loadAndSortOpenAPISpec(url) {
         try {
-          const response = await fetch(url);
+          const response = await fetch(url, {
+            cache: 'no-store', // Explicitly prevent caching
+            headers: {
+              'Pragma': 'no-cache',
+              'Cache-Control': 'no-cache'
+            }
+          });
           const spec = await response.json();
 
           // Function to capitalize first letter and replace underscores
@@ -89,7 +98,8 @@
       }
 
       // Load and sort OpenAPI spec
-      const openApiUrl = "swagger.json";
+      const timestamp = new Date().getTime(); // Add timestamp for cache busting
+      const openApiUrl = `swagger.json?v=${timestamp}`;
       loadAndSortOpenAPISpec(openApiUrl);
     </script>
   

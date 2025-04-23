@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Glueful\Helpers;
 
+use Composer\Autoload\ClassLoader;
+
 /**
  * Extensions Manager
  * 
@@ -22,6 +24,98 @@ class ExtensionsManager {
     private static array $extensionNamespaces = [
         'Glueful\\Extensions\\' => ['extensions','api/api-extensions']
     ];
+    
+    /** @var ClassLoader|null Composer's class loader instance */
+    private static ?ClassLoader $classLoader = null;
+
+    /**
+     * Enable debug mode for extension loading
+     * 
+     * @var bool
+     */
+    private static bool $debug = false;
+    
+    /**
+     * Toggle debug mode for extension loading
+     * 
+     * @param bool $enable Whether to enable debug mode
+     * @return void
+     */
+    public static function setDebugMode(bool $enable = true): void
+    {
+        self::$debug = $enable;
+    }
+    
+    /**
+     * Log debug message if debug mode is enabled
+     * 
+     * @param string $message Message to log
+     * @return void
+     */
+    private static function debug(string $message): void
+    {
+        if (self::$debug) {
+            error_log("[ExtensionsManager Debug] " . $message);
+        }
+    }
+    
+    /**
+     * Get information about registered namespaces
+     * 
+     * @return array Information about registered namespaces
+     */
+    public static function getRegisteredNamespaces(): array
+    {
+        $result = [];
+        $classLoader = self::getClassLoader();
+        
+        if ($classLoader === null) {
+            return ['error' => 'ClassLoader not available'];
+        }
+        
+        $prefixesPsr4 = $classLoader->getPrefixesPsr4();
+        
+        foreach ($prefixesPsr4 as $namespace => $paths) {
+            // Use str_starts_with for cleaner type handling
+            // This avoids the strpos type error completely
+            if (str_starts_with($namespace, 'Glueful\\Extensions')) {
+                $result[$namespace] = $paths;
+            }
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Set the Composer ClassLoader instance
+     * 
+     * @param ClassLoader $classLoader Composer's class loader
+     * @return void
+     */
+    public static function setClassLoader(ClassLoader $classLoader): void
+    {
+        self::$classLoader = $classLoader;
+    }
+
+    /**
+     * Get the Composer ClassLoader instance
+     * 
+     * @return ClassLoader|null
+     */
+    public static function getClassLoader(): ?ClassLoader
+    {
+        if (self::$classLoader === null) {
+            // Try to get the ClassLoader from the Composer autoloader
+            foreach (spl_autoload_functions() as $function) {
+                if (is_array($function) && $function[0] instanceof ClassLoader) {
+                    self::$classLoader = $function[0];
+                    break;
+                }
+            }
+        }
+        
+        return self::$classLoader;
+    }
 
     /**
      * Load API Extensions
@@ -36,6 +130,9 @@ class ExtensionsManager {
      */
     public static function loadExtensions(): void 
     {   
+        // Register extension namespaces with Composer if available
+        self::registerExtensionNamespaces();
+        
         foreach (self::$extensionNamespaces as $namespace => $directories) {
             foreach($directories as $directory) {
                 $dir = dirname(__DIR__,2) . '/' . $directory;
@@ -45,6 +142,128 @@ class ExtensionsManager {
         
         // Initialize all loaded extensions
         self::initializeExtensions();
+    }
+    
+    /**
+     * Register all extension namespaces with Composer ClassLoader
+     * 
+     * @return void
+     */
+    private static function registerExtensionNamespaces(): void
+    {
+        $classLoader = self::getClassLoader();
+        if ($classLoader === null) {
+            error_log("ClassLoader not available, falling back to include_once");
+            return;
+        }
+        
+        // First, register the base Extensions namespace
+        // This is now required since we've removed it from composer.json
+        foreach (self::$extensionNamespaces as $namespace => $directories) {
+            foreach ($directories as $directory) {
+                $dir = dirname(__DIR__, 2) . '/' . $directory;
+                if (!is_dir($dir)) {
+                    continue;
+                }
+                
+                // Register main namespace
+                $classLoader->addPsr4($namespace, $dir);
+                self::debug("Registered base namespace {$namespace} to {$dir}");
+            }
+        }
+        
+        // Then register each extension's specific namespace
+        foreach (self::$extensionNamespaces as $namespace => $directories) {
+            foreach ($directories as $directory) {
+                $dir = dirname(__DIR__, 2) . '/' . $directory;
+                if (!is_dir($dir)) {
+                    continue;
+                }
+                
+                // Register specific extensions with their full namespaces
+                foreach (glob($dir . '/*', GLOB_ONLYDIR) as $extensionDir) {
+                    $extensionName = basename($extensionDir);
+                    $fullNamespace = $namespace . $extensionName . '\\';
+                    $classLoader->addPsr4($fullNamespace, $extensionDir . '/');
+                    self::debug("Registered extension namespace {$fullNamespace} to {$extensionDir}/");
+                    
+                    // Register all subdirectories with their matching namespaces
+                    self::registerSubdirectoryNamespaces($classLoader, $extensionDir, $fullNamespace);
+                    
+                    // Also register alias for common subdirectories to help with misreferenced classes
+                    self::registerLegacyAliases($classLoader, $extensionDir, $namespace, $extensionName);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Register all subdirectories within an extension with their proper namespaces
+     * 
+     * @param ClassLoader $classLoader Composer's class loader
+     * @param string $extensionPath Path to the extension
+     * @param string $baseNamespace Base namespace for the extension
+     * @return void
+     */
+    private static function registerSubdirectoryNamespaces(
+        ClassLoader $classLoader, 
+        string $extensionPath, 
+        string $baseNamespace
+    ): void
+    {
+        // Use RecursiveDirectoryIterator to find all subdirectories
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($extensionPath, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+        
+        foreach ($iterator as $item) {
+            if ($item->isDir()) {
+                $subdir = $item->getPathname();
+                $relativePath = substr($subdir, strlen($extensionPath) + 1);
+                
+                if (empty($relativePath)) {
+                    continue; // Skip the root extension directory
+                }
+                
+                // Convert directory path to namespace format
+                $namespaceSegment = str_replace('/', '\\', $relativePath);
+                $subdirNamespace = $baseNamespace . $namespaceSegment . '\\';
+                
+                // Register this subdirectory with its corresponding namespace
+                $classLoader->addPsr4($subdirNamespace, $subdir . '/');
+            }
+        }
+    }
+    
+    /**
+     * Register legacy namespace aliases for backwards compatibility
+     * 
+     * @param ClassLoader $classLoader Composer's class loader
+     * @param string $extensionPath Path to the extension
+     * @param string $namespace Base namespace for extensions
+     * @param string $extensionName Name of the extension
+     * @return void
+     */
+    private static function registerLegacyAliases(
+        ClassLoader $classLoader, 
+        string $extensionPath, 
+        string $namespace, 
+        string $extensionName
+    ): void
+    {
+        // Common directories within extensions that might contain classes
+        $commonDirs = ['Providers', 'migrations', 'Models', 'Controllers', 'Services'];
+        
+        foreach ($commonDirs as $dir) {
+            $subdirPath = $extensionPath . '/' . $dir;
+            if (is_dir($subdirPath)) {
+                // Register a fallback namespace to catch misreferenced classes
+                // For example: Glueful\Extensions\GithubAuthProvider -> extensions/SocialLogin/Providers/GithubAuthProvider
+                $aliasNamespace = "Glueful\\Extensions\\";
+                $classLoader->addPsr4($aliasNamespace, $extensionPath . '/' . $dir . '/');
+            }
+        }
     }
     
     /**
@@ -89,6 +308,7 @@ class ExtensionsManager {
                 $className = str_replace('.php', '', $filename);
                 $fullClassName = $namespace . $className;
 
+                // Only attempt to load the class if we haven't already loaded it
                 if (!class_exists($fullClassName, false)) {
                     try {
                         include_once $file->getPathname();
@@ -97,47 +317,21 @@ class ExtensionsManager {
                     }
                 }
 
-                // Check if class exists and is not already loaded
+                // Check if the class exists and extends the base Extensions class
                 if (class_exists($fullClassName, false)) {
                     $reflection = new \ReflectionClass($fullClassName);
                     
+                    // Only register classes that extend the Extensions base class
                     if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
                         if (!in_array($fullClassName, self::$loadedExtensions, true)) {
-                            try {
-                                self::$loadedExtensions[] = $fullClassName;
-                            } catch (\Exception $e) {
-                                error_log("Failed to load extension {$fullClassName}: " . $e->getMessage());
-                            }
+                            self::$loadedExtensions[] = $fullClassName;
+                            self::debug("Loaded extension: {$fullClassName}");
                         } else {
-                            error_log("Skipping duplicate extension: {$fullClassName}");
+                            self::debug("Skipping duplicate extension: {$fullClassName}");
                         }
-                    } else {
-                        error_log("Class does not extend Extensions: {$fullClassName}");
                     }
-                } else {
-                    error_log("Class still doesn't exist: $fullClassName");
-                    // self::debugFileNamespace($file->getPathname());
                 }
             }
-        }
-    }
-
-    /**
-     * Debug function to check namespace and class declarations in files.
-     */
-    private static function debugFileNamespace(string $filePath): void
-    {
-        $content = file_get_contents($filePath);
-        if (preg_match('/namespace\s+([^;]+);/i', $content, $matches)) {
-            error_log("File declares namespace: " . $matches[1]);
-        } else {
-            error_log("No namespace declaration found in file");
-        }
-
-        if (preg_match('/class\s+(\w+)/i', $content, $matches)) {
-            error_log("File declares class: " . $matches[1]);
-        } else {
-            error_log("No class declaration found in file");
         }
     }
     

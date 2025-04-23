@@ -5,7 +5,6 @@ namespace Glueful\Extensions\SocialLogin\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
 use Glueful\Database\Schema\SchemaManager;
-use Glueful\Helpers\Utils;
 
 /**
  * Social Accounts Migration
@@ -25,54 +24,26 @@ class CreateSocialAccountsTable implements MigrationInterface
         $tables = $schema->getTables();
         if (!in_array('social_accounts', $tables)) {
             $schema->createTable('social_accounts', [
-                'uuid' => [
-                    'type' => 'CHAR(21)',
-                    'nullable' => false,
-                    'primary' => true
-                ],
-                'user_uuid' => [
-                    'type' => 'CHAR(21)', 
-                    'nullable' => false,
-                    'references' => [
-                        'table' => 'users',
-                        'column' => 'uuid',
-                        'onDelete' => 'CASCADE'
-                    ]
-                ],
-                'provider' => [
-                    'type' => 'VARCHAR(50)',
-                    'nullable' => false,
-                    'comment' => 'Social provider name (google, facebook, github, etc.)'
-                ],
-                'social_id' => [
-                    'type' => 'VARCHAR(255)',
-                    'nullable' => false,
-                    'comment' => 'User ID from the social provider'
-                ],
-                'profile_data' => [
-                    'type' => 'TEXT',
-                    'nullable' => true,
-                    'comment' => 'JSON-encoded social profile data'
-                ],
-                'created_at' => [
-                    'type' => 'TIMESTAMP',
-                    'nullable' => false,
-                    'default' => 'CURRENT_TIMESTAMP'
-                ],
-                'updated_at' => [
-                    'type' => 'TIMESTAMP',
-                    'nullable' => false,
-                    'default' => 'CURRENT_TIMESTAMP'
-                ]
-            ])
-            ->addIndex([
-                'columns' => ['user_uuid'],
-                'name' => 'idx_social_accounts_user_uuid'
-            ])
-            ->addIndex([
+                'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                'uuid' => 'CHAR(12) NOT NULL',
+                'user_uuid' => 'CHAR(12) NOT NULL', 
+                'provider' => 'VARCHAR(50) NOT NULL',
+                'social_id' => 'VARCHAR(255) NOT NULL',
+                'profile_data' => 'TEXT NULL',
+                'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+            ])->addIndex([
+                ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'social_accounts'],
+                ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'social_accounts'],
+                ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'social_accounts', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE']
+            ]);
+            
+            // Add composite unique index on provider and social_id
+            $schema->addIndex([
+                'table' => 'social_accounts',
+                'type' => 'UNIQUE',
                 'columns' => ['provider', 'social_id'],
-                'name' => 'idx_social_accounts_provider_id',
-                'unique' => true
+                'name' => 'idx_social_provider_id'
             ]);
         }
     }

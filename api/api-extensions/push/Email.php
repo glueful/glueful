@@ -34,13 +34,14 @@ class Email extends Extensions
                 return self::sendViaSmtp($postParams);
             }
 
-            if (@$postParams["type"] == "attachment") {
-                return self::handleAttachmentEmail($postParams);
-            }
-
-            return self::handleBasicEmail($postParams);
+            // Use PHPMailer consistently instead of native mail() function
+            return self::sendViaPHPMailer($postParams);
         } catch (\Exception $e) {
-            return ["ERR" => $e->getMessage()];
+            return [
+                "success" => false,
+                "error" => $e->getMessage(),
+                "code" => $e instanceof PHPMailerException ? 500 : 400
+            ];
         }
     }
 
@@ -75,45 +76,91 @@ class Email extends Extensions
             $mailer->SMTPSecure = self::$smtpConfig['secure'] ?? config('mail.smtp.secure', 'tls');
             $mailer->Port = self::$smtpConfig['port'] ?? (int) config('mail.smtp.port', 587);
 
-            // Set email content
-            $mailer->setFrom($data['from']);
-            $mailer->addAddress($data['to']);
-            if (!empty($data['cc'])) $mailer->addCC($data['cc']);
-            if (!empty($data['bcc'])) $mailer->addBCC($data['bcc']);
-            
-            $mailer->Subject = $data['subject'];
-            $mailer->Body = self::wrapTemplate($data['message']);
-            $mailer->isHTML(true);
+            return self::finalizeMailer($mailer, $data);
+        } catch (PHPMailerException $e) {
+            return ['success' => false, 'error' => "Mail error: {$e->getMessage()}", 'code' => 500];
+        }
+    }
 
-            // Handle attachments if present
-            if (isset($data['type']) && $data['type'] === 'attachment' && !empty($data['attachment'])) {
-                foreach ($data['attachment'] as $attachment) {
+    private static function sendViaPHPMailer(array $data): array
+    {
+        try {
+            $mailer = new PHPMailer(true);
+            
+            // Use sendmail transport by default
+            $mailer->isSendmail();
+            
+            return self::finalizeMailer($mailer, $data);
+        } catch (PHPMailerException $e) {
+            return ['success' => false, 'error' => "Mail error: {$e->getMessage()}", 'code' => 500];
+        }
+    }
+    
+    private static function finalizeMailer(PHPMailer $mailer, array $data): array
+    {
+        // Parse sender information
+        if (preg_match('/^(.+?)\s*<(.+?)>$/', trim($data['from']), $matches)) {
+            $fromName = trim($matches[1]);
+            $fromEmail = trim($matches[2]);
+        } else {
+            $fromName = '';
+            $fromEmail = $data['from'];
+        }
+        
+        // Set email content
+        $mailer->setFrom($fromEmail, $fromName);
+        $mailer->addReplyTo($fromEmail, $fromName);
+        $mailer->addAddress($data['to']);
+        
+        if (!empty($data['cc'])) {
+            foreach ((array)$data['cc'] as $cc) {
+                $mailer->addCC(trim($cc));
+            }
+        }
+        
+        if (!empty($data['bcc'])) {
+            foreach ((array)$data['bcc'] as $bcc) {
+                $mailer->addBCC(trim($bcc));
+            }
+        }
+            
+        $mailer->Subject = $data['subject'];
+        $mailer->Body = self::wrapTemplate($data['message']);
+        $mailer->isHTML(true);
+
+        // Handle attachments if present
+        if (isset($data['type']) && $data['type'] === 'attachment' && !empty($data['attachment'])) {
+            foreach ($data['attachment'] as $attachment) {
+                if (file_exists($attachment['location'])) {
                     $mailer->addAttachment(
                         $attachment['location'],
                         $attachment['name']
                     );
                 }
             }
-
-            return $mailer->send() ? ['SUCCESS' => true] : ['ERR' => 'Could not send email'];
-        } catch (PHPMailerException $e) {
-            return ['ERR' => "Mail error: {$e->getMessage()}"];
         }
+
+        // Send email
+        if (!$mailer->send()) {
+            throw new PHPMailerException($mailer->ErrorInfo);
+        }
+
+        return [
+            'success' => true, 
+            'message' => 'Email sent successfully',
+            'recipients' => count($mailer->getAllRecipientAddresses())
+        ];
     }
 
     private static function handleAdvancedEmail(array $getParams, array $postParams): array
     {
-        if (!class_exists(AdvancedEmail::class)) {
-            require_once __DIR__ . "/AdvancedEmail.php";
-        }
-        
         AdvancedEmail::setTemplate(self::$template);
         AdvancedEmail::setFooter(self::$footer);
 
         return API::processRequest(
             [
                 "f" => "AdvancedEmail:push",
-                "token" => $getParams['token']
+                "token" => $getParams['token'] ?? null
             ],
             [
                 "from" => $postParams['from'],
@@ -121,82 +168,10 @@ class Email extends Extensions
                 "cc" => $postParams['cc'] ?? null,
                 "bcc" => $postParams['bcc'] ?? null,
                 "subject" => $postParams['subject'],
-                "message" => $postParams['message']
+                "message" => $postParams['message'],
+                "attachment" => $postParams['attachment'] ?? null
             ]
         );
-    }
-
-    private static function handleAttachmentEmail(array $postParams): array
-    {
-        return self::sendAttachment($postParams, $postParams["attachment"]) 
-            ? ["SUCCESS" => true] 
-            : ["ERR" => "Could not send email"];
-    }
-
-    private static function handleBasicEmail(array $postParams): array
-    {
-        return self::send($postParams) 
-            ? ["SUCCESS" => true] 
-            : ["ERR" => "Could not send email"];
-    }
-
-    private static function send(array $data): bool
-    {
-        $headers  = "MIME-Version: 1.0\r\n"; 
-        $headers .= "From: ".$data["from"]."\r\n"; 
-        if($data["cc"]){
-            $headers .= "Cc: ".$data["cc"]."\r\n";
-        }
-        if($data["bcc"]){
-            $headers .= "Bcc: ".$data["bcc"]."\r\n";
-        }
-        $headers .= "Reply-To: ".$data["from"]."\r\n";
-        $headers .= "Content-type: text/html; charset=iso-8859-1\r\n";
-
-        $send = @mail($data["to"], $data["subject"], self::wrapTemplate($data["message"]), $headers);
-        return $send ? true : false;
-    }
-
-    private static function sendAttachment(array $data, array $attachments): bool
-    {
-        $file_type = 'application/pdf';
-        
-        $boundary = md5(serialize($data)); 
-        
-        //header
-        $headers = "MIME-Version: 1.0\r\n"; 
-        $headers .= "From:". $data["from"] . "\r\n"; 
-        if($data["cc"]){
-            $headers .= "Cc: ".$data["cc"]."\r\n";
-        }
-        if($data["bcc"]){
-            $headers .= "Bcc: ".$data["bcc"]."\r\n";
-        }
-        $headers .= "Reply-To: ". $data["from"] . "\r\n";
-        $headers .= "Content-Type: multipart/mixed; boundary = ".$boundary."\r\n\r\n";
-        
-        //html message
-        $body = "--".$boundary."\r\n";
-        $body .= "Content-Type: text/html; charset=ISO-8859-1\r\n";
-        $body .= "Content-Transfer-Encoding: 7bit\r\n\r\n"; 
-        $body .= $data["message"]; 
-
-        $body .= "<!-- Content-Type: text/plain; charset=ISO-8859-1 -->\r\n";
-
-        foreach ($attachments as $key => $attachment) {
-            $encoded_content = chunk_split(base64_encode(file_get_contents($attachment["location"])));
-
-            //attachment
-            $body .= "--".$boundary."\r\n";
-            $body .="Content-Type: ".$file_type."; name=\"".$attachment["name"]."\"\r\n";
-            $body .="Content-Disposition: attachment; filename=\"".$attachment["name"]."\"\r\n";
-            $body .="Content-Transfer-Encoding: base64\r\n";
-            $body .="X-Attachment-Id: ".rand(1000,99999)."\r\n\r\n"; 
-            $body .= $encoded_content; 
-        }
-
-        $send = @mail($data["to"], $data["subject"], $body, $headers);
-        return $send ? true : false;
     }
 
     public static function setTemplate(string $template): void

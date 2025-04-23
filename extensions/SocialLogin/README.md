@@ -36,8 +36,22 @@ return [
 3. Run the migrations to create the necessary database tables:
 
 ```bash
-php glueful migrate
+php glueful db:migrate
 ```
+
+4. Generate API documentation:
+
+```bash
+php glueful generate:json doc
+```
+
+This will automatically:
+- Create the database table schema for social_accounts
+- Scan and parse your extension's route files
+- Generate OpenAPI documentation for all your social login endpoints
+- Add them to the main API documentation
+
+5. Restart your web server to apply the changes.
 
 ## Configuration
 

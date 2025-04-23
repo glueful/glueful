@@ -63,11 +63,12 @@ class ExtensionsCommand extends Command
      * Command options
      */
     protected array $options = [
-        'list'      => 'List all installed extensions',
-        'info'      => 'Show detailed information about an extension',
-        'enable'    => 'Enable an extension',
-        'disable'   => 'Disable an extension',
-        'create'    => 'Create a new extension scaffold'
+        'list'       => 'List all installed extensions',
+        'info'       => 'Show detailed information about an extension',
+        'enable'     => 'Enable an extension',
+        'disable'    => 'Disable an extension',
+        'create'     => 'Create a new extension scaffold',
+        'namespaces' => 'Show all registered extension namespaces'
     ];
     
     /**
@@ -130,6 +131,10 @@ class ExtensionsCommand extends Command
                     $this->createExtension($extensionName);
                     break;
                 
+                case 'namespaces':
+                    $this->showNamespaces();
+                    break;
+
                 default:
                     $this->error("Action not implemented: $action");
                     return Command::FAILURE;
@@ -691,21 +696,23 @@ Manages API extensions - list, enable, disable, create and get information about
 
 Usage:
   extensions list
-  extensions info <name>
-  extensions enable <name>
-  extensions disable <name>
-  extensions create <name>
+  extensions info <n>
+  extensions enable <n>
+  extensions disable <n>
+  extensions create <n>
+  extensions namespaces
   extensions [action] [options]
 
 Actions:
   list                List all installed extensions
-  info <name>         Show detailed information about an extension
-  enable <name>       Enable an extension
-  disable <name>      Disable an extension
-  create <name>       Create a new extension scaffold
+  info <n>            Show detailed information about an extension
+  enable <n>          Enable an extension
+  disable <n>         Disable an extension
+  create <n>          Create a new extension scaffold
+  namespaces          Show all registered extension namespaces
 
 Arguments:
-  <name>              Extension name (in PascalCase, e.g. MyExtension)
+  <n>                 Extension name (in PascalCase, e.g. MyExtension)
 
 Options:
   -h, --help          Show this help message
@@ -716,6 +723,7 @@ Examples:
   php glueful extensions enable PaymentGateway
   php glueful extensions disable Analytics
   php glueful extensions create NewFeature
+  php glueful extensions namespaces
 HELP;
     }
     
@@ -727,5 +735,41 @@ HELP;
     protected function showHelp(): void
     {
         $this->line($this->getHelp());
+    }
+
+    /**
+     * Show registered extension namespaces
+     * 
+     * @return void
+     */
+    protected function showNamespaces(): void
+    {
+        $this->info('Registered Extension Namespaces');
+        $this->line('==============================');
+        
+        $namespaces = ExtensionsManager::getRegisteredNamespaces();
+        
+        if (empty($namespaces)) {
+            $this->warning('No extension namespaces registered');
+            return;
+        }
+        
+        // Display each namespace and its path
+        foreach ($namespaces as $namespace => $paths) {
+            $this->info($namespace);
+            
+            if (is_array($paths)) {
+                foreach ($paths as $path) {
+                    $this->line("  → " . $path);
+                }
+            } else {
+                $this->line("  → " . $paths);
+            }
+            
+            $this->line('');
+        }
+        
+        $this->line("\nTip: These namespaces are dynamically registered at runtime by ExtensionsManager.");
+        $this->line("No manual changes to composer.json are needed for extension autoloading.");
     }
 }
