@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Extensions\Email;
 use Glueful\Cache\CacheEngine;
+use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
+use Glueful\Notifications\Contracts\Notifiable;
+use Glueful\Notifications\Services\NotificationService;
 use Glueful\{APIEngine};
 
 /**
@@ -39,16 +41,38 @@ class EmailVerification
     
     /** @var string Cache prefix for daily request tracking */
     private const REQUESTS_PREFIX = 'email_verification_requests:';
+    
+    /** @var NotificationService Notification service instance */
+    private NotificationService $notificationService;
+    
+    /** @var EmailNotificationProvider Email notification provider */
+    private EmailNotificationProvider $emailProvider;
 
     /**
      * Constructor
      * 
-     * Initializes cache engine for OTP storage.
+     * Initializes cache engine for OTP storage and notification service.
      */
     public function __construct()
     {
         // Initialize CacheEngine with Redis driver
         CacheEngine::initialize('Glueful:', config('cache.default'));
+        
+        // Create the channel manager
+        $channelManager = new \Glueful\Notifications\Services\ChannelManager();
+        
+        // Create the notification dispatcher
+        $dispatcher = new \Glueful\Notifications\Services\NotificationDispatcher($channelManager);
+        
+        // Initialize EmailNotificationProvider
+        $this->emailProvider = new EmailNotificationProvider();
+        $this->emailProvider->initialize();
+        
+        // Register the email provider with the dispatcher (not the service)
+        $dispatcher->registerExtension($this->emailProvider);
+        
+        // Initialize NotificationService with required dispatcher
+        $this->notificationService = new NotificationService($dispatcher);
     }
 
     /**
@@ -64,7 +88,7 @@ class EmailVerification
     /**
      * Send verification email
      * 
-     * Handles rate limiting and sends OTP via email.
+     * Handles rate limiting and sends OTP via notification system.
      * 
      * @param string $email Recipient email address
      * @param string $otp Generated OTP code
@@ -93,15 +117,57 @@ class EmailVerification
                 return false;
             }
 
-            $emailData = [
-                'from' => $_ENV['MAIL_FROM_ADDRESS'],
-                'to' => $email,
-                'subject' => 'Email Verification Code',
-                'message' => $this->getEmailTemplate($otp)
-            ];
-
-            $response = Email::process([], $emailData);
-            return isset($response['SUCCESS']);
+            // Create a temporary notifiable for this email
+            $notifiable = new class($email) implements Notifiable {
+                private string $email;
+                
+                public function __construct(string $email) {
+                    $this->email = $email;
+                }
+                
+                public function routeNotificationFor(string $channel): ?string {
+                    if ($channel === 'email') {
+                        return $this->email;
+                    }
+                    return null;
+                }
+                
+                public function getNotifiableId(): string {
+                    return md5($this->email);
+                }
+                
+                public function getNotifiableType(): string {
+                    return 'verification_recipient';
+                }
+                
+                public function shouldReceiveNotification(string $notificationType, string $channel): bool {
+                    return $channel === 'email';
+                }
+                
+                public function getNotificationPreferences(): array {
+                    return ['email' => true];
+                }
+            };
+            
+            // Send via notification system using the verification template
+            $result = $this->notificationService->send(
+                'email_verification',
+                $notifiable,
+                'Email Verification Code',
+                [
+                    'otp' => $otp,
+                    'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
+                    'app_name' => config('app.name', 'Glueful'),
+                    'current_year' => date('Y')
+                ],
+                [
+                    'channels' => ['email'],
+                    'template_name' => 'verification'
+                ]
+            );
+            
+            // Check if the notification was sent successfully
+            return is_array($result) && isset($result['success']) ? (bool)$result['success'] : false;
             
         } catch (\Exception $e) {
             error_log("Email verification failed: " . $e->getMessage());
@@ -218,24 +284,6 @@ class EmailVerification
     }
 
     /**
-     * Get email template with OTP
-     * 
-     * @param string $otp OTP to include in email
-     * @return string HTML email template
-     */
-    private function getEmailTemplate(string $otp): string
-    {
-        return "
-            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                <h2>Email Verification</h2>
-                <p>Your verification code is: <strong>{$otp}</strong></p>
-                <p>This code will expire in " . self::OTP_EXPIRY_MINUTES . " minutes.</p>
-                <p>If you didn't request this code, please ignore this email.</p>
-            </div>
-        ";
-    }
-
-    /**
      * Validate email format
      * 
      * @param string $email Email to validate
@@ -249,7 +297,7 @@ class EmailVerification
     /**
      * Send password reset email
      * 
-     * Handles password reset flow with verification.
+     * Handles password reset flow with verification using notification system.
      * 
      * @param string $email User email address
      * @return array Operation result with status
@@ -285,32 +333,65 @@ class EmailVerification
 
             // Generate OTP
             $otp = $verifier->generateOTP();
-
-            // Prepare email data
-            $emailData = [
-                'from' => config('mail.from.address'),
-                'to' => $email,
-                'subject' => 'Password Reset Code',
-                'message' => str_replace(
-                    ['{name}', '{otp}', '{expiry_minutes}'],
-                    [
-                        $userData[0]['first_name'], 
-                        $otp,
-                        self::OTP_EXPIRY_MINUTES
-                    ],
-                    $verifier->getEmailTemplate($otp)
-                )
-            ];
-
-            // Send email using Email::process
-            $emailResult = Email::process([], $emailData);
-            if (!isset($emailResult['SUCCESS'])) {
-                throw new \RuntimeException('Failed to send email');
+            
+            // Store OTP
+            $hashedOTP = OTP::hashOTP($otp);
+            if (!$verifier->storeOTP($email, $hashedOTP)) {
+                throw new \RuntimeException('Failed to initialize password reset');
             }
 
-            // Store OTP only after email is sent successfully
-            if (!$verifier->sendVerificationEmail($email, $otp)) {
-                throw new \RuntimeException('Failed to initialize password reset');
+            // Create a temporary notifiable for this email
+            $notifiable = new class($email) implements Notifiable {
+                private string $email;
+                
+                public function __construct(string $email) {
+                    $this->email = $email;
+                }
+                
+                public function routeNotificationFor(string $channel): ?string {
+                    if ($channel === 'email') {
+                        return $this->email;
+                    }
+                    return null;
+                }
+                
+                public function getNotifiableId(): string {
+                    return md5($this->email);
+                }
+                
+                public function getNotifiableType(): string {
+                    return 'password_reset_recipient';
+                }
+                
+                public function shouldReceiveNotification(string $notificationType, string $channel): bool {
+                    return $channel === 'email';
+                }
+                
+                public function getNotificationPreferences(): array {
+                    return ['email' => true];
+                }
+            };
+            
+            // Send via notification system using the password-reset template
+            $result = $verifier->notificationService->send(
+                'password_reset',
+                $notifiable,
+                'Password Reset Code',
+                [
+                    'name' => $userData[0]['first_name'] ?? 'User',
+                    'otp' => $otp,
+                    'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
+                    'app_name' => config('app.name', 'Glueful'),
+                    'current_year' => date('Y')
+                ],
+                [
+                    'channels' => ['email'],
+                    'template_name' => 'password-reset'
+                ]
+            );
+            
+            if (!$result) {
+                throw new \RuntimeException('Failed to send password reset notification');
             }
 
             return [

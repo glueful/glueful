@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <style>
+        @media only screen and (max-width: 620px) {
+            table.body {
+                width: 100%;
+                min-width: 320px;
+            }
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+            background-color: #f8f9fa;
+            color: #333333;
+            height: 100% !important;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+            -ms-text-size-adjust: 100%;
+            -webkit-text-size-adjust: 100%;
+        }
+        .wrapper {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .content {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 25px;
+            border: 1px solid #e9e9e9;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .header h1 {
+            color: #d14836;
+            font-size: 22px;
+            font-weight: 500;
+            margin: 0;
+        }
+        .message {
+            color: #333333;
+            font-size: 16px;
+            line-height: 1.6em;
+        }
+        .alert-box {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .footer {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid #e9e9e9;
+            color: #999999;
+            font-size: 12px;
+            text-align: center;
+        }
+        .button {
+            background-color: #d14836;
+            border-radius: 3px;
+            color: #ffffff !important;
+            display: inline-block;
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 12px 24px;
+            text-decoration: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="content">
+            <div class="header">
+                <h1>⚠️ {{subject}}</h1>
+            </div>
+            <div class="message">
+                <p>Important Alert:</p>
+                <p>{{message}}</p>
+                
+                <div class="alert-box">
+                    <p style="margin: 0;"><strong>Details:</strong> {{details}}</p>
+                </div>
+                
+                <p>Please take action immediately.</p>
+                
+                {{#if action_url}}
+                <div style="text-align: center;">
+                    <a href="{{action_url}}" class="button">Take Action</a>
+                </div>
+                {{/if}}
+            </div>
+            <div class="footer">
+                <p>This is an automated alert from {{app_name}}. Please do not reply to this email.</p>
+                <p>&copy; {{current_year}} {{app_name}}. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
