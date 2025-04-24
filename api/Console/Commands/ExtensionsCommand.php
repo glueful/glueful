@@ -475,7 +475,6 @@ class ExtensionsCommand extends Command
             'enabled' => [],
             'paths' => [
                 'extensions' => config('paths.project_extensions'),
-                'api-extensions' => config('paths.api_extensions'),
             ]
         ];
         

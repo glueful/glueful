@@ -12,7 +12,6 @@ return [
     
     // API related paths
     'api_base_directory' => dirname(__DIR__) . '/api/',        // API root directory
-    'api_extensions' => dirname(__DIR__) . '/api/api-extensions/', // API extensions
     'api_docs' => dirname(__DIR__) . '/docs/',                 // API documentation
     
     // Content delivery paths

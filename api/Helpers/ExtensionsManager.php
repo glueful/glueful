@@ -22,7 +22,7 @@ class ExtensionsManager {
     
     /** @var array Extension namespaces and their directories */
     private static array $extensionNamespaces = [
-        'Glueful\\Extensions\\' => ['extensions','api/api-extensions']
+        'Glueful\\Extensions\\' => ['extensions']
     ];
     
     /** @var ClassLoader|null Composer's class loader instance */
@@ -558,7 +558,6 @@ class ExtensionsManager {
             'enabled' => [],
             'paths' => [
                 'extensions' => config('paths.project_extensions'),
-                'api-extensions' => config('paths.api_extensions'),
             ]
         ];
         // Create the config file with default values
