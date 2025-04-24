@@ -7,14 +7,13 @@ Glueful Extensions provide a powerful way to extend and customize the API functi
 ## Directory Structure
 
 glueful/ 
-├── extensions/ # User-created extensions 
+├── extensions/ # Extensions directory 
 │   ├── MyExtension/ # Individual extension directory 
 │   │   ├── MyExtension.php 
 │   │   └── README.md 
 │   └── README.md 
 ├── api/ 
-│   ├── Extensions.php # Base extension class 
-│   └── api-extensions/ # Core API extensions 
+│   └── Extensions.php # Base extension class 
 └── config/ 
     └── extensions.php # Extension configuration
 
@@ -66,8 +65,8 @@ return [
         'PaymentGateway'
     ],
     'paths' => [
-        'extensions' => '/path/to/extensions',
-        'api-extensions' => '/path/to/api-extensions'
+        'extensions' => '/path/to/extensions'
+        // Note: The 'api-extensions' key has been intentionally removed. Ensure no components rely on it.
     ]
 ];
 ```

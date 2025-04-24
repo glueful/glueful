@@ -7,6 +7,5 @@ return array (
   'paths' => 
   array (
     'extensions' => '/Users/michaeltawiahsowah/Sites/localhost/glueful/extensions/',
-    'api-extensions' => '/Users/michaeltawiahsowah/Sites/localhost/glueful/api/api-extensions/',
   ),
 );
