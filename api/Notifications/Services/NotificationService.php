@@ -4,10 +4,12 @@ declare(strict_types=1);
 namespace Glueful\Notifications\Services;
 
 use DateTime;
+use Glueful\Helpers\Utils;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Models\Notification;
 use Glueful\Notifications\Models\NotificationPreference;
 use Glueful\Notifications\Templates\TemplateManager;
+use Glueful\Repository\NotificationRepository;
 use InvalidArgumentException;
 
 
@@ -32,6 +34,11 @@ class NotificationService
     private ?TemplateManager $templateManager;
     
     /**
+     * @var NotificationRepository The notification repository
+     */
+    private NotificationRepository $repository;
+    
+    /**
      * @var callable Generator for notification IDs
      */
     private $idGenerator;
@@ -45,31 +52,24 @@ class NotificationService
      * NotificationService constructor
      * 
      * @param NotificationDispatcher $dispatcher Notification dispatcher
+     * @param NotificationRepository $repository Notification repository
      * @param TemplateManager|null $templateManager Template manager
      * @param array $config Configuration options
      */
     public function __construct(
         NotificationDispatcher $dispatcher,
+        NotificationRepository $repository,
         ?TemplateManager $templateManager = null,
         array $config = []
     ) {
         $this->dispatcher = $dispatcher;
+        $this->repository = $repository;
         $this->templateManager = $templateManager;
         $this->config = $config;
         
-        // Default ID generator creates UUIDs
+        // Default ID generator uses Utils::generateNanoID
         $this->idGenerator = $config['id_generator'] ?? function() {
-            return sprintf(
-                '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-                mt_rand(0, 0xffff),
-                mt_rand(0, 0xffff),
-                mt_rand(0, 0xffff),
-                mt_rand(0, 0x0fff) | 0x4000,
-                mt_rand(0, 0x3fff) | 0x8000,
-                mt_rand(0, 0xffff),
-                mt_rand(0, 0xffff),
-                mt_rand(0, 0xffff)
-            );
+            return Utils::generateNanoID();
         };
     }
     
@@ -93,13 +93,24 @@ class NotificationService
         // Create the notification
         $notification = $this->create($type, $notifiable, $subject, $data, $options);
         
+        // Save to database first
+        $this->repository->save($notification);
+        
         // Send it immediately unless scheduled for later
         if (!isset($options['schedule']) || $options['schedule'] === null) {
-            return $this->dispatcher->send(
+            $result = $this->dispatcher->send(
                 $notification,
                 $notifiable,
                 $options['channels'] ?? null
             );
+            
+            // Update notification in database after sending
+            if ($result['status'] === 'success') {
+                $notification->markAsSent();
+                $this->repository->save($notification);
+            }
+            
+            return $result;
         }
         
         return [
@@ -199,12 +210,23 @@ class NotificationService
             $options
         );
         
+        // Save to database
+        $this->repository->save($notification);
+        
         // Send notification
-        return $this->dispatcher->send(
+        $result = $this->dispatcher->send(
             $notification,
             $notifiable,
             $options['channels'] ?? null
         );
+        
+        // Update notification in database after sending
+        if ($result['status'] === 'success') {
+            $notification->markAsSent();
+            $this->repository->save($notification);
+        }
+        
+        return $result;
     }
     
     /**
@@ -216,7 +238,9 @@ class NotificationService
      */
     public function markAsRead(Notification $notification, ?DateTime $readAt = null): Notification
     {
-        return $notification->markAsRead($readAt);
+        $notification = $notification->markAsRead($readAt);
+        $this->repository->save($notification);
+        return $notification;
     }
     
     /**
@@ -227,7 +251,9 @@ class NotificationService
      */
     public function markAsUnread(Notification $notification): Notification
     {
-        return $notification->markAsUnread();
+        $notification = $notification->markAsUnread();
+        $this->repository->save($notification);
+        return $notification;
     }
     
     /**
@@ -252,7 +278,7 @@ class NotificationService
             ? call_user_func($this->idGenerator) 
             : uniqid('preference_');
         
-        return new NotificationPreference(
+        $preference = new NotificationPreference(
             $id,
             $notifiable->getNotifiableType(),
             $notifiable->getNotifiableId(),
@@ -260,6 +286,142 @@ class NotificationService
             $channels,
             $enabled,
             $settings
+        );
+        
+        // Save to database
+        $this->repository->savePreference($preference);
+        
+        return $preference;
+    }
+    
+    /**
+     * Get notifications for a user
+     * 
+     * @param Notifiable $notifiable Recipient
+     * @param bool $onlyUnread Whether to get only unread notifications
+     * @param int|null $limit Maximum number of notifications
+     * @param int|null $offset Pagination offset
+     * @return array Array of Notification objects
+     */
+    public function getNotifications(
+        Notifiable $notifiable,
+        bool $onlyUnread = false,
+        ?int $limit = null,
+        ?int $offset = null
+    ): array {
+        return $this->repository->findForNotifiable(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId(),
+            $onlyUnread,
+            $limit,
+            $offset
+        );
+    }
+    
+    /**
+     * Get notification by ID
+     * 
+     * @param string $id Notification ID
+     * @return Notification|null The notification or null if not found
+     */
+    public function getNotificationById(string $id): ?Notification {
+        return $this->repository->findById($id);
+    }
+    
+    /**
+     * Get unread notification count for a user
+     * 
+     * @param Notifiable $notifiable Recipient
+     * @return int Count of unread notifications
+     */
+    public function getUnreadCount(Notifiable $notifiable): int {
+        return $this->repository->countUnread(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId()
+        );
+    }
+    
+    /**
+     * Mark all notifications as read for a user
+     * 
+     * @param Notifiable $notifiable Recipient
+     * @return int Number of notifications updated
+     */
+    public function markAllAsRead(Notifiable $notifiable): int {
+        return $this->repository->markAllAsRead(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId()
+        );
+    }
+    
+    /**
+     * Process scheduled notifications
+     * 
+     * This method should be called from a cron job or scheduler
+     * to process notifications that were scheduled for delivery.
+     * 
+     * @param int $batchSize Maximum number of notifications to process
+     * @return array Processing results
+     */
+    public function processScheduledNotifications(int $batchSize = 50): array {
+        $pendingNotifications = $this->repository->findPendingScheduled(null, $batchSize);
+        
+        $results = [
+            'processed' => 0,
+            'successful' => 0,
+            'failed' => 0
+        ];
+        
+        foreach ($pendingNotifications as $notification) {
+            $results['processed']++;
+            
+            // Get notifiable entity
+            $notifiableType = $notification->getNotifiableType();
+            $notifiableId = $notification->getNotifiableId();
+            
+            // This assumes you have a way to get the notifiable entity
+            // You would need to implement this method or similar
+            $notifiable = $this->getNotifiableEntity($notifiableType, $notifiableId);
+            
+            if (!$notifiable) {
+                $results['failed']++;
+                continue;
+            }
+            
+            $sendResult = $this->dispatcher->send($notification, $notifiable);
+            
+            if ($sendResult['status'] === 'success') {
+                $notification->markAsSent();
+                $this->repository->save($notification);
+                $results['successful']++;
+            } else {
+                $results['failed']++;
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Delete old notifications
+     * 
+     * @param int $olderThanDays Delete notifications older than this many days
+     * @return bool Success status
+     */
+    public function deleteOldNotifications(int $olderThanDays): bool {
+        return $this->repository->deleteOldNotifications($olderThanDays);
+    }
+    
+    /**
+     * Get notification preferences for a user
+     * 
+     * @param Notifiable $notifiable The user or entity
+     * @return array Array of NotificationPreference objects
+     */
+    public function getPreferences(Notifiable $notifiable): array {
+        return $this->repository->findPreferencesForNotifiable(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId()
         );
     }
     
@@ -283,6 +445,16 @@ class NotificationService
     public function getDispatcher(): NotificationDispatcher
     {
         return $this->dispatcher;
+    }
+    
+    /**
+     * Get the notification repository
+     * 
+     * @return NotificationRepository The notification repository
+     */
+    public function getRepository(): NotificationRepository
+    {
+        return $this->repository;
     }
     
     /**
@@ -330,5 +502,29 @@ class NotificationService
     public function getConfig(string $key, $default = null)
     {
         return $this->config[$key] ?? $default;
+    }
+    
+    /**
+     * Get the notifiable entity from type and ID
+     * 
+     * Note: This is a placeholder method that should be implemented
+     * based on your application's entity retrieval mechanism.
+     * 
+     * @param string $type Entity type
+     * @param string $id Entity ID
+     * @return Notifiable|null The notifiable entity
+     */
+    protected function getNotifiableEntity(string $type, string $id): ?Notifiable
+    {
+        // This is a placeholder implementation
+        // In a real application, you would retrieve the entity from your ORM/database
+        
+        // Example implementation for a User entity:
+        // if ($type === 'user') {
+        //     $userRepository = new UserRepository();
+        //     return $userRepository->findById($id);
+        // }
+        
+        return null;
     }
 }
