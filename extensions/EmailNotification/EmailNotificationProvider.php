@@ -229,6 +229,78 @@ class EmailNotificationProvider implements NotificationExtension
     }
     
     /**
+     * Check if email provider is properly configured
+     * 
+     * @return bool True if email provider is properly configured
+     */
+    public function isEmailProviderConfigured(): bool
+    {
+        try {
+            // Check if email notification extension is enabled
+            $extensionsConfig = config('extensions');
+            if (empty($extensionsConfig) || 
+                !is_array($extensionsConfig) || 
+                !isset($extensionsConfig['enabled']) || 
+                !is_array($extensionsConfig['enabled']) || 
+                !in_array('EmailNotification', $extensionsConfig['enabled'])) {
+                $this->logger->error("EmailNotification extension is not enabled");
+                return false;
+            }
+            
+            // Check mail configuration
+            $mailConfig = config('mail');
+            if (empty($mailConfig) || !is_array($mailConfig)) {
+                $this->logger->error("Mail configuration is missing or invalid");
+                return false;
+            }
+            
+            if (empty($mailConfig['driver'])) {
+                $this->logger->error("Mail driver is not configured");
+                return false;
+            }
+            
+            // Check specific driver requirements
+            switch ($mailConfig['driver']) {
+                case 'smtp':
+                    if (empty($mailConfig['host'])) {
+                        $this->logger->error("SMTP host is not configured");
+                        return false;
+                    }
+                    if (empty($mailConfig['port'])) {
+                        $this->logger->error("SMTP port is not configured");
+                        return false;
+                    }
+                    break;
+                    
+                case 'ses':
+                    if (empty($mailConfig['key']) || empty($mailConfig['secret'])) {
+                        $this->logger->error("Amazon SES credentials are missing");
+                        return false;
+                    }
+                    break;
+                    
+                case 'mailgun':
+                    if (empty($mailConfig['domain']) || empty($mailConfig['secret'])) {
+                        $this->logger->error("Mailgun credentials are missing");
+                        return false;
+                    }
+                    break;
+            }
+            
+            // Check if the channel is initialized and available
+            if (!$this->initialized || $this->channel === null) {
+                $this->logger->error("Email provider is not initialized");
+                return false;
+            }
+            
+            return $this->channel->isAvailable();
+        } catch (\Exception $e) {
+            $this->logger->error("Error checking email provider configuration: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
      * Get the configuration
      * 
      * @return array Configuration settings

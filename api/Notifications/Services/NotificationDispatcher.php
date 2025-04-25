@@ -7,10 +7,7 @@ use DateTime;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Contracts\NotificationExtension;
-use Glueful\Notifications\Events\NotificationFailed;
-use Glueful\Notifications\Events\NotificationSent;
 use Glueful\Notifications\Models\Notification;
-use InvalidArgumentException;
 use Throwable;
 
 /**

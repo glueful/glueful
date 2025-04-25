@@ -66,15 +66,16 @@ class GenerateJsonCommand extends Command
     {
         return <<<HELP
 Usage:
-  generate:json <type> [-d <database>] [-T <table>]
-  generate:json -t <type> [-d <database>] [-T <table>]
-  generate:json --type=<type> [--database=<name>] [--table=<name>]
+  generate:json <type> [-d <database>] [-T <table>] [-f]
+  generate:json -t <type> [-d <database>] [-T <table>] [-f]
+  generate:json --type=<type> [--database=<n>] [--table=<n>] [--force]
 
 Options:
-  <type>                  Type of generation (api-definitions|doc)
-  -t, --type=<type>      Alternative way to specify type
-  -d, --database=<name>  Database name (optional)
-  -T, --table=<name>     Table name (optional)
+  <type>                Type of generation (api-definitions|doc)
+  -t, --type=<type>     Alternative way to specify type
+  -d, --database=<n>    Database name (optional)
+  -T, --table=<n>       Table name (optional)
+  -f, --force           Force generation of new documentation, even if manual files exist
   -h, --help            Show this help message
 
 Examples:
@@ -82,6 +83,7 @@ Examples:
   php glueful generate:json api-definitions -d mydb -T users
   php glueful generate:json -t api-definitions -d mydb
   php glueful generate:json --type=doc
+  php glueful generate:json api-definitions --force
 HELP;
     }
 
@@ -124,25 +126,26 @@ HELP;
         }
 
         $generator = new ApiDefinitionGenerator(true);
+        $forceGenerate = isset($options['force']) && $options['force'];
         
         if ($options['type'] === 'api-definitions') {
             $database = $options['database'] ?? null;
             $table = $options['table'] ?? null;
             
             if ($database && $table) {
-                $generator->generate($database, $table);
+                $generator->generate($database, $table, $forceGenerate);
                 $this->info("Generated JSON for table: $table");
             } else if ($database) {
-                $generator->generate($database);
+                $generator->generate($database, null, $forceGenerate);
                 $this->info("Generated JSON for database: $database");
             } else {
-                $generator->generate();
+                $generator->generate(null, null, $forceGenerate);
                 $this->info("Generated JSON for all database(s)");
             }
             return Command::SUCCESS;
         } else if ($options['type'] === 'doc') {
             if (\config('app.docs_enabled')) {
-                $generator->generateApiDocs();
+                $generator->generateApiDocs($forceGenerate);
                 $this->info("Generated API documentation");
                 return Command::SUCCESS;
             } else {
@@ -175,7 +178,8 @@ HELP;
         $map = [
             't' => 'type',
             'd' => 'database',
-            'T' => 'table'
+            'T' => 'table',
+            'f' => 'force'
         ];
         
         for ($i = 0; $i < count($args); $i++) {
@@ -188,16 +192,25 @@ HELP;
             
             // Handle long options (--option=value)
             if (str_starts_with($arg, '--')) {
-                $parts = explode('=', $arg);
+                $parts = explode('=', $arg, 2); // Limit to 2 parts
                 if (count($parts) === 2) {
                     $key = ltrim($parts[0], '-');
                     $options[$key] = $parts[1];
+                } else {
+                    // Handle flag options like --force
+                    $key = ltrim($arg, '-');
+                    if ($key === 'force') {
+                        $options['force'] = true;
+                    }
                 }
             }
             // Handle short options (-o value)
             elseif (str_starts_with($arg, '-') && strlen($arg) === 2) {
                 $key = substr($arg, 1);
-                if (isset($map[$key]) && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
+                // Handle flag options like -f
+                if ($key === 'f') {
+                    $options['force'] = true;
+                } else if (isset($map[$key]) && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
                     $options[$map[$key]] = $args[$i + 1];
                     $i++; // Skip next argument as it's the value
                 }

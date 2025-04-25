@@ -325,7 +325,8 @@ class Router
                 $reflection = new \ReflectionFunction($controller);
                 $parametersInfo = $reflection->getParameters();
                 
-                if ($parametersInfo[0]->getType()->getName() === Request::class) {
+                // Check if there are parameters before trying to access them
+                if (!empty($parametersInfo) && $parametersInfo[0]->getType() && $parametersInfo[0]->getType()->getName() === Request::class) {
                     $result = call_user_func($controller, $request);
                 } else {
                     $result = call_user_func($controller, $parameters);

@@ -32,9 +32,9 @@ class NotificationService
     private ?TemplateManager $templateManager;
     
     /**
-     * @var string Generator for notification IDs
+     * @var callable Generator for notification IDs
      */
-    private string $idGenerator;
+    private $idGenerator;
     
     /**
      * @var array Configuration options

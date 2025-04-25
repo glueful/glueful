@@ -34,7 +34,7 @@ class ApiDefinitionGenerator {
 
         $this->runFromConsole = $runFromConsole || $this->isConsole();
         $this->log("Starting JSON Definition Generator...");
-        $this->dbResource = Utils::getDatabaseRole();
+        $this->dbResource = $this->getDatabaseRole();
 
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
@@ -44,6 +44,17 @@ class ApiDefinitionGenerator {
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
+    }
+
+    /**
+     * Get the current database role from configuration
+     * 
+     * @return string The database role (e.g., 'primary')
+     */
+    private function getDatabaseRole(): string
+    {
+        $engine = config('database.engine', 'mysql');
+        return config("database.{$engine}.role", 'primary');
     }
 
      /**
@@ -90,8 +101,9 @@ class ApiDefinitionGenerator {
      * 
      * @param string|null $specificDatabase Target specific database
      * @param string|null $tableName Generate for specific table only
+     * @param bool $forceGenerate Force generation even if manual files exist
      */
-    public function generate(?string $specificDatabase = null,?string $tableName = null): void {
+    public function generate(?string $specificDatabase = null, ?string $tableName = null, bool $forceGenerate = false): void {
         $this->generateDatabaseDefinitions($specificDatabase);
 
         if($tableName){
@@ -104,7 +116,7 @@ class ApiDefinitionGenerator {
         }
 
         $this->log("Step 3: Starting API docs generation...");
-        $this->generateApiDocs();
+        $this->generateApiDocs($forceGenerate);
     }
 
     /**
@@ -202,8 +214,10 @@ class ApiDefinitionGenerator {
      * Generate API documentation
      * 
      * Creates OpenAPI/Swagger documentation from JSON definitions.
+     * 
+     * @param bool $forceGenerate Force generation even if manual files exist
      */
-    public function generateApiDocs(): void 
+    public function generateApiDocs(bool $forceGenerate = false): void 
     {
         $this->log("Generating API Documentation...");
         
@@ -248,7 +262,29 @@ class ApiDefinitionGenerator {
             
             // Use the ExtensionDocGenerator to auto-generate docs from route files
             $extDocGen = new ExtensionDocGenerator();
-            $generatedFiles = $extDocGen->generateAll();
+            
+            if ($forceGenerate) {
+                $this->log("Forcing generation of extension documentation...");
+                
+                // If forcing generation, handle each extension separately
+                $extensionDirs = array_filter(glob(dirname(__DIR__) . '/extensions' . '/*'), 'is_dir');
+                $generatedFiles = [];
+                
+                foreach ($extensionDirs as $extDir) {
+                    $extName = basename($extDir);
+                    $routeFile = $extDir . '/routes.php';
+                    
+                    if (file_exists($routeFile)) {
+                        $docFile = $extDocGen->generateForExtension($extName, $routeFile, true);
+                        if ($docFile) {
+                            $generatedFiles[] = $docFile;
+                        }
+                    }
+                }
+            } else {
+                // Normal generation
+                $generatedFiles = $extDocGen->generateAll();
+            }
             
             if (!empty($generatedFiles)) {
                 $this->log("Dynamically generated documentation for " . count($generatedFiles) . " extensions");

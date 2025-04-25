@@ -192,38 +192,57 @@ class Utils
     }
 
     /**
-     * Get Database Connection Role
+     * Map error codes to HTTP status codes
      * 
-     * Determines if current database connection is primary or secondary (replica).
-     * Used for read/write decision making and load balancing.
+     * Utility method for converting application error codes to appropriate HTTP status codes.
+     * Used by controllers to standardize error responses across the API.
      * 
-     * Features:
-     * - Reads from configuration
-     * - Supports multiple database engines
-     * - Fallback to primary if not specified
-     * - Used in replication scenarios
-     * 
-     * @return string Connection role ('primary' or 'secondary')
-     * 
-     * @example
-     * ```php
-     * $role = Utils::getDatabaseRole();
-     * if ($role === 'primary') {
-     *     // Perform write operations
-     * }
-     * ```
+     * @param string $errorCode Error code from services/verification
+     * @return int HTTP status code from Response class constants
      */
-    public static function getDatabaseRole(): string 
+    public static function mapErrorCodeToStatusCode(string $errorCode): int
     {
-        $engine = config('database.engine');
-        $dbConfig = array_merge(
-            config("database.{$engine}") ?? [],
-        );
-
-        return $dbConfig['role'] ?? 'primary';
+        // Import Response class for constants
+        $responseClass = \Glueful\Http\Response::class;
+        
+        switch ($errorCode) {
+            case 'rate_limited':
+            case 'daily_limit_exceeded':
+                return $responseClass::HTTP_TOO_MANY_REQUESTS;
+                
+            case 'email_send_failure':
+            case 'email_service_unavailable':
+            case 'service_unavailable':
+            case 'provider_unavailable':
+                return $responseClass::HTTP_SERVICE_UNAVAILABLE;
+                
+            case 'system_error':
+            case 'email_system_error':
+            case 'cache_failure':
+            case 'database_error':
+                return $responseClass::HTTP_INTERNAL_SERVER_ERROR;
+                
+            case 'not_found':
+            case 'resource_not_found':
+            case 'email_not_found':
+            case 'user_not_found':
+                return $responseClass::HTTP_NOT_FOUND;
+                
+            case 'unauthorized':
+            case 'invalid_credentials':
+            case 'token_expired':
+                return $responseClass::HTTP_UNAUTHORIZED;
+                
+            case 'forbidden':
+            case 'permission_denied':
+                return $responseClass::HTTP_FORBIDDEN;
+                
+            default:
+                return $responseClass::HTTP_BAD_REQUEST;
+        }
     }
 
-     /**
+    /**
      * Pad column text for table output
      * 
      * @param string $text Text to pad

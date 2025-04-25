@@ -68,8 +68,8 @@ class EmailVerification
         $this->emailProvider = new EmailNotificationProvider();
         $this->emailProvider->initialize();
         
-        // Register the email provider with the dispatcher (not the service)
-        $dispatcher->registerExtension($this->emailProvider);
+        // Register the email provider with the channel manager directly
+        $this->emailProvider->register($channelManager);
         
         // Initialize NotificationService with required dispatcher
         $this->notificationService = new NotificationService($dispatcher);
@@ -92,29 +92,41 @@ class EmailVerification
      * 
      * @param string $email Recipient email address
      * @param string $otp Generated OTP code
-     * @return bool True if email sent successfully
+     * @return array Operation result with status and message
      */
-    public function sendVerificationEmail(string $email, string $otp): bool
+    public function sendVerificationEmail(string $email, string $otp): array
     {
         try {
             if ($this->isRateLimited($email)) {
                 error_log("Rate limit exceeded for email: $email");
-                return false;
+                return [
+                    'success' => false,
+                    'message' => 'Too many failed attempts. Please try again later.',
+                    'error_code' => 'rate_limited'
+                ];
             }
 
             // Increment daily request counter
             if (!$this->incrementDailyRequests($email)) {
                 error_log("Daily limit exceeded for email: $email");
-                return false;
+                return [
+                    'success' => false,
+                    'message' => 'Daily verification limit reached. Please try again tomorrow.',
+                    'error_code' => 'daily_limit_exceeded'
+                ];
             }
 
             // Store OTP in Redis before sending email
             $hashedOTP = OTP::hashOTP($otp);
             $stored = $this->storeOTP($email, $hashedOTP);
-
+        
             if (!$stored) {
                 error_log("Failed to store OTP in cache for email: $email");
-                return false;
+                return [
+                    'success' => false,
+                    'message' => 'Failed to initialize verification process. Please try again.',
+                    'error_code' => 'cache_failure' 
+                ];
             }
 
             // Create a temporary notifiable for this email
@@ -158,7 +170,20 @@ class EmailVerification
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                     'app_name' => config('app.name', 'Glueful'),
-                    'current_year' => date('Y')
+                    'current_year' => date('Y'),
+                    'message' => 'Your verification code is: ' . $otp, // Add a message for templates that use it
+                    'subject' => 'Email Verification Code', // Add subject directly to main data 
+                    'title' => 'Email Verification', // Fixed title explicitly for header
+                    'template_data' => [  // Explicitly provide template data in the correct format
+                        'otp' => $otp,
+                        'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
+                        'app_name' => config('app.name', 'Glueful'),
+                        'current_year' => date('Y'),
+                        'subject' => 'Email Verification Code', // Add subject to template data
+                        'title' => 'Email Verification'    // Add title to template data 
+                    ],
+                    'type' => 'email_verification', // Explicitly set the notification type
+                    'template_name' => 'verification' // Set template name directly in data as well
                 ],
                 [
                     'channels' => ['email'],
@@ -166,12 +191,22 @@ class EmailVerification
                 ]
             );
             
-            // Check if the notification was sent successfully
-            return is_array($result) && isset($result['success']) ? (bool)$result['success'] : false;
+            // Use the NotificationResultParser to handle the result
+            return \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
+                $result,
+                [
+                    'email' => $email,
+                    'expires_in' => self::OTP_EXPIRY_MINUTES * 60
+                ],
+                'Verification code sent successfully'
+            );
             
         } catch (\Exception $e) {
-            error_log("Email verification failed: " . $e->getMessage());
-            return false;
+            return [
+                'success' => false,
+                'message' => 'An error occurred during email verification: ' . $e->getMessage(),
+                'error_code' => 'system_error'
+            ];
         }
     }
 
@@ -184,11 +219,84 @@ class EmailVerification
      */
     private function storeOTP(string $email, string $hashedOTP): bool
     {
-        $key = self::OTP_PREFIX . $email;
-        return CacheEngine::set($key, [
-            'otp' => $hashedOTP,
-            'timestamp' => time()
-        ], self::OTP_EXPIRY_MINUTES * 60);
+        try {
+            // Ensure cache engine is initialized
+            if (!CacheEngine::isInitialized() || !CacheEngine::isEnabled()) {
+                error_log("Cache not ready. Reinitializing...");
+                CacheEngine::initialize('Glueful:', config('cache.default'));
+                
+                // Double-check if initialization worked
+                if (!CacheEngine::isEnabled()) {
+                    error_log("Failed to initialize cache system after retry");
+                    return false;
+                }
+            }
+            
+            $key = self::OTP_PREFIX . $email;
+            $data = [
+                'otp' => $hashedOTP,
+                'timestamp' => time()
+            ];
+            
+            // Try to store the data
+            $result = CacheEngine::set($key, $data, self::OTP_EXPIRY_MINUTES * 60);
+            
+            // Debug what's happening with the cache operation
+            if (!$result) {
+                error_log("Failed to store OTP in cache. Key: $key, Driver: " . config('cache.default'));
+                
+                // Try with a shorter expiry as fallback
+                $fallbackResult = CacheEngine::set($key, $data, 900); // 15 minutes in seconds
+                if ($fallbackResult) {
+                    error_log("Successfully stored OTP using fallback method for email: $email");
+                    return true;
+                }
+                
+                // If still failing, try one last approach with direct cache driver access
+                if (defined('CACHE_ENGINE')) {
+                    error_log("Attempting alternative storage method for OTP");
+                    return $this->storeOTPAlternative($key, $data);
+                }
+            }
+            
+            return $result;
+        } catch (\Exception $e) {
+            error_log("Exception storing OTP in cache: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Alternative OTP storage method
+     * 
+     * Used as a fallback when primary cache storage fails
+     * 
+     * @param string $key Cache key
+     * @param array $data OTP data to store
+     * @return bool True if stored successfully
+     */
+    private function storeOTPAlternative(string $key, array $data): bool
+    {
+        try {
+            // Try to use file-based storage as last resort
+            $storagePath = config('paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
+            if (!is_dir($storagePath)) {
+                mkdir($storagePath, 0755, true);
+            }
+            
+            $filePath = $storagePath . md5($key) . '.tmp';
+            $data['expiry'] = time() + self::OTP_EXPIRY_MINUTES * 60;
+            $success = file_put_contents($filePath, json_encode($data)) !== false;
+            
+            if ($success) {
+                error_log("Successfully stored OTP using file-based fallback");
+            }
+            
+            return $success;
+        } catch (\Exception $e) {
+            error_log("Alternative OTP storage failed: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -310,7 +418,8 @@ class EmailVerification
             if (!$verifier->isValidEmail($email)) {
                 return [
                     'success' => false,
-                    'message' => 'Invalid email format'
+                    'message' => 'Invalid email format',
+                    'error_code' => 'invalid_email_format'
                 ];
             }
 
@@ -319,7 +428,8 @@ class EmailVerification
             if (empty($userData)) {
                 return [
                     'success' => false,
-                    'message' => 'Email address not found'
+                    'message' => 'Email address not found',
+                    'error_code' => 'email_not_found'
                 ];
             }
 
@@ -327,7 +437,8 @@ class EmailVerification
             if ($verifier->isRateLimited($email)) {
                 return [
                     'success' => false,
-                    'message' => 'Too many attempts. Please try again later.'
+                    'message' => 'Too many attempts. Please try again later.',
+                    'error_code' => 'rate_limited'
                 ];
             }
 
@@ -382,7 +493,15 @@ class EmailVerification
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                     'app_name' => config('app.name', 'Glueful'),
-                    'current_year' => date('Y')
+                    'current_year' => date('Y'),
+                    'message' => 'Your password reset code is: ' . $otp,
+                    'template_data' => [  // Explicitly provide template data in the correct format
+                        'name' => $userData[0]['first_name'] ?? 'User',
+                        'otp' => $otp,
+                        'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
+                        'app_name' => config('app.name', 'Glueful'),
+                        'current_year' => date('Y'),
+                    ]
                 ],
                 [
                     'channels' => ['email'],
@@ -390,22 +509,38 @@ class EmailVerification
                 ]
             );
             
-            if (!$result) {
-                throw new \RuntimeException('Failed to send password reset notification');
-            }
-
-            return [
-                'success' => true,
-                'message' => 'Password reset code sent to your email',
-                'email' => $email,
-                'expires_in' => self::OTP_EXPIRY_MINUTES * 60
-            ];
+            // Use the NotificationResultParser to handle the result
+            return \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
+                $result,
+                [
+                    'email' => $email,
+                    'expires_in' => self::OTP_EXPIRY_MINUTES * 60
+                ],
+                'Password reset code sent to your email'
+            );
 
         } catch (\Exception $e) {
             return [
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
+                'error_code' => 'system_error'
             ];
+        }
+    }
+
+    /**
+     * Check if email provider is properly configured
+     * 
+     * @return bool True if email provider is properly configured
+     */
+    public function isEmailProviderConfigured(): bool
+    {
+        try {
+            // Delegate to EmailNotificationProvider's implementation
+            return $this->emailProvider->isEmailProviderConfigured();
+        } catch (\Exception $e) {
+            error_log("Error checking email provider configuration: " . $e->getMessage());
+            return false;
         }
     }
 }

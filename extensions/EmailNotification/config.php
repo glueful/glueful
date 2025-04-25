@@ -11,33 +11,33 @@ return [
     /**
      * SMTP Server Configuration
      */
-    'host' => getenv('MAIL_HOST') ?: 'smtp.example.com',
-    'port' => getenv('MAIL_PORT') ?: 587,
-    'username' => getenv('MAIL_USERNAME') ?: '',
-    'password' => getenv('MAIL_PASSWORD') ?: '',
-    'encryption' => getenv('MAIL_ENCRYPTION') ?: 'tls', // tls, ssl, or null
+    'host' => env('MAIL_HOST') ?: 'smtp.example.com',
+    'port' => env('MAIL_PORT') ?: 587,
+    'username' => env('MAIL_USERNAME') ?: '',
+    'password' => env('MAIL_PASSWORD') ?: '',
+    'encryption' => env('MAIL_ENCRYPTION') ?: 'tls', // tls, ssl, or null
     'smtp_auth' => true,
     
     /**
      * From Address Configuration
      */
     'from' => [
-        'address' => getenv('MAIL_FROM_ADDRESS') ?: 'noreply@example.com',
-        'name' => getenv('MAIL_FROM_NAME') ?: 'Notification System',
+        'address' => env('MAIL_FROM_ADDRESS') ?: 'noreply@example.com',
+        'name' => env('MAIL_FROM_NAME') ?: 'Notification System',
     ],
     
     /**
      * Reply-To Address Configuration (optional)
      */
     'reply_to' => [
-        'address' => getenv('MAIL_REPLY_TO_ADDRESS') ?: '',
-        'name' => getenv('MAIL_REPLY_TO_NAME') ?: '',
+        'address' => env('MAIL_REPLY_TO_ADDRESS') ?: '',
+        'name' => env('MAIL_REPLY_TO_NAME') ?: '',
     ],
     
     /**
      * Application Name (used in templates)
      */
-    'app_name' => getenv('APP_NAME') ?: 'Glueful Application',
+    'app_name' => env('APP_NAME') ?: 'Glueful Application',
     
     /**
      * Default Email Templates Path

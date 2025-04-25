@@ -7,13 +7,16 @@
  * Supports Redis and Memcached with fallback options.
  */
 return [
-    // Default cache driver (redis, memcached)
+    // Default cache driver (redis, memcached, file)
     'default' => env('CACHE_DRIVER', 'redis'),
 
     // Global cache prefix for key namespacing
     'prefix' => env('CACHE_PREFIX', 'glueful:'),
+    
+    // Enable file-based fallback if primary cache fails
+    'fallback_to_file' => env('CACHE_FALLBACK', true),
 
-    // Cache store configurations
+    // Stores configuration
     'stores' => [
         // Redis configuration
         'redis' => [
@@ -39,6 +42,12 @@ return [
                 'password' => env('MEMCACHED_PASSWORD'),
             ],
         ],
+        
+        // File cache configuration
+        'file' => [
+            'driver' => 'file',
+            'path' => env('CACHE_FILE_PATH', config('paths.cache', dirname(__DIR__) . '/storage/cache/')),
+        ],
     ],
 
     // Global cache settings
@@ -46,6 +55,6 @@ return [
     'lock_ttl' => env('CACHE_LOCK_TTL', 60),   // Lock timeout in seconds
     
     // Cache tag settings
-    'enable_tags' => env('CACHE_TAGS', true),   // Enable cache tags support
-    'tags_store' => 'redis',                    // Store for cache tags
+    'enable_tags' => env('CACHE_TAGS', true),  // Enable cache tags support
+    'tags_store' => 'redis',                   // Store for cache tags
 ];
