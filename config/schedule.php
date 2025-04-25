@@ -21,5 +21,14 @@ return [
             'description' => 'Database backup',                          // Backup retention period
             'persistence' => false,                   // Backup retention period
         ],
+        [
+            'name' => 'process-notification-retries',
+            'schedule' => '*/10 * * * *',  // Every 10 minutes
+            'handler_class' => 'Glueful\\Console\\Commands\\Notifications\\ProcessNotificationRetriesCommand',
+            'parameters' => ['--limit' => 50],
+            'description' => 'Process queued notification retries',
+            'enabled' => true,
+            'persistence' => false,
+        ],
     ]
 ];

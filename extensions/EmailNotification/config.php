@@ -49,7 +49,7 @@ return [
      * Email Queue Configuration
      */
     'queue' => [
-        'enabled' => false,
+        'enabled' => true,
         'connection' => 'default',
         'queue' => 'emails',
         'retry_after' => 90, // seconds
@@ -59,7 +59,7 @@ return [
      * Email Sending Limits
      */
     'rate_limit' => [
-        'enabled' => false,
+        'enabled' => true,
         'max_per_minute' => 10,
         'max_per_hour' => 100,
     ],
@@ -76,5 +76,25 @@ return [
     'logging' => [
         'enabled' => true,
         'channel' => 'email',
+    ],
+    
+    /**
+     * Event Handling Configuration
+     */
+    'events' => [
+        'enabled' => true,
+        'listeners' => [
+            'Glueful\\Extensions\\EmailNotification\\Listeners\\EmailNotificationListener'
+        ]
+    ],
+    
+    /**
+     * Retry Configuration for Failed Deliveries
+     */
+    'retry' => [
+        'enabled' => true,
+        'max_attempts' => 3,
+        'delay' => 300, // seconds (5 minutes)
+        'backoff' => 'exponential', // linear, exponential
     ],
 ];

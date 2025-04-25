@@ -51,6 +51,7 @@ class Kernel
             \Glueful\Console\Commands\ExtensionsCommand::class,
             \Glueful\Console\Commands\SchedulerCommand::class,
             \Glueful\Console\Commands\CacheCommand::class,
+            \Glueful\Console\Commands\Notifications\ProcessNotificationRetriesCommand::class,
         ]);
     }
 
