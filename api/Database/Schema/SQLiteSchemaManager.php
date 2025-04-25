@@ -132,13 +132,20 @@ class SQLiteSchemaManager extends SchemaManager
             $column = $index['column'];
             $type = strtoupper($index['type']);
     
+            // Generate appropriate index name for checking
+            if (is_array($column)) {
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+            } else {
+                $indexNameToCheck = "{$table}_{$column}_idx";
+            }
+    
             // Check if index already exists in SQLite
             $existingIndexes = $this->pdo
                 ->query("PRAGMA index_list(`$table`)")
                 ->fetchAll(PDO::FETCH_ASSOC);
     
             foreach ($existingIndexes as $existingIndex) {
-                if ($existingIndex['name'] === "{$table}_{$column}_idx") {
+                if ($existingIndex['name'] === $indexNameToCheck) {
                     continue 2; // Skip if index exists
                 }
             }
@@ -146,9 +153,26 @@ class SQLiteSchemaManager extends SchemaManager
             if ($type === 'FOREIGN KEY') {
                 throw new \RuntimeException("SQLite does not support adding foreign keys with ALTER TABLE. Define them in CREATE TABLE.");
             } elseif ($type === 'UNIQUE') {
-                $sql = "CREATE UNIQUE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                // Handle multi-column unique indexes
+                if (is_array($column)) {
+                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columnStr = implode(", ", $columns);
+                    $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                    $sql = "CREATE UNIQUE INDEX `$name` ON `$table` ($columnStr)";
+                } else {
+                    $sql = "CREATE UNIQUE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                }
             } else {
-                $sql = "CREATE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                // Default case: add normal index
+                // Handle multi-column indexes
+                if (is_array($column)) {
+                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columnStr = implode(", ", $columns);
+                    $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                    $sql = "CREATE INDEX `$name` ON `$table` ($columnStr)";
+                } else {
+                    $sql = "CREATE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                }
             }
     
             $this->pdo->exec($sql);

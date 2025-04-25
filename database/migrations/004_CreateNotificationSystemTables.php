@@ -85,9 +85,10 @@ class CreateNotificationSystemTables implements MigrationInterface
             ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_preferences'],
-            ['type' => 'UNIQUE', 'columns' => ['notifiable_type', 'notifiable_id', 'notification_type'], 'table' => 'notification_preferences']
+            ['type' => 'UNIQUE', 'column' => ['notifiable_type', 'notifiable_id', 'notification_type'], 
+             'name' => 'unique_notification_pref', 'table' => 'notification_preferences']
         ]);
-
+        
         // Create Notification Templates Table
         $schema->createTable('notification_templates', [
             'id' => 'VARCHAR(255) PRIMARY KEY',
@@ -99,8 +100,10 @@ class CreateNotificationSystemTables implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'INDEX', 'columns' => ['notification_type', 'channel'], 'table' => 'notification_templates'],
-            ['type' => 'UNIQUE', 'columns' => ['notification_type', 'channel', 'name'], 'table' => 'notification_templates']
+            ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_templates'],
+            ['type' => 'INDEX', 'column' => 'channel', 'table' => 'notification_templates'],
+            ['type' => 'UNIQUE', 'column' => ['notification_type', 'channel', 'name'], 
+             'name' => 'unique_notification_template', 'table' => 'notification_templates']
         ]);
     }
 
