@@ -7,20 +7,26 @@ use ReflectionClass;
 use ReflectionMethod;
 
 /**
- * Extension Documentation Generator
+ * Comments Documentation Generator
  * 
- * Generates OpenAPI documentation for extension routes by:
+ * Generates OpenAPI documentation for routes by:
  * - Scanning extension directories for route files
  * - Extracting route documentation from doc comments
  * - Generating OpenAPI specifications
  */
-class ExtensionDocGenerator
+class CommentsDocGenerator
 {
     /** @var string Base path to extensions directory */
     private string $extensionsPath;
     
-    /** @var string Output directory for generated documentation */
+    /** @var string Base path to routes directory */
+    private string $routesPath;
+    
+    /** @var string Output directory for generated extension documentation */
     private string $outputPath;
+    
+    /** @var string Output directory for generated routes documentation */
+    private string $routesOutputPath;
     
     /** @var array Processed route information */
     private array $routeData = [];
@@ -29,18 +35,26 @@ class ExtensionDocGenerator
      * Constructor
      * 
      * @param string|null $extensionsPath Custom path to extensions directory
-     * @param string|null $outputPath Custom output path for documentation
+     * @param string|null $outputPath Custom output path for extension documentation
+     * @param string|null $routesPath Custom path to routes directory
+     * @param string|null $routesOutputPath Custom output path for routes documentation
      */
-    public function __construct(?string $extensionsPath = null, ?string $outputPath = null)
-    {
+    public function __construct(
+        ?string $extensionsPath = null, 
+        ?string $outputPath = null,
+        ?string $routesPath = null,
+        ?string $routesOutputPath = null
+    ) {
         $this->extensionsPath = $extensionsPath ?? dirname(__DIR__) . '/extensions';
         $this->outputPath = $outputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
+        $this->routesPath = $routesPath ?? dirname(__DIR__) . '/routes';
+        $this->routesOutputPath = $routesOutputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/routes';
     }
     
     /**
-     * Generate documentation for all extensions
+     * Generate documentation for all extensions and routes
      * 
-     * Scans all extensions and generates documentation for those with route files
+     * Scans all extensions and routes directories and generates documentation
      * 
      * @return array List of generated documentation files
      */
@@ -48,7 +62,7 @@ class ExtensionDocGenerator
     {
         $generatedFiles = [];
         
-        // Get all extension directories
+        // First, generate docs for extensions
         $extensionDirs = array_filter(glob($this->extensionsPath . '/*'), 'is_dir');
         
         foreach ($extensionDirs as $extDir) {
@@ -63,7 +77,185 @@ class ExtensionDocGenerator
             }
         }
         
+        // Then, generate docs for main routes
+        $routeFiles = $this->generateForRoutes();
+        $generatedFiles = array_merge($generatedFiles, $routeFiles);
+        
         return $generatedFiles;
+    }
+    
+    /**
+     * Generate documentation for all main route files
+     * 
+     * Scans the routes directory and generates documentation for each route file
+     * 
+     * @return array List of generated documentation files
+     */
+    public function generateForRoutes(): array
+    {
+        $generatedFiles = [];
+        
+        // Create routes docs directory if it doesn't exist
+        if (!is_dir($this->routesOutputPath)) {
+            mkdir($this->routesOutputPath, 0755, true);
+        }
+        
+        // Get all route files in the routes directory
+        $routeFiles = glob($this->routesPath . '/*.php');
+        
+        foreach ($routeFiles as $routeFile) {
+            $routeName = basename($routeFile, '.php');
+            $docFile = $this->generateForRouteFile($routeName, $routeFile);
+            if ($docFile) {
+                $generatedFiles[] = $docFile;
+            }
+        }
+        
+        return $generatedFiles;
+    }
+    
+    /**
+     * Generate documentation for a specific route file
+     * 
+     * @param string $routeName Route file name (without extension)
+     * @param string $routeFile Path to route file
+     * @param bool $forceGenerate Force generation even if manual file exists
+     * @return string|null Path to generated file or null on failure
+     */
+    public function generateForRouteFile(string $routeName, string $routeFile, bool $forceGenerate = false): ?string
+    {
+        // Define output file path
+        $outputFile = $this->routesOutputPath . '/' . strtolower($routeName) . '.json';
+        
+        // Check for manual OpenAPI definition files
+        if (!$forceGenerate) {
+            $possibleManualFiles = [
+                // Check in the docs directory for a manual definition
+                $this->routesOutputPath . '/' . strtolower($routeName) . '.json',
+            ];
+            
+            foreach ($possibleManualFiles as $manualFile) {
+                if (file_exists($manualFile)) {
+                    return $manualFile;
+                }
+            }
+        }
+        
+        // Parse routes file to extract doc comments
+        $this->parseRouteDocComments($routeFile);
+        
+        if (empty($this->routeData)) {
+            return null;
+        }
+        
+        // Generate OpenAPI specification
+        $openApiSpec = $this->generateRouteOpenApiSpec($routeName);
+        
+        // Write to file
+        file_put_contents($outputFile, json_encode($openApiSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        
+        return $outputFile;
+    }
+    
+    /**
+     * Generate OpenAPI specification for a route file
+     * 
+     * @param string $routeName Route file name
+     * @return array OpenAPI specification
+     */
+    private function generateRouteOpenApiSpec(string $routeName): array
+    {
+        $paths = [];
+        
+        // Format route name for display
+        $formattedRouteName = str_replace(['_', '-'], ' ', $routeName);
+        $formattedRouteName = ucwords($formattedRouteName);
+        
+        // Group routes by tag
+        $routesByTag = [];
+        foreach ($this->routeData as $route) {
+            $tag = $route['tag'];
+            
+            if (!isset($routesByTag[$tag])) {
+                $routesByTag[$tag] = [];
+            }
+            
+            $routesByTag[$tag][] = $route;
+        }
+        
+        // Create tags
+        $tags = [];
+        foreach (array_keys($routesByTag) as $tag) {
+            $tags[] = [
+                'name' => $tag,
+                'description' => 'Operations related to ' . $tag
+            ];
+        }
+        
+        // Generate paths
+        foreach ($this->routeData as $route) {
+            $path = $route['path'];
+            $method = strtolower($route['method']);
+            
+            // Initialize path if it doesn't exist
+            if (!isset($paths[$path])) {
+                $paths[$path] = [];
+            }
+            
+            // Create operation object
+            $operation = [
+                'tags' => [$route['tag']],
+                'summary' => $route['summary'],
+                'description' => $route['description'],
+                'responses' => $route['responses']
+            ];
+            
+            // Add request body if present
+            if (!empty($route['requestBody'])) {
+                $operation['requestBody'] = [
+                    'required' => true,
+                    'content' => [
+                        'application/json' => [
+                            'schema' => $route['requestBody']
+                        ]
+                    ]
+                ];
+            }
+            
+            // Add security requirement if authentication is required
+            if ($route['requiresAuth']) {
+                $operation['security'] = [['BearerAuth' => []]];
+            }
+            
+            // Add path parameters if any
+            if (!empty($route['pathParams'])) {
+                $operation['parameters'] = $route['pathParams'];
+            }
+            
+            // Add operation to path
+            $paths[$path][$method] = $operation;
+        }
+        
+        // Create OpenAPI specification
+        return [
+            'openapi' => '3.0.0',
+            'info' => [
+                'title' => $formattedRouteName . ' Routes',
+                'description' => 'API documentation for ' . $formattedRouteName . ' routes',
+                'version' => '1.0.0'
+            ],
+            'paths' => $paths,
+            'components' => [
+                'securitySchemes' => [
+                    'BearerAuth' => [
+                        'type' => 'http',
+                        'scheme' => 'bearer',
+                        'bearerFormat' => 'JWT'
+                    ]
+                ]
+            ],
+            'tags' => $tags
+        ];
     }
     
     /**

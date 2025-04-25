@@ -1,0 +1,228 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Files Routes",
+        "description": "API documentation for Files routes",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/files/{uuid}": {
+            "get": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Get File",
+                "description": "Retrieves a file by its UUID, with optional image processing capabilities",
+                "responses": {
+                    "200": {
+                        "description": "File retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "description": "Success status"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Success message"
+                                        },
+                                        "uuid": {
+                                            "type": "string",
+                                            "description": "File unique identifier"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "description": "UUID of the file to retrieve",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "required": false,
+                        "description": "Type of response format (file or image)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "w",
+                        "in": "query",
+                        "required": false,
+                        "description": "Image width in pixels (1-1500)",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "h",
+                        "in": "query",
+                        "required": false,
+                        "description": "Image height in pixels (1-1500)",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": false,
+                        "description": "Image quality (1-100)",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Delete File",
+                "description": "Permanently removes a file from the system",
+                "responses": {
+                    "200": {
+                        "description": "File deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "description": "Success status"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "File deleted successfully"
+                                        },
+                                        "code": {
+                                            "type": "integer",
+                                            "description": "HTTP status code"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "description": "UUID of the file to delete",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/files": {
+            "post": {
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Upload File",
+                "description": "Uploads a new file to the system, supporting both multipart form uploads and base64 encoded content",
+                "responses": {
+                    "201": {
+                        "description": "File uploaded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "description": "Success status"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Success message"
+                                        },
+                                        "uuid": {
+                                            "type": "string",
+                                            "description": "File unique identifier"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "base64": {
+                                        "type": "string",
+                                        "description": "Base64 encoded file content (when using application/json)"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Custom filename (optional)"
+                                    },
+                                    "mime_type": {
+                                        "type": "string",
+                                        "description": "MIME type of the file (optional)"
+                                    }
+                                },
+                                "required": [
+                                    "file|base64"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Files",
+            "description": "Operations related to Files"
+        }
+    ]
+}

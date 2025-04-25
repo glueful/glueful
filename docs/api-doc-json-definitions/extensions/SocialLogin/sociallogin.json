@@ -1,718 +1,632 @@
 {
-  "openapi": "3.0.0",
-  "info": {
-    "title": "Social Login API",
-    "description": "Authentication endpoints for social login providers",
-    "version": "1.0.0"
-  },
-  "paths": {
-    "/auth/social/google": {
-      "get": {
-        "summary": "Google OAuth Authentication",
-        "description": "Initiates the OAuth flow with Google for user authentication",
-        "tags": ["Social Authentication"],
-        "responses": {
-          "302": {
-            "description": "Redirects to Google's OAuth authorization page"
-          }
-        }
-      },
-      "post": {
-        "summary": "Google Native Authentication",
-        "description": "Authenticates a user with a Google ID token from a native mobile app",
-        "tags": ["Social Authentication"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id_token"],
-                "properties": {
-                  "id_token": {
-                    "type": "string",
-                    "description": "ID token obtained from Google Sign-In SDK"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Google",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
+    "openapi": "3.0.0",
+    "info": {
+        "title": "SocialLogin API",
+        "description": "API documentation for SocialLogin extension",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/auth/social/google": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Google OAuth Authentication",
+                "description": "Initiates the OAuth flow with Google for user authentication",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
                     },
-                    "tokens": {
-                      "type": "object",
-                      "properties": {
-                        "access_token": {
-                          "type": "string",
-                          "description": "JWT access token"
-                        },
-                        "refresh_token": {
-                          "type": "string",
-                          "description": "JWT refresh token"
-                        },
-                        "expires_in": {
-                          "type": "integer",
-                          "description": "Token expiration time in seconds"
+                    "400": {
+                        "description": "Bad request"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Google Native Authentication",
+                "description": "Authenticates a user with a Google ID token from a native mobile app",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Google",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        },
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        }
+                                    }
+                                }
+                            }
                         }
-                      }
                     }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Missing ID token"
-          },
-          "401": {
-            "description": "Failed to verify Google ID token"
-          },
-          "500": {
-            "description": "Server error during authentication"
-          }
-        }
-      }
-    },
-    "/auth/social/google/callback": {
-      "get": {
-        "summary": "Google OAuth Callback",
-        "description": "Callback endpoint that processes the OAuth response from Google",
-        "tags": ["Social Authentication"],
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "description": "Authorization code from Google",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "description": "State token for CSRF protection",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Google",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": {
-                      "type": "string",
-                      "description": "JWT access token"
-                    },
-                    "refresh_token": {
-                      "type": "string",
-                      "description": "JWT refresh token"
-                    },
-                    "expires_in": {
-                      "type": "integer",
-                      "description": "Token expiration time in seconds"
-                    },
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request or invalid parameters"
-          },
-          "401": {
-            "description": "Authentication failed"
-          }
-        }
-      }
-    },
-    "/auth/social/facebook": {
-      "get": {
-        "summary": "Facebook OAuth Authentication",
-        "description": "Initiates the OAuth flow with Facebook for user authentication",
-        "tags": ["Social Authentication"],
-        "responses": {
-          "302": {
-            "description": "Redirects to Facebook's OAuth authorization page"
-          }
-        }
-      },
-      "post": {
-        "summary": "Facebook Native Authentication",
-        "description": "Authenticates a user with a Facebook access token from a native mobile app",
-        "tags": ["Social Authentication"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["access_token"],
-                "properties": {
-                  "access_token": {
-                    "type": "string",
-                    "description": "Access token obtained from Facebook Login SDK"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Facebook",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
-                    },
-                    "tokens": {
-                      "type": "object",
-                      "properties": {
-                        "access_token": {
-                          "type": "string",
-                          "description": "JWT access token"
-                        },
-                        "refresh_token": {
-                          "type": "string",
-                          "description": "JWT refresh token"
-                        },
-                        "expires_in": {
-                          "type": "integer",
-                          "description": "Token expiration time in seconds"
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id_token": {
+                                        "type": "string",
+                                        "description": "ID token obtained from Google Sign-In SDK"
+                                    }
+                                },
+                                "required": [
+                                    "id_token"
+                                ]
+                            }
                         }
-                      }
                     }
-                  }
                 }
-              }
             }
-          },
-          "400": {
-            "description": "Missing access token"
-          },
-          "401": {
-            "description": "Failed to verify Facebook access token"
-          },
-          "500": {
-            "description": "Server error during authentication"
-          }
-        }
-      }
-    },
-    "/auth/social/facebook/callback": {
-      "get": {
-        "summary": "Facebook OAuth Callback",
-        "description": "Callback endpoint that processes the OAuth response from Facebook",
-        "tags": ["Social Authentication"],
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "description": "Authorization code from Facebook",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "description": "State token for CSRF protection",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Facebook",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": {
-                      "type": "string",
-                      "description": "JWT access token"
-                    },
-                    "refresh_token": {
-                      "type": "string",
-                      "description": "JWT refresh token"
-                    },
-                    "expires_in": {
-                      "type": "integer",
-                      "description": "Token expiration time in seconds"
-                    },
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request or invalid parameters"
-          },
-          "401": {
-            "description": "Authentication failed"
-          }
-        }
-      }
-    },
-    "/auth/social/github": {
-      "get": {
-        "summary": "GitHub OAuth Authentication",
-        "description": "Initiates the OAuth flow with GitHub for user authentication",
-        "tags": ["Social Authentication"],
-        "responses": {
-          "302": {
-            "description": "Redirects to GitHub's OAuth authorization page"
-          }
-        }
-      },
-      "post": {
-        "summary": "GitHub Native Authentication",
-        "description": "Authenticates a user with a GitHub access token from a native mobile app",
-        "tags": ["Social Authentication"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["access_token"],
-                "properties": {
-                  "access_token": {
-                    "type": "string",
-                    "description": "Access token obtained from GitHub OAuth"
-                  }
-                }
-              }
-            }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with GitHub",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
-                    },
-                    "tokens": {
-                      "type": "object",
-                      "properties": {
-                        "access_token": {
-                          "type": "string",
-                          "description": "JWT access token"
-                        },
-                        "refresh_token": {
-                          "type": "string",
-                          "description": "JWT refresh token"
-                        },
-                        "expires_in": {
-                          "type": "integer",
-                          "description": "Token expiration time in seconds"
+        "/auth/social/google/callback": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Google OAuth Callback",
+                "description": "Callback endpoint that processes the OAuth response from Google",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Google",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        },
+                                        "refresh_token": {
+                                            "type": "string",
+                                            "description": "JWT refresh token"
+                                        },
+                                        "expires_in": {
+                                            "type": "integer",
+                                            "description": "Token expiration time in seconds"
+                                        },
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        }
+                                    }
+                                }
+                            }
                         }
-                      }
                     }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Missing access token"
-          },
-          "401": {
-            "description": "Failed to verify GitHub access token"
-          },
-          "500": {
-            "description": "Server error during authentication"
-          }
-        }
-      }
-    },
-    "/auth/social/github/callback": {
-      "get": {
-        "summary": "GitHub OAuth Callback",
-        "description": "Callback endpoint that processes the OAuth response from GitHub",
-        "tags": ["Social Authentication"],
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "description": "Authorization code from GitHub",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "description": "State token for CSRF protection",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with GitHub",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": {
-                      "type": "string",
-                      "description": "JWT access token"
+                },
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "description": "Authorization code from Google",
+                        "schema": {
+                            "type": "string"
+                        }
                     },
-                    "refresh_token": {
-                      "type": "string",
-                      "description": "JWT refresh token"
-                    },
-                    "expires_in": {
-                      "type": "integer",
-                      "description": "Token expiration time in seconds"
-                    },
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
+                    {
+                        "name": "state",
+                        "in": "query",
+                        "required": true,
+                        "description": "State token for CSRF protection",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
-                  }
-                }
-              }
+                ]
             }
-          },
-          "400": {
-            "description": "Bad request or invalid parameters"
-          },
-          "401": {
-            "description": "Authentication failed"
-          }
-        }
-      }
-    },
-    "/auth/social/apple": {
-      "get": {
-        "summary": "Apple OAuth Authentication",
-        "description": "Initiates the OAuth flow with Apple for user authentication",
-        "tags": ["Social Authentication"],
-        "responses": {
-          "302": {
-            "description": "Redirects to Apple's OAuth authorization page"
-          }
-        }
-      },
-      "post": {
-        "summary": "Apple Native Authentication",
-        "description": "Authenticates a user with an Apple ID token from a native mobile app",
-        "tags": ["Social Authentication"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id_token"],
-                "properties": {
-                  "id_token": {
-                    "type": "string",
-                    "description": "ID token obtained from Sign in with Apple SDK"
-                  }
-                }
-              }
-            }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Apple",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
+        "/auth/social/facebook": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Facebook OAuth Authentication",
+                "description": "Initiates the OAuth flow with Facebook for user authentication",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
                     },
-                    "tokens": {
-                      "type": "object",
-                      "properties": {
-                        "access_token": {
-                          "type": "string",
-                          "description": "JWT access token"
-                        },
-                        "refresh_token": {
-                          "type": "string",
-                          "description": "JWT refresh token"
-                        },
-                        "expires_in": {
-                          "type": "integer",
-                          "description": "Token expiration time in seconds"
-                        }
-                      }
+                    "400": {
+                        "description": "Bad request"
+                    },
+                    "500": {
+                        "description": "Server error"
                     }
-                  }
                 }
-              }
-            }
-          },
-          "400": {
-            "description": "Missing ID token"
-          },
-          "401": {
-            "description": "Failed to verify Apple ID token"
-          },
-          "500": {
-            "description": "Server error during authentication"
-          }
-        }
-      }
-    },
-    "/auth/social/apple/callback": {
-      "post": {
-        "summary": "Apple OAuth Callback",
-        "description": "Callback endpoint that processes the OAuth response from Apple",
-        "tags": ["Social Authentication"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "type": "object",
-                "required": ["code", "state"],
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "Authorization code from Apple"
-                  },
-                  "state": {
-                    "type": "string",
-                    "description": "State token for CSRF protection"
-                  },
-                  "user": {
-                    "type": "string",
-                    "description": "JSON string containing user information (only provided on first login)"
-                  }
+            },
+            "post": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Facebook Native Authentication",
+                "description": "Authenticates a user with a Facebook access token from a native mobile app",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Facebook",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        },
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "access_token": {
+                                        "type": "string",
+                                        "description": "Access token obtained from Facebook Login SDK"
+                                    }
+                                },
+                                "required": [
+                                    "access_token"
+                                ]
+                            }
+                        }
+                    }
                 }
-              }
             }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Successfully authenticated with Apple",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access_token": {
-                      "type": "string",
-                      "description": "JWT access token"
-                    },
-                    "refresh_token": {
-                      "type": "string",
-                      "description": "JWT refresh token"
-                    },
-                    "expires_in": {
-                      "type": "integer",
-                      "description": "Token expiration time in seconds"
-                    },
-                    "user": {
-                      "type": "object",
-                      "description": "User profile information"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request or invalid parameters"
-          },
-          "401": {
-            "description": "Authentication failed"
-          }
-        }
-      }
-    },
-    "/user/social-accounts": {
-      "get": {
-        "summary": "Get Connected Social Accounts",
-        "description": "Retrieve all social accounts connected to the authenticated user",
-        "tags": ["Social Account Management"],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully retrieved social accounts",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "example": "success"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Social accounts retrieved successfully"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "uuid": {
-                            "type": "string",
-                            "description": "Unique identifier for the social account"
-                          },
-                          "provider": {
-                            "type": "string",
-                            "description": "Social provider name (google, facebook, github, etc.)"
-                          },
-                          "created_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "When the account was connected"
-                          },
-                          "updated_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "When the account was last updated"
-                          }
+        "/auth/social/facebook/callback": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Facebook OAuth Callback",
+                "description": "Callback endpoint that processes the OAuth response from Facebook",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Facebook",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        },
+                                        "refresh_token": {
+                                            "type": "string",
+                                            "description": "JWT refresh token"
+                                        },
+                                        "expires_in": {
+                                            "type": "integer",
+                                            "description": "Token expiration time in seconds"
+                                        },
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        }
+                                    }
+                                }
+                            }
                         }
-                      }
                     }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - User is not authenticated"
-          },
-          "500": {
-            "description": "Server error retrieving social accounts"
-          }
-        }
-      }
-    },
-    "/user/social-accounts/{uuid}": {
-      "delete": {
-        "summary": "Unlink Social Account",
-        "description": "Remove a social provider connection from the authenticated user",
-        "tags": ["Social Account Management"],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "uuid",
-            "in": "path",
-            "description": "UUID of the social account to unlink",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully unlinked social account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "example": "success"
+                },
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "description": "Authorization code from Facebook",
+                        "schema": {
+                            "type": "string"
+                        }
                     },
-                    "message": {
-                      "type": "string",
-                      "example": "Social account unlinked successfully"
+                    {
+                        "name": "state",
+                        "in": "query",
+                        "required": true,
+                        "description": "State token for CSRF protection",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
-                  }
-                }
-              }
+                ]
             }
-          },
-          "401": {
-            "description": "Unauthorized - User is not authenticated"
-          },
-          "404": {
-            "description": "Social account not found or not owned by user"
-          },
-          "500": {
-            "description": "Server error unlinking social account"
-          }
+        },
+        "/auth/social/github": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "GitHub OAuth Authentication",
+                "description": "Initiates the OAuth flow with GitHub for user authentication",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "400": {
+                        "description": "Bad request"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "GitHub Native Authentication",
+                "description": "Authenticates a user with a GitHub access token from a native mobile app",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with GitHub",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        },
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "access_token": {
+                                        "type": "string",
+                                        "description": "Access token obtained from GitHub OAuth"
+                                    }
+                                },
+                                "required": [
+                                    "access_token"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/social/github/callback": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "GitHub OAuth Callback",
+                "description": "Callback endpoint that processes the OAuth response from GitHub",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with GitHub",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        },
+                                        "refresh_token": {
+                                            "type": "string",
+                                            "description": "JWT refresh token"
+                                        },
+                                        "expires_in": {
+                                            "type": "integer",
+                                            "description": "Token expiration time in seconds"
+                                        },
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "description": "Authorization code from GitHub",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "state",
+                        "in": "query",
+                        "required": true,
+                        "description": "State token for CSRF protection",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/auth/social/apple": {
+            "get": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Apple OAuth Authentication",
+                "description": "Initiates the OAuth flow with Apple for user authentication",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "400": {
+                        "description": "Bad request"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Apple Native Authentication",
+                "description": "Authenticates a user with an Apple ID token from a native mobile app",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Apple",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        },
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id_token": {
+                                        "type": "string",
+                                        "description": "ID token obtained from Sign in with Apple SDK"
+                                    }
+                                },
+                                "required": [
+                                    "id_token"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/social/apple/callback": {
+            "post": {
+                "tags": [
+                    "Social Authentication"
+                ],
+                "summary": "Apple OAuth Callback",
+                "description": "Callback endpoint that processes the OAuth response from Apple",
+                "responses": {
+                    "200": {
+                        "description": "Successfully authenticated with Apple",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string",
+                                            "description": "JWT access token"
+                                        },
+                                        "refresh_token": {
+                                            "type": "string",
+                                            "description": "JWT refresh token"
+                                        },
+                                        "expires_in": {
+                                            "type": "integer",
+                                            "description": "Token expiration time in seconds"
+                                        },
+                                        "user": {
+                                            "type": "object",
+                                            "description": "User profile information"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "description": "Authorization code from Apple"
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "description": "State token for CSRF protection"
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "description": "JSON string containing user information (only provided on first login)"
+                                    }
+                                },
+                                "required": [
+                                    "code",
+                                    "state"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/user/social-accounts": {
+            "get": {
+                "tags": [
+                    "Social Account Management"
+                ],
+                "summary": "Get Connected Social Accounts",
+                "description": "Retrieve all social accounts connected to the authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "Successfully retrieved social accounts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "description": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Social accounts retrieved successfully"
+                                        },
+                                        "uuid": {
+                                            "type": "string",
+                                            "description": "Unique identifier for the social account"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/user/social-accounts/{uuid}": {
+            "delete": {
+                "tags": [
+                    "Social Account Management"
+                ],
+                "summary": "Unlink Social Account",
+                "description": "Remove a social provider connection from the authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "Successfully unlinked social account",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "description": "success"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Social account unlinked successfully"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true,
+                        "description": "UUID of the social account to unlink",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
         }
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-      }
-    }
-  },
-  "tags": [
-    {
-      "name": "Social Authentication",
-      "description": "Endpoints for authenticating users via OAuth providers"
     },
-    {
-      "name": "Social Account Management",
-      "description": "Endpoints for managing connected social accounts"
-    }
-  ]
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Social Authentication",
+            "description": "Operations related to Social Authentication"
+        },
+        {
+            "name": "Social Account Management",
+            "description": "Operations related to Social Account Management"
+        }
+    ]
 }

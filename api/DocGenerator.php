@@ -70,7 +70,7 @@ class DocGenerator
      * 
      * @param string $extensionsPath Path to the extensions directory
      */
-    public function generateFromExtensions(string $extensionsPath = null): void 
+    public function generateFromExtensions(?string $extensionsPath = null): void 
     {
         if ($extensionsPath === null) {
             $extensionsPath = dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
@@ -120,15 +120,7 @@ class DocGenerator
         // Merge paths
         if (isset($definition['paths']) && is_array($definition['paths'])) {
             foreach ($definition['paths'] as $path => $methods) {
-                // Add extension name to tags for better organization
-                foreach ($methods as $method => $operation) {
-                    if (isset($operation['tags']) && is_array($operation['tags'])) {
-                        $methods[$method]['tags'] = array_map(
-                            fn($tag) => "$extName: $tag", 
-                            $operation['tags']
-                        );
-                    }
-                }
+                // No longer add extension name to tags for better organization
                 $this->paths[$path] = $methods;
             }
         }
@@ -143,7 +135,81 @@ class DocGenerator
         // Merge tags
         if (isset($definition['tags']) && is_array($definition['tags'])) {
             foreach ($definition['tags'] as $tag) {
-                $tag['name'] = "$extName: " . $tag['name'];
+                // No longer add prefixes to tag names
+                $this->extensionTags[] = $tag;
+            }
+        }
+    }
+
+    /**
+     * Generate documentation from main routes
+     * 
+     * Finds and processes OpenAPI definition files for main routes.
+     * 
+     * @param string $routesPath Path to the routes documentation directory
+     */
+    public function generateFromRoutes(?string $routesPath = null): void 
+    {
+        if ($routesPath === null) {
+            $routesPath = dirname(__DIR__) . '/docs/api-doc-json-definitions/routes';
+        }
+        
+        if (!is_dir($routesPath)) {
+            error_log("Routes documentation directory not found: $routesPath");
+            return;
+        }
+        
+        // Process all route documentation files
+        $routeFiles = glob($routesPath . '/*.json');
+        
+        foreach ($routeFiles as $routeFile) {
+            $routeName = basename($routeFile, '.json');
+            $this->mergeRouteDefinition($routeFile, $routeName);
+        }
+    }
+    
+    /**
+     * Merge route OpenAPI definition into main documentation
+     * 
+     * Processes a route's OpenAPI definition file and merges 
+     * its components into the main API documentation.
+     * 
+     * @param string $filePath Path to route definition file
+     * @param string $routeName Route file name
+     */
+    private function mergeRouteDefinition(string $filePath, string $routeName): void 
+    {
+        $jsonContent = file_get_contents($filePath);
+        if (!$jsonContent) {
+            error_log("Could not read route definition file: $filePath");
+            return;
+        }
+
+        $definition = json_decode($jsonContent, true);
+        if (!$definition) {
+            error_log("Invalid JSON in route definition file: $filePath");
+            return;
+        }
+        
+        // Merge paths
+        if (isset($definition['paths']) && is_array($definition['paths'])) {
+            foreach ($definition['paths'] as $path => $methods) {
+                // No longer add prefixes to tag names for better organization
+                $this->paths[$path] = $methods;
+            }
+        }
+        
+        // Merge schemas
+        if (isset($definition['components']['schemas']) && is_array($definition['components']['schemas'])) {
+            foreach ($definition['components']['schemas'] as $name => $schema) {
+                $this->schemas["Route$routeName$name"] = $schema;
+            }
+        }
+        
+        // Merge tags
+        if (isset($definition['tags']) && is_array($definition['tags'])) {
+            foreach ($definition['tags'] as $tag) {
+                // No longer add prefixes to tag names
                 $this->extensionTags[] = $tag;
             }
         }
@@ -471,8 +537,6 @@ class DocGenerator
     {
         $properties = [];
         $required = [];
-
-        // Replace the code around line 305 with:
 
         $fields = $this->processFields($definition['table'] ?? []);
         if ($fields === null) {

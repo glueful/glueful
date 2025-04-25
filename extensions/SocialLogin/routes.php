@@ -16,8 +16,13 @@ use Glueful\Http\Response;
 
 // Social Login Initialization Routes
 Router::group('/auth/social', function() {
-    // Google authentication routes
-    // GET - initiates web OAuth flow
+    /**
+     * @route GET /auth/social/google
+     * @summary Google OAuth Authentication
+     * @description Initiates the OAuth flow with Google for user authentication
+     * @tag Social Authentication
+     * @response 302 "Redirects to Google's OAuth authorization page"
+     */
     Router::get('/google', function (Request $request) {
         // Initialize the Google auth provider
         $googleProvider = new \Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider();
@@ -35,7 +40,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // POST - handles mobile token verification
+    /**
+     * @route POST /auth/social/google
+     * @summary Google Native Authentication
+     * @description Authenticates a user with a Google ID token from a native mobile app
+     * @tag Social Authentication
+     * @requestBody id_token:string="ID token obtained from Google Sign-In SDK" {required=id_token}
+     * @response 200 application/json "Successfully authenticated with Google" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 400 "Missing ID token"
+     * @response 401 "Failed to verify Google ID token"
+     * @response 500 "Server error during authentication"
+     */
     Router::post('/google', function (Request $request) {
         try {
             // Get the ID token from the request
@@ -72,7 +87,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // Google callback only for web OAuth flows
+    /**
+     * @route GET /auth/social/google/callback
+     * @summary Google OAuth Callback
+     * @description Callback endpoint that processes the OAuth response from Google
+     * @tag Social Authentication
+     * @param code query string true "Authorization code from Google"
+     * @param state query string true "State token for CSRF protection"
+     * @response 200 application/json "Successfully authenticated with Google" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 400 "Bad request or invalid parameters"
+     * @response 401 "Authentication failed"
+     */
     Router::get('/google/callback', function (Request $request) {
         try {
             // Initialize the Google auth provider
@@ -100,8 +125,13 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // Facebook authentication routes
-    // GET - initiates web OAuth flow
+    /**
+     * @route GET /auth/social/facebook
+     * @summary Facebook OAuth Authentication
+     * @description Initiates the OAuth flow with Facebook for user authentication
+     * @tag Social Authentication
+     * @response 302 "Redirects to Facebook's OAuth authorization page"
+     */
     Router::get('/facebook', function (Request $request) {
         // Initialize the Facebook auth provider
         $facebookProvider = new \Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider();
@@ -119,7 +149,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // POST - handles mobile token verification
+    /**
+     * @route POST /auth/social/facebook
+     * @summary Facebook Native Authentication
+     * @description Authenticates a user with a Facebook access token from a native mobile app
+     * @tag Social Authentication
+     * @requestBody access_token:string="Access token obtained from Facebook Login SDK" {required=access_token}
+     * @response 200 application/json "Successfully authenticated with Facebook" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 400 "Missing access token"
+     * @response 401 "Failed to verify Facebook access token"
+     * @response 500 "Server error during authentication"
+     */
     Router::post('/facebook', function (Request $request) {
         try {
             // Get the access token from the request
@@ -156,7 +196,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // Facebook callback only for web OAuth flows
+    /**
+     * @route GET /auth/social/facebook/callback
+     * @summary Facebook OAuth Callback
+     * @description Callback endpoint that processes the OAuth response from Facebook
+     * @tag Social Authentication
+     * @param code query string true "Authorization code from Facebook"
+     * @param state query string true "State token for CSRF protection"
+     * @response 200 application/json "Successfully authenticated with Facebook" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 400 "Bad request or invalid parameters"
+     * @response 401 "Authentication failed"
+     */
     Router::get('/facebook/callback', function (Request $request) {
         try {
             // Initialize the Facebook auth provider
@@ -184,8 +234,13 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // GitHub authentication routes
-    // GET - initiates web OAuth flow
+    /**
+     * @route GET /auth/social/github
+     * @summary GitHub OAuth Authentication
+     * @description Initiates the OAuth flow with GitHub for user authentication
+     * @tag Social Authentication
+     * @response 302 "Redirects to GitHub's OAuth authorization page"
+     */
     Router::get('/github', function (Request $request) {
         // Initialize the GitHub auth provider
         $githubProvider = new \Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider();
@@ -203,7 +258,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // POST - handles mobile token verification
+    /**
+     * @route POST /auth/social/github
+     * @summary GitHub Native Authentication
+     * @description Authenticates a user with a GitHub access token from a native mobile app
+     * @tag Social Authentication
+     * @requestBody access_token:string="Access token obtained from GitHub OAuth" {required=access_token}
+     * @response 200 application/json "Successfully authenticated with GitHub" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 400 "Missing access token"
+     * @response 401 "Failed to verify GitHub access token"
+     * @response 500 "Server error during authentication"
+     */
     Router::post('/github', function (Request $request) {
         try {
             // Get the access token from the request
@@ -240,7 +305,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // GitHub callback only for web OAuth flows
+    /**
+     * @route GET /auth/social/github/callback
+     * @summary GitHub OAuth Callback
+     * @description Callback endpoint that processes the OAuth response from GitHub
+     * @tag Social Authentication
+     * @param code query string true "Authorization code from GitHub"
+     * @param state query string true "State token for CSRF protection"
+     * @response 200 application/json "Successfully authenticated with GitHub" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 400 "Bad request or invalid parameters"
+     * @response 401 "Authentication failed"
+     */
     Router::get('/github/callback', function (Request $request) {
         try {
             // Initialize the GitHub auth provider
@@ -268,8 +343,13 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // Apple authentication routes
-    // GET - initiates web OAuth flow
+    /**
+     * @route GET /auth/social/apple
+     * @summary Apple OAuth Authentication
+     * @description Initiates the OAuth flow with Apple for user authentication
+     * @tag Social Authentication
+     * @response 302 "Redirects to Apple's OAuth authorization page"
+     */
     Router::get('/apple', function (Request $request) {
         // Initialize the Apple auth provider
         $appleProvider = new \Glueful\Extensions\SocialLogin\Providers\AppleAuthProvider();
@@ -287,7 +367,17 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // POST - handles mobile token verification
+    /**
+     * @route POST /auth/social/apple
+     * @summary Apple Native Authentication
+     * @description Authenticates a user with an Apple ID token from a native mobile app
+     * @tag Social Authentication
+     * @requestBody id_token:string="ID token obtained from Sign in with Apple SDK" {required=id_token}
+     * @response 200 application/json "Successfully authenticated with Apple" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 400 "Missing ID token"
+     * @response 401 "Failed to verify Apple ID token"
+     * @response 500 "Server error during authentication"
+     */
     Router::post('/apple', function (Request $request) {
         try {
             // Get the ID token from the request
@@ -324,7 +414,16 @@ Router::group('/auth/social', function() {
         }
     });
     
-    // Apple callback for web OAuth flows - using POST as Apple requires form_post response mode
+    /**
+     * @route POST /auth/social/apple/callback
+     * @summary Apple OAuth Callback
+     * @description Callback endpoint that processes the OAuth response from Apple
+     * @tag Social Authentication
+     * @requestBody code:string="Authorization code from Apple" state:string="State token for CSRF protection" user:string="JSON string containing user information (only provided on first login)" {required=code,state}
+     * @response 200 application/json "Successfully authenticated with Apple" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 400 "Bad request or invalid parameters"
+     * @response 401 "Authentication failed"
+     */
     Router::post('/apple/callback', function (Request $request) {
         try {
             // Initialize the Apple auth provider
@@ -358,7 +457,16 @@ Router::group('/auth/social', function() {
 
 // User social accounts management (requires authentication)
 Router::group('/user/social-accounts', function() {
-    // Get connected social accounts
+    /**
+     * @route GET /user/social-accounts
+     * @summary Get Connected Social Accounts
+     * @description Retrieve all social accounts connected to the authenticated user
+     * @tag Social Account Management
+     * @requiresAuth true
+     * @response 200 application/json "Successfully retrieved social accounts" {status:string="success", message:string="Social accounts retrieved successfully", data:[{uuid:string="Unique identifier for the social account", provider:string="Social provider name (google, facebook, github, etc.)", created_at:string="When the account was connected", updated_at:string="When the account was last updated"}]}
+     * @response 401 "Unauthorized - User is not authenticated"
+     * @response 500 "Server error retrieving social accounts"
+     */
     Router::get('/', function (Request $request) {
         try {
             // Get authenticated user
@@ -393,7 +501,18 @@ Router::group('/user/social-accounts', function() {
         }
     }, requiresAuth: true);
     
-    // Unlink a social account
+    /**
+     * @route DELETE /user/social-accounts/{uuid}
+     * @summary Unlink Social Account
+     * @description Remove a social provider connection from the authenticated user
+     * @tag Social Account Management
+     * @requiresAuth true
+     * @param uuid path string true "UUID of the social account to unlink"
+     * @response 200 application/json "Successfully unlinked social account" {status:string="success", message:string="Social account unlinked successfully"}
+     * @response 401 "Unauthorized - User is not authenticated"
+     * @response 404 "Social account not found or not owned by user"
+     * @response 500 "Server error unlinking social account"
+     */
     Router::delete('/{uuid}', function (Request $request, string $uuid) {
         try {
             // Get authenticated user
