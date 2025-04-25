@@ -71,8 +71,9 @@ class EmailVerification
         // Register the email provider with the channel manager directly
         $this->emailProvider->register($channelManager);
         
-        // Initialize NotificationService with required dispatcher
-        $this->notificationService = new NotificationService($dispatcher);
+        // Initialize NotificationService with required dispatcher and repository
+        $notificationRepository = new \Glueful\Repository\NotificationRepository();
+        $this->notificationService = new NotificationService($dispatcher, $notificationRepository);
     }
 
     /**

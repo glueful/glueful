@@ -136,12 +136,19 @@ class PostgreSQLSchemaManager extends SchemaManager
             $column = $index['column'];
             $type = strtoupper($index['type']);
     
+            // Generate a consistent index name for checking
+            if (is_array($column)) {
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+            } else {
+                $indexNameToCheck = "{$table}_{$column}_idx";
+            }
+    
             // Check if index already exists in PostgreSQL
             $existingIndexes = $this->pdo
                 ->query("SELECT indexname FROM pg_indexes WHERE tablename = '$table'")
                 ->fetchAll(PDO::FETCH_COLUMN);
     
-            if (in_array("{$table}_{$column}_idx", $existingIndexes)) {
+            if (in_array($indexNameToCheck, $existingIndexes)) {
                 continue; // Skip if index exists
             }
     
@@ -150,12 +157,38 @@ class PostgreSQLSchemaManager extends SchemaManager
                     throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
                 }
     
-                $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"fk_{$table}_{$column}\" 
-                        FOREIGN KEY (\"$column\") REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+                // Handle both string and array columns for foreign keys
+                if (is_array($column)) {
+                    $columnNames = array_map(fn($col) => "\"$col\"", $column);
+                    $columnStr = implode(", ", $columnNames);
+                    $name = isset($index['name']) ? $index['name'] : "fk_{$table}_" . implode("_", $column);
+                    $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"$name\" 
+                            FOREIGN KEY ($columnStr) REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+                } else {
+                    $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"fk_{$table}_{$column}\" 
+                            FOREIGN KEY (\"$column\") REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+                }
             } elseif ($type === 'UNIQUE') {
-                $sql = "CREATE UNIQUE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
+                // Handle multi-column unique indexes
+                if (is_array($column)) {
+                    $columnNames = array_map(fn($col) => "\"$col\"", $column);
+                    $columnStr = implode(", ", $columnNames);
+                    $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                    $sql = "CREATE UNIQUE INDEX \"$name\" ON \"$table\" ($columnStr)";
+                } else {
+                    $sql = "CREATE UNIQUE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
+                }
             } else {
-                $sql = "CREATE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
+                // Default case: add normal index
+                // Handle multi-column indexes
+                if (is_array($column)) {
+                    $columnNames = array_map(fn($col) => "\"$col\"", $column);
+                    $columnStr = implode(", ", $columnNames);
+                    $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                    $sql = "CREATE INDEX \"$name\" ON \"$table\" ($columnStr)";
+                } else {
+                    $sql = "CREATE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
+                }
             }
     
             $this->pdo->exec($sql);

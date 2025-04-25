@@ -114,7 +114,12 @@ class MySQLSchemaManager implements SchemaManager
             // Prevent duplicate indexing
             $existingIndexes = $this->pdo->query("SHOW INDEXES FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
             foreach ($existingIndexes as $existingIndex) {
-                if ($existingIndex['Column_name'] === $column) {
+                if (is_array($column)) {
+                    // For multi-column indexes, skip if any column exists (simplified check)
+                    if (in_array($existingIndex['Column_name'], $column)) {
+                        continue 2;
+                    }
+                } else if ($existingIndex['Column_name'] === $column) {
                     // Index already exists, skip it
                     continue 2;
                 }
@@ -125,16 +130,34 @@ class MySQLSchemaManager implements SchemaManager
                     throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
                 }
 
-                $sql = "ALTER TABLE `$table` ADD CONSTRAINT `fk_{$table}_{$column}` 
-                        FOREIGN KEY (`$column`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
+                // Handle both string and array columns for foreign keys
+                $columnStr = is_array($column) ? implode("`,`", $column) : $column;
+                $sql = "ALTER TABLE `$table` ADD CONSTRAINT `fk_{$table}_{$columnStr}` 
+                        FOREIGN KEY (`$columnStr`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
             } elseif ($type === 'PRIMARY KEY') {
                 // Primary Key should be handled in CREATE TABLE
                 continue;
             } elseif ($type === 'UNIQUE') {
-                $sql = "ALTER TABLE `$table` ADD UNIQUE (`$column`)";
+                // Handle multi-column unique indexes
+                if (is_array($column)) {
+                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columnStr = implode(", ", $columns);
+                    $name = isset($index['name']) ? $index['name'] : "unique_" . implode("_", $column);
+                    $sql = "ALTER TABLE `$table` ADD CONSTRAINT `$name` UNIQUE ($columnStr)";
+                } else {
+                    $sql = "ALTER TABLE `$table` ADD UNIQUE (`$column`)";
+                }
             } else {
                 // Default case: add normal index
-                $sql = "ALTER TABLE `$table` ADD INDEX (`$column`)";
+                // Handle multi-column indexes
+                if (is_array($column)) {
+                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columnStr = implode(", ", $columns);
+                    $name = isset($index['name']) ? $index['name'] : "idx_" . implode("_", $column);
+                    $sql = "ALTER TABLE `$table` ADD INDEX `$name` ($columnStr)";
+                } else {
+                    $sql = "ALTER TABLE `$table` ADD INDEX (`$column`)";
+                }
             }
 
             $this->pdo->exec($sql);
