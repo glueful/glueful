@@ -102,6 +102,7 @@ class NotificationRepository
      * @param bool|null $onlyUnread Whether to get only unread notifications
      * @param int|null $limit Maximum number of notifications to retrieve
      * @param int|null $offset Pagination offset
+     * @param array $filters Optional additional filters (type, priority, date range)
      * @return array Array of Notification objects
      */
     public function findForNotifiable(
@@ -109,7 +110,8 @@ class NotificationRepository
         string $notifiableId,
         ?bool $onlyUnread = false,
         ?int $limit = null,
-        ?int $offset = null
+        ?int $offset = null,
+        array $filters = []
     ): array {
         $query = $this->queryBuilder->select('notifications', ['*'])
             ->where([
@@ -119,6 +121,40 @@ class NotificationRepository
             
         if ($onlyUnread) {
             $query->whereNull('read_at');
+        }
+        
+        // Apply additional filters if provided
+        foreach ($filters as $field => $value) {
+            if (is_array($value)) {
+                // Handle operators like 'gte', 'lte', etc.
+                foreach ($value as $operator => $val) {
+                    switch($operator) {
+                        case 'gte':
+                            $query->whereRaw("{$field} >= ?", [$val]);
+                            break;
+                        case 'lte':
+                            $query->whereRaw("{$field} <= ?", [$val]);
+                            break;
+                        case 'gt':
+                            $query->whereRaw("{$field} > ?", [$val]);
+                            break;
+                        case 'lt':
+                            $query->whereRaw("{$field} < ?", [$val]);
+                            break;
+                        case 'like':
+                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
+                            break;
+                        case 'in':
+                            if (is_array($val) && !empty($val)) {
+                                $placeholders = implode(',', array_fill(0, count($val), '?'));
+                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
+                            }
+                            break;
+                    }
+                }
+            } else {
+                $query->where([$field => $value]);
+            }
         }
         
         // Order by creation date, newest first
@@ -389,22 +425,65 @@ class NotificationRepository
     }
     
     /**
-     * Count unread notifications for a recipient
+     * Count all notifications for a recipient
      * 
      * @param string $notifiableType Recipient type
      * @param string $notifiableId Recipient ID
-     * @return int Count of unread notifications
+     * @param bool $onlyUnread Whether to count only unread notifications
+     * @param array $filters Optional additional filters
+     * @return int Total count of notifications
      */
-    public function countUnread(string $notifiableType, string $notifiableId): int
-    {
-        $result = $this->queryBuilder->select('notifications', ['COUNT(*) as count'])
+    public function countForNotifiable(
+        string $notifiableType, 
+        string $notifiableId, 
+        bool $onlyUnread = false,
+        array $filters = []
+    ): int {
+        $query = $this->queryBuilder->select('notifications', ['COUNT(*) as count'])
             ->where([
                 'notifiable_type' => $notifiableType,
                 'notifiable_id' => $notifiableId
-            ])
-            ->whereNull('read_at')
-            ->get();
+            ]);
             
+        if ($onlyUnread) {
+            $query->whereNull('read_at');
+        }
+        
+        // Apply additional filters if provided
+        foreach ($filters as $field => $value) {
+            if (is_array($value)) {
+                // Handle operators like 'gte', 'lte', etc.
+                foreach ($value as $operator => $val) {
+                    switch($operator) {
+                        case 'gte':
+                            $query->whereRaw("{$field} >= ?", [$val]);
+                            break;
+                        case 'lte':
+                            $query->whereRaw("{$field} <= ?", [$val]);
+                            break;
+                        case 'gt':
+                            $query->whereRaw("{$field} > ?", [$val]);
+                            break;
+                        case 'lt':
+                            $query->whereRaw("{$field} < ?", [$val]);
+                            break;
+                        case 'like':
+                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
+                            break;
+                        case 'in':
+                            if (is_array($val) && !empty($val)) {
+                                $placeholders = implode(',', array_fill(0, count($val), '?'));
+                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
+                            }
+                            break;
+                    }
+                }
+            } else {
+                $query->where([$field => $value]);
+            }
+        }
+        
+        $result = $query->get();
         return $result ? (int)$result[0]['count'] : 0;
     }
     

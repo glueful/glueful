@@ -4,9 +4,12 @@ declare(strict_types=1);
 namespace Glueful\Notifications\Services;
 
 use DateTime;
+use Glueful\Events\EventDispatcher;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Contracts\NotificationExtension;
+use Glueful\Notifications\Events\NotificationFailed;
+use Glueful\Notifications\Events\NotificationSent;
 use Glueful\Notifications\Models\Notification;
 use Throwable;
 
@@ -36,6 +39,11 @@ class NotificationDispatcher
     private ?LogManager $logger;
     
     /**
+     * @var EventDispatcher|null Event dispatcher for notification events
+     */
+    private ?EventDispatcher $eventDispatcher;
+    
+    /**
      * @var array Configuration options
      */
     private array $config;
@@ -45,15 +53,18 @@ class NotificationDispatcher
      * 
      * @param ChannelManager $channelManager Channel manager instance
      * @param LogManager|null $logger Logger instance
+     * @param EventDispatcher|null $eventDispatcher Event dispatcher instance
      * @param array $config Configuration options
      */
     public function __construct(
         ChannelManager $channelManager,
         ?LogManager $logger = null,
+        ?EventDispatcher $eventDispatcher = null,
         array $config = []
     ) {
         $this->channelManager = $channelManager;
         $this->logger = $logger;
+        $this->eventDispatcher = $eventDispatcher;
         $this->config = $config;
     }
     
@@ -282,6 +293,28 @@ class NotificationDispatcher
     }
     
     /**
+     * Set the event dispatcher
+     * 
+     * @param EventDispatcher $eventDispatcher Event dispatcher instance
+     * @return self
+     */
+    public function setEventDispatcher(EventDispatcher $eventDispatcher): self
+    {
+        $this->eventDispatcher = $eventDispatcher;
+        return $this;
+    }
+    
+    /**
+     * Get the event dispatcher
+     * 
+     * @return EventDispatcher|null The event dispatcher
+     */
+    public function getEventDispatcher(): ?EventDispatcher
+    {
+        return $this->eventDispatcher;
+    }
+    
+    /**
      * Resolve which channels to use for sending a notification
      * 
      * @param Notification $notification The notification to send
@@ -368,13 +401,20 @@ class NotificationDispatcher
      */
     protected function triggerSentEvent(Notification $notification, Notifiable $notifiable, string $channel): void
     {
-        // Event triggering logic would go here
-        // For now, just log
+        // Create the event object
+        $event = new NotificationSent($notification, $notifiable, $channel);
+        
+        // Log the event
         $this->log('info', "Notification {$notification->getId()} sent successfully via {$channel}.", [
             'notification_id' => $notification->getId(),
             'notifiable_id' => $notifiable->getNotifiableId(),
             'channel' => $channel
         ]);
+        
+        // Dispatch the event if event dispatcher is available
+        if ($this->eventDispatcher !== null) {
+            $this->eventDispatcher->dispatch($event);
+        }
     }
     
     /**
@@ -389,8 +429,10 @@ class NotificationDispatcher
      */
     protected function triggerFailedEvent(Notification $notification, Notifiable $notifiable, string $channel, string $reason, ?Throwable $exception = null): void
     {
-        // Event triggering logic would go here
-        // For now, just log
+        // Create the event object
+        $event = new NotificationFailed($notification, $notifiable, $channel, $reason, $exception);
+        
+        // Log the event
         $this->log('warning', "Failed to send notification {$notification->getId()} via {$channel}: {$reason}", [
             'notification_id' => $notification->getId(),
             'notifiable_id' => $notifiable->getNotifiableId(),
@@ -398,6 +440,11 @@ class NotificationDispatcher
             'reason' => $reason,
             'exception' => $exception ? $exception->getMessage() : null
         ]);
+        
+        // Dispatch the event if event dispatcher is available
+        if ($this->eventDispatcher !== null) {
+            $this->eventDispatcher->dispatch($event);
+        }
     }
     
     /**
@@ -413,5 +460,27 @@ class NotificationDispatcher
         if ($this->logger !== null) {
             $this->logger->log($level, $message, $context);
         }
+    }
+    
+    /**
+     * Set the logger
+     * 
+     * @param LogManager $logger Logger instance
+     * @return self
+     */
+    public function setLogger(LogManager $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
+    }
+    
+    /**
+     * Get the logger
+     * 
+     * @return LogManager|null The logger instance
+     */
+    public function getLogger(): ?LogManager
+    {
+        return $this->logger;
     }
 }

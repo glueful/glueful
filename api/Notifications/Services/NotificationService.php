@@ -11,7 +11,7 @@ use Glueful\Notifications\Models\NotificationPreference;
 use Glueful\Notifications\Templates\TemplateManager;
 use Glueful\Repository\NotificationRepository;
 use InvalidArgumentException;
-
+use Glueful\Logging\LogManager;
 
 /**
  * Notification Service
@@ -39,6 +39,11 @@ class NotificationService
     private NotificationRepository $repository;
     
     /**
+     * @var NotificationMetricsService The metrics service
+     */
+    private NotificationMetricsService $metricsService;
+    
+    /**
      * @var callable Generator for notification IDs
      */
     private $idGenerator;
@@ -54,18 +59,25 @@ class NotificationService
      * @param NotificationDispatcher $dispatcher Notification dispatcher
      * @param NotificationRepository $repository Notification repository
      * @param TemplateManager|null $templateManager Template manager
+     * @param NotificationMetricsService|null $metricsService Metrics service
      * @param array $config Configuration options
      */
     public function __construct(
         NotificationDispatcher $dispatcher,
         NotificationRepository $repository,
         ?TemplateManager $templateManager = null,
+        ?NotificationMetricsService $metricsService = null,
         array $config = []
     ) {
         $this->dispatcher = $dispatcher;
         $this->repository = $repository;
         $this->templateManager = $templateManager;
         $this->config = $config;
+        
+        // Create metrics service if not provided
+        $this->metricsService = $metricsService ?? new NotificationMetricsService(
+            $dispatcher->getLogger() instanceof LogManager ? $dispatcher->getLogger() : null
+        );
         
         // Default ID generator uses Utils::generateNanoID
         $this->idGenerator = $config['id_generator'] ?? function() {
@@ -96,6 +108,12 @@ class NotificationService
         // Save to database first
         $this->repository->save($notification);
         
+        // Track notification creation time for metrics
+        $channels = $options['channels'] ?? $this->getDefaultChannels();
+        foreach ($channels as $channel) {
+            $this->metricsService->setNotificationCreationTime($notification->getId(), $channel);
+        }
+        
         // Send it immediately unless scheduled for later
         if (!isset($options['schedule']) || $options['schedule'] === null) {
             $result = $this->dispatcher->send(
@@ -108,6 +126,26 @@ class NotificationService
             if ($result['status'] === 'success') {
                 $notification->markAsSent();
                 $this->repository->save($notification);
+                
+                // Track successful delivery metrics for each channel
+                if (isset($result['channels'])) {
+                    foreach ($result['channels'] as $channel => $channelResult) {
+                        if ($channelResult['status'] === 'success') {
+                            // Calculate delivery time if applicable
+                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getId(), $channel);
+                            if ($creationTime) {
+                                $deliveryTime = time() - $creationTime;
+                                $this->metricsService->trackDeliveryTime($notification->getId(), $channel, $deliveryTime);
+                            }
+                            
+                            // Update success metrics
+                            $this->metricsService->updateSuccessRateMetrics($channel, true);
+                            
+                            // Clean up individual notification metrics
+                            $this->metricsService->cleanupNotificationMetrics($notification->getId(), $channel);
+                        }
+                    }
+                }
             }
             
             return $result;
@@ -295,26 +333,50 @@ class NotificationService
     }
     
     /**
-     * Get notifications for a user
+     * Get notifications for a user with optional filtering
      * 
      * @param Notifiable $notifiable Recipient
      * @param bool $onlyUnread Whether to get only unread notifications
      * @param int|null $limit Maximum number of notifications
      * @param int|null $offset Pagination offset
+     * @param array $filters Optional additional filters (type, priority, date range)
      * @return array Array of Notification objects
      */
     public function getNotifications(
         Notifiable $notifiable,
         bool $onlyUnread = false,
         ?int $limit = null,
-        ?int $offset = null
+        ?int $offset = null,
+        array $filters = []
     ): array {
         return $this->repository->findForNotifiable(
             $notifiable->getNotifiableType(),
             $notifiable->getNotifiableId(),
             $onlyUnread,
             $limit,
-            $offset
+            $offset,
+            $filters
+        );
+    }
+    
+    /**
+     * Count total notifications for a user with optional filters
+     * 
+     * @param Notifiable $notifiable Recipient
+     * @param bool $onlyUnread Whether to count only unread notifications
+     * @param array $filters Additional filters to apply
+     * @return int Total count of notifications
+     */
+    public function countNotifications(
+        Notifiable $notifiable,
+        bool $onlyUnread = false,
+        array $filters = []
+    ): int {
+        return $this->repository->countForNotifiable(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId(),
+            $onlyUnread,
+            $filters
         );
     }
     
@@ -335,9 +397,11 @@ class NotificationService
      * @return int Count of unread notifications
      */
     public function getUnreadCount(Notifiable $notifiable): int {
-        return $this->repository->countUnread(
+        // Using the countForNotifiable method with onlyUnread=true instead of countUnread
+        return $this->repository->countForNotifiable(
             $notifiable->getNotifiableType(),
-            $notifiable->getNotifiableId()
+            $notifiable->getNotifiableId(),
+            true // onlyUnread=true to count only unread notifications
         );
     }
     
@@ -507,8 +571,8 @@ class NotificationService
     /**
      * Get the notifiable entity from type and ID
      * 
-     * Note: This is a placeholder method that should be implemented
-     * based on your application's entity retrieval mechanism.
+     * Retrieves a notifiable entity based on its type and ID.
+     * Supports different entity types like 'user', 'customer', etc.
      * 
      * @param string $type Entity type
      * @param string $id Entity ID
@@ -516,15 +580,178 @@ class NotificationService
      */
     protected function getNotifiableEntity(string $type, string $id): ?Notifiable
     {
-        // This is a placeholder implementation
-        // In a real application, you would retrieve the entity from your ORM/database
+        // Determine which repository to use based on entity type
+        switch (strtolower($type)) {
+            case 'user':
+                // For users, use the UserRepository
+                $userRepository = new \Glueful\Repository\UserRepository();
+                $userData = $userRepository->findByUUID($id);
+                
+                if (!$userData || empty($userData)) {
+                    return null;
+                }
+                
+                // Create and return a notifiable object that implements the Notifiable interface
+                return new class($id) implements \Glueful\Notifications\Contracts\Notifiable {
+                    private string $uuid;
+                    
+                    public function __construct(string $uuid) {
+                        $this->uuid = $uuid;
+                    }
+                    
+                    public function routeNotificationFor(string $channel) {
+                        return null; // Can be extended to return specific routing info based on channel
+                    }
+                    
+                    public function getNotifiableId(): string {
+                        return $this->uuid;
+                    }
+                    
+                    public function getNotifiableType(): string {
+                        return 'user';
+                    }
+                    
+                    public function shouldReceiveNotification(string $notificationType, string $channel): bool {
+                        return true; // Default to allowing notifications
+                    }
+                    
+                    public function getNotificationPreferences(): array {
+                        return []; // Can be extended to fetch actual preferences
+                    }
+                };
+                
+            // Add more cases for other entity types as needed
+            // case 'customer':
+            //    $customerRepository = new CustomerRepository();
+            //    ...
+                
+            default:
+                // Try to resolve through extension system if available
+                return $this->resolveNotifiableEntityThroughExtensions($type, $id);
+        }
+    }
+    
+    /**
+     * Resolve notifiable entity through extensions
+     * 
+     * Attempts to resolve a notifiable entity using the extension system
+     * for entity types not handled directly by this service.
+     * 
+     * @param string $type Entity type
+     * @param string $id Entity ID
+     * @return Notifiable|null The notifiable entity or null if not found
+     */
+    protected function resolveNotifiableEntityThroughExtensions(string $type, string $id): ?Notifiable
+    {
+        // Get all loaded extensions through ExtensionsManager
+        $extensions = \Glueful\Helpers\ExtensionsManager::getLoadedExtensions();
         
-        // Example implementation for a User entity:
-        // if ($type === 'user') {
-        //     $userRepository = new UserRepository();
-        //     return $userRepository->findById($id);
-        // }
+        // Look for extensions that might support this type of notifiable entity
+        foreach ($extensions as $extensionClass) {
+            // Check if the extension has a method for resolving notifiable entities
+            if (method_exists($extensionClass, 'resolveNotifiableEntity')) {
+                try {
+                    // Call the extension's resolveNotifiableEntity method
+                    $notifiable = call_user_func_array([$extensionClass, 'resolveNotifiableEntity'], [$type, $id]);
+                    
+                    // If the extension returned a valid Notifiable entity, return it
+                    if ($notifiable instanceof \Glueful\Notifications\Contracts\Notifiable) {
+                        return $notifiable;
+                    }
+                } catch (\Throwable $e) {
+                    // Log error but continue trying other extensions
+                    error_log("Extension {$extensionClass} failed to resolve notifiable entity: " . $e->getMessage());
+                }
+            }
+        }
+        
+        // If no extension could resolve the entity, try notification extensions
+        if (isset($this->dispatcher)) {
+            foreach ($this->dispatcher->getExtensions() as $extension) {
+                // Check if notification extension supports resolving notifiable entities
+                if (method_exists($extension, 'resolveNotifiableEntity')) {
+                    try {
+                        $notifiable = $extension->resolveNotifiableEntity($type, $id);
+                        if ($notifiable instanceof \Glueful\Notifications\Contracts\Notifiable) {
+                            return $notifiable;
+                        }
+                    } catch (\Throwable $e) {
+                        // Log error but continue trying other extensions
+                        error_log("Notification extension failed to resolve notifiable entity: " . $e->getMessage());
+                    }
+                }
+            }
+        }
         
         return null;
+    }
+    
+    /**
+     * Get the metrics service
+     * 
+     * @return NotificationMetricsService The metrics service
+     */
+    public function getMetricsService(): NotificationMetricsService
+    {
+        return $this->metricsService;
+    }
+    
+    /**
+     * Set the metrics service
+     * 
+     * @param NotificationMetricsService $metricsService The metrics service
+     * @return self
+     */
+    public function setMetricsService(NotificationMetricsService $metricsService): self
+    {
+        $this->metricsService = $metricsService;
+        return $this;
+    }
+    
+    /**
+     * Get notification performance metrics for all channels
+     * 
+     * @return array Performance metrics for all channels
+     */
+    public function getPerformanceMetrics(): array
+    {
+        // Get all active channels
+        $channels = $this->dispatcher->getChannelManager()->getAvailableChannels();
+        
+        // Get metrics for all channels
+        return $this->metricsService->getAllMetrics($channels);
+    }
+    
+    /**
+     * Get metrics for a specific channel
+     * 
+     * @param string $channel Channel name
+     * @return array Channel-specific metrics
+     */
+    public function getChannelMetrics(string $channel): array
+    {
+        return $this->metricsService->getChannelMetrics($channel);
+    }
+    
+    /**
+     * Reset metrics for a specific channel
+     * 
+     * @param string $channel Channel name
+     * @return bool Success status
+     */
+    public function resetChannelMetrics(string $channel): bool
+    {
+        return $this->metricsService->resetChannelMetrics($channel);
+    }
+    
+    /**
+     * Get default notification channels
+     * 
+     * @return array Array of default channel names
+     */
+    protected function getDefaultChannels(): array
+    {
+        return $this->config['default_channels'] ?? 
+               $this->dispatcher->getConfig('default_channels', ['database']);
     }
 }

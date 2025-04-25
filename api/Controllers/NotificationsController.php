@@ -96,32 +96,57 @@ class NotificationsController {
             $perPage = (int)($queryParams['per_page'] ?? 20);
             $onlyUnread = isset($queryParams['unread']) && $queryParams['unread'] === 'true';
             
+            // Build filters for type, date range and priority
+            $filters = [];
+            
+            // Filter by type
+            if (isset($queryParams['type']) && !empty($queryParams['type'])) {
+                $filters['type'] = $queryParams['type'];
+            }
+            
+            // Filter by priority
+            if (isset($queryParams['priority']) && !empty($queryParams['priority'])) {
+                $priorities = explode(',', $queryParams['priority']);
+                if (count($priorities) > 1) {
+                    $filters['priority'] = ['in' => $priorities];
+                } else {
+                    $filters['priority'] = $queryParams['priority'];
+                }
+            }
+            
+            // Filter by date range for created_at
+            if (isset($queryParams['date_from']) && !empty($queryParams['date_from'])) {
+                if (!isset($filters['created_at'])) {
+                    $filters['created_at'] = [];
+                }
+                $filters['created_at']['gte'] = $queryParams['date_from'];
+            }
+            
+            if (isset($queryParams['date_to']) && !empty($queryParams['date_to'])) {
+                if (!isset($filters['created_at'])) {
+                    $filters['created_at'] = [];
+                }
+                $filters['created_at']['lte'] = $queryParams['date_to'];
+            }
+            
             // Create notifiable from user
             $userNotifiable = $this->createUserNotifiable($userData['uuid']);
             
-            // Retrieve notifications with pagination
+            // Retrieve notifications with pagination and filters
             $notifications = $this->notificationService->getNotifications(
                 $userNotifiable,
                 $onlyUnread,
                 $perPage,
-                ($page - 1) * $perPage
+                ($page - 1) * $perPage,
+                $filters
             );
             
-            // Get total count for pagination
-            $totalCount = 0;
-            if ($onlyUnread) {
-                $totalCount = $this->notificationService->getUnreadCount($userNotifiable);
-            } else {
-                // Use getNotifications with a large limit to get total count
-                // This is a workaround since countForNotifiable is not available
-                $allNotifications = $this->notificationService->getNotifications(
-                    $userNotifiable,
-                    false,
-                    1000, // Use a large number to get all notifications
-                    0
-                );
-                $totalCount = count($allNotifications);
-            }
+            // Get total count for pagination using the service layer method, including filters
+            $totalCount = $this->notificationService->countNotifications(
+                $userNotifiable,
+                $onlyUnread,
+                $filters
+            );
             
             return Response::ok([
                 'data' => $notifications,
@@ -130,6 +155,10 @@ class NotificationsController {
                     'per_page' => $perPage,
                     'total' => $totalCount,
                     'last_page' => ceil($totalCount / $perPage)
+                ],
+                'filters' => [
+                    'applied' => !empty($filters),
+                    'parameters' => $filters
                 ]
             ], 'Notifications retrieved successfully')->send();
             
@@ -403,6 +432,159 @@ class NotificationsController {
         } catch (\Exception $e) {
             return Response::error(
                 'Failed to delete notification: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+    
+    /**
+     * Get notification performance metrics
+     * 
+     * @return mixed HTTP response
+     */
+    public function getNotificationMetrics() {
+        try {
+            // Get authenticated user
+            $userData = Utils::getCurrentUser();
+            
+            if (!$userData || !isset($userData['uuid'])) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? null;
+            
+            // Check if user has admin permissions using PermissionManager
+            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
+                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            }
+            
+            // Get metrics from the notification service
+            $metrics = $this->notificationService->getPerformanceMetrics();
+            
+            return Response::ok([
+                'metrics' => $metrics,
+                'timestamp' => (new \DateTime())->format('Y-m-d H:i:s')
+            ], 'Notification performance metrics retrieved successfully')->send();
+            
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to retrieve notification metrics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+    
+    /**
+     * Get metrics for a specific notification channel
+     * 
+     * @param array $params Route parameters
+     * @return mixed HTTP response
+     */
+    public function getChannelMetrics(array $params) {
+        try {
+            // Get authenticated user
+            $userData = Utils::getCurrentUser();
+            
+            if (!$userData || !isset($userData['uuid'])) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? null;
+            
+            // Check if user has admin permissions using PermissionManager
+            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
+                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            }
+            
+            if (!isset($params['channel'])) {
+                return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $channelName = $params['channel'];
+            
+            // Check if the channel exists
+            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
+            if (!in_array($channelName, $availableChannels)) {
+                return Response::error(
+                    "Channel '{$channelName}' not found or not available", 
+                    Response::HTTP_NOT_FOUND
+                )->send();
+            }
+            
+            // Get metrics for the specific channel
+            $metrics = $this->notificationService->getChannelMetrics($channelName);
+            
+            return Response::ok([
+                'metrics' => $metrics,
+                'timestamp' => (new \DateTime())->format('Y-m-d H:i:s')
+            ], "Metrics for channel '{$channelName}' retrieved successfully")->send();
+            
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to retrieve channel metrics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+    
+    /**
+     * Reset metrics for a specific notification channel
+     * 
+     * @param array $params Route parameters
+     * @return mixed HTTP response
+     */
+    public function resetChannelMetrics(array $params) {
+        try {
+            // Get authenticated user
+            $userData = Utils::getCurrentUser();
+            
+            if (!$userData || !isset($userData['uuid'])) {
+                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+            }
+            
+            // Extract token for permission check
+            $token = $userData['token'] ?? null;
+            
+            // Check if user has admin permissions using PermissionManager
+            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
+                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            }
+            
+            if (!isset($params['channel'])) {
+                return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+            
+            $channelName = $params['channel'];
+            
+            // Check if the channel exists
+            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
+            if (!in_array($channelName, $availableChannels)) {
+                return Response::error(
+                    "Channel '{$channelName}' not found or not available", 
+                    Response::HTTP_NOT_FOUND
+                )->send();
+            }
+            
+            // Reset metrics for the specific channel
+            $success = $this->notificationService->resetChannelMetrics($channelName);
+            
+            if (!$success) {
+                return Response::error(
+                    "Failed to reset metrics for channel '{$channelName}'", 
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+            
+            return Response::ok(
+                null, 
+                "Metrics for channel '{$channelName}' reset successfully"
+            )->send();
+            
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to reset channel metrics: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
