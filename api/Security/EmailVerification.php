@@ -165,21 +165,21 @@ class EmailVerification
             $result = $this->notificationService->send(
                 'email_verification',
                 $notifiable,
-                'Email Verification Code',
+                'Verify your email address',
                 [
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                     'app_name' => config('app.name', 'Glueful'),
                     'current_year' => date('Y'),
                     'message' => 'Your verification code is: ' . $otp, // Add a message for templates that use it
-                    'subject' => 'Email Verification Code', // Add subject directly to main data 
+                    'subject' => 'Verify your email address', // Update subject to match recent edits
                     'title' => 'Email Verification', // Fixed title explicitly for header
                     'template_data' => [  // Explicitly provide template data in the correct format
                         'otp' => $otp,
                         'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                         'app_name' => config('app.name', 'Glueful'),
                         'current_year' => date('Y'),
-                        'subject' => 'Email Verification Code', // Add subject to template data
+                        'subject' => 'Verify your email address', // Update subject to match recent edits
                         'title' => 'Email Verification'    // Add title to template data 
                     ],
                     'type' => 'email_verification', // Explicitly set the notification type
