@@ -123,6 +123,23 @@ Tracks database migrations and schema changes. This table ensures database versi
 | user_agent  | TEXT          | Client user agent                               |
 | created_at  | TIMESTAMP     | Record creation timestamp                       |
 
+### notifications
+| Column          | Type          | Description                                     |
+|-----------------|---------------|-------------------------------------------------|
+| id              | BIGINT        | Auto-incrementing primary key                   |
+| uuid            | CHAR(12)      | Unique identifier                               |
+| user_uuid       | CHAR(12)      | Reference to users.uuid (recipient)             |
+| type            | VARCHAR(50)   | Notification type identifier                    |
+| title           | VARCHAR(255)  | Notification title                              |
+| content         | TEXT          | Notification content                            |
+| data            | JSON          | Additional notification data                    |
+| read_at         | TIMESTAMP     | When the notification was read (null if unread) |
+| status          | VARCHAR(20)   | Status (delivered/read/failed)                  |
+| retry_count     | INT           | Number of delivery attempts                     |
+| next_retry_at   | TIMESTAMP     | Next scheduled retry timestamp                  |
+| created_at      | TIMESTAMP     | Record creation timestamp                       |
+| updated_at      | TIMESTAMP     | Record update timestamp                         |
+
 ## Table Relationships
 
 ```mermaid
@@ -134,6 +151,7 @@ erDiagram
     roles ||--o{ permissions : "has"
     users ||--o{ blobs : "creates"
     profiles ||--o| blobs : "has photo"
+    users ||--o{ notifications : "receives"
 ```
 
 ## Indexing Strategy
@@ -143,6 +161,24 @@ Each table implements appropriate indexes for:
 - Foreign keys
 - Frequently queried fields
 - UUID fields for efficient lookups
+- Multi-column indexes for optimized query patterns
+
+### Multi-Column Index Examples
+
+#### notifications
+- `idx_notifications_user_read`: (user_uuid, read_at) - Optimizes queries for unread notifications
+- `idx_notifications_type_status`: (type, status) - Improves filtering by type and status
+- `idx_notifications_retry`: (status, next_retry_at) - Enhances retrieval of failed notifications pending retry
+
+#### auth_sessions
+- `idx_auth_sessions_user_status`: (user_uuid, status) - Optimizes active session lookups by user
+- `idx_auth_sessions_expiry`: (status, access_expires_at) - Improves expired session cleanup
+
+### Index Naming Convention
+
+Indexes follow a standardized naming convention for clarity and maintenance:
+- `idx_[table]_[column1]_[column2]`: For multi-column indexes
+- `idx_[table]_[column]`: For single-column indexes
 
 ## Audit Trail
 

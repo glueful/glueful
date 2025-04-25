@@ -260,8 +260,14 @@ class ApiDefinitionGenerator {
                 mkdir($extensionDocsDir, 0755, true);
             }
             
-            // Use the ExtensionDocGenerator to auto-generate docs from route files
-            $extDocGen = new ExtensionDocGenerator();
+            // Create the routes documentation directory if it doesn't exist
+            $routesDocsDir = config('paths.api_docs') . 'api-doc-json-definitions/routes';
+            if (!is_dir($routesDocsDir)) {
+                mkdir($routesDocsDir, 0755, true);
+            }
+            
+            // Use the CommentsDocGenerator to auto-generate docs from route files
+            $extDocGen = new CommentsDocGenerator();
             
             if ($forceGenerate) {
                 $this->log("Forcing generation of extension documentation...");
@@ -281,25 +287,39 @@ class ApiDefinitionGenerator {
                         }
                     }
                 }
-            } else {
-                // Normal generation
-                $generatedFiles = $extDocGen->generateAll();
-            }
-            
-            if (!empty($generatedFiles)) {
-                $this->log("Dynamically generated documentation for " . count($generatedFiles) . " extensions");
-                foreach ($generatedFiles as $file) {
-                    $this->log("Generated: " . basename($file));
+                
+                // Force generation for main routes
+                $routeFiles = glob(dirname(__DIR__) . '/routes/*.php');
+                foreach ($routeFiles as $routeFile) {
+                    $routeName = basename($routeFile, '.php');
+                    $docFile = $extDocGen->generateForRouteFile($routeName, $routeFile, true);
+                    if ($docFile) {
+                        $generatedFiles[] = $docFile;
+                    }
                 }
             } else {
-                $this->log("No extension route files found for documentation generation");
+                // Normal generation for extensions
+                $generatedExtFiles = $extDocGen->generateAll();
+                
+                if (!empty($generatedExtFiles)) {
+                    $this->log("Dynamically generated documentation for " . count($generatedExtFiles) . " extensions");
+                    foreach ($generatedExtFiles as $file) {
+                        $this->log("Generated: " . basename($file));
+                    }
+                } else {
+                    $this->log("No extension route files found for documentation generation");
+                }
             }
             
             // Process the generated extension documentation 
             $docGenerator->generateFromExtensions($extensionDocsDir);
             $this->log("Processed extension API documentation");
+            
+            // Process the generated routes documentation
+            $docGenerator->generateFromRoutes($routesDocsDir);
+            $this->log("Processed main routes API documentation");
         } catch (\Exception $e) {
-            $this->log("Error generating extension documentation: " . $e->getMessage());
+            $this->log("Error generating documentation: " . $e->getMessage());
         }
 
         // Generate and save Swagger JSON
