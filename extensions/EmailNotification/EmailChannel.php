@@ -162,6 +162,13 @@ class EmailChannel implements NotificationChannel
      */
     public function format(array $data, Notifiable $notifiable): array
     {
+        // Check if data is already formatted
+        if (isset($data['html_content']) && isset($data['text_content'])) {
+            // Email is already formatted, return as-is
+            $this->logger->debug('Email already formatted, skipping second formatting');
+            return $data;
+        }
+        
         // Use the formatter to prepare email content
         return $this->formatter->format($data, $notifiable);
     }

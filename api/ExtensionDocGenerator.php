@@ -3,15 +3,16 @@ declare(strict_types=1);
 
 namespace Glueful;
 
+use ReflectionClass;
+use ReflectionMethod;
+
 /**
  * Extension Documentation Generator
  * 
- * Dynamically generates OpenAPI documentation for extension routes by:
+ * Generates OpenAPI documentation for extension routes by:
  * - Scanning extension directories for route files
- * - Checking for custom documentation files
- * - Parsing route definitions to extract endpoint information
- * - Generating OpenAPI specifications automatically
- * - Creating necessary directory structure
+ * - Extracting route documentation from doc comments
+ * - Generating OpenAPI specifications
  */
 class ExtensionDocGenerator
 {
@@ -70,9 +71,10 @@ class ExtensionDocGenerator
      * 
      * @param string $extensionName Extension name
      * @param string $routeFile Path to routes file
+     * @param bool $forceGenerate Force generation even if manual file exists
      * @return string|null Path to generated file or null on failure
      */
-    public function generateForExtension(string $extensionName, string $routeFile): ?string
+    public function generateForExtension(string $extensionName, string $routeFile, bool $forceGenerate = false): ?string
     {
         // Create extension docs directory if it doesn't exist
         $extDocsDir = $this->outputPath . '/' . $extensionName;
@@ -83,17 +85,40 @@ class ExtensionDocGenerator
         // Define output file path
         $outputFile = $extDocsDir . '/' . strtolower($extensionName) . '.json';
         
-        // Check for manual definition file
-        $manualDefFile = $extDocsDir . '/social_login.json';
-        if (file_exists($manualDefFile)) {
-            // Copy the manually created definition file
-            echo "Found manual definition file for {$extensionName}\n";
-            copy($manualDefFile, $outputFile);
-            return $outputFile;
+        // Check for metadata file that defines routes
+        $metadataFile = dirname($routeFile) . '/metadata.json';
+        if (file_exists($metadataFile) && !$forceGenerate) {
+            $metadata = json_decode(file_get_contents($metadataFile), true);
+            if (isset($metadata['openapi']) || isset($metadata['routes'])) {
+                // Use metadata as documentation source
+                file_put_contents($outputFile, json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                return $outputFile;
+            }
         }
         
-        // Parse routes file to extract route information
-        $this->parseRouteFile($routeFile);
+        // Check for manual OpenAPI definition files
+        if (!$forceGenerate) {
+            $possibleManualFiles = [
+                // Check in the extension directory for a schema file
+                dirname($routeFile) . '/schema.json',
+                dirname($routeFile) . '/openapi.json',
+                // Check in the docs directory
+                $extDocsDir . '/' . strtolower($extensionName) . '.json',
+            ];
+            
+            foreach ($possibleManualFiles as $manualFile) {
+                if (file_exists($manualFile)) {
+                    // Copy the manually created definition file
+                    if ($manualFile !== $outputFile) {
+                        copy($manualFile, $outputFile);
+                    }
+                    return $outputFile;
+                }
+            }
+        }
+        
+        // Parse routes file to extract doc comments
+        $this->parseRouteDocComments($routeFile);
         
         if (empty($this->routeData)) {
             return null;
@@ -109,11 +134,11 @@ class ExtensionDocGenerator
     }
     
     /**
-     * Parse route file to extract route information
+     * Parse route file to extract documentation from doc comments
      * 
      * @param string $routeFile Path to routes file
      */
-    private function parseRouteFile(string $routeFile): void
+    private function parseRouteDocComments(string $routeFile): void
     {
         $this->routeData = [];
         
@@ -123,238 +148,355 @@ class ExtensionDocGenerator
             return;
         }
         
-        // Extract PHPDoc comments for route groups
-        preg_match_all('/\/\*\*(.*?)\*\//s', $content, $docComments);
-        $groupDescription = '';
-        if (!empty($docComments[1])) {
-            // Use the first doc comment as the group description
-            $groupDescription = $this->parseDocComment($docComments[1][0]);
+        // Parse doc comment-based documentation
+        $this->parseDocCommentBasedDocs($routeFile);
+    }
+    
+    /**
+     * Parse doc comment-based documentation
+     * 
+     * @param string $routeFile Path to the routes file
+     * @return bool True if any doc comment-based documentation was found
+     */
+    private function parseDocCommentBasedDocs(string $routeFile): bool
+    {
+        // Get file content
+        $content = file_get_contents($routeFile);
+        if (!$content) {
+            return false;
         }
         
-        // Extract route groups
-        preg_match_all('/Router::group\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*function\s*\(\s*\)\s*{(.*?)}\s*\)\s*;/s', $content, $groups);
+        $foundDocComments = false;
         
-        if (empty($groups[1])) {
-            return;
-        }
-        
-        // Process each route group
-        foreach ($groups[1] as $index => $groupPrefix) {
-            $groupContent = $groups[2][$index];
-            
-            // First, check for Router::match calls which handle multiple methods
-            $this->parseMatchRoutes($groupContent, $groupPrefix);
-            
-            // Then extract standard routes within the group
-            preg_match_all('/Router::(get|post|put|delete|patch)\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*function\s*\(\s*.*?\)\s*{(.*?)(?:}\s*,?\s*(?:requiresAuth\s*:\s*(true|false))?\s*\)\s*;)/s', $groupContent, $routes);
-            
-            if (empty($routes[1])) {
-                continue;
-            }
-            
-            // Process each route
-            for ($i = 0; $i < count($routes[1]); $i++) {
-                $method = strtoupper($routes[1][$i]);
-                $path = $groupPrefix . $routes[2][$i];
-                $routeBody = $routes[3][$i];
-                $requiresAuth = isset($routes[4][$i]) && $routes[4][$i] === 'true';
+        // Look for doc comments with @route annotation
+        $pattern = '/\/\*\*\s*([^*]|\*[^\/])*@route\s+([A-Z]+)\s+([^\s\*]+)([^*]|\*[^\/])*\*\//';
+        if (preg_match_all($pattern, $content, $commentMatches)) {
+            foreach ($commentMatches[0] as $index => $docComment) {
+                // Extract route information
+                $httpMethod = strtolower($commentMatches[2][$index]);
+                $routePath = $commentMatches[3][$index];
                 
-                // Extract route description from comments
-                $routeDescription = $this->extractRouteDescription($routeBody);
+                // Extract basic info
+                $summary = $this->extractDocTag($docComment, '@summary');
+                $description = $this->extractDocTag($docComment, '@description');
+                $tag = $this->extractDocTag($docComment, '@tag');
+                $requiresAuth = strtolower($this->extractDocTag($docComment, '@requiresAuth')) === 'true';
                 
-                // Extract request body schema
-                $requestBody = $this->extractRequestBody($routeBody);
+                // Extract responses using simplified syntax
+                $responses = $this->extractSimplifiedResponses($docComment);
                 
-                // Extract response structure
-                $responseStructure = $this->extractResponseStructure($routeBody);
+                // Extract request body using simplified syntax
+                $requestBody = $this->extractSimplifiedRequestBody($docComment);
                 
-                // Extract path parameters
-                $pathParams = $this->extractPathParameters($path);
+                // Extract parameters
+                $pathParams = $this->extractSimplifiedParameters($docComment);
                 
-                // Store route information
+                // If no explicit parameters were defined but path contains parameters,
+                // extract them from the path
+                if (empty($pathParams) && strpos($routePath, '{') !== false) {
+                    $pathParams = $this->extractPathParameters($routePath);
+                }
+                
+                // Add to route data
                 $this->routeData[] = [
-                    'method' => $method,
-                    'path' => $path,
-                    'description' => $routeDescription,
-                    'requestBody' => $requestBody,
+                    'method' => strtoupper($httpMethod),
+                    'path' => $routePath,
+                    'summary' => $summary,
+                    'description' => $description,
+                    'tag' => $tag ?: $this->deriveTagFromPath($routePath),
                     'requiresAuth' => $requiresAuth,
-                    'pathParams' => $pathParams,
-                    'responseStructure' => $responseStructure
-                ];
-            }
-        }
-    }
-    
-    /**
-     * Parse Router::match routes that handle multiple HTTP methods
-     * 
-     * @param string $groupContent Content of the route group
-     * @param string $groupPrefix Group URL prefix
-     */
-    private function parseMatchRoutes(string $groupContent, string $groupPrefix): void
-    {
-        // Match Router::match(['GET', 'POST'], '/path', function...)
-        preg_match_all('/Router::match\s*\(\s*\[(.*?)\]\s*,\s*[\'"]([^\'"]+)[\'"]\s*,\s*function\s*\(\s*.*?\)\s*{(.*?)(?:}\s*,?\s*(?:requiresAuth\s*:\s*(true|false))?\s*\)\s*;)/s', $groupContent, $matches);
-        
-        if (empty($matches[1])) {
-            return;
-        }
-        
-        for ($i = 0; $i < count($matches[1]); $i++) {
-            $methodsStr = $matches[1][$i];
-            $path = $groupPrefix . $matches[2][$i];
-            $routeBody = $matches[3][$i];
-            $requiresAuth = isset($matches[4][$i]) && $matches[4][$i] === 'true';
-            
-            // Extract HTTP methods from the array
-            preg_match_all('/[\'"]([A-Z]+)[\'"]/', $methodsStr, $methodMatches);
-            $methods = $methodMatches[1];
-            
-            if (empty($methods)) {
-                continue;
-            }
-            
-            // Extract route description from comments
-            $routeDescription = $this->extractRouteDescription($routeBody);
-            
-            // Extract condition checks that might distinguish between methods
-            $methodHandlers = $this->extractMethodHandlers($routeBody, $methods);
-            
-            // For each method, create a route entry
-            foreach ($methods as $method) {
-                // Extract request body schema - might depend on the method
-                $requestBody = $this->extractRequestBody($methodHandlers[$method] ?? $routeBody, $method);
-                
-                // Extract response structure
-                $responseStructure = $this->extractResponseStructure($methodHandlers[$method] ?? $routeBody);
-                
-                // Extract path parameters
-                $pathParams = $this->extractPathParameters($path);
-                
-                // Store route information
-                $this->routeData[] = [
-                    'method' => $method,
-                    'path' => $path,
-                    'description' => $routeDescription,
+                    'responses' => $responses,
                     'requestBody' => $requestBody,
-                    'requiresAuth' => $requiresAuth,
-                    'pathParams' => $pathParams,
-                    'responseStructure' => $responseStructure
+                    'pathParams' => $pathParams
                 ];
-            }
-        }
-    }
-    
-    /**
-     * Extract method-specific handlers from a multi-method route
-     * 
-     * @param string $routeBody Route handler function body
-     * @param array $methods HTTP methods supported by the route
-     * @return array Associative array mapping methods to their handler code
-     */
-    private function extractMethodHandlers(string $routeBody, array $methods): array
-    {
-        $handlers = [];
-        
-        // Look for method checks like if ($request->getMethod() === 'POST')
-        preg_match_all('/if\s*\(\s*\$request->(?:getMethod|request->method)\s*(?:==|===)\s*[\'"]([A-Z]+)[\'"]\s*\)\s*{(.*?)}/s', $routeBody, $matches);
-        
-        if (!empty($matches[1])) {
-            for ($i = 0; $i < count($matches[1]); $i++) {
-                $method = $matches[1][$i];
-                $handlers[$method] = $matches[2][$i];
+                
+                $foundDocComments = true;
             }
         }
         
-        // For methods without explicit handlers, use the full body
-        foreach ($methods as $method) {
-            if (!isset($handlers[$method])) {
-                $handlers[$method] = $routeBody;
-            }
-        }
-        
-        return $handlers;
+        return $foundDocComments;
     }
     
     /**
-     * Extract route description from the handler body or comments
+     * Extract simplified request body format from doc comment
+     * Format: @requestBody field1:type[enum]="description" field2:type="description" {required=field1,field2}
      * 
-     * @param string $routeBody Route handler function body
-     * @return string Extracted description
+     * @param string $docComment Doc comment to parse
+     * @return array|null Request body schema or null if not found
      */
-    private function extractRouteDescription(string $routeBody): string
+    private function extractSimplifiedRequestBody(string $docComment): ?array
     {
-        // Look for inline comments
-        if (preg_match('/\/\/\s*(.*?)$/m', $routeBody, $routeComment)) {
-            return trim($routeComment[1]);
-        }
-        
-        // Look for multiline comments
-        if (preg_match('/\/\*\s*(.*?)\s*\*\//s', $routeBody, $routeComment)) {
-            return trim($routeComment[1]);
-        }
-        
-        // Look for log messages or response messages that might describe the route
-        if (preg_match('/Response::ok\s*\(\s*.*?,\s*[\'"]([^\'"]+)[\'"]\s*\)/s', $routeBody, $responseMessage)) {
-            return trim($responseMessage[1]);
-        }
-        
-        return '';
-    }
-    
-    /**
-     * Extract request body schema from route handler
-     * 
-     * @param string $routeBody Route handler function body
-     * @param string $method HTTP method
-     * @return array|null Request body schema or null if not needed
-     */
-    private function extractRequestBody(string $routeBody, string $method = ''): ?array
-    {
-        // Only POST, PUT, PATCH typically have request bodies
-        if ($method && !in_array($method, ['POST', 'PUT', 'PATCH'])) {
+        if (!preg_match('/@requestBody\s+([^\n]+)/', $docComment, $matches)) {
             return null;
         }
         
-        $schema = null;
+        $requestBodyStr = $matches[1];
+        $required = [];
         
-        // Check for JSON deserialization
-        if (preg_match('/json_decode\s*\(\s*\$request->getContent\(\)\s*,\s*true\s*\)/s', $routeBody)) {
-            $schema = [
-                'type' => 'object',
-                'properties' => []
-            ];
+        // Extract required fields if specified
+        if (preg_match('/\{required=([^}]+)\}/', $requestBodyStr, $reqMatches)) {
+            $required = array_map('trim', explode(',', $reqMatches[1]));
+            // Remove the required part from the string
+            $requestBodyStr = str_replace($reqMatches[0], '', $requestBodyStr);
+        }
+        
+        // Parse fields
+        $properties = [];
+        $pattern = '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/';
+        
+        preg_match_all($pattern, $requestBodyStr, $fieldMatches, PREG_SET_ORDER);
+        
+        foreach ($fieldMatches as $match) {
+            $name = $match[1];
+            $type = $match[2];
+            $enum = isset($match[3]) && !empty($match[3]) ? array_map('trim', explode(',', $match[3])) : null;
+            $description = $match[4] ?? '';
             
-            // Try to extract validation or property access to determine schema
-            preg_match_all('/\$requestData\s*\[\s*[\'"]([^\'"]+)[\'"]\s*\]/', $routeBody, $propMatches);
-            if (!empty($propMatches[1])) {
-                foreach ($propMatches[1] as $prop) {
-                    $schema['properties'][$prop] = ['type' => 'string'];
-                    
-                    // Check if property is required
-                    if (preg_match('/if\s*\(\s*empty\s*\(\s*\$requestData\s*\[\s*[\'"]' . preg_quote($prop, '/') . '[\'"]\s*\]\s*\)\s*\)/', $routeBody)) {
-                        $schema['required'] = $schema['required'] ?? [];
-                        $schema['required'][] = $prop;
-                    }
-                }
+            $property = ['type' => $type];
+            
+            if ($enum) {
+                $property['enum'] = $enum;
             }
+            
+            if ($description) {
+                $property['description'] = $description;
+            }
+            
+            $properties[$name] = $property;
+        }
+        
+        $schema = [
+            'type' => 'object',
+            'properties' => $properties
+        ];
+        
+        if (!empty($required)) {
+            $schema['required'] = $required;
         }
         
         return $schema;
     }
     
     /**
-     * Extract path parameters from route path
+     * Extract simplified responses from doc comment
+     * Format: @response code contentType "description" {schema}
+     * 
+     * @param string $docComment Doc comment to parse
+     * @return array Response definitions
+     */
+    private function extractSimplifiedResponses(string $docComment): array
+    {
+        $responses = [];
+        $pattern = '/@response\s+(\d+)\s+([\w\/\-+]+)?\s+"([^"]*)"\s*(\{[^}]*\})?/';
+        
+        preg_match_all($pattern, $docComment, $matches, PREG_SET_ORDER);
+        
+        foreach ($matches as $match) {
+            $statusCode = $match[1];
+            $contentType = $match[2] ?? 'application/json';
+            $description = $match[3];
+            $schemaStr = isset($match[4]) ? $match[4] : null;
+            
+            if ($schemaStr) {
+                // Parse schema from the simplified format
+                $schema = $this->parseSimplifiedSchema($schemaStr);
+                
+                $responses[$statusCode] = [
+                    'description' => $description ?: $this->getDefaultResponseDescription($statusCode),
+                    'content' => [
+                        $contentType => [
+                            'schema' => $schema
+                        ]
+                    ]
+                ];
+            } else {
+                $responses[$statusCode] = [
+                    'description' => $description ?: $this->getDefaultResponseDescription($statusCode)
+                ];
+            }
+        }
+        
+        // Add default responses if none specified
+        if (empty($responses)) {
+            $responses = [
+                '200' => [
+                    'description' => 'Successful operation'
+                ],
+                '400' => [
+                    'description' => 'Bad request'
+                ],
+                '500' => [
+                    'description' => 'Server error'
+                ]
+            ];
+        }
+        
+        return $responses;
+    }
+    
+    /**
+     * Parse simplified schema format
+     * Format: {field1:type="description", field2:{nestedField:type}}
+     * 
+     * @param string $schemaStr Schema string to parse
+     * @return array Parsed schema
+     */
+    private function parseSimplifiedSchema(string $schemaStr): array
+    {
+        // Clean up the schema string
+        $schemaStr = trim($schemaStr, '{} ');
+        $parts = [];
+        $start = 0;
+        $braceCount = 0;
+        $inQuotes = false;
+        
+        // Split on commas, but respect nested objects and quoted strings
+        for ($i = 0; $i < strlen($schemaStr); $i++) {
+            $char = $schemaStr[$i];
+            
+            if ($char === '"' && ($i === 0 || $schemaStr[$i-1] !== '\\')) {
+                $inQuotes = !$inQuotes;
+            } elseif (!$inQuotes && $char === '{') {
+                $braceCount++;
+            } elseif (!$inQuotes && $char === '}') {
+                $braceCount--;
+            } elseif (!$inQuotes && $char === ',' && $braceCount === 0) {
+                $parts[] = substr($schemaStr, $start, $i - $start);
+                $start = $i + 1;
+            }
+        }
+        
+        // Add the last part
+        if ($start < strlen($schemaStr)) {
+            $parts[] = substr($schemaStr, $start);
+        }
+        
+        $properties = [];
+        $type = 'object';
+        
+        // Process simple array notation
+        if (strpos($schemaStr, '[') === 0 && substr($schemaStr, -1) === ']') {
+            $type = 'array';
+            $itemsSchema = $this->parseSimplifiedSchema(substr($schemaStr, 1, -1));
+            return [
+                'type' => 'array',
+                'items' => $itemsSchema
+            ];
+        }
+        
+        // Process each part as a property
+        foreach ($parts as $part) {
+            $part = trim($part);
+            
+            // Match field with type and optional description
+            if (preg_match('/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/', $part, $match)) {
+                $name = $match[1];
+                $propType = $match[2];
+                $description = isset($match[4]) ? $match[4] : (isset($match[3]) ? $match[3] : '');
+                
+                $property = ['type' => $propType];
+                
+                if (isset($match[3]) && preg_match('/^[^"=]/', $match[3])) {
+                    // This is an enum
+                    $property['enum'] = array_map('trim', explode(',', $match[3]));
+                }
+                
+                if ($description) {
+                    $property['description'] = $description;
+                }
+                
+                $properties[$name] = $property;
+            }
+            // Match field with object value
+            elseif (preg_match('/(\w+):(\{[^}]+\})/', $part, $match)) {
+                $name = $match[1];
+                $nestedSchema = $this->parseSimplifiedSchema($match[2]);
+                $properties[$name] = $nestedSchema;
+            }
+            // Match field with array value
+            elseif (preg_match('/(\w+):(\[[^\]]+\])/', $part, $match)) {
+                $name = $match[1];
+                $itemsSchema = $this->parseSimplifiedSchema(substr($match[2], 1, -1));
+                $properties[$name] = [
+                    'type' => 'array',
+                    'items' => $itemsSchema
+                ];
+            }
+        }
+        
+        return [
+            'type' => $type,
+            'properties' => $properties
+        ];
+    }
+    
+    /**
+     * Extract simplified parameters from doc comment
+     * Format: @param name location type required "description"
+     * 
+     * @param string $docComment Doc comment to parse
+     * @return array Parameter definitions
+     */
+    private function extractSimplifiedParameters(string $docComment): array
+    {
+        $params = [];
+        $pattern = '/@param\s+(\w+)\s+(path|query|header|cookie)\s+(string|integer|number|boolean|array|object)\s+(true|false)\s+"([^"]*)"/';
+        
+        preg_match_all($pattern, $docComment, $matches, PREG_SET_ORDER);
+        
+        foreach ($matches as $match) {
+            $params[] = [
+                'name' => $match[1],
+                'in' => $match[2],
+                'required' => $match[4] === 'true',
+                'description' => $match[5],
+                'schema' => ['type' => $match[3]]
+            ];
+        }
+        
+        return $params;
+    }
+    
+    /**
+     * Derive tag from path
+     * 
+     * @param string $path API path
+     * @return string Tag name
+     */
+    private function deriveTagFromPath(string $path): string
+    {
+        $pathParts = explode('/', trim($path, '/'));
+        return ucfirst($pathParts[0] ?? 'default');
+    }
+    
+    /**
+     * Extract a specific tag value from a doc comment
+     * 
+     * @param string $docComment Doc comment to parse
+     * @param string $tagName Tag name to extract
+     * @return string Tag value or empty string if not found
+     */
+    private function extractDocTag(string $docComment, string $tagName): string
+    {
+        $pattern = '/' . preg_quote($tagName) . '\s+([^\r\n]+)/';
+        if (preg_match($pattern, $docComment, $matches)) {
+            return trim($matches[1]);
+        }
+        return '';
+    }
+    
+    /**
+     * Extract path parameters from a route path
      * 
      * @param string $path Route path
      * @return array Path parameters
      */
     private function extractPathParameters(string $path): array
     {
-        $pathParams = [];
+        $params = [];
         if (preg_match_all('/\{([^}]+)\}/', $path, $matches)) {
             foreach ($matches[1] as $param) {
-                $pathParams[] = [
+                $params[] = [
                     'name' => $param,
                     'in' => 'path',
                     'required' => true,
@@ -362,73 +504,29 @@ class ExtensionDocGenerator
                 ];
             }
         }
-        return $pathParams;
+        return $params;
     }
     
     /**
-     * Extract response structure from route handler body
+     * Get standard description for HTTP status code
      * 
-     * @param string $routeBody Route handler function body
-     * @return array Response structure
+     * @param string $statusCode HTTP status code
+     * @return string Description
      */
-    private function extractResponseStructure(string $routeBody): array
+    private function getDefaultResponseDescription(string $statusCode): string
     {
-        $structure = [
-            'success' => true,
-            'data' => []
+        $descriptions = [
+            '200' => 'OK',
+            '201' => 'Created',
+            '204' => 'No Content',
+            '400' => 'Bad Request',
+            '401' => 'Unauthorized',
+            '403' => 'Forbidden',
+            '404' => 'Not Found',
+            '500' => 'Internal Server Error'
         ];
         
-        // Check for Response::ok calls
-        if (preg_match_all('/Response::ok\s*\(\s*(.*?)\s*(?:,|\))/s', $routeBody, $matches)) {
-            foreach ($matches[1] as $match) {
-                // Check if we're returning an array structure we can parse
-                if (preg_match('/\[(.*?)\]/', $match, $arrayMatch)) {
-                    $arrayContent = $arrayMatch[1];
-                    preg_match_all('/[\'"]([^\'"]+)[\'"]\s*=>\s*/', $arrayContent, $keyMatches);
-                    
-                    if (!empty($keyMatches[1])) {
-                        foreach ($keyMatches[1] as $key) {
-                            $structure['data'][$key] = 'string';
-                        }
-                    }
-                }
-                
-                // Check for database queries to determine response shape
-                if (preg_match('/select\s*\(\s*[\'"][^\'"]+[\'"]\s*,\s*\[(.*?)\]\s*\)/s', $routeBody, $dbMatch)) {
-                    $fields = explode(',', $dbMatch[1]);
-                    foreach ($fields as $field) {
-                        if (preg_match('/[\'"]([^\'"]+)[\'"]/', $field, $nameMatch)) {
-                            $structure['data'][$nameMatch[1]] = 'string';
-                        }
-                    }
-                }
-            }
-        }
-        
-        return $structure;
-    }
-    
-    /**
-     * Parse PHPDoc comment to extract description
-     * 
-     * @param string $docComment PHPDoc comment
-     * @return string Extracted description
-     */
-    private function parseDocComment(string $docComment): string
-    {
-        // Remove asterisks and leading whitespace
-        $lines = explode("\n", $docComment);
-        $description = '';
-        
-        foreach ($lines as $line) {
-            $line = preg_replace('/^\s*\*\s*/', '', $line);
-            if (strpos($line, '@') === 0) {
-                continue; // Skip annotation lines
-            }
-            $description .= $line . "\n";
-        }
-        
-        return trim($description);
+        return $descriptions[$statusCode] ?? 'Response';
     }
     
     /**
@@ -440,30 +538,34 @@ class ExtensionDocGenerator
     private function generateOpenApiSpec(string $extensionName): array
     {
         $paths = [];
-        $tags = [];
         
-        // Group routes by first path segment for tagging
+        // Format extension name for display
+        $formattedExtName = str_replace(['_', '-'], ' ', $extensionName);
+        $formattedExtName = ucwords($formattedExtName);
+        
+        // Group routes by tag
         $routesByTag = [];
         foreach ($this->routeData as $route) {
-            $pathSegments = explode('/', trim($route['path'], '/'));
-            $tag = $pathSegments[0] ?? 'default';
+            $tag = $route['tag'];
             
             if (!isset($routesByTag[$tag])) {
                 $routesByTag[$tag] = [];
-                $tags[] = [
-                    'name' => ucfirst($tag),
-                    'description' => "Operations related to " . ucfirst($tag)
-                ];
             }
             
             $routesByTag[$tag][] = $route;
         }
         
+        // Create tags
+        $tags = [];
+        foreach (array_keys($routesByTag) as $tag) {
+            $tags[] = [
+                'name' => $tag,
+                'description' => 'Operations related to ' . $tag
+            ];
+        }
+        
         // Generate paths
         foreach ($this->routeData as $route) {
-            $pathSegments = explode('/', trim($route['path'], '/'));
-            $tag = $pathSegments[0] ?? 'default';
-            
             $path = $route['path'];
             $method = strtolower($route['method']);
             
@@ -474,43 +576,10 @@ class ExtensionDocGenerator
             
             // Create operation object
             $operation = [
-                'tags' => [ucfirst($tag)],
-                'summary' => $route['description'] ?: ucfirst($method) . ' ' . $path,
-                'description' => $route['description'] ?: 'Endpoint for ' . $path,
-                'responses' => [
-                    '200' => [
-                        'description' => 'Successful response',
-                        'content' => [
-                            'application/json' => [
-                                'schema' => [
-                                    'type' => 'object',
-                                    'properties' => [
-                                        'status' => [
-                                            'type' => 'string',
-                                            'example' => 'success'
-                                        ],
-                                        'message' => [
-                                            'type' => 'string'
-                                        ],
-                                        'data' => [
-                                            'type' => 'object',
-                                            'properties' => $this->mapResponseStructure($route['responseStructure']['data'] ?? [])
-                                        ]
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ],
-                    '400' => [
-                        'description' => 'Bad request'
-                    ],
-                    '401' => [
-                        'description' => 'Unauthorized'
-                    ],
-                    '500' => [
-                        'description' => 'Server error'
-                    ]
-                ]
+                'tags' => [$route['tag']],
+                'summary' => $route['summary'],
+                'description' => $route['description'],
+                'responses' => $route['responses']
             ];
             
             // Add request body if present
@@ -543,8 +612,8 @@ class ExtensionDocGenerator
         return [
             'openapi' => '3.0.0',
             'info' => [
-                'title' => $extensionName . ' API',
-                'description' => 'API documentation for ' . $extensionName . ' extension',
+                'title' => $formattedExtName . ' API',
+                'description' => 'API documentation for ' . $formattedExtName . ' extension',
                 'version' => '1.0.0'
             ],
             'paths' => $paths,
@@ -560,96 +629,4 @@ class ExtensionDocGenerator
             'tags' => $tags
         ];
     }
-    
-    /**
-     * Map extracted data structure to OpenAPI schema properties
-     * 
-     * @param array $data Extracted data structure
-     * @return array OpenAPI schema properties
-     */
-    private function mapResponseStructure(array $data): array
-    {
-        $properties = [];
-        
-        foreach ($data as $field => $type) {
-            $properties[$field] = [
-                'type' => $this->mapDataType($type)
-            ];
-        }
-        
-        return $properties;
-    }
-    
-    /**
-     * Map PHP/database data type to OpenAPI type
-     * 
-     * @param string $type PHP/database type
-     * @return string OpenAPI type
-     */
-    private function mapDataType(string $type): string
-    {
-        switch ($type) {
-            case 'int':
-            case 'integer':
-                return 'integer';
-            case 'float':
-            case 'double':
-                return 'number';
-            case 'bool':
-            case 'boolean':
-                return 'boolean';
-            case 'array':
-                return 'array';
-            default:
-                return 'string';
-        }
-    }
-    
-    /**
-     * Main entry point for CLI usage
-     * 
-     * @param array $args Command line arguments
-     * @return void
-     */
-    public static function main(array $args): void
-    {
-        if (count($args) < 2) {
-            echo "Usage: php ExtensionDocGenerator.php <extension_name>\n";
-            echo "       php ExtensionDocGenerator.php all\n";
-            return;
-        }
-        
-        $generator = new self();
-        
-        if ($args[1] === 'all') {
-            echo "Generating documentation for all extensions...\n";
-            $files = $generator->generateAll();
-            echo "Generated " . count($files) . " documentation files:\n";
-            foreach ($files as $file) {
-                echo "- $file\n";
-            }
-        } else {
-            $extensionName = $args[1];
-            $routeFile = $generator->extensionsPath . '/' . $extensionName . '/routes.php';
-            
-            if (!file_exists($routeFile)) {
-                echo "Error: Routes file not found for extension '$extensionName'\n";
-                return;
-            }
-            
-            echo "Generating documentation for extension '$extensionName'...\n";
-            $file = $generator->generateForExtension($extensionName, $routeFile);
-            
-            if ($file) {
-                echo "Documentation generated: $file\n";
-            } else {
-                echo "Failed to generate documentation for extension '$extensionName'\n";
-            }
-        }
-    }
-}
-
-// Run the generator if invoked directly
-if (basename($_SERVER['SCRIPT_FILENAME']) === basename(__FILE__)) {
-    ExtensionDocGenerator::main($argv);
 }

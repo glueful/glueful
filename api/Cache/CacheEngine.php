@@ -31,21 +31,25 @@ class CacheEngine
      * 
      * @param string $prefix Optional key prefix
      * @param string $driver Optional driver type
+     * @return bool True if initialization successful
      */
-    public static function initialize(string $prefix = '', string $driver = ''): void 
+    public static function initialize(string $prefix = '', string $driver = ''): bool 
     {
+        // Define CACHE_ENGINE constant if not already defined
         if (!defined('CACHE_ENGINE')) {
-            return;
+            define('CACHE_ENGINE', true);
         }
 
         self::$prefix = $prefix ?: config('cache.prefix');
         
         try {
-            self::$driver = CacheFactory::create();
+            self::$driver = CacheFactory::create($driver);
             self::$enabled = true;
+            return true;
         } catch (\Exception $e) {
-            error_log("Cache initialization failed: " . $e->getMessage());
+            error_log("Cache initialization failed: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
             self::$enabled = false;
+            return false;
         }
     }
 
@@ -195,5 +199,15 @@ class CacheEngine
     public static function isEnabled(): bool 
     {
         return self::ensureEnabled();
+    }
+
+    /**
+     * Check if cache driver is initialized
+     * 
+     * @return bool True if cache driver is initialized
+     */
+    public static function isInitialized(): bool
+    {
+        return self::$driver !== null;
     }
 }

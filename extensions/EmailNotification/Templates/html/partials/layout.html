@@ -101,39 +101,7 @@
 <body>
     <div class="wrapper">
         <div class="content">
-            {{> header}}
-            <div class="message">
-                <p>Hello{{#if name}} {{name}}{{/if}},</p>
-                
-                {{#if otp}}
-                <p>Your verification code is:</p>
-                <div class="otp-container">
-                    <div class="otp-code">{{otp}}</div>
-                </div>
-                {{#if expiry_minutes}}
-                <p>This code will expire in {{expiry_minutes}} minutes.</p>
-                {{/if}}
-                {{/if}}
-                
-                {{#if message}}
-                <p>{{message}}</p>
-                {{/if}}
-                
-                {{#if details}}
-                <div class="alert-box">
-                    <p style="margin: 0;"><strong>Details:</strong> {{details}}</p>
-                </div>
-                {{/if}}
-                
-                {{#if action_url}}
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{{action_url}}" class="btn">
-                        {{#if action_text}}{{action_text}}{{else}}Get Started{{/if}}
-                    </a>
-                </div>
-                {{/if}}
-            </div>
-            {{> footer}}
+            {{content}}
         </div>
     </div>
 </body>

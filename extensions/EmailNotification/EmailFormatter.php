@@ -63,6 +63,7 @@ class EmailFormatter
      */
     public function format(array $data, Notifiable $notifiable): array
     {
+        
         // Determine the notification type and corresponding template
         $type = $data['type'] ?? 'default';
         $templateName = $data['template_name'] ?? $this->defaultOptions['default_template'];
@@ -86,9 +87,19 @@ class EmailFormatter
         
         // Get the template content
         $template = $this->getTemplate($type, $templateName);
+
         
         // Set notification data for template rendering
         $templateData = $data['template_data'] ?? $data;
+        
+        // Always include subject and title in template data
+        $templateData['subject'] = $result['subject'];
+        $templateData['title'] = $result['subject']; // Add title as an alias to subject
+        
+        // Ensure logo_url is always available, using config default if not provided
+        if (!isset($templateData['logo_url'])) {
+            $templateData['logo_url'] = config('mail.logo_url', 'https://brand.glueful.com/logo.png');
+        }
         
         // Add notifiable information
         $templateData['notifiable_id'] = $notifiable->getNotifiableId();
@@ -150,17 +161,36 @@ class EmailFormatter
      */
     protected function renderTemplate($template, array $data): string
     {
+        
         // If template is a file path, load the file
         if (is_string($template) && file_exists($template)) {
             $fileContent = file_get_contents($template);
             if ($fileContent !== false) {
-                return $this->replaceVariables($fileContent, $data);
+
+                // Process the template content with variables
+                $rendered = $this->replaceVariables($fileContent, $data);
+                
+                // Apply the layout if it's not already a complete HTML document
+                if (strpos($rendered, '<!DOCTYPE html>') === false) {
+                    $rendered = $this->applyLayout($rendered, $data);
+                }
+                
+                return $rendered;
+            } else {
+                error_log("EmailFormatter: Failed to load template file");
             }
         }
         
         // If template is a string, substitute variables
         if (is_string($template)) {
-            return $this->replaceVariables($template, $data);
+            $rendered = $this->replaceVariables($template, $data);
+            
+            // Apply the layout if it's not already a complete HTML document
+            if (strpos($rendered, '<!DOCTYPE html>') === false) {
+                $rendered = $this->applyLayout($rendered, $data);
+            }
+            
+            return $rendered;
         }
         
         // If template is a structured array with header, body, footer
@@ -175,6 +205,8 @@ class EmailFormatter
             // Add body (required)
             if (isset($template['body'])) {
                 $html .= $this->replaceVariables($template['body'], $data);
+            } else {
+                error_log("EmailFormatter: Template body is missing!");
             }
             
             // Add footer if requested
@@ -182,11 +214,41 @@ class EmailFormatter
                 $html .= $this->replaceVariables($template['footer'], $data);
             }
             
+            // Apply the layout if it's not already a complete HTML document
+            if (strpos($html, '<!DOCTYPE html>') === false) {
+                $html = $this->applyLayout($html, $data);
+            }
+            
             return $html;
         }
         
         // Fallback: return a simple message
-        return '<p>Notification: ' . ($data['subject'] ?? 'No subject') . '</p>';
+        $fallback = '<p>Notification: ' . ($data['subject'] ?? 'No subject') . '</p>';
+        return $this->applyLayout($fallback, $data);
+    }
+    
+    /**
+     * Apply layout template to content
+     * 
+     * @param string $content The template content
+     * @param array $data Variables for substitution
+     * @return string Content wrapped in layout
+     */
+    protected function applyLayout(string $content, array $data): string
+    {
+        $layoutPath = $this->defaultOptions['templates_path'] . '/partials/layout.html';
+        
+        if (file_exists($layoutPath)) {
+            $layout = file_get_contents($layoutPath);
+            if ($layout !== false) {
+                // Add the content to the data for the layout template
+                $layoutData = array_merge($data, ['content' => $content]);
+                return $this->replaceVariables($layout, $layoutData);
+            }
+        }
+        
+        // If layout doesn't exist, just return the content
+        return $content;
     }
     
     /**
@@ -198,6 +260,16 @@ class EmailFormatter
      */
     protected function replaceVariables(string $template, array $data): string
     {
+        // Process template includes in the form {{> partial_name}}
+        $template = preg_replace_callback(
+            '/\{\{>\s+([a-zA-Z0-9_\-\.\/]+)\}\}/',
+            function ($matches) use ($data) {
+                $partialName = trim($matches[1]);
+                return $this->includePartial($partialName, $data);
+            },
+            $template
+        );
+        
         // Process conditional blocks {{#if variable}}...content...{{/if}}
         $template = preg_replace_callback(
             '/\{\{#if\s+([a-zA-Z0-9_\.]+)\}\}(.*?)\{\{\/if\}\}/s',
@@ -215,34 +287,59 @@ class EmailFormatter
             $template
         );
         
-        // Replace simple variables in the form {{variable}}
+        // Replace simple variables in the form {{variable}} or {{variable|default}}
         $result = preg_replace_callback(
-            '/\{\{([a-zA-Z0-9_\.]+)\}\}/',
+            '/\{\{([^}]+)\}\}/',
             function ($matches) use ($data) {
-                $key = $matches[1];
+                $parts = explode('|', $matches[1]);
+                $key = trim($parts[0]);
+                $default = isset($parts[1]) ? trim($parts[1]) : '';
                 
                 // Handle nested keys with dot notation (e.g., user.name)
                 if (strpos($key, '.') !== false) {
-                    $parts = explode('.', $key);
+                    $keyParts = explode('.', $key);
                     $value = $data;
                     
-                    foreach ($parts as $part) {
+                    foreach ($keyParts as $part) {
                         if (is_array($value) && isset($value[$part])) {
                             $value = $value[$part];
                         } else {
-                            return ''; // Key not found
+                            return $default; // Key not found, use default
                         }
                     }
                     
-                    return is_scalar($value) ? (string)$value : '';
+                    return is_scalar($value) ? (string)$value : $default;
                 }
                 
-                return isset($data[$key]) && is_scalar($data[$key]) ? (string)$data[$key] : '';
+                return isset($data[$key]) && is_scalar($data[$key]) ? (string)$data[$key] : $default;
             },
             $template
         );
         
         return $result;
+    }
+    
+    /**
+     * Include a partial template
+     * 
+     * @param string $partialName Name of the partial to include
+     * @param array $data Variables for substitution
+     * @return string Rendered partial content
+     */
+    protected function includePartial(string $partialName, array $data): string
+    {
+        $partialsPath = $this->defaultOptions['templates_path'] . '/partials';
+        $partialFile = $partialsPath . '/' . $partialName . '.html';
+        
+        if (file_exists($partialFile)) {
+            $partialContent = file_get_contents($partialFile);
+            if ($partialContent !== false) {
+                // Process the partial content (allows nested includes)
+                return $this->replaceVariables($partialContent, $data);
+            }
+        }
+        
+        return '<!-- Partial not found: ' . $partialName . ' -->';
     }
     
     /**
@@ -277,115 +374,30 @@ class EmailFormatter
     {
         $templatesPath = $this->defaultOptions['templates_path'];
         
-        // Load templates from files if they exist
-        if (file_exists($templatesPath)) {
-            // Default template
-            if (file_exists($templatesPath . '/default.html')) {
-                $this->templates['default'] = $templatesPath . '/default.html';
-            } else {
-                $this->registerHardcodedDefaultTemplate();
-            }
-            
-            // Alert template
-            if (file_exists($templatesPath . '/alert.html')) {
-                $this->templates['alert'] = $templatesPath . '/alert.html';
-            }
-            
-            // Welcome template
-            if (file_exists($templatesPath . '/welcome.html')) {
-                $this->templates['welcome'] = $templatesPath . '/welcome.html';
-            }
-        } else {
-            // Fall back to hardcoded templates
-            $this->registerHardcodedDefaultTemplate();
+        // Make sure templates directory exists
+        if (!file_exists($templatesPath)) {
+            throw new \RuntimeException("Email templates directory not found: {$templatesPath}");
         }
-    }
-    
-    /**
-     * Register the hardcoded default template as fallback
-     */
-    private function registerHardcodedDefaultTemplate(): void
-    {
-        // Default template with a simple responsive design (fallback)
-        $this->templates['default'] = [
-            'header' => '
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-                    <style>
-                        @media only screen and (max-width: 620px) {
-                            table.body {
-                                width: 100%;
-                                min-width: 320px;
-                            }
-                        }
-                    </style>
-                </head>
-                <body style="font-family: sans-serif; -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.4; margin: 0; padding: 0; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%;">
-                    <table border="0" cellpadding="0" cellspacing="0" class="body" style="border-collapse: separate; width: 100%; max-width: 600px; margin: 0 auto;">
-                        <tr>
-                            <td style="font-family: sans-serif; font-size: 14px; vertical-align: top; padding: 24px;">
-                                <div style="background: #ffffff; border-radius: 3px; padding: 20px; border: 1px solid #e9e9e9;">
-                                    <div style="text-align: center; margin-bottom: 25px;">
-                                        <h1 style="color: #333333; font-size: 20px; font-weight: 400; margin: 0;">{{subject}}</h1>
-                                    </div>
-            ',
-            'body' => '
-                                    <div style="color: #333333; font-size: 16px; line-height: 1.6em;">
-                                        <p>Hello,</p>
-                                        <p>You have received a notification.</p>
-                                        <p>{{message}}</p>
-                                    </div>
-            ',
-            'footer' => '
-                                    <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e9e9e9; color: #999999; font-size: 12px; text-align: center;">
-                                        <p>This is an automated message from {{app_name}}. Please do not reply to this email.</p>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                    </table>
-                </body>
-                </html>
-            '
-        ];
         
-        // Alert template for notifications that require attention
-        $this->templates['alert'] = [
-            'header' => $this->templates['default']['header'],
-            'body' => '
-                                    <div style="color: #333333; font-size: 16px; line-height: 1.6em;">
-                                        <p>Hello,</p>
-                                        <p>⚠️ <strong>Important Alert:</strong> {{message}}</p>
-                                        <div style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 15px; margin: 15px 0; border-radius: 3px;">
-                                            <p style="margin: 0;"><strong>Details:</strong> {{details}}</p>
-                                        </div>
-                                        <p>Please take action immediately.</p>
-                                    </div>
-            ',
-            'footer' => $this->templates['default']['footer']
-        ];
+        // First register the default template (required)
+        $defaultTemplatePath = $templatesPath . '/default.html';
+        if (!file_exists($defaultTemplatePath)) {
+            throw new \RuntimeException("Default email template not found: {$defaultTemplatePath}");
+        }
         
-        // Welcome template for new user registrations
-        $this->templates['welcome'] = [
-            'header' => $this->templates['default']['header'],
-            'body' => '
-                                    <div style="color: #333333; font-size: 16px; line-height: 1.6em;">
-                                        <p>Hello {{name}},</p>
-                                        <p>Welcome to {{app_name}}! We\'re excited to have you join us.</p>
-                                        <p>{{message}}</p>
-                                        <div style="text-align: center; margin: 30px 0;">
-                                            <a href="{{action_url}}" style="background-color: #3490dc; border-radius: 3px; color: #ffffff; display: inline-block; font-size: 16px; font-weight: 400; line-height: 1.4; padding: 12px 24px; text-decoration: none; text-align: center;">
-                                                Get Started
-                                            </a>
-                                        </div>
-                                        <p>If you have any questions, feel free to contact our support team.</p>
-                                    </div>
-            ',
-            'footer' => $this->templates['default']['footer']
-        ];
+        $this->templates['default'] = $defaultTemplatePath;
+       
+        
+        // Scan for all HTML templates in the directory
+        $files = glob($templatesPath . '/*.html');
+        foreach ($files as $file) {
+            $templateName = pathinfo($file, PATHINFO_FILENAME);
+            
+            // Skip default as we already registered it
+            if ($templateName === 'default') continue;
+            
+            $this->templates[$templateName] = $file;
+        }
     }
     
     /**

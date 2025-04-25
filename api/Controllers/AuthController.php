@@ -5,6 +5,7 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\Request;
+use Glueful\Helpers\Utils;
 use Glueful\Security\EmailVerification;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\AuthBootstrap;
@@ -106,11 +107,19 @@ class AuthController {
 
             $otp = $this->verifier->generateOTP();
 
-            // Send verification email
+            // Send verification email with the new return format (array with status info)
             $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
                 
-            if (!$result) {
-                return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
+            if (!$result['success']) {
+                // Use the detailed error message from the verification service
+                $errorMessage = $result['message'] ?? 'Failed to send verification email';
+                
+                // Map error codes to appropriate HTTP status codes using the utility
+                $statusCode = isset($result['error_code']) 
+                    ? Utils::mapErrorCodeToStatusCode($result['error_code']) 
+                    : Response::HTTP_BAD_REQUEST;
+                
+                return Response::error($errorMessage, $statusCode)->send();
             }
 
             return Response::ok([
@@ -176,11 +185,19 @@ class AuthController {
 
             $otp = $this->verifier->generateOTP();
 
-            // Send verification email
+            // Send verification email with updated return format (array with status info)
             $result = $this->verifier->sendVerificationEmail($postData['email'], $otp);
                 
-            if (!$result) {
-                return Response::error('Failed to send verification email', Response::HTTP_BAD_REQUEST)->send();
+            if (!$result['success']) {
+                // Use the detailed error message from the verification service
+                $errorMessage = $result['message'] ?? 'Failed to send verification email';
+                
+                // Map error codes to appropriate HTTP status codes using the utility
+                $statusCode = isset($result['error_code']) 
+                    ? Utils::mapErrorCodeToStatusCode($result['error_code']) 
+                    : Response::HTTP_BAD_REQUEST;
+                
+                return Response::error($errorMessage, $statusCode)->send();
             }
 
             return Response::ok([

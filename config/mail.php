@@ -48,6 +48,9 @@ return [
         'cache' => env('MAIL_TEMPLATE_CACHE', true),   // Enable template caching
     ],
 
+    // Brand identity settings
+    'logo_url' => env('MAIL_LOGO_URL', 'https://brand.glueful.com/logo.png'), // Company logo for email templates
+
     // Debug and logging
     'debug' => env('MAIL_DEBUG', false),              // Enable detailed logging
     'log_channel' => env('MAIL_LOG_CHANNEL', 'mail'), // Logging channel name
