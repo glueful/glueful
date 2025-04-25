@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.19.1 (April 25, 2025)
+
+### New Features
+- Added comprehensive API documentation for authentication, file management, and notification routes
+  - Created auth.json for authentication routes including login, email verification, OTP verification, password reset, token validation, and logout
+  - Created files.json for file management routes including file retrieval, upload, and deletion
+  - Created notifications.json for notification management routes including listing, retrieving, marking as read/unread, and updating preferences
+
+### Improvements
+- Enhanced schema documentation for better API reference
+- Improved developer experience with detailed route documentation
+
 ## v0.19.0 (April 25, 2025)
 
 ### New Features
