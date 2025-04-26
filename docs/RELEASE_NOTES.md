@@ -1,5 +1,34 @@
 # Release Notes
 
+## v0.20.0 (April 26, 2025)
+
+### New Features
+- Implemented update method in QueryBuilder for efficient record updates
+  - Added support for updating records with complex conditions
+  - Optimized query generation for better performance
+  - Simplified repository operations with standardized update pattern
+
+### Improvements
+- Refactored database operations in repositories to use update method for improved clarity and consistency
+- Enhanced admin routes with comprehensive API documentation for:
+  - Authentication management
+  - Database operations
+  - Extensions configuration
+  - Migrations handling
+  - Jobs monitoring
+  - System configurations
+  - Permissions management
+  - Role assignments
+
+### System Refactoring
+- Refactored Notification system to use UUIDs for identification
+  - Updated Notification model to allow nullable ID and moved it to the end of constructor parameters
+  - Changed NotificationRetryService to find notifications by UUID instead of ID
+  - Modified NotificationService to generate and pass UUIDs for notifications and preferences
+  - Enhanced TemplateManager to accept UUIDs for templates
+  - Adjusted NotificationRepository to handle nullable ID during insert operations
+  - Updated API documentation to reflect changes from ID to UUID for notifications
+
 ## v0.19.1 (April 25, 2025)
 
 ### New Features
