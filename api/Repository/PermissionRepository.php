@@ -284,18 +284,16 @@ class PermissionRepository {
             ->get();
             
         if ($existingPermission) {
-            // Update existing permission
-            $data = [
-                [
-                    'uuid' => $existingPermission[0]['uuid'],
-                    'permissions' => $permissionsData,
-                ]
+            // Update existing permission using update method
+            $updateData = [
+                'permissions' => $permissionsData,
+                'updated_at' => date('Y-m-d H:i:s')
             ];
             
-            return $this->db->upsert(
+            return $this->db->update(
                 'role_permissions',
-                $data,
-                ['permissions', 'updated_at']
+                $updateData,
+                ['uuid' => $existingPermission[0]['uuid']]
             ) > 0;
         } else {
             // Create new permission

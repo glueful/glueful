@@ -212,22 +212,16 @@ class UserRepository {
             return false; // User not found
         }
         
-        // Format data for upsert - needs to be an array of records
-        $data = [
+        // Update the password using update method
+        $affected = $this->queryBuilder->update(
+            'users',
             [
-                'uuid' => $user[0]['uuid'],
                 'password' => $password,
                 'updated_at' => date('Y-m-d H:i:s')
-            ]
-        ];
+            ],
+            ['uuid' => $user[0]['uuid']]
+        );
         
-        // Specify which columns should be updated on duplicate
-        $updateColumns = ['password', 'updated_at'];
-        
-        // Perform the upsert operation
-        $affected = $this->queryBuilder->upsert('users', $data, $updateColumns);
-        
-        // Return true if at least one record was affected
         return $affected > 0;
     }
 
@@ -294,15 +288,16 @@ class UserRepository {
         unset($userData['password']);
         unset($userData['uuid']);
         
+        // Add updated_at timestamp if not provided
+        if (!isset($userData['updated_at'])) {
+            $userData['updated_at'] = date('Y-m-d H:i:s');
+        }
         
-        // Format data for upsert
-        $data = [array_merge(['uuid' => $uuid], $userData)];
-        
-        // Perform update
-        $affected = $this->queryBuilder->upsert(
-            'users', 
-            $data, 
-            array_keys($userData)
+        // Perform update using the update method with conditions
+        $affected = $this->queryBuilder->update(
+            'users',
+            $userData,
+            ['uuid' => $uuid]
         );
         
         return $affected > 0;
