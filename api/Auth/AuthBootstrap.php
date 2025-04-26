@@ -31,6 +31,7 @@ class AuthBootstrap
         // Create default authentication providers
         $jwtProvider = new JwtAuthenticationProvider();
         $apiKeyProvider = new ApiKeyAuthenticationProvider();
+        $adminProvider = new AdminAuthenticationProvider();
         
         // Create manager with JWT provider as default
         $manager = new AuthenticationManager($jwtProvider);
@@ -38,6 +39,7 @@ class AuthBootstrap
         // Register additional providers
         $manager->registerProvider('jwt', $jwtProvider);
         $manager->registerProvider('api_key', $apiKeyProvider);
+        $manager->registerProvider('admin', $adminProvider);
         
         // Register additional custom providers
         self::registerCustomProviders($manager);
