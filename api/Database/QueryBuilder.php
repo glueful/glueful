@@ -1063,4 +1063,66 @@ class QueryBuilder
     {
         return $this->logger;
     }
+
+    /**
+     * Update records in database table
+     * 
+     * Features:
+     * - Automatic parameter binding for security
+     * - Conditional updates with WHERE clauses
+     * - Proper identifier escaping for tables and columns
+     * - Execution monitoring and logging
+     * 
+     * @param string $table Target table name
+     * @param array $data Column data key-value pairs to update
+     * @param array $conditions WHERE conditions to limit affected rows
+     * @return int Number of affected rows
+     * @throws PDOException On update failure
+     * 
+     * @example
+     * ```php
+     * // Update a user's status
+     * $affected = $query->update('users', ['status' => 'inactive'], ['id' => 5]);
+     * 
+     * // Update multiple fields with complex condition
+     * $affected = $query->update('orders', 
+     *     ['status' => 'shipped', 'shipped_at' => '2025-04-26'], 
+     *     ['status' => 'processing', 'id' => $orderId]
+     * );
+     * ```
+     */
+    public function update(string $table, array $data, array $conditions): int
+    {
+        if (empty($data)) {
+            return 0; // Nothing to update
+        }
+        
+        // Build SET clause with placeholders
+        $setClauses = [];
+        $values = [];
+        
+        foreach ($data as $column => $value) {
+            $setClauses[] = "{$this->driver->wrapIdentifier($column)} = ?";
+            $values[] = $value;
+        }
+        
+        // Build WHERE clause
+        $whereClauses = [];
+        foreach ($conditions as $column => $value) {
+            $whereClauses[] = "{$this->driver->wrapIdentifier($column)} = ?";
+            $values[] = $value;
+        }
+        
+        $sql = "UPDATE {$this->driver->wrapIdentifier($table)} SET " . 
+               implode(', ', $setClauses);
+        
+        if (!empty($whereClauses)) {
+            $sql .= " WHERE " . implode(' AND ', $whereClauses);
+        }
+        
+        // Execute the update query using the centralized method
+        $stmt = $this->prepareAndExecute($sql, $values);
+        
+        return $stmt->rowCount();
+    }
 }

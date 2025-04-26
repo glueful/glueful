@@ -104,7 +104,6 @@ class NotificationService
     ): array {
         // Create the notification
         $notification = $this->create($type, $notifiable, $subject, $data, $options);
-        
         // Save to database first
         $this->repository->save($notification);
         

@@ -69,12 +69,13 @@ class NotificationRepository
         }
         
         if ($existing) {
-            // Update existing notification
-            $updateColumns = array_keys($data);
-            return $this->queryBuilder->upsert(
+            // Update existing notification using the new update method
+            // This is more efficient and avoids auto-increment issues
+            $data['id'] = $existing->getId();
+            return $this->queryBuilder->update(
                 'notifications',
-                [$data],
-                $updateColumns
+                $data,
+                ['uuid' => $data['uuid']]
             ) > 0;
         } else {
             // Remove the ID field if it's NULL to let the database auto-increment

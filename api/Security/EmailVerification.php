@@ -98,24 +98,24 @@ class EmailVerification
     public function sendVerificationEmail(string $email, string $otp): array
     {
         try {
-            if ($this->isRateLimited($email)) {
-                error_log("Rate limit exceeded for email: $email");
-                return [
-                    'success' => false,
-                    'message' => 'Too many failed attempts. Please try again later.',
-                    'error_code' => 'rate_limited'
-                ];
-            }
+            // if ($this->isRateLimited($email)) {
+            //     error_log("Rate limit exceeded for email: $email");
+            //     return [
+            //         'success' => false,
+            //         'message' => 'Too many failed attempts. Please try again later.',
+            //         'error_code' => 'rate_limited'
+            //     ];
+            // }
 
             // Increment daily request counter
-            if (!$this->incrementDailyRequests($email)) {
-                error_log("Daily limit exceeded for email: $email");
-                return [
-                    'success' => false,
-                    'message' => 'Daily verification limit reached. Please try again tomorrow.',
-                    'error_code' => 'daily_limit_exceeded'
-                ];
-            }
+            // if (!$this->incrementDailyRequests($email)) {
+            //     error_log("Daily limit exceeded for email: $email");
+            //     return [
+            //         'success' => false,
+            //         'message' => 'Daily verification limit reached. Please try again tomorrow.',
+            //         'error_code' => 'daily_limit_exceeded'
+            //     ];
+            // }
 
             // Store OTP in Redis before sending email
             $hashedOTP = OTP::hashOTP($otp);
