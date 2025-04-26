@@ -22,41 +22,141 @@ use Symfony\Component\HttpFoundation\Request;
 $controller = new AdminController();
 
 Router::group('/admin', function() use ($controller) {
-    // Public routes - outside of any middleware
+    /**
+     * @route POST /admin/login
+     * @tag Authentication
+     * @summary Admin login
+     * @description Authenticates an admin user and creates a session
+     * @requiresAuth false
+     * @requestBody username:string="Admin username" password:string="Admin password" {required=username,password}
+     * @response 200 application/json "Login successful" {token:string="Authentication token", user:object={id:integer="User ID", username:string="Username", email:string="Email address"}}
+     * @response 401 application/json "Invalid credentials"
+     * @response 429 application/json "Too many login attempts"
+     */
     Router::post('/login', function (Request $request) use ($controller){
         return $controller->login($request);
     });
 
+    /**
+     * @route POST /admin/logout
+     * @tag Authentication
+     * @summary Admin logout
+     * @description Ends an admin user session
+     * @requiresAuth false
+     * @response 200 application/json "Logout successful"
+     * @response 401 application/json "Not authenticated"
+     */
     Router::post('/logout', function (Request $request) use ($controller){
         return $controller->logout($request);
     });
 
     Router::group('/db', function() use ($controller) {
+        /**
+         * @route GET /admin/db/tables
+         * @tag Database
+         * @summary Get all database tables
+         * @description Retrieves a list of all tables in the database
+         * @requiresAuth true
+         * @response 200 application/json "List of tables" {tables:array=[{name:string="Table name", rows:integer="Row count", created:string="Creation date"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/tables', function (Request $request) use ($controller){
             return $controller->getTables($request);
         });
 
+        /**
+         * @route POST /admin/db/table/create
+         * @tag Database
+         * @summary Create new database table
+         * @description Creates a new table in the database with specified columns
+         * @requiresAuth true
+         * @requestBody name:string="Table name" columns:array=[{name:string="Column name", type:string="Column type", nullable:boolean="Whether column can be null", default:string="Default value"}] {required=name,columns}
+         * @response 201 application/json "Table created successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 409 application/json "Table already exists"
+         */
         Router::post('/table/create', function (Request $request) use ($controller){
             return $controller->createTable($request);
         });
 
+        /**
+         * @route POST /admin/db/table/drop
+         * @tag Database
+         * @summary Drop database table
+         * @description Deletes a table from the database
+         * @requiresAuth true
+         * @requestBody name:string="Table name" confirm:boolean="Confirmation flag to drop the table" {required=name,confirm}
+         * @response 200 application/json "Table dropped successfully"
+         * @response 400 application/json "Invalid request format or missing confirmation"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
         Router::post('/table/drop', function (Request $request) use ($controller){
             return $controller->dropTable($request);
         });
 
+        /**
+         * @route GET /admin/db/table/size
+         * @tag Database
+         * @summary Get database table size
+         * @description Retrieves the size of the specified table in the database
+         * @requiresAuth true
+         * @requestBody name:string="Table name" {required=name}
+         * @response 200 application/json "Table size information" {name:string="Table name", size:string="Size (formatted)", bytes:integer="Size in bytes", rows:integer="Row count"}
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
         Router::get('/table/size', function (Request $request) use ($controller){
             return $controller->getTableSize($request);
         });
 
+        /**
+         * @route GET /admin/db/table/{name}
+         * @tag Database
+         * @summary Get table data
+         * @description Retrieves data from the specified table with pagination
+         * @requiresAuth true
+         * @param name path string true "Table name"
+         * @response 200 application/json "Table data" {data:array=[{id:integer="Row ID"}], total:integer="Total number of rows", page:integer="Current page", limit:integer="Items per page"}
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
         Router::get('/table/{name}', function (array $params) use ($controller){
             // $params = $request->getRouteParams();
             return $controller->getTableData($params);
         });
 
+        /**
+         * @route POST /admin/db/table/column/add
+         * @tag Database
+         * @summary Add column to table
+         * @description Adds a new column to an existing database table
+         * @requiresAuth true
+         * @requestBody table:string="Table name" column:object={name:string="Column name", type:string="Column type", nullable:boolean="Whether column can be null", default:string="Default value"} {required=table,column}
+         * @response 200 application/json "Column added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         * @response 409 application/json "Column already exists"
+         */
         Router::post('/table/column/add', function (Request $request) use ($controller){
             return $controller->addColumn($request);
         });
 
+        /**
+         * @route POST /admin/db/table/column/drop
+         * @tag Database
+         * @summary Drop column from table
+         * @description Removes a column from an existing database table
+         * @requiresAuth true
+         * @requestBody table:string="Table name" column:string="Column name" confirm:boolean="Confirmation flag to drop the column" {required=table,column,confirm}
+         * @response 200 application/json "Column dropped successfully"
+         * @response 400 application/json "Invalid request format or missing confirmation"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or column not found"
+         */
         Router::post('/table/column/drop', function (Request $request) use ($controller){
             return $controller->dropColumn($request);
         });
@@ -64,96 +164,325 @@ Router::group('/admin', function() use ($controller) {
 
     
     Router::group('/extensions', function() use ($controller) {
+        /**
+         * @route GET /admin/extensions
+         * @tag Extensions
+         * @summary List all extensions
+         * @description Retrieves a list of all available extensions and their status
+         * @requiresAuth true
+         * @response 200 application/json "List of extensions" {extensions:array=[{name:string="Extension name", enabled:boolean="Whether extension is enabled", version:string="Extension version", description:string="Extension description"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/', function (Request $request) use ($controller){
             return $controller->getExtensions($request);
         });
 
+        /**
+         * @route POST /admin/extensions/enable
+         * @tag Extensions
+         * @summary Enable extension
+         * @description Enables a specific extension
+         * @requiresAuth true
+         * @requestBody name:string="Extension name" {required=name}
+         * @response 200 application/json "Extension enabled successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Extension not found"
+         * @response 500 application/json "Failed to enable extension"
+         */
         Router::post('/enable', function (Request $request) use ($controller){
             return $controller->enableExtension($request);
         });
 
+        /**
+         * @route POST /admin/extensions/disable
+         * @tag Extensions
+         * @summary Disable extension
+         * @description Disables a specific extension
+         * @requiresAuth true
+         * @requestBody name:string="Extension name" {required=name}
+         * @response 200 application/json "Extension disabled successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Extension not found"
+         * @response 500 application/json "Failed to disable extension"
+         */
         Router::post('/disable', function (Request $request) use ($controller){
             return $controller->disableExtension($request);
         });
     }, requiresAdminAuth: true);
 
     Router::group('/migrations', function() use ($controller) {
+        /**
+         * @route GET /admin/migrations
+         * @tag Migrations
+         * @summary List all migrations
+         * @description Retrieves a list of all database migrations and their status
+         * @requiresAuth true
+         * @response 200 application/json "List of migrations" {migrations:array=[{id:integer="Migration ID", name:string="Migration name", batch:integer="Migration batch", executed_at:string="Execution timestamp"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/', function (Request $request) use ($controller){
             return $controller->getMigrations($request);
         });
 
+        /**
+         * @route GET /admin/migrations/pending
+         * @tag Migrations
+         * @summary List pending migrations
+         * @description Retrieves a list of all pending database migrations
+         * @requiresAuth true
+         * @response 200 application/json "List of pending migrations" {migrations:array=[{name:string="Migration name", path:string="Migration file path"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/pending', function (Request $request) use ($controller){
             return $controller->getPendingMigrations($request);
         });
     }, requiresAdminAuth: true);
 
     Router::group('/jobs', function() use ($controller) {
+        /**
+         * @route GET /admin/jobs
+         * @tag Jobs
+         * @summary List all scheduled jobs
+         * @description Retrieves a list of all scheduled jobs and their status
+         * @requiresAuth true
+         * @response 200 application/json "List of scheduled jobs" {jobs:array=[{id:integer="Job ID", name:string="Job name", command:string="Job command", schedule:string="Job schedule", next_run:string="Next scheduled run", last_run:string="Last run timestamp", status:string="Job status"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/', function (Request $request) use ($controller){
             return $controller->getScheduledJobs($request);
         });
 
+        /**
+         * @route POST /admin/jobs/run-due
+         * @tag Jobs
+         * @summary Run due jobs
+         * @description Runs all jobs that are due to be executed
+         * @requiresAuth true
+         * @response 200 application/json "Jobs executed" {executed:array=[{id:integer="Job ID", name:string="Job name", status:string="Execution status"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::post('/run-due', function (Request $request) use ($controller){
             return $controller->runDueJobs($request);
         });
 
+        /**
+         * @route POST /admin/jobs/run-all
+         * @tag Jobs
+         * @summary Run all jobs
+         * @description Runs all scheduled jobs regardless of their schedule
+         * @requiresAuth true
+         * @response 200 application/json "Jobs executed" {executed:array=[{id:integer="Job ID", name:string="Job name", status:string="Execution status"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::post('/run-all', function (Request $request) use ($controller){
             return $controller->runAllJobs($request);
         });
 
+        /**
+         * @route POST /admin/jobs/run
+         * @tag Jobs
+         * @summary Run specific job
+         * @description Runs a specific job regardless of its schedule
+         * @requiresAuth true
+         * @requestBody id:integer="Job ID" {required=id}
+         * @response 200 application/json "Job executed" {id:integer="Job ID", name:string="Job name", status:string="Execution status"}
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Job not found"
+         */
         Router::post('/run', function (Request $request) use ($controller){
             return $controller->runJob($request);
         });
 
+        /**
+         * @route POST /admin/jobs/create-job
+         * @tag Jobs
+         * @summary Create new job
+         * @description Creates a new scheduled job
+         * @requiresAuth true
+         * @requestBody name:string="Job name" command:string="Job command" schedule:string="Cron schedule expression" enabled:boolean="Whether job is enabled initially" {required=name,command,schedule}
+         * @response 201 application/json "Job created" {id:integer="Job ID", name:string="Job name"}
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         */
         Router::post('/create-job', function (Request $request) use ($controller){
             return $controller->createJob($request);
         });
     }, requiresAdminAuth: true);
 
     Router::group('/configs', function() use ($controller) {
+        /**
+         * @route GET /admin/configs
+         * @tag Configuration
+         * @summary List all configuration files
+         * @description Retrieves a list of all available configuration files
+         * @requiresAuth true
+         * @response 200 application/json "List of configuration files" {configs:array=[{name:string="Config filename", path:string="Config file path"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/', function (Request $request) use ($controller){
             return $controller->getAllConfigs($request);
         });
 
+        /**
+         * @route GET /admin/configs/{filename}
+         * @tag Configuration
+         * @summary Get configuration file
+         * @description Retrieves the contents of a specific configuration file
+         * @requiresAuth true
+         * @param filename path string true "Configuration filename"
+         * @response 200 application/json "Configuration file content" {name:string="Config filename", content:object="Configuration data"}
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Configuration file not found"
+         */
         Router::get('/{filename}', function (Request $request) use ($controller){
             return $controller->getConfig($request);
         });
 
+        /**
+         * @route PUT /admin/configs/{filename}
+         * @tag Configuration
+         * @summary Update configuration file
+         * @description Updates the contents of a specific configuration file
+         * @requiresAuth true
+         * @param filename path string true "Configuration filename"
+         * @requestBody content:object="Configuration data to update" {required=content}
+         * @response 200 application/json "Configuration updated"
+         * @response 400 application/json "Invalid configuration data"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Configuration file not found"
+         */
         Router::put('/{filename}', function (Request $request) use ($controller){
             return $controller->updateConfig($request);
         });
 
+        /**
+         * @route POST /admin/configs/create
+         * @tag Configuration
+         * @summary Create configuration file
+         * @description Creates a new configuration file
+         * @requiresAuth true
+         * @requestBody name:string="Config filename" content:object="Configuration data" {required=name,content}
+         * @response 201 application/json "Configuration file created"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 409 application/json "Configuration file already exists"
+         */
         Router::post('/create', function (Request $request) use ($controller){
             return $controller->createConfig($request);
         });
     }, requiresAdminAuth: true);
 
     Router::group('/permissions', function() use ($controller) {
+        /**
+         * @route GET /admin/permissions
+         * @tag Permissions
+         * @summary List all permissions
+         * @description Retrieves a list of all available permissions
+         * @requiresAuth true
+         * @response 200 application/json "List of permissions" {permissions:array=[{id:integer="Permission ID", name:string="Permission name", description:string="Permission description"}]}
+         * @response 403 application/json "Permission denied"
+         */
         Router::get('/', function (Request $request) use ($controller){
             return $controller->getPermissions($request);
         });
 
+        /**
+         * @route POST /admin/permissions/create
+         * @tag Permissions
+         * @summary Create permission
+         * @description Creates a new permission
+         * @requiresAuth true
+         * @requestBody name:string="Permission name" description:string="Permission description" {required=name}
+         * @response 201 application/json "Permission created" {id:integer="Permission ID", name:string="Permission name"}
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 409 application/json "Permission already exists"
+         */
         Router::post('/create', function (Request $request) use ($controller) {
             return $controller->createPermission($request);
         });
         
+        /**
+         * @route PUT /admin/permissions/update
+         * @tag Permissions
+         * @summary Update permission
+         * @description Updates an existing permission
+         * @requiresAuth true
+         * @requestBody id:integer="Permission ID" name:string="Permission name" description:string="Permission description" {required=id}
+         * @response 200 application/json "Permission updated"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Permission not found"
+         */
         Router::put('/update', function (Request $request) use ($controller) {
             return $controller->updatePermission($request);
         });
         
+        /**
+         * @route POST /admin/permissions/assign-to-role
+         * @tag Permissions
+         * @summary Assign permissions to role
+         * @description Assigns one or more permissions to a role
+         * @requiresAuth true
+         * @requestBody roleId:integer="Role ID" permissionIds:array=[integer="Permission ID"] {required=roleId,permissionIds}
+         * @response 200 application/json "Permissions assigned to role"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Role or permission not found"
+         */
         Router::post('/assign-to-role', function (Request $request) use ($controller) {
             return $controller->assignPermissionsToRole($request);
         });
         
+        /**
+         * @route PUT /admin/permissions/update-role-permissions
+         * @tag Permissions
+         * @summary Update role permissions
+         * @description Updates the permissions assigned to a role
+         * @requiresAuth true
+         * @requestBody roleId:integer="Role ID" permissionIds:array=[integer="Permission ID"] {required=roleId,permissionIds}
+         * @response 200 application/json "Role permissions updated"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Role not found"
+         */
         Router::put('/update-role-permissions', function (Request $request) use ($controller) {
             return $controller->updateRolePermissions($request);
         });
     }, requiresAdminAuth: true);
 
     Router::group('/roles', function() use ($controller) {
+        /**
+         * @route POST /admin/roles/assign-to-user
+         * @tag Roles
+         * @summary Assign roles to user
+         * @description Assigns one or more roles to a user
+         * @requiresAuth true
+         * @requestBody userId:integer="User ID" roleIds:array=[integer="Role ID"] {required=userId,roleIds}
+         * @response 200 application/json "Roles assigned to user"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "User or role not found"
+         */
         Router::post('/assign-to-user', function (Request $request) use ($controller) {
             return $controller->assignRolesToUser($request);
         });
         
+        /**
+         * @route PUT /admin/roles/remove-user-roles
+         * @tag Roles
+         * @summary Remove roles from user
+         * @description Removes one or more roles from a user
+         * @requiresAuth true
+         * @requestBody userId:integer="User ID" roleIds:array=[integer="Role ID"] {required=userId,roleIds}
+         * @response 200 application/json "Roles removed from user"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "User or role not found"
+         */
         Router::put('/remove-user-roles', function (Request $request) use ($controller) {
             return $controller->removeUserRole($request);
         });

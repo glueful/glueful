@@ -104,14 +104,13 @@ class NotificationService
     ): array {
         // Create the notification
         $notification = $this->create($type, $notifiable, $subject, $data, $options);
-        
         // Save to database first
         $this->repository->save($notification);
         
         // Track notification creation time for metrics
         $channels = $options['channels'] ?? $this->getDefaultChannels();
         foreach ($channels as $channel) {
-            $this->metricsService->setNotificationCreationTime($notification->getId(), $channel);
+            $this->metricsService->setNotificationCreationTime($notification->getUuid(), $channel);
         }
         
         // Send it immediately unless scheduled for later
@@ -132,17 +131,17 @@ class NotificationService
                     foreach ($result['channels'] as $channel => $channelResult) {
                         if ($channelResult['status'] === 'success') {
                             // Calculate delivery time if applicable
-                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getId(), $channel);
+                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getUuid(), $channel);
                             if ($creationTime) {
                                 $deliveryTime = time() - $creationTime;
-                                $this->metricsService->trackDeliveryTime($notification->getId(), $channel, $deliveryTime);
+                                $this->metricsService->trackDeliveryTime($notification->getUuid(), $channel, $deliveryTime);
                             }
                             
                             // Update success metrics
                             $this->metricsService->updateSuccessRateMetrics($channel, true);
                             
                             // Clean up individual notification metrics
-                            $this->metricsService->cleanupNotificationMetrics($notification->getId(), $channel);
+                            $this->metricsService->cleanupNotificationMetrics($notification->getUuid(), $channel);
                         }
                     }
                 }
@@ -176,17 +175,20 @@ class NotificationService
         array $options = []
     ): Notification {
         // Generate a unique ID
-        $id = is_callable($this->idGenerator) 
-            ? call_user_func($this->idGenerator) 
-            : uniqid('notification_');
+        // $id = is_callable($this->idGenerator) 
+        //     ? call_user_func($this->idGenerator) 
+        //     : uniqid('notification_');
+        
+        // Generate a UUID if not provided in options
+        $uuid = $options['uuid'] ?? Utils::generateNanoID();
         
         $notification = new Notification(
-            $id,
             $type,
             $subject,
             $notifiable->getNotifiableType(),
             $notifiable->getNotifiableId(),
-            $data
+            $data,
+            $uuid
         );
         
         // Set priority if specified
@@ -302,6 +304,7 @@ class NotificationService
      * @param array|null $channels Preferred channels (null to use defaults)
      * @param bool $enabled Whether notifications are enabled
      * @param array|null $settings Additional settings
+     * @param string|null $uuid UUID for cross-system identification
      * @return NotificationPreference The created/updated preference
      */
     public function setPreference(
@@ -309,12 +312,18 @@ class NotificationService
         string $notificationType,
         ?array $channels = null,
         bool $enabled = true,
-        ?array $settings = null
+        ?array $settings = null,
+        ?string $uuid = null
     ): NotificationPreference {
         // Generate a unique ID
         $id = is_callable($this->idGenerator) 
             ? call_user_func($this->idGenerator) 
             : uniqid('preference_');
+        
+        // Generate a UUID if not provided
+        if ($uuid === null) {
+            $uuid = Utils::generateNanoID();
+        }
         
         $preference = new NotificationPreference(
             $id,
@@ -323,7 +332,8 @@ class NotificationService
             $notificationType,
             $channels,
             $enabled,
-            $settings
+            $settings,
+            $uuid
         );
         
         // Save to database
@@ -381,13 +391,13 @@ class NotificationService
     }
     
     /**
-     * Get notification by ID
+     * Get notification by UUID
      * 
-     * @param string $id Notification ID
+     * @param string $uuid Notification UUID
      * @return Notification|null The notification or null if not found
      */
-    public function getNotificationById(string $id): ?Notification {
-        return $this->repository->findById($id);
+    public function getNotificationByUuid(string $uuid): ?Notification {
+        return $this->repository->findByUuid($uuid);
     }
     
     /**

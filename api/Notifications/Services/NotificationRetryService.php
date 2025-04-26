@@ -305,7 +305,7 @@ class NotificationRetryService
             $results['processed']++;
             
             // Get the notification
-            $notification = $this->notificationRepository->findById($retry['notification_id']);
+            $notification = $this->notificationRepository->findByUuId($retry['notification_id']);
             if (!$notification) {
                 // Remove from queue if notification doesn't exist anymore
                 $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);

@@ -17,9 +17,14 @@ use JsonSerializable;
 class Notification implements JsonSerializable
 {
     /**
-     * @var string Unique identifier for the notification
+     * @var string|null Unique identifier for the notification
      */
-    private string $id;
+    private ?string $id;
+    
+    /**
+     * @var string|null UUID for the notification, used for consistent cross-system identification
+     */
+    private ?string $uuid;
     
     /**
      * @var string Type of notification (e.g., 'account_created', 'payment_received')
@@ -79,27 +84,30 @@ class Notification implements JsonSerializable
     /**
      * Notification constructor.
      * 
-     * @param string $id Unique identifier
      * @param string $type Notification type
      * @param string $subject Notification subject
      * @param string $notifiableType Type of notifiable entity
      * @param string $notifiableId ID of notifiable entity
      * @param array|null $data Additional notification data
+     * @param string|null $uuid UUID for cross-system identification
+     * @param string|null $id Unique identifier (moved to the end as optional parameter)
      */
     public function __construct(
-        string $id,
         string $type,
         string $subject,
         string $notifiableType,
         string $notifiableId,
-        ?array $data = null
+        ?array $data = null,
+        ?string $uuid = null,
+        ?string $id = null
     ) {
-        $this->id = $id;
         $this->type = $type;
         $this->subject = $subject;
         $this->notifiableType = $notifiableType;
         $this->notifiableId = $notifiableId;
         $this->data = $data;
+        $this->uuid = $uuid;
+        $this->id = $id;
         $this->priority = 'normal';
         $this->readAt = null;
         $this->scheduledAt = null;
@@ -111,11 +119,34 @@ class Notification implements JsonSerializable
     /**
      * Get notification ID
      * 
-     * @return string Notification unique identifier
+     * @return string|null Notification unique identifier
      */
-    public function getId(): string
+    public function getId(): ?string
     {
         return $this->id;
+    }
+    
+    /**
+     * Get notification UUID
+     * 
+     * @return string|null Notification UUID
+     */
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+    
+    /**
+     * Set notification UUID
+     * 
+     * @param string $uuid Notification UUID
+     * @return self
+     */
+    public function setUuid(string $uuid): self
+    {
+        $this->uuid = $uuid;
+        $this->updatedAt = new DateTime();
+        return $this;
     }
     
     /**
@@ -360,6 +391,7 @@ class Notification implements JsonSerializable
     {
         return [
             'id' => $this->id,
+            'uuid' => $this->uuid,
             'type' => $this->type,
             'subject' => $this->subject,
             'data' => $this->data,
@@ -393,12 +425,13 @@ class Notification implements JsonSerializable
     public static function fromArray(array $data): self
     {
         $notification = new self(
-            $data['id'],
             $data['type'],
             $data['subject'],
             $data['notifiable_type'],
             $data['notifiable_id'],
-            isset($data['data']) ? (is_string($data['data']) ? json_decode($data['data'], true) : $data['data']) : null
+            isset($data['data']) ? (is_string($data['data']) ? json_decode($data['data'], true) : $data['data']) : null,
+            $data['uuid'] ?? null,
+            isset($data['id']) ? (string)$data['id'] : null
         );
         
         if (isset($data['priority'])) {

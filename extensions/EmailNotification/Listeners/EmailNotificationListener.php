@@ -110,24 +110,24 @@ class EmailNotificationListener implements EventListener
     {
         $notification = $event->getNotification();
         $notifiable = $event->getNotifiable();
-        $notificationId = $notification->getId();
+        $notificationUuid = $notification->getUuid();
         
         // Get recipient email if available
         $recipientEmail = $notifiable->routeNotificationFor('email');
         
         // Get retry count from metrics service
-        $retryCount = $this->metricsService->getRetryCount($notificationId, 'email');
+        $retryCount = $this->metricsService->getRetryCount($notificationUuid, 'email');
         
         // Calculate delivery time
         $deliveryTime = null;
-        $creationTime = $this->metricsService->getNotificationCreationTime($notificationId, 'email');
+        $creationTime = $this->metricsService->getNotificationCreationTime($notificationUuid, 'email');
         
         if ($creationTime) {
             $sentTime = $event->getSentAt()->getTimestamp();
             $deliveryTime = $sentTime - $creationTime;
             
             // Record delivery time
-            $this->metricsService->trackDeliveryTime($notificationId, 'email', $deliveryTime);
+            $this->metricsService->trackDeliveryTime($notificationUuid, 'email', $deliveryTime);
         }
         
         // Update success metrics
@@ -136,7 +136,7 @@ class EmailNotificationListener implements EventListener
         // Enhanced logging with delivery metrics
         if ($this->logger && $this->config['logging']['enabled'] ?? true) {
             $this->logger->info('Email notification sent successfully', [
-                'notification_id' => $notificationId,
+                'notification_uuid' => $notificationUuid,
                 'notification_type' => $notification->getType(),
                 'recipient' => $recipientEmail ?: $notifiable->getNotifiableId(),
                 'subject' => $notification->getData()['subject'] ?? 'No subject',
@@ -147,7 +147,7 @@ class EmailNotificationListener implements EventListener
         }
         
         // Clean up performance tracking data for this notification
-        $this->metricsService->cleanupNotificationMetrics($notificationId, 'email');
+        $this->metricsService->cleanupNotificationMetrics($notificationUuid, 'email');
     }
     
     /**
@@ -162,13 +162,13 @@ class EmailNotificationListener implements EventListener
         $notifiable = $event->getNotifiable();
         $reason = $event->getReason();
         $exception = $event->getException();
-        $notificationId = $notification->getId();
+        $notificationUuid = $notification->getUuid();
         
         // Get recipient email if available
         $recipientEmail = $notifiable->routeNotificationFor('email');
         
         // Update retry count
-        $retryCount = $this->metricsService->incrementRetryCount($notificationId, 'email');
+        $retryCount = $this->metricsService->incrementRetryCount($notificationUuid, 'email');
         
         // Update failure metrics if all retries exhausted
         $maxRetries = $this->config['retry']['max_attempts'] ?? 3;
@@ -179,7 +179,7 @@ class EmailNotificationListener implements EventListener
         // Enhanced error logging with detailed information
         if ($this->logger && $this->config['logging']['enabled'] ?? true) {
             $this->logger->error('Email notification failed', [
-                'notification_id' => $notificationId,
+                'notification_uuid' => $notificationUuid,
                 'notification_type' => $notification->getType(),
                 'recipient' => $recipientEmail ?: $notifiable->getNotifiableId(),
                 'reason' => $reason,
@@ -194,7 +194,7 @@ class EmailNotificationListener implements EventListener
         if ($this->config['retry']['enabled'] ?? true) {
             // Store notification creation time if this is the first attempt
             if ($retryCount === 1) {
-                $this->metricsService->setNotificationCreationTime($notificationId, 'email');
+                $this->metricsService->setNotificationCreationTime($notificationUuid, 'email');
             }
             
             // Delegate retry logic to the NotificationRetryService
@@ -202,7 +202,7 @@ class EmailNotificationListener implements EventListener
                 $this->retryService->queueForRetry($notification, $notifiable, 'email');
             } else if ($retryCount >= $maxRetries) {
                 // Cleanup metrics data if we've reached max retries and won't try again
-                $this->metricsService->cleanupNotificationMetrics($notificationId, 'email');
+                $this->metricsService->cleanupNotificationMetrics($notificationUuid, 'email');
             }
         }
     }

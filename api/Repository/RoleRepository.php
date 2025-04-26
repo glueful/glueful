@@ -118,7 +118,6 @@ class RoleRepository
      * Update existing role
      * 
      * Modifies an existing role's attributes.
-     * Uses upsert to ensure the role exists.
      * 
      * @param string $uuid Role UUID to update
      * @param array $data Updated role data
@@ -126,14 +125,21 @@ class RoleRepository
      */
     public function updateRole(string $uuid, array $data): bool
     {
-        // Ensure UUID is included
-        $data['uuid'] = $uuid;
+        // Remove UUID from data to be updated
+        $updateData = $data;
+        unset($updateData['uuid']);
         
-        // Format data for upsert
-        $formattedData = [$data];
+        // Add updated_at timestamp if not provided
+        if (!isset($updateData['updated_at'])) {
+            $updateData['updated_at'] = date('Y-m-d H:i:s');
+        }
         
-        // Update role
-        $affected = $this->db->upsert('roles', $formattedData, array_keys($data));
+        // Update role using the update method with conditions
+        $affected = $this->db->update(
+            'roles',
+            $updateData,
+            ['uuid' => $uuid]
+        );
         
         return $affected > 0;
     }

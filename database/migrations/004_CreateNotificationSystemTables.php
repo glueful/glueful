@@ -50,7 +50,8 @@ class CreateNotificationSystemTables implements MigrationInterface
     {
         // Create Notifications Table
         $schema->createTable('notifications', [
-            'id' => 'VARCHAR(255) PRIMARY KEY',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
             'type' => 'VARCHAR(100) NOT NULL',
             'subject' => 'VARCHAR(255) NOT NULL',
             'data' => 'JSON NULL',
@@ -61,8 +62,9 @@ class CreateNotificationSystemTables implements MigrationInterface
             'scheduled_at' => 'TIMESTAMP NULL DEFAULT NULL',
             'sent_at' => 'TIMESTAMP NULL DEFAULT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notifications'],
             ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notifications'],
             ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notifications'],
             ['type' => 'INDEX', 'column' => 'type', 'table' => 'notifications'],
@@ -72,7 +74,8 @@ class CreateNotificationSystemTables implements MigrationInterface
 
         // Create Notification Preferences Table
         $schema->createTable('notification_preferences', [
-            'id' => 'VARCHAR(255) PRIMARY KEY',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
             'notifiable_type' => 'VARCHAR(100) NOT NULL',
             'notifiable_id' => 'VARCHAR(255) NOT NULL',
             'notification_type' => 'VARCHAR(100) NOT NULL',
@@ -82,6 +85,7 @@ class CreateNotificationSystemTables implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_preferences'],
@@ -91,7 +95,8 @@ class CreateNotificationSystemTables implements MigrationInterface
         
         // Create Notification Templates Table
         $schema->createTable('notification_templates', [
-            'id' => 'VARCHAR(255) PRIMARY KEY',
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
             'name' => 'VARCHAR(255) NOT NULL',
             'notification_type' => 'VARCHAR(100) NOT NULL',
             'channel' => 'VARCHAR(100) NOT NULL',
@@ -100,6 +105,7 @@ class CreateNotificationSystemTables implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notification_templates'],
             ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_templates'],
             ['type' => 'INDEX', 'column' => 'channel', 'table' => 'notification_templates'],
             ['type' => 'UNIQUE', 'column' => ['notification_type', 'channel', 'name'], 

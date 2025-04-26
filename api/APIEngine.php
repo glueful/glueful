@@ -75,7 +75,7 @@ class APIEngine{
             self::$driver = $connection->getDriver();
             
             // Set current database resource
-            self::$currentResource = Utils::getDatabaseRole();;
+            self::$currentResource = config('database.role', 'primary');
             
         } catch (\Exception $e) {
             throw new \RuntimeException("Failed to initialize database: " . $e->getMessage());
@@ -244,13 +244,10 @@ class APIEngine{
                 ],
                 
                 'update' => [
-                    'affected' => $queryBuilder->upsert(
+                    'affected' => $queryBuilder->update(
                         $definition['table']['name'],
-                        [array_merge(
-                            ['uuid' => $params['uuid']],
-                            $params['data'] ?? []
-                        )],
-                        array_keys($params['data'] ?? [])
+                        $params['data'] ?? [],
+                        ['uuid' => $params['uuid']]
                     )
                 ],
                 
