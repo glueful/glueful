@@ -62,9 +62,10 @@ class AuthenticationMiddleware implements MiddlewareInterface
         $userData = $this->authenticate($request);
         
         if (!$userData) {
+            // Use a more generic error message that doesn't expose which specific authentication method failed
             return new JsonResponse([
                 'success' => false,
-                'message' => $this->authManager->getError() ?? 'Unauthorized access, invalid or expired token',
+                'message' => 'Authentication failed. Please provide valid credentials.',
                 'code' => 401
             ], 401);
         }

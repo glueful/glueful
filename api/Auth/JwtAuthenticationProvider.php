@@ -61,16 +61,23 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
-        // Check if user has the superuser role
-        if (!isset($userData['roles']) || !is_array($userData['roles'])) {
-            return false;
+        // First check if there's an explicit is_admin flag in the user data
+        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
+            error_log("Admin access granted through is_admin flag for user: " . ($userData['username'] ?? 'unknown'));
+            return true;
         }
         
-        foreach ($userData['roles'] as $role) {
-            if (isset($role['name']) && $role['name'] === 'superuser') {
-                return true;
+        // Also check for superuser role as before
+        if (isset($userData['roles']) && is_array($userData['roles'])) {
+            foreach ($userData['roles'] as $role) {
+                if (isset($role['name']) && $role['name'] === 'superuser') {
+                    return true;
+                }
             }
         }
+        
+        error_log("Admin access denied for user: " . ($userData['username'] ?? 'unknown') . 
+                  ", roles: " . (isset($userData['roles']) ? json_encode($userData['roles']) : 'none'));
         
         return false;
     }

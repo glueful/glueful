@@ -42,7 +42,8 @@ class ApiKeyAuthenticationProvider implements AuthenticationProviderInterface
             $apiKey = $this->extractApiKeyFromRequest($request);
             
             if (!$apiKey) {
-                $this->lastError = 'No API key provided';
+                // Silently fail with a less alarming message so other auth methods can be tried
+                $this->lastError = 'API key not found in request';
                 return null;
             }
             

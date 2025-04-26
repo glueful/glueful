@@ -126,6 +126,8 @@ class AuthenticationManager
      * Authenticate a request with multiple providers in sequence
      * 
      * Tries each provider in order until one succeeds or all fail.
+     * When multiple providers fail, it will use a more generic error message
+     * rather than exposing the specific error from any one provider.
      * 
      * @param array $providerNames Names of providers to try
      * @param Request $request The HTTP request to authenticate
@@ -133,11 +135,23 @@ class AuthenticationManager
      */
     public function authenticateWithProviders(array $providerNames, Request $request): ?array
     {
+        $errors = [];
+        
         foreach ($providerNames as $name) {
             $result = $this->authenticateWithProvider($name, $request);
             if ($result) {
                 return $result;
             }
+            
+            // Store each provider's error message
+            if ($this->lastError) {
+                $errors[$name] = $this->lastError;
+            }
+        }
+        
+        // Only set a generic error message if all providers failed
+        if (!empty($errors)) {
+            $this->lastError = "Authentication failed. Please provide valid credentials.";
         }
         
         return null;
@@ -146,12 +160,53 @@ class AuthenticationManager
     /**
      * Check if a user has admin privileges
      * 
+     * Tries different methods to determine admin status:
+     * 1. Check is_admin flag directly in user data
+     * 2. Check provider-specific admin determination
+     * 3. Look for superuser role in roles array
+     * 
      * @param array $userData User data from authentication
      * @return bool True if user has admin privileges
      */
     public function isAdmin(array $userData): bool
     {
-        return $this->defaultProvider->isAdmin($userData);
+        // Direct check for is_admin flag
+        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
+            return true;
+        }
+        
+        // Check via provider-specific method
+        if ($this->defaultProvider->isAdmin($userData)) {
+            return true;
+        }
+        
+        // Extra check for roles directly in user data
+        if (isset($userData['roles']) && is_array($userData['roles'])) {
+            foreach ($userData['roles'] as $role) {
+                // Check for superuser role
+                if (isset($role['name']) && strtolower($role['name']) === 'superuser') {
+                    return true;
+                }
+            }
+        }
+        
+        // Additional check for admin/superuser in the user object if it exists
+        if (isset($userData['user']) && is_array($userData['user'])) {
+            if (isset($userData['user']['is_admin']) && $userData['user']['is_admin']) {
+                return true;
+            }
+            
+            // Check roles in user object if they exist
+            if (isset($userData['user']['roles']) && is_array($userData['user']['roles'])) {
+                foreach ($userData['user']['roles'] as $role) {
+                    if (isset($role['name']) && strtolower($role['name']) === 'superuser') {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
     }
     
     /**

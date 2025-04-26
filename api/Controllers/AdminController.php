@@ -995,8 +995,20 @@ class AdminController {
      */
     private function authenticate(SymfonyRequest $request): ?array
     {
-        // For admin routes, prefer admin-specific authentication
-        return $this->authManager->authenticateWithProviders(['admin', 'jwt'], $request);
+        // For admin routes, try admin provider first, then either jwt OR api_key (not both)
+        $userData = $this->authManager->authenticateWithProvider('admin', $request);
+        
+        if (!$userData) {
+            // If admin auth fails, try jwt
+            $userData = $this->authManager->authenticateWithProvider('jwt', $request);
+            
+            // If jwt fails, try api_key as a last resort
+            if (!$userData) {
+                $userData = $this->authManager->authenticateWithProvider('api_key', $request);
+            }
+        }
+        
+        return $userData;
     }
     
     /**
