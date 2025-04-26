@@ -77,6 +77,11 @@ class NotificationRepository
                 $updateColumns
             ) > 0;
         } else {
+            // Remove the ID field if it's NULL to let the database auto-increment
+            if (isset($data['id']) && $data['id'] === null) {
+                unset($data['id']);
+            }
+            
             // Create new notification
             return $this->queryBuilder->insert('notifications', $data) > 0;
         }

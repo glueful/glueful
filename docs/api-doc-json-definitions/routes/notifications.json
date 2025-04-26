@@ -52,7 +52,7 @@
                     "Notifications"
                 ],
                 "summary": "Get Notification",
-                "description": "Retrieve a single notification by its ID",
+                "description": "Retrieve a single notification by its UUID",
                 "responses": {
                     "200": {
                         "description": "Notification retrieved successfully",
@@ -89,7 +89,7 @@
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "Notification ID",
+                        "description": "Notification UUID",
                         "schema": {
                             "type": "string"
                         }
@@ -101,7 +101,7 @@
                     "Notifications"
                 ],
                 "summary": "Delete Notification",
-                "description": "Delete a specific notification by ID",
+                "description": "Delete a specific notification by UUID",
                 "responses": {
                     "200": {
                         "description": "Notification deleted successfully",
@@ -138,7 +138,7 @@
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "Notification ID",
+                        "description": "Notification UUID",
                         "schema": {
                             "type": "string"
                         }
@@ -189,7 +189,7 @@
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "Notification ID",
+                        "description": "Notification UUID",
                         "schema": {
                             "type": "string"
                         }
@@ -240,7 +240,7 @@
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "description": "Notification ID",
+                        "description": "Notification UUID",
                         "schema": {
                             "type": "string"
                         }

@@ -197,6 +197,7 @@ class TemplateManager
      * @param string $channel Channel name
      * @param string $content Template content
      * @param array|null $parameters Template parameters
+     * @param string|null $uuid Template UUID for cross-system identification
      * @return NotificationTemplate The created template
      */
     public function createTemplate(
@@ -205,7 +206,8 @@ class TemplateManager
         string $name,
         string $channel,
         string $content,
-        ?array $parameters = null
+        ?array $parameters = null,
+        ?string $uuid = null
     ): NotificationTemplate {
         $template = new NotificationTemplate(
             $id,
@@ -213,7 +215,8 @@ class TemplateManager
             $type,
             $channel,
             $content,
-            $parameters
+            $parameters,
+            $uuid
         );
         
         $this->registerTemplate($template);

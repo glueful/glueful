@@ -176,17 +176,20 @@ class NotificationService
         array $options = []
     ): Notification {
         // Generate a unique ID
-        $id = is_callable($this->idGenerator) 
-            ? call_user_func($this->idGenerator) 
-            : uniqid('notification_');
+        // $id = is_callable($this->idGenerator) 
+        //     ? call_user_func($this->idGenerator) 
+        //     : uniqid('notification_');
+        
+        // Generate a UUID if not provided in options
+        $uuid = $options['uuid'] ?? Utils::generateNanoID();
         
         $notification = new Notification(
-            $id,
             $type,
             $subject,
             $notifiable->getNotifiableType(),
             $notifiable->getNotifiableId(),
-            $data
+            $data,
+            $uuid
         );
         
         // Set priority if specified
@@ -302,6 +305,7 @@ class NotificationService
      * @param array|null $channels Preferred channels (null to use defaults)
      * @param bool $enabled Whether notifications are enabled
      * @param array|null $settings Additional settings
+     * @param string|null $uuid UUID for cross-system identification
      * @return NotificationPreference The created/updated preference
      */
     public function setPreference(
@@ -309,12 +313,18 @@ class NotificationService
         string $notificationType,
         ?array $channels = null,
         bool $enabled = true,
-        ?array $settings = null
+        ?array $settings = null,
+        ?string $uuid = null
     ): NotificationPreference {
         // Generate a unique ID
         $id = is_callable($this->idGenerator) 
             ? call_user_func($this->idGenerator) 
             : uniqid('preference_');
+        
+        // Generate a UUID if not provided
+        if ($uuid === null) {
+            $uuid = Utils::generateNanoID();
+        }
         
         $preference = new NotificationPreference(
             $id,
@@ -323,7 +333,8 @@ class NotificationService
             $notificationType,
             $channels,
             $enabled,
-            $settings
+            $settings,
+            $uuid
         );
         
         // Save to database
