@@ -391,7 +391,7 @@ class AdminController {
             
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
-                ->orderBy(['created_at' => 'DESC'])
+                ->orderBy(['id' => 'DESC'])
                 ->paginate($page, $perPage);
             
 
