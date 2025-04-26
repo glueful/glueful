@@ -185,8 +185,8 @@ class NotificationsController {
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Get notification using findById instead of find
-            $notification = $this->notificationService->getRepository()->findById($params['id']);
+            // Use UUID-based lookup instead of ID-based
+            $notification = $this->notificationService->getNotificationByUuid($params['id']);
             
             // Check if notification exists
             if (!$notification) {
@@ -223,8 +223,8 @@ class NotificationsController {
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Get notification
-            $notification = $this->notificationService->getRepository()->findById($params['id']);
+            // Get notification using UUID-based lookup
+            $notification = $this->notificationService->getNotificationByUuid($params['id']);
             
             // Check if notification exists
             if (!$notification) {
@@ -264,8 +264,8 @@ class NotificationsController {
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Get notification
-            $notification = $this->notificationService->getRepository()->findById($params['id']);
+            // Get notification using UUID-based lookup
+            $notification = $this->notificationService->getNotificationByUuid($params['id']);
             
             // Check if notification exists
             if (!$notification) {
@@ -407,8 +407,8 @@ class NotificationsController {
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
             
-            // Get notification
-            $notification = $this->notificationService->getRepository()->findById($params['id']);
+            // Get notification using UUID-based lookup
+            $notification = $this->notificationService->getNotificationByUuid($params['id']);
             
             // Check if notification exists
             if (!$notification) {
@@ -420,8 +420,8 @@ class NotificationsController {
                 return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
             }
             
-            // Delete notification using the correct method name
-            $success = $this->notificationService->getRepository()->deleteNotification($notification->getId());
+            // Delete notification using UUID-based method
+            $success = $this->notificationService->getRepository()->deleteNotificationByUuid($notification->getUuid());
             
             if (!$success) {
                 return Response::error('Failed to delete notification', Response::HTTP_INTERNAL_SERVER_ERROR)->send();

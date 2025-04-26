@@ -57,8 +57,16 @@ class NotificationRepository
             $data['data'] = json_encode($data['data']);
         }
         
-        // Check if notification exists
-        $existing = $this->findById($notification->getId());
+        // Ensure UUID is present for new notifications
+        if (!isset($data['uuid']) || empty($data['uuid'])) {
+            $data['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
+        }
+        
+        // Check if notification exists by UUID
+        $existing = null;
+        if (!empty($data['uuid'])) {
+            $existing = $this->findByUuid($data['uuid']);
+        }
         
         if ($existing) {
             // Update existing notification
@@ -75,15 +83,18 @@ class NotificationRepository
     }
     
     /**
-     * Find notification by ID
+     * Find notification by UUID
      * 
-     * @param string $id Notification ID
+     * This is the preferred method for looking up notifications
+     * as it aligns with the UUID-based identifier pattern used across the system.
+     * 
+     * @param string $uuid Notification UUID
      * @return Notification|null The notification or null if not found
      */
-    public function findById(string $id): ?Notification
+    public function findByUuid(string $uuid): ?Notification
     {
         $result = $this->queryBuilder->select('notifications', ['*'])
-            ->where(['id' => $id])
+            ->where(['uuid' => $uuid])
             ->limit(1)
             ->get();
             
@@ -227,6 +238,7 @@ class NotificationRepository
     {
         $data = [
             'id' => $preference->getId(),
+            'uuid' => $preference->getUuid() ?? \Glueful\Helpers\Utils::generateNanoID(),
             'notifiable_type' => $preference->getNotifiableType(),
             'notifiable_id' => $preference->getNotifiableId(),
             'notification_type' => $preference->getNotificationType(),
@@ -235,8 +247,11 @@ class NotificationRepository
             'settings' => json_encode($preference->getSettings()),
         ];
         
-        // Check if preference exists
-        $existing = $this->findPreferenceById($preference->getId());
+        // Check if preference exists by UUID
+        $existing = null;
+        if (!empty($preference->getUuid())) {
+            $existing = $this->findPreferenceByUuid($preference->getUuid());
+        }
         
         if ($existing) {
             // Update existing preference
@@ -253,15 +268,15 @@ class NotificationRepository
     }
     
     /**
-     * Find notification preference by ID
+     * Find notification preference by UUID
      * 
-     * @param string $id Preference ID
+     * @param string $uuid Preference UUID
      * @return NotificationPreference|null The preference or null if not found
      */
-    public function findPreferenceById(string $id): ?NotificationPreference
+    public function findPreferenceByUuid(string $uuid): ?NotificationPreference
     {
         $result = $this->queryBuilder->select('notification_preferences', ['*'])
-            ->where(['id' => $id])
+            ->where(['uuid' => $uuid])
             ->limit(1)
             ->get();
             
@@ -280,7 +295,8 @@ class NotificationRepository
             $data['notification_type'],
             $channels,
             (bool)$data['enabled'],
-            $settings
+            $settings,
+            $data['uuid'] ?? null
         );
     }
     
@@ -316,7 +332,8 @@ class NotificationRepository
                 $row['notification_type'],
                 $channels,
                 (bool)$row['enabled'],
-                $settings
+                $settings,
+                $row['uuid'] ?? null
             );
         }
         
@@ -333,6 +350,7 @@ class NotificationRepository
     {
         $data = [
             'id' => $template->getId(),
+            'uuid' => $template->getUuid() ?? \Glueful\Helpers\Utils::generateNanoID(),
             'name' => $template->getName(),
             'notification_type' => $template->getNotificationType(),
             'channel' => $template->getChannel(),
@@ -340,8 +358,11 @@ class NotificationRepository
             'parameters' => json_encode($template->getParameters()),
         ];
         
-        // Check if template exists
-        $existing = $this->findTemplateById($template->getId());
+        // Check if template exists by UUID
+        $existing = null;
+        if (!empty($template->getUuid())) {
+            $existing = $this->findTemplateByUuid($template->getUuid());
+        }
         
         if ($existing) {
             // Update existing template
@@ -358,15 +379,15 @@ class NotificationRepository
     }
     
     /**
-     * Find notification template by ID
+     * Find notification template by UUID
      * 
-     * @param string $id Template ID
+     * @param string $uuid Template UUID
      * @return NotificationTemplate|null The template or null if not found
      */
-    public function findTemplateById(string $id): ?NotificationTemplate
+    public function findTemplateByUuid(string $uuid): ?NotificationTemplate
     {
         $result = $this->queryBuilder->select('notification_templates', ['*'])
-            ->where(['id' => $id])
+            ->where(['uuid' => $uuid])
             ->limit(1)
             ->get();
             
@@ -383,7 +404,8 @@ class NotificationRepository
             $data['notification_type'],
             $data['channel'],
             $data['content'],
-            $parameters
+            $parameters,
+            $data['uuid'] ?? null
         );
     }
     
@@ -417,7 +439,8 @@ class NotificationRepository
                 $row['notification_type'],
                 $row['channel'],
                 $row['content'],
-                $parameters
+                $parameters,
+                $row['uuid'] ?? null
             );
         }
         
@@ -549,15 +572,15 @@ class NotificationRepository
     }
     
     /**
-     * Delete a single notification by ID
+     * Delete a single notification by UUID
      *
-     * @param string $id The ID of the notification to delete
+     * @param string $uuid The UUID of the notification to delete
      * @return bool Success status
      */
-    public function deleteNotification(string $id): bool
+    public function deleteNotificationByUuid(string $uuid): bool
     {
         $conditions = [
-            'id' => $id
+            'uuid' => $uuid
         ];
         
         return $this->queryBuilder->delete('notifications', $conditions);

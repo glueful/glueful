@@ -22,6 +22,11 @@ class NotificationPreference implements JsonSerializable
     private string $id;
     
     /**
+     * @var string|null UUID for the preference, used for consistent cross-system identification
+     */
+    private ?string $uuid;
+    
+    /**
      * @var string Type of entity the preferences belong to
      */
     private string $notifiableType;
@@ -71,6 +76,7 @@ class NotificationPreference implements JsonSerializable
      * @param array|null $channels Preferred channels
      * @param bool $enabled Whether notifications are enabled
      * @param array|null $settings Additional settings
+     * @param string|null $uuid UUID for cross-system identification
      */
     public function __construct(
         string $id,
@@ -79,7 +85,8 @@ class NotificationPreference implements JsonSerializable
         string $notificationType,
         ?array $channels = null,
         bool $enabled = true,
-        ?array $settings = null
+        ?array $settings = null,
+        ?string $uuid = null
     ) {
         $this->id = $id;
         $this->notifiableType = $notifiableType;
@@ -88,6 +95,7 @@ class NotificationPreference implements JsonSerializable
         $this->channels = $channels;
         $this->enabled = $enabled;
         $this->settings = $settings;
+        $this->uuid = $uuid;
         $this->createdAt = new DateTime();
         $this->updatedAt = null;
     }
@@ -100,6 +108,29 @@ class NotificationPreference implements JsonSerializable
     public function getId(): string
     {
         return $this->id;
+    }
+    
+    /**
+     * Get preference UUID
+     * 
+     * @return string|null Preference UUID
+     */
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+    
+    /**
+     * Set preference UUID
+     * 
+     * @param string $uuid Preference UUID
+     * @return self
+     */
+    public function setUuid(string $uuid): self
+    {
+        $this->uuid = $uuid;
+        $this->updatedAt = new DateTime();
+        return $this;
     }
     
     /**
@@ -329,6 +360,7 @@ class NotificationPreference implements JsonSerializable
     {
         return [
             'id' => $this->id,
+            'uuid' => $this->uuid,
             'notifiable_type' => $this->notifiableType,
             'notifiable_id' => $this->notifiableId,
             'notification_type' => $this->notificationType,
@@ -365,7 +397,8 @@ class NotificationPreference implements JsonSerializable
             $data['notification_type'],
             isset($data['channels']) ? (is_string($data['channels']) ? json_decode($data['channels'], true) : $data['channels']) : null,
             isset($data['enabled']) ? (bool)$data['enabled'] : true,
-            isset($data['settings']) ? (is_string($data['settings']) ? json_decode($data['settings'], true) : $data['settings']) : null
+            isset($data['settings']) ? (is_string($data['settings']) ? json_decode($data['settings'], true) : $data['settings']) : null,
+            $data['uuid'] ?? null
         );
         
         if (!empty($data['created_at'])) {

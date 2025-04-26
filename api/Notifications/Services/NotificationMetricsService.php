@@ -50,41 +50,41 @@ class NotificationMetricsService
     /**
      * Store notification creation time for calculating delivery time later
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @return void
      */
-    public function setNotificationCreationTime(string $notificationId, string $channel): void
+    public function setNotificationCreationTime(string $notificationUuid, string $channel): void
     {
-        $key = "notification:{$channel}:{$notificationId}:created_at";
+        $key = "notification:{$channel}:{$notificationUuid}:created_at";
         $this->cache->set($key, time(), 86400); // Store for 24 hours
     }
     
     /**
      * Get notification creation time 
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @return int|null Timestamp when notification was created or null if not found
      */
-    public function getNotificationCreationTime(string $notificationId, string $channel): ?int
+    public function getNotificationCreationTime(string $notificationUuid, string $channel): ?int
     {
-        $key = "notification:{$channel}:{$notificationId}:created_at";
+        $key = "notification:{$channel}:{$notificationUuid}:created_at";
         return $this->cache->get($key);
     }
     
     /**
      * Track delivery time for performance metrics
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @param int $deliveryTime Delivery time in seconds
      * @return void
      */
-    public function trackDeliveryTime(string $notificationId, string $channel, int $deliveryTime): void
+    public function trackDeliveryTime(string $notificationUuid, string $channel, int $deliveryTime): void
     {
         // Store delivery time for this specific notification
-        $key = "notification:{$channel}:{$notificationId}:delivery_time";
+        $key = "notification:{$channel}:{$notificationUuid}:delivery_time";
         $this->cache->set($key, $deliveryTime, 86400);
         
         // Update running metrics
@@ -135,13 +135,13 @@ class NotificationMetricsService
     /**
      * Increment and get retry count for a notification
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @return int Current retry count after increment
      */
-    public function incrementRetryCount(string $notificationId, string $channel): int
+    public function incrementRetryCount(string $notificationUuid, string $channel): int
     {
-        $key = "notification:{$channel}:{$notificationId}:retry_count";
+        $key = "notification:{$channel}:{$notificationUuid}:retry_count";
         $retryCount = (int)$this->cache->get($key, 0);
         $retryCount++;
         $this->cache->set($key, $retryCount, 86400);
@@ -155,13 +155,13 @@ class NotificationMetricsService
     /**
      * Get retry count for a notification
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @return int Current retry count
      */
-    public function getRetryCount(string $notificationId, string $channel): int
+    public function getRetryCount(string $notificationUuid, string $channel): int
     {
-        $key = "notification:{$channel}:{$notificationId}:retry_count";
+        $key = "notification:{$channel}:{$notificationUuid}:retry_count";
         return (int)$this->cache->get($key, 0);
     }
     
@@ -276,15 +276,15 @@ class NotificationMetricsService
     /**
      * Clean up notification-specific metrics data after processing is complete
      * 
-     * @param string $notificationId Notification ID
+     * @param string $notificationUuid Notification UUID
      * @param string $channel Notification channel
      * @return void
      */
-    public function cleanupNotificationMetrics(string $notificationId, string $channel): void
+    public function cleanupNotificationMetrics(string $notificationUuid, string $channel): void
     {
-        $createdKey = "notification:{$channel}:{$notificationId}:created_at";
-        $deliveryTimeKey = "notification:{$channel}:{$notificationId}:delivery_time";
-        $retryCountKey = "notification:{$channel}:{$notificationId}:retry_count";
+        $createdKey = "notification:{$channel}:{$notificationUuid}:created_at";
+        $deliveryTimeKey = "notification:{$channel}:{$notificationUuid}:delivery_time";
+        $retryCountKey = "notification:{$channel}:{$notificationUuid}:retry_count";
         
         $this->cache->delete($createdKey);
         $this->cache->delete($deliveryTimeKey);

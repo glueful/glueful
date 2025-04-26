@@ -48,10 +48,10 @@ Router::group('/notifications', function() use ($notificationsController) {
     /**
      * @route GET /notifications/{id}
      * @summary Get Notification
-     * @description Retrieve a single notification by its ID
+     * @description Retrieve a single notification by its UUID
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification ID"
+     * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification retrieved successfully" {
      *   success:boolean="Success status",
      *   message:string="Success message",
@@ -78,7 +78,7 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @description Mark a specific notification as read
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification ID"
+     * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification marked as read" {
      *   success:boolean="Success status",
      *   message:string="Success message",
@@ -102,7 +102,7 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @description Mark a specific notification as unread
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification ID"
+     * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification marked as unread" {
      *   success:boolean="Success status",
      *   message:string="Success message",
@@ -201,10 +201,10 @@ Router::group('/notifications', function() use ($notificationsController) {
     /**
      * @route DELETE /notifications/{id}
      * @summary Delete Notification
-     * @description Delete a specific notification by ID
+     * @description Delete a specific notification by UUID
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification ID"
+     * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification deleted successfully" {
      *   success:boolean="Success status",
      *   message:string="Success message",

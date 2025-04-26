@@ -111,7 +111,7 @@ class NotificationService
         // Track notification creation time for metrics
         $channels = $options['channels'] ?? $this->getDefaultChannels();
         foreach ($channels as $channel) {
-            $this->metricsService->setNotificationCreationTime($notification->getId(), $channel);
+            $this->metricsService->setNotificationCreationTime($notification->getUuid(), $channel);
         }
         
         // Send it immediately unless scheduled for later
@@ -132,17 +132,17 @@ class NotificationService
                     foreach ($result['channels'] as $channel => $channelResult) {
                         if ($channelResult['status'] === 'success') {
                             // Calculate delivery time if applicable
-                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getId(), $channel);
+                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getUuid(), $channel);
                             if ($creationTime) {
                                 $deliveryTime = time() - $creationTime;
-                                $this->metricsService->trackDeliveryTime($notification->getId(), $channel, $deliveryTime);
+                                $this->metricsService->trackDeliveryTime($notification->getUuid(), $channel, $deliveryTime);
                             }
                             
                             // Update success metrics
                             $this->metricsService->updateSuccessRateMetrics($channel, true);
                             
                             // Clean up individual notification metrics
-                            $this->metricsService->cleanupNotificationMetrics($notification->getId(), $channel);
+                            $this->metricsService->cleanupNotificationMetrics($notification->getUuid(), $channel);
                         }
                     }
                 }
@@ -381,13 +381,13 @@ class NotificationService
     }
     
     /**
-     * Get notification by ID
+     * Get notification by UUID
      * 
-     * @param string $id Notification ID
+     * @param string $uuid Notification UUID
      * @return Notification|null The notification or null if not found
      */
-    public function getNotificationById(string $id): ?Notification {
-        return $this->repository->findById($id);
+    public function getNotificationByUuid(string $uuid): ?Notification {
+        return $this->repository->findByUuid($uuid);
     }
     
     /**

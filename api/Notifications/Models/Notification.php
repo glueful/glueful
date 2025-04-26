@@ -22,6 +22,11 @@ class Notification implements JsonSerializable
     private string $id;
     
     /**
+     * @var string|null UUID for the notification, used for consistent cross-system identification
+     */
+    private ?string $uuid;
+    
+    /**
      * @var string Type of notification (e.g., 'account_created', 'payment_received')
      */
     private string $type;
@@ -85,6 +90,7 @@ class Notification implements JsonSerializable
      * @param string $notifiableType Type of notifiable entity
      * @param string $notifiableId ID of notifiable entity
      * @param array|null $data Additional notification data
+     * @param string|null $uuid UUID for cross-system identification
      */
     public function __construct(
         string $id,
@@ -92,7 +98,8 @@ class Notification implements JsonSerializable
         string $subject,
         string $notifiableType,
         string $notifiableId,
-        ?array $data = null
+        ?array $data = null,
+        ?string $uuid = null
     ) {
         $this->id = $id;
         $this->type = $type;
@@ -100,6 +107,7 @@ class Notification implements JsonSerializable
         $this->notifiableType = $notifiableType;
         $this->notifiableId = $notifiableId;
         $this->data = $data;
+        $this->uuid = $uuid;
         $this->priority = 'normal';
         $this->readAt = null;
         $this->scheduledAt = null;
@@ -116,6 +124,29 @@ class Notification implements JsonSerializable
     public function getId(): string
     {
         return $this->id;
+    }
+    
+    /**
+     * Get notification UUID
+     * 
+     * @return string|null Notification UUID
+     */
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+    
+    /**
+     * Set notification UUID
+     * 
+     * @param string $uuid Notification UUID
+     * @return self
+     */
+    public function setUuid(string $uuid): self
+    {
+        $this->uuid = $uuid;
+        $this->updatedAt = new DateTime();
+        return $this;
     }
     
     /**
@@ -360,6 +391,7 @@ class Notification implements JsonSerializable
     {
         return [
             'id' => $this->id,
+            'uuid' => $this->uuid,
             'type' => $this->type,
             'subject' => $this->subject,
             'data' => $this->data,
@@ -398,7 +430,8 @@ class Notification implements JsonSerializable
             $data['subject'],
             $data['notifiable_type'],
             $data['notifiable_id'],
-            isset($data['data']) ? (is_string($data['data']) ? json_decode($data['data'], true) : $data['data']) : null
+            isset($data['data']) ? (is_string($data['data']) ? json_decode($data['data'], true) : $data['data']) : null,
+            $data['uuid'] ?? null
         );
         
         if (isset($data['priority'])) {

@@ -22,6 +22,11 @@ class NotificationTemplate implements JsonSerializable
     private string $id;
     
     /**
+     * @var string|null UUID for the template, used for consistent cross-system identification
+     */
+    private ?string $uuid;
+    
+    /**
      * @var string Template name/identifier
      */
     private string $name;
@@ -65,6 +70,7 @@ class NotificationTemplate implements JsonSerializable
      * @param string $channel Notification channel
      * @param string $content Template content
      * @param array|null $parameters Additional parameters
+     * @param string|null $uuid UUID for cross-system identification
      */
     public function __construct(
         string $id,
@@ -72,7 +78,8 @@ class NotificationTemplate implements JsonSerializable
         string $notificationType,
         string $channel,
         string $content,
-        ?array $parameters = null
+        ?array $parameters = null,
+        ?string $uuid = null
     ) {
         $this->id = $id;
         $this->name = $name;
@@ -80,6 +87,7 @@ class NotificationTemplate implements JsonSerializable
         $this->channel = $channel;
         $this->content = $content;
         $this->parameters = $parameters;
+        $this->uuid = $uuid;
         $this->createdAt = new DateTime();
         $this->updatedAt = null;
     }
@@ -92,6 +100,29 @@ class NotificationTemplate implements JsonSerializable
     public function getId(): string
     {
         return $this->id;
+    }
+    
+    /**
+     * Get template UUID
+     * 
+     * @return string|null Template UUID
+     */
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+    
+    /**
+     * Set template UUID
+     * 
+     * @param string $uuid Template UUID
+     * @return self
+     */
+    public function setUuid(string $uuid): self
+    {
+        $this->uuid = $uuid;
+        $this->updatedAt = new DateTime();
+        return $this;
     }
     
     /**
@@ -259,6 +290,7 @@ class NotificationTemplate implements JsonSerializable
     {
         return [
             'id' => $this->id,
+            'uuid' => $this->uuid,
             'name' => $this->name,
             'notification_type' => $this->notificationType,
             'channel' => $this->channel,
@@ -293,7 +325,8 @@ class NotificationTemplate implements JsonSerializable
             $data['notification_type'],
             $data['channel'],
             $data['content'],
-            isset($data['parameters']) ? (is_string($data['parameters']) ? json_decode($data['parameters'], true) : $data['parameters']) : null
+            isset($data['parameters']) ? (is_string($data['parameters']) ? json_decode($data['parameters'], true) : $data['parameters']) : null,
+            $data['uuid'] ?? null
         );
         
         if (!empty($data['created_at'])) {
