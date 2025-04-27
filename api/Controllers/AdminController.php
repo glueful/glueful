@@ -124,15 +124,7 @@ class AdminController {
             $request->headers->set('Content-Type', 'application/json');
             
             // Authenticate using the admin authentication provider
-            error_log("Authenticating user: " . $credentials['username']);
             $userData = $this->authManager->authenticateWithProvider('admin', $request);
-            
-            // Log authentication result
-            if ($userData) {
-                error_log("Authentication successful for user: " . $credentials['username']);
-            } else {
-                error_log("Authentication failed for user: " . $credentials['username'] . ". Check auth provider configuration.");
-            }
             
             if (!$userData) {
                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
