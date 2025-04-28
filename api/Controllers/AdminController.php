@@ -386,7 +386,12 @@ class AdminController {
                 ->orderBy(['id' => 'DESC'])
                 ->paginate($page, $perPage);
             
+            // Get detailed column metadata using SchemaManager
+            $columns = $this->schemaManager->getTableColumns($table['name']);
+            // error_log("Columns: " . json_encode($columns));
 
+            $results['columns'] = $columns;
+            // error_log("Results: " . json_encode($results));
             return Response::ok($results, 'Data retrieved successfully')->send();
 
         } catch (\Exception $e) {

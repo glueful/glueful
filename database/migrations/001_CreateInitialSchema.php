@@ -67,9 +67,9 @@ class CreateInitialSchema implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'users'],
-            ['type' => 'UNIQUE', 'column' => 'username', 'table' => 'users'],
-            ['type' => 'UNIQUE', 'column' => 'email', 'table' => 'users'],
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'UNIQUE', 'column' => 'username'],
+            ['type' => 'UNIQUE', 'column' => 'email']
         ]);
 
         // Create Roles Table
@@ -82,8 +82,8 @@ class CreateInitialSchema implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'roles'],
-            ['type' => 'UNIQUE', 'column' => 'name', 'table' => 'roles']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'UNIQUE', 'column' => 'name']
         ]);
 
         // Create Role Permissions Table
@@ -96,9 +96,15 @@ class CreateInitialSchema implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'role_permissions'],
-            ['type' => 'INDEX', 'column' => 'role_uuid', 'table' => 'role_permissions'],
-            ['type' => 'FOREIGN KEY', 'column' => 'role_uuid', 'table' => 'role_permissions', 'references' => 'uuid', 'on' => 'roles', 'onDelete' => 'CASCADE']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'role_uuid']
+        ])->addForeignKey([
+            [
+                'column' => 'role_uuid',
+                'references' => 'uuid',
+                'on' => 'roles',
+                'onDelete' => 'CASCADE'
+            ]
         ]);
 
         // Create User Permissions Table
@@ -111,9 +117,15 @@ class CreateInitialSchema implements MigrationInterface
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'user_permissions'],
-            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'user_permissions'],
-            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'user_permissions', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'user_uuid']
+        ])->addForeignKey([
+            [
+                'column' => 'user_uuid',
+                'references' => 'uuid',
+                'on' => 'users',
+                'onDelete' => 'CASCADE'
+            ]
         ]);
 
         // Create Blobs Table
@@ -132,9 +144,14 @@ class CreateInitialSchema implements MigrationInterface
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP',
             'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'blobs'],
-            ['type' => 'INDEX', 'column' => 'created_by', 'table' => 'blobs'],
-            ['type' => 'FOREIGN KEY', 'column' => 'created_by', 'table' => 'blobs', 'references' => 'uuid', 'on' => 'users']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'created_by']
+        ])->addForeignKey([
+            [
+                'column' => 'created_by',
+                'references' => 'uuid',
+                'on' => 'users'
+            ]
         ]);
 
         // Create Profiles Table
@@ -151,11 +168,22 @@ class CreateInitialSchema implements MigrationInterface
             'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
             'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'profiles'],
-            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'profiles'],
-            ['type' => 'INDEX', 'column' => 'photo_uuid', 'table' => 'profiles'],
-            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
-            ['type' => 'FOREIGN KEY', 'column' => 'photo_uuid', 'table' => 'profiles', 'references' => 'uuid', 'on' => 'blobs', 'onDelete' => 'SET NULL']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'user_uuid'],
+            ['type' => 'INDEX', 'column' => 'photo_uuid']
+        ])->addForeignKey([
+            [
+                'column' => 'user_uuid',
+                'references' => 'uuid',
+                'on' => 'users',
+                'onDelete' => 'RESTRICT'
+            ],
+            [
+                'column' => 'photo_uuid',
+                'references' => 'uuid',
+                'on' => 'blobs',
+                'onDelete' => 'SET NULL'
+            ]
         ]);
 
         // Create User Roles Lookup Table
@@ -164,10 +192,21 @@ class CreateInitialSchema implements MigrationInterface
             'user_uuid' => 'CHAR(12) NOT NULL',
             'role_uuid' => 'CHAR(12) NOT NULL'
         ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'user_roles_lookup'],
-            ['type' => 'INDEX', 'column' => 'role_uuid', 'table' => 'user_roles_lookup'],
-            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'user_roles_lookup', 'references' => 'uuid', 'on' => 'users', 'onDelete' => 'CASCADE'],
-            ['type' => 'FOREIGN KEY', 'column' => 'role_uuid', 'table' => 'user_roles_lookup', 'references' => 'uuid', 'on' => 'roles', 'onDelete' => 'CASCADE']
+            ['type' => 'INDEX', 'column' => 'user_uuid'],
+            ['type' => 'INDEX', 'column' => 'role_uuid']
+        ])->addForeignKey([
+            [
+                'column' => 'user_uuid',
+                'references' => 'uuid',
+                'on' => 'users',
+                'onDelete' => 'CASCADE'
+            ],
+            [
+                'column' => 'role_uuid',
+                'references' => 'uuid',
+                'on' => 'roles',
+                'onDelete' => 'CASCADE'
+            ]
         ]);
 
         // Create Auth Sessions Table
@@ -187,10 +226,15 @@ class CreateInitialSchema implements MigrationInterface
             'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'auth_sessions'],
-            ['type' => 'INDEX', 'column' => 'user_uuid', 'table' => 'auth_sessions'],
-            ['type' => 'INDEX', 'column' => 'status', 'table' => 'auth_sessions'],
-            ['type' => 'FOREIGN KEY', 'column' => 'user_uuid', 'table' => 'auth_sessions', 'references' => 'uuid', 'on' => 'users']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'user_uuid'],
+            ['type' => 'INDEX', 'column' => 'status']
+        ])->addForeignKey([
+            [
+                'column' => 'user_uuid',
+                'references' => 'uuid',
+                'on' => 'users'
+            ]
         ]);
 
         // Create App Logs Table
@@ -204,10 +248,10 @@ class CreateInitialSchema implements MigrationInterface
             'channel' => 'VARCHAR(255) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'app_logs'],
-            ['type' => 'INDEX', 'column' => 'level', 'table' => 'app_logs'],
-            ['type' => 'INDEX', 'column' => 'channel', 'table' => 'app_logs'],
-            ['type' => 'INDEX', 'column' => 'created_at', 'table' => 'app_logs']
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'level'],
+            ['type' => 'INDEX', 'column' => 'channel'],
+            ['type' => 'INDEX', 'column' => 'created_at']
         ]);
     }
 

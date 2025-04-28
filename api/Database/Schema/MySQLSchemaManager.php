@@ -39,6 +39,9 @@ class MySQLSchemaManager implements SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
+    
+    /** @var string|null Name of the current table being operated on */
+    protected ?string $currentTable = null;
 
     public function __construct(PDO $pdo)
     {
@@ -75,6 +78,9 @@ class MySQLSchemaManager implements SchemaManager
 
         $sql = "CREATE TABLE IF NOT EXISTS `$table` (" . implode(", ", $columnDefinitions) . ") ENGINE=InnoDB";
         $this->pdo->exec($sql);
+        
+        // Set the current table for chained operations
+        $this->currentTable = $table;
 
         return $this; // Return instance for method chaining
     }
@@ -103,11 +109,22 @@ class MySQLSchemaManager implements SchemaManager
         }
 
         foreach ($indexes as $index) {
-            if (!isset($index['type'], $index['column'], $index['table'])) {
-                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            if (!isset($index['type'], $index['column'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type' and 'column'.");
+            }
+            
+            // If table is not specified, use the current table from chain
+            if (!isset($index['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $index['table'];
+                // Update current table for chaining
+                $this->currentTable = $table;
             }
 
-            $table = $index['table'];
             $column = $index['column'];
             $type = strtoupper($index['type']);
 
@@ -125,18 +142,15 @@ class MySQLSchemaManager implements SchemaManager
                 }
             }
 
-            if ($type === 'FOREIGN KEY') {
-                if (!isset($index['references'], $index['on'])) {
-                    throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
+            if ($type === 'PRIMARY KEY') {
+                // Handle PRIMARY KEY indexes
+                if (is_array($column)) {
+                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columnStr = implode(", ", $columns);
+                    $sql = "ALTER TABLE `$table` ADD PRIMARY KEY ($columnStr)";
+                } else {
+                    $sql = "ALTER TABLE `$table` ADD PRIMARY KEY (`$column`)";
                 }
-
-                // Handle both string and array columns for foreign keys
-                $columnStr = is_array($column) ? implode("`,`", $column) : $column;
-                $sql = "ALTER TABLE `$table` ADD CONSTRAINT `fk_{$table}_{$columnStr}` 
-                        FOREIGN KEY (`$columnStr`) REFERENCES `{$index['on']}` (`{$index['references']}`)";
-            } elseif ($type === 'PRIMARY KEY') {
-                // Primary Key should be handled in CREATE TABLE
-                continue;
             } elseif ($type === 'UNIQUE') {
                 // Handle multi-column unique indexes
                 if (is_array($column)) {
@@ -268,21 +282,102 @@ class MySQLSchemaManager implements SchemaManager
      * Gets MySQL table metadata
      * 
      * Returns detailed information:
-     * - Column definitions
-     * - Index structures
-     * - Foreign keys
-     * - Partition info
-     * - Storage engine
-     * - Table status
-     * - Character sets
+     * - Column definitions (name, type, nullable, default)
+     * - Index structures (primary, unique, index)
+     * - Foreign keys and relationships
+     * - Column attributes (auto_increment, etc)
+     * - Character sets and collations
      * 
+     * @param string $table The table name to get columns for
+     * @return array Comprehensive column information including relationships and indexes
      * @throws \PDOException If table info unavailable
      */
     public function getTableColumns(string $table): array
     {
+        // Get basic column information
         $stmt = $this->pdo->prepare("SHOW COLUMNS FROM `$table`");
         $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Format columns into a more usable structure with column name as key
+        $formattedColumns = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'];
+            $formattedColumns[$columnName] = [
+                'name' => $columnName,
+                'type' => $column['Type'],
+                'nullable' => $column['Null'] === 'YES',
+                'default' => $column['Default'],
+                'extra' => $column['Extra'],
+                'is_primary' => strpos($column['Key'], 'PRI') !== false,
+                'is_unique' => strpos($column['Key'], 'UNI') !== false,
+                'is_indexed' => strpos($column['Key'], 'MUL') !== false,
+                'relationships' => [],
+                'indexes' => []
+            ];
+        }
+        
+        // Get index information
+        try {
+            $indexStmt = $this->pdo->prepare("SHOW INDEXES FROM `$table`");
+            $indexStmt->execute();
+            $indexes = $indexStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Group indexes by column
+            foreach ($indexes as $index) {
+                $columnName = $index['Column_name'];
+                if (isset($formattedColumns[$columnName])) {
+                    $formattedColumns[$columnName]['indexes'][] = [
+                        'name' => $index['Key_name'],
+                        'type' => $index['Key_name'] === 'PRIMARY' ? 'PRIMARY KEY' : 
+                                 ($index['Non_unique'] == 0 ? 'UNIQUE' : 'INDEX'),
+                        'sequence' => $index['Seq_in_index'],
+                        'cardinality' => $index['Cardinality']
+                    ];
+                }
+            }
+        } catch (\PDOException $e) {
+            // If indexes can't be retrieved, continue without them
+        }
+        
+        // Get foreign key information (requires INFORMATION_SCHEMA privilege)
+        try {
+            $fkQuery = "SELECT 
+                            k.COLUMN_NAME as column_name,
+                            k.REFERENCED_TABLE_NAME as ref_table,
+                            k.REFERENCED_COLUMN_NAME as ref_column,
+                            c.UPDATE_RULE as on_update,
+                            c.DELETE_RULE as on_delete,
+                            c.CONSTRAINT_NAME as constraint_name
+                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
+                        JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS c
+                            ON k.CONSTRAINT_NAME = c.CONSTRAINT_NAME
+                        WHERE k.TABLE_SCHEMA = DATABASE()
+                            AND k.TABLE_NAME = :table
+                            AND k.REFERENCED_TABLE_NAME IS NOT NULL";
+            
+            $fkStmt = $this->pdo->prepare($fkQuery);
+            $fkStmt->execute(['table' => $table]);
+            $foreignKeys = $fkStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Add relationships to columns
+            foreach ($foreignKeys as $fk) {
+                $columnName = $fk['column_name'];
+                if (isset($formattedColumns[$columnName])) {
+                    $formattedColumns[$columnName]['relationships'][] = [
+                        'constraint' => $fk['constraint_name'],
+                        'references_table' => $fk['ref_table'],
+                        'references_column' => $fk['ref_column'],
+                        'on_update' => $fk['on_update'],
+                        'on_delete' => $fk['on_delete']
+                    ];
+                }
+            }
+        } catch (\PDOException $e) {
+            // If foreign key information can't be retrieved, continue without it
+        }
+        
+        return array_values($formattedColumns); // Convert back to indexed array
     }
 
     public function disableForeignKeyChecks(): void
@@ -327,5 +422,70 @@ class MySQLSchemaManager implements SchemaManager
         return isset($status['Data_length'], $status['Index_length'])
             ? (int) ($status['Data_length'] + $status['Index_length'])
             : 0;
+    }
+    /**
+     * Adds foreign key constraints to MySQL tables
+     * 
+     * Creates foreign key constraints with:
+     * - Support for multiple constraints in one call
+     * - ON DELETE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - ON UPDATE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - Custom constraint naming
+     * 
+     * When used in a chain after createTable(), the table parameter is optional 
+     * and will use the current table from the previous operation.
+     * 
+     * @param array $foreignKeys Array of foreign key definitions
+     * @return self For method chaining
+     * @throws \PDOException On constraint creation failure
+     */
+    public function addForeignKey(array $foreignKeys): self
+    {
+        // Convert single foreign key format to array format for consistency
+        if (!isset($foreignKeys[0]) || !is_array($foreignKeys[0])) {
+            $foreignKeys = [$foreignKeys];
+        }
+        
+        foreach ($foreignKeys as $foreignKey) {
+            // Check if we're referencing the current table in a chain
+            if (!isset($foreignKey['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $foreignKey['table'];
+                // Update current table for possible future chain operations
+                $this->currentTable = $table;
+            }
+            
+            if (!isset($foreignKey['column'], $foreignKey['references'], $foreignKey['on'])) {
+                throw new \InvalidArgumentException("Foreign key must have 'column', 'references', and 'on' defined.");
+            }
+            
+            $column = $foreignKey['column'];
+            $referencesTable = $foreignKey['on'];
+            $referencesColumn = $foreignKey['references'];
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_".(is_array($column) ? implode("_", $column) : $column);
+            
+            // Handle single-column and multi-column foreign keys
+            $columnStr = is_array($column) ? implode("`,`", $column) : $column;
+            $referencesColumnStr = is_array($referencesColumn) ? implode("`,`", $referencesColumn) : $referencesColumn;
+            
+            $sql = "ALTER TABLE `$table` ADD CONSTRAINT `$constraintName` 
+                    FOREIGN KEY (`$columnStr`) REFERENCES `$referencesTable` (`$referencesColumnStr`)";
+            
+            if (isset($foreignKey['onDelete'])) {
+                $sql .= " ON DELETE {$foreignKey['onDelete']}";
+            }
+            
+            if (isset($foreignKey['onUpdate'])) {
+                $sql .= " ON UPDATE {$foreignKey['onUpdate']}";
+            }
+            
+            $this->pdo->exec($sql);
+        }
+        
+        return $this;
     }
 }

@@ -50,6 +50,9 @@ class PostgreSQLSchemaManager extends SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
+    
+    /** @var string|null Name of the current table being operated on */
+    protected ?string $currentTable = null;
 
     public function __construct(PDO $pdo)
     {
@@ -97,6 +100,9 @@ class PostgreSQLSchemaManager extends SchemaManager
         $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
 
         $this->pdo->exec($sql);
+        
+        // Set the current table for chained operations
+        $this->currentTable = $table;
 
         return $this; // Return instance for method chaining
     }
@@ -128,11 +134,22 @@ class PostgreSQLSchemaManager extends SchemaManager
         }
     
         foreach ($indexes as $index) {
-            if (!isset($index['type'], $index['column'], $index['table'])) {
-                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            if (!isset($index['type'], $index['column'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type' and 'column'.");
+            }
+            
+            // If table is not specified, use the current table from chain
+            if (!isset($index['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $index['table'];
+                // Update current table for chaining
+                $this->currentTable = $table;
             }
     
-            $table = $index['table'];
             $column = $index['column'];
             $type = strtoupper($index['type']);
     
@@ -152,21 +169,14 @@ class PostgreSQLSchemaManager extends SchemaManager
                 continue; // Skip if index exists
             }
     
-            if ($type === 'FOREIGN KEY') {
-                if (!isset($index['references'], $index['on'])) {
-                    throw new \InvalidArgumentException("Foreign key must have 'references' and 'on' defined.");
-                }
-    
-                // Handle both string and array columns for foreign keys
+            if ($type === 'PRIMARY KEY') {
+                // Handle PRIMARY KEY indexes
                 if (is_array($column)) {
                     $columnNames = array_map(fn($col) => "\"$col\"", $column);
                     $columnStr = implode(", ", $columnNames);
-                    $name = isset($index['name']) ? $index['name'] : "fk_{$table}_" . implode("_", $column);
-                    $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"$name\" 
-                            FOREIGN KEY ($columnStr) REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+                    $sql = "ALTER TABLE \"$table\" ADD PRIMARY KEY ($columnStr)";
                 } else {
-                    $sql = "ALTER TABLE \"$table\" ADD CONSTRAINT \"fk_{$table}_{$column}\" 
-                            FOREIGN KEY (\"$column\") REFERENCES \"{$index['on']}\" (\"{$index['references']}\")";
+                    $sql = "ALTER TABLE \"$table\" ADD PRIMARY KEY (\"$column\")";
                 }
             } elseif ($type === 'UNIQUE') {
                 // Handle multi-column unique indexes
@@ -351,35 +361,205 @@ class PostgreSQLSchemaManager extends SchemaManager
      * Get PostgreSQL table information
      * 
      * Returns Metadata:
-     * - Column definitions
-     * - Constraint details
-     * - Storage parameters
-     * - Dependencies
-     * - Inheritance
-     * - Partitioning
-     * - Statistics
-     * - Permissions
+     * - Column definitions (name, type, nullable, default)
+     * - Constraint details (primary, foreign keys, unique)
+     * - Index information with types
+     * - Relationship data with referenced tables
+     * - Column attributes (identity, generated)
      * 
      * System Views Used:
      * - information_schema.columns
-     * - pg_stat_user_tables
-     * - pg_class
+     * - pg_constraint
+     * - pg_indexes
      * - pg_attribute
      * 
+     * @param string $tableName The table name to get column information for
+     * @return array Comprehensive column information including relationships and indexes
      * @throws Exception On invalid table or permission denied
      */
     public function getTableColumns(string $tableName): array
     {
         try {
-            $stmt = $this->pdo->prepare("
-            SELECT column_name, data_type, is_nullable, column_default 
-            FROM information_schema.columns 
-            WHERE table_name = :table
-            ");
-            $stmt->execute(['table' => $tableName]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Get basic column information from information_schema
+            $columnQuery = "
+                SELECT 
+                    column_name, 
+                    data_type, 
+                    is_nullable, 
+                    column_default,
+                    character_maximum_length,
+                    udt_name,
+                    is_identity,
+                    is_generated
+                FROM information_schema.columns 
+                WHERE table_name = :table
+                ORDER BY ordinal_position
+            ";
+            $columnStmt = $this->pdo->prepare($columnQuery);
+            $columnStmt->execute(['table' => $tableName]);
+            $columns = $columnStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format columns into a more usable structure with column name as key
+            $formattedColumns = [];
+            foreach ($columns as $column) {
+                $columnName = $column['column_name'];
+                $formattedColumns[$columnName] = [
+                    'name' => $columnName,
+                    'type' => $column['data_type'],
+                    'udt_name' => $column['udt_name'],
+                    'nullable' => $column['is_nullable'] === 'YES',
+                    'default' => $column['column_default'],
+                    'max_length' => $column['character_maximum_length'],
+                    'is_identity' => $column['is_identity'] === 'YES',
+                    'is_generated' => $column['is_generated'] !== 'NEVER',
+                    'is_primary' => false,
+                    'is_unique' => false,
+                    'is_indexed' => false,
+                    'relationships' => [],
+                    'indexes' => []
+                ];
+            }
+            
+            // Get primary key constraints
+            try {
+                $pkQuery = "
+                    SELECT 
+                        a.attname as column_name
+                    FROM pg_constraint c
+                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                    JOIN pg_class t ON t.oid = c.conrelid
+                    WHERE c.contype = 'p' 
+                      AND t.relname = :table
+                ";
+                $pkStmt = $this->pdo->prepare($pkQuery);
+                $pkStmt->execute(['table' => $tableName]);
+                $pks = $pkStmt->fetchAll(PDO::FETCH_COLUMN);
+                
+                // Mark primary key columns
+                foreach ($pks as $pk) {
+                    if (isset($formattedColumns[$pk])) {
+                        $formattedColumns[$pk]['is_primary'] = true;
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without primary key information
+            }
+            
+            // Get unique constraints
+            try {
+                $uniqueQuery = "
+                    SELECT 
+                        a.attname as column_name
+                    FROM pg_constraint c
+                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                    JOIN pg_class t ON t.oid = c.conrelid
+                    WHERE c.contype = 'u' 
+                      AND t.relname = :table
+                ";
+                $uniqueStmt = $this->pdo->prepare($uniqueQuery);
+                $uniqueStmt->execute(['table' => $tableName]);
+                $uniques = $uniqueStmt->fetchAll(PDO::FETCH_COLUMN);
+                
+                // Mark unique constraint columns
+                foreach ($uniques as $unique) {
+                    if (isset($formattedColumns[$unique])) {
+                        $formattedColumns[$unique]['is_unique'] = true;
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without unique constraint information
+            }
+            
+            // Get indexes
+            try {
+                $indexQuery = "
+                    SELECT 
+                        i.relname as index_name,
+                        a.attname as column_name,
+                        ix.indisunique as is_unique,
+                        am.amname as index_type
+                    FROM pg_index ix
+                    JOIN pg_class i ON i.oid = ix.indexrelid
+                    JOIN pg_class t ON t.oid = ix.indrelid
+                    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+                    JOIN pg_am am ON am.oid = i.relam
+                    WHERE t.relname = :table
+                    AND i.relname NOT IN (
+                        SELECT constraint_name 
+                        FROM information_schema.table_constraints 
+                        WHERE table_name = :table 
+                        AND constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+                    )
+                ";
+                $indexStmt = $this->pdo->prepare($indexQuery);
+                $indexStmt->execute(['table' => $tableName]);
+                $indexes = $indexStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Add index information to columns
+                foreach ($indexes as $index) {
+                    $columnName = $index['column_name'];
+                    if (isset($formattedColumns[$columnName])) {
+                        $formattedColumns[$columnName]['is_indexed'] = true;
+                        $formattedColumns[$columnName]['indexes'][] = [
+                            'name' => $index['index_name'],
+                            'type' => $index['is_unique'] === 't' ? 'UNIQUE' : 'INDEX',
+                            'method' => $index['index_type'] // btree, hash, gist, gin, etc.
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without index information
+            }
+            
+            // Get foreign key constraints (relationships)
+            try {
+                $fkQuery = "
+                    SELECT 
+                        a.attname as column_name,
+                        c.conname as constraint_name,
+                        c.confupdtype as on_update,
+                        c.confdeltype as on_delete,
+                        tf.relname as ref_table,
+                        af.attname as ref_column
+                    FROM pg_constraint c
+                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                    JOIN pg_class t ON t.oid = c.conrelid
+                    JOIN pg_class tf ON tf.oid = c.confrelid
+                    JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey)
+                    WHERE c.contype = 'f'
+                      AND t.relname = :table
+                ";
+                $fkStmt = $this->pdo->prepare($fkQuery);
+                $fkStmt->execute(['table' => $tableName]);
+                $foreignKeys = $fkStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Map PostgreSQL's action codes to readable text
+                $actionMap = [
+                    'a' => 'NO ACTION',
+                    'r' => 'RESTRICT',
+                    'c' => 'CASCADE',
+                    'n' => 'SET NULL',
+                    'd' => 'SET DEFAULT'
+                ];
+                
+                // Add relationship information to columns
+                foreach ($foreignKeys as $fk) {
+                    $columnName = $fk['column_name'];
+                    if (isset($formattedColumns[$columnName])) {
+                        $formattedColumns[$columnName]['relationships'][] = [
+                            'constraint' => $fk['constraint_name'],
+                            'references_table' => $fk['ref_table'],
+                            'references_column' => $fk['ref_column'],
+                            'on_update' => $actionMap[$fk['on_update']] ?? 'NO ACTION',
+                            'on_delete' => $actionMap[$fk['on_delete']] ?? 'NO ACTION'
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without foreign key information
+            }
+            
+            return array_values($formattedColumns); // Convert back to indexed array
         } catch (Exception $e) {
             throw new Exception("Error fetching columns for table '{$tableName}': " . $e->getMessage());
         }
@@ -443,6 +623,89 @@ class PostgreSQLSchemaManager extends SchemaManager
         ");
         $stmt->execute(['table' => $table]);
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Adds foreign key constraints to PostgreSQL tables
+     * 
+     * Creates foreign key constraints with:
+     * - Support for multiple constraints in one call
+     * - ON DELETE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - ON UPDATE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - Custom constraint naming
+     * - Validation options
+     * - Match types (FULL, PARTIAL, SIMPLE)
+     * 
+     * When used in a chain after createTable(), the table parameter is optional 
+     * and will use the current table from the previous operation.
+     * 
+     * @param array $foreignKeys Array of foreign key definitions
+     * @return self For method chaining
+     * @throws Exception On constraint creation failure
+     */
+    public function addForeignKey(array $foreignKeys): self
+    {
+        // Convert single foreign key format to array format for consistency
+        if (!isset($foreignKeys[0]) || !is_array($foreignKeys[0])) {
+            $foreignKeys = [$foreignKeys];
+        }
+        
+        foreach ($foreignKeys as $foreignKey) {
+            // Check if we're referencing the current table in a chain
+            if (!isset($foreignKey['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $foreignKey['table'];
+                // Update current table for possible future chain operations
+                $this->currentTable = $table;
+            }
+            
+            if (!isset($foreignKey['column'], $foreignKey['references'], $foreignKey['on'])) {
+                throw new \InvalidArgumentException("Foreign key must have 'column', 'references', and 'on' defined.");
+            }
+            
+            $column = $foreignKey['column'];
+            $referencesTable = $foreignKey['on'];
+            $referencesColumn = $foreignKey['references'];
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_".(is_array($column) ? implode("_", $column) : $column);
+            
+            // Handle single-column and multi-column foreign keys
+            $columnStr = is_array($column) ? implode("\",\"", $column) : $column;
+            $referencesColumnStr = is_array($referencesColumn) ? implode("\",\"", $referencesColumn) : $referencesColumn;
+            
+            $sql = "ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$constraintName}\" 
+                    FOREIGN KEY (\"{$columnStr}\") REFERENCES \"{$referencesTable}\" (\"{$referencesColumnStr}\")";
+            
+            if (isset($foreignKey['onDelete'])) {
+                $sql .= " ON DELETE {$foreignKey['onDelete']}";
+            }
+            
+            if (isset($foreignKey['onUpdate'])) {
+                $sql .= " ON UPDATE {$foreignKey['onUpdate']}";
+            }
+            
+            // PostgreSQL-specific options
+            if (isset($foreignKey['match'])) {
+                $sql .= " MATCH {$foreignKey['match']}"; // SIMPLE, FULL, PARTIAL
+            }
+            
+            if (isset($foreignKey['deferrable']) && $foreignKey['deferrable']) {
+                $sql .= " DEFERRABLE";
+                
+                if (isset($foreignKey['initiallyDeferred']) && $foreignKey['initiallyDeferred']) {
+                    $sql .= " INITIALLY DEFERRED";
+                } else {
+                    $sql .= " INITIALLY IMMEDIATE";
+                }
+            }
+            
+            $this->pdo->exec($sql);
+        }
+        
+        return $this;
     }
 }
 
