@@ -48,9 +48,9 @@ class CreateScheduledJobsTables implements MigrationInterface
             'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'DATETIME NULL'
         ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'name', 'table' => 'scheduled_jobs'],
-            ['type' => 'INDEX', 'column' => 'next_run', 'table' => 'scheduled_jobs'],
-            ['type' => 'INDEX', 'column' => 'is_enabled', 'table' => 'scheduled_jobs']
+            ['type' => 'INDEX', 'column' => 'name'],
+            ['type' => 'INDEX', 'column' => 'next_run'],
+            ['type' => 'INDEX', 'column' => 'is_enabled']
         ]);
 
         // Create Job Executions Table
@@ -66,10 +66,16 @@ class CreateScheduledJobsTables implements MigrationInterface
             'execution_time' => 'FLOAT NULL',
             'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
         ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
-            ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
-            ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
-            ['type' => 'FOREIGN KEY', 'column' => 'job_uuid', 'table' => 'job_executions', 'references' => 'uuid', 'on' => 'scheduled_jobs', 'onDelete' => 'CASCADE']
+            ['type' => 'INDEX', 'column' => 'job_uuid'],
+            ['type' => 'INDEX', 'column' => 'status'],
+            ['type' => 'INDEX', 'column' => 'started_at']
+        ])->addForeignKey([
+            [
+                'column' => 'job_uuid',
+                'references' => 'uuid',
+                'on' => 'scheduled_jobs',
+                'onDelete' => 'CASCADE'
+            ]
         ]);
     }
 

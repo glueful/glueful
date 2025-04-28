@@ -45,11 +45,14 @@ use Exception;
  *     ]);
  * ```
  */
-class SQLiteSchemaManager extends SchemaManager
+class SQLiteSchemaManager implements SchemaManager
 {
 
     /** @var PDO Active database connection */
     protected PDO $pdo;
+    
+    /** @var string|null Name of the current table being operated on */
+    protected ?string $currentTable = null;
 
     public function __construct(PDO $pdo)
     {
@@ -96,6 +99,9 @@ class SQLiteSchemaManager extends SchemaManager
         $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
 
         $this->pdo->exec($sql);
+        
+        // Set the current table for chained operations
+        $this->currentTable = $table;
 
         return $this; // Return instance for method chaining
     }
@@ -124,11 +130,22 @@ class SQLiteSchemaManager extends SchemaManager
         }
     
         foreach ($indexes as $index) {
-            if (!isset($index['type'], $index['column'], $index['table'])) {
-                throw new \InvalidArgumentException("Each index must have a 'type', 'column', and 'table'.");
+            if (!isset($index['type'], $index['column'])) {
+                throw new \InvalidArgumentException("Each index must have a 'type' and 'column'.");
+            }
+            
+            // If table is not specified, use the current table from chain
+            if (!isset($index['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $index['table'];
+                // Update current table for chaining
+                $this->currentTable = $table;
             }
     
-            $table = $index['table'];
             $column = $index['column'];
             $type = strtoupper($index['type']);
     
@@ -141,7 +158,7 @@ class SQLiteSchemaManager extends SchemaManager
     
             // Check if index already exists in SQLite
             $existingIndexes = $this->pdo
-                ->query("PRAGMA index_list(`$table`)")
+                ->query("PRAGMA index_list(\"$table\")")
                 ->fetchAll(PDO::FETCH_ASSOC);
     
             foreach ($existingIndexes as $existingIndex) {
@@ -150,28 +167,29 @@ class SQLiteSchemaManager extends SchemaManager
                 }
             }
     
-            if ($type === 'FOREIGN KEY') {
-                throw new \RuntimeException("SQLite does not support adding foreign keys with ALTER TABLE. Define them in CREATE TABLE.");
+            if ($type === 'PRIMARY KEY') {
+                // SQLite doesn't support adding PRIMARY KEY after table creation
+                throw new \RuntimeException("SQLite does not support adding PRIMARY KEY with ALTER TABLE. Define it in CREATE TABLE.");
             } elseif ($type === 'UNIQUE') {
                 // Handle multi-column unique indexes
                 if (is_array($column)) {
-                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columns = array_map(fn($col) => "\"$col\"", $column);
                     $columnStr = implode(", ", $columns);
                     $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
-                    $sql = "CREATE UNIQUE INDEX `$name` ON `$table` ($columnStr)";
+                    $sql = "CREATE UNIQUE INDEX \"$name\" ON \"$table\" ($columnStr)";
                 } else {
-                    $sql = "CREATE UNIQUE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                    $sql = "CREATE UNIQUE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
                 }
             } else {
                 // Default case: add normal index
                 // Handle multi-column indexes
                 if (is_array($column)) {
-                    $columns = array_map(fn($col) => "`$col`", $column);
+                    $columns = array_map(fn($col) => "\"$col\"", $column);
                     $columnStr = implode(", ", $columns);
                     $name = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
-                    $sql = "CREATE INDEX `$name` ON `$table` ($columnStr)";
+                    $sql = "CREATE INDEX \"$name\" ON \"$table\" ($columnStr)";
                 } else {
-                    $sql = "CREATE INDEX `{$table}_{$column}_idx` ON `$table` (`$column`)";
+                    $sql = "CREATE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
                 }
             }
     
@@ -325,26 +343,140 @@ class SQLiteSchemaManager extends SchemaManager
     /**
      * Get SQLite table information
      * 
-     * Returns via PRAGMA table_info:
-     * - Column names and positions
-     * - Declared types (with affinity)
-     * - NOT NULL constraints
-     * - DEFAULT values
-     * - PRIMARY KEY columns
+     * Returns comprehensive column information:
+     * - Column definitions (name, type, nullable, default)
+     * - Primary key columns
+     * - Foreign key relationships
+     * - Index information 
+     * - Unique constraint details
      * 
-     * Additional PRAGMA commands:
-     * - foreign_key_list
-     * - index_list
-     * - table_xinfo
+     * Data sources:
+     * - PRAGMA table_info
+     * - PRAGMA foreign_key_list
+     * - PRAGMA index_list and index_info
+     * - sqlite_master for detailed constraints
      * 
-     * @throws Exception On invalid table
+     * @param string $table Table to analyze
+     * @return array Detailed column metadata with relationships and indexes
+     * @throws Exception On invalid table or access error
      */
     public function getTableColumns(string $table): array
     {
         try {
+            // Get basic column information from PRAGMA table_info
             $stmt = $this->pdo->prepare("PRAGMA table_info({$table});");
             $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format columns into a more usable structure with column name as key
+            $formattedColumns = [];
+            foreach ($columns as $column) {
+                $columnName = $column['name'];
+                $formattedColumns[$columnName] = [
+                    'name' => $columnName,
+                    'type' => $column['type'],
+                    'nullable' => $column['notnull'] == 0,
+                    'default' => $column['dflt_value'],
+                    'is_primary' => $column['pk'] == 1,
+                    'is_unique' => false, // Will be populated later
+                    'is_indexed' => false, // Will be populated later
+                    'relationships' => [],
+                    'indexes' => []
+                ];
+            }
+            
+            // Get index information
+            try {
+                // First get all indexes for the table
+                $indexListStmt = $this->pdo->prepare("PRAGMA index_list({$table});");
+                $indexListStmt->execute();
+                $indexes = $indexListStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($indexes as $index) {
+                    $indexName = $index['name'];
+                    $isUnique = $index['unique'] == 1;
+                    
+                    // Skip SQLite's auto-generated indexes for PRIMARY KEY
+                    if (preg_match('/^sqlite_autoindex_/', $indexName)) {
+                        continue;
+                    }
+                    
+                    // Get columns in this index
+                    $indexInfoStmt = $this->pdo->prepare("PRAGMA index_info({$indexName});");
+                    $indexInfoStmt->execute();
+                    $indexedColumns = $indexInfoStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    foreach ($indexedColumns as $indexedColumn) {
+                        $columnName = $indexedColumn['name'];
+                        if (isset($formattedColumns[$columnName])) {
+                            $formattedColumns[$columnName]['is_indexed'] = true;
+                            if ($isUnique) {
+                                $formattedColumns[$columnName]['is_unique'] = true;
+                            }
+                            
+                            $formattedColumns[$columnName]['indexes'][] = [
+                                'name' => $indexName,
+                                'type' => $isUnique ? 'UNIQUE' : 'INDEX',
+                                'sequence' => $indexedColumn['seqno']
+                            ];
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without index information
+            }
+            
+            // Get foreign key relationships
+            try {
+                $fkStmt = $this->pdo->prepare("PRAGMA foreign_key_list({$table});");
+                $fkStmt->execute();
+                $foreignKeys = $fkStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($foreignKeys as $fk) {
+                    $columnName = $fk['from'];
+                    if (isset($formattedColumns[$columnName])) {
+                        $formattedColumns[$columnName]['relationships'][] = [
+                            'constraint' => "fk_{$table}_{$columnName}_{$fk['id']}", // SQLite doesn't name constraints, create synthetic name
+                            'references_table' => $fk['table'],
+                            'references_column' => $fk['to'],
+                            'on_update' => $fk['on_update'] ?: 'NO ACTION',
+                            'on_delete' => $fk['on_delete'] ?: 'NO ACTION'
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without foreign key information
+            }
+            
+            // Identify columns that are part of unique constraints but not detected as indexes
+            // This handles cases where UNIQUE constraints are defined in CREATE TABLE
+            try {
+                // Get table creation SQL
+                $sqlStmt = $this->pdo->prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=:table;");
+                $sqlStmt->execute(['table' => $table]);
+                $createTableSql = $sqlStmt->fetchColumn();
+                
+                if ($createTableSql) {
+                    // Look for UNIQUE constraints in the table definition
+                    if (preg_match_all('/UNIQUE\s*\((.*?)\)/i', $createTableSql, $matches)) {
+                        foreach ($matches[1] as $uniqueConstraint) {
+                            // Split and trim column names
+                            $uniqueColumns = array_map('trim', explode(',', $uniqueConstraint));
+                            foreach ($uniqueColumns as $columnName) {
+                                // Remove backticks or quotes
+                                $columnName = trim($columnName, '"`[] ');
+                                if (isset($formattedColumns[$columnName])) {
+                                    $formattedColumns[$columnName]['is_unique'] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue without additional unique constraint information
+            }
+            
+            return array_values($formattedColumns); // Convert back to indexed array
         } catch (Exception $e) {
             throw new Exception("Error fetching columns for table '{$table}': " . $e->getMessage());
         }
@@ -401,5 +533,139 @@ class SQLiteSchemaManager extends SchemaManager
         ");
         $stmt->execute(['table' => $table]);
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Adds foreign key constraints to SQLite tables
+     * 
+     * Creates foreign key constraints with:
+     * - Support for multiple constraints in one call
+     * - ON DELETE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - ON UPDATE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
+     * - Custom constraint naming (for reference only, SQLite doesn't use constraint names)
+     * 
+     * SQLite Limitations:
+     * - Foreign keys must be enabled with PRAGMA foreign_keys = ON
+     * - Cannot add foreign keys to existing tables
+     * - Must recreate the table to add foreign keys
+     * - This implementation uses a workaround to add foreign keys by recreating the table
+     * 
+     * When used in a chain after createTable(), the table parameter is optional 
+     * and will use the current table from the previous operation.
+     * 
+     * @param array $foreignKeys Array of foreign key definitions
+     * @return self For method chaining
+     * @throws Exception On constraint creation failure or SQLite limitations
+     */
+    public function addForeignKey(array $foreignKeys): self
+    {
+        // Convert single foreign key format to array format for consistency
+        if (!isset($foreignKeys[0]) || !is_array($foreignKeys[0])) {
+            $foreignKeys = [$foreignKeys];
+        }
+        
+        foreach ($foreignKeys as $foreignKey) {
+            // Check if we're referencing the current table in a chain
+            if (!isset($foreignKey['table'])) {
+                if ($this->currentTable === null) {
+                    throw new \InvalidArgumentException("Table must be specified when not using method chaining.");
+                }
+                $table = $this->currentTable;
+            } else {
+                $table = $foreignKey['table'];
+                // Update current table for possible future chain operations
+                $this->currentTable = $table;
+            }
+            
+            if (!isset($foreignKey['column'], $foreignKey['references'], $foreignKey['on'])) {
+                throw new \InvalidArgumentException("Foreign key must have 'column', 'references', and 'on' defined.");
+            }
+            
+            $column = $foreignKey['column'];
+            $referencesTable = $foreignKey['on'];
+            $referencesColumn = $foreignKey['references'];
+            
+            // SQLite requires recreating the table to add foreign keys
+            // First, get the current table definition
+            $tableInfo = $this->pdo->query("PRAGMA table_info(\"$table\")")->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($tableInfo)) {
+                throw new \RuntimeException("Table '$table' does not exist");
+            }
+            
+            // Build the new table definition with foreign key constraint
+            $columns = [];
+            foreach ($tableInfo as $columnInfo) {
+                $name = $columnInfo['name'];
+                $type = $columnInfo['type'];
+                $notNull = $columnInfo['notnull'] ? 'NOT NULL' : '';
+                $default = $columnInfo['dflt_value'] ? "DEFAULT {$columnInfo['dflt_value']}" : '';
+                $pk = $columnInfo['pk'] ? 'PRIMARY KEY' : '';
+                
+                $columns[] = "\"$name\" $type $notNull $default $pk";
+            }
+            
+            // Format the foreign key constraint
+            $foreignKeyConstraint = "FOREIGN KEY (\"" . (is_array($column) ? implode("\", \"", $column) : $column) . "\") " .
+                                   "REFERENCES \"$referencesTable\" (\"" . (is_array($referencesColumn) ? implode("\", \"", $referencesColumn) : $referencesColumn) . "\")";
+                                   
+            // Add ON DELETE/UPDATE clauses if specified
+            if (isset($foreignKey['onDelete'])) {
+                $foreignKeyConstraint .= " ON DELETE {$foreignKey['onDelete']}";
+            }
+            
+            if (isset($foreignKey['onUpdate'])) {
+                $foreignKeyConstraint .= " ON UPDATE {$foreignKey['onUpdate']}";
+            }
+            
+            // Check if foreign keys are enabled
+            $foreignKeysEnabled = (bool) $this->pdo->query("PRAGMA foreign_keys")->fetchColumn();
+            if (!$foreignKeysEnabled) {
+                $this->enableForeignKeyChecks();
+            }
+            
+            // Start transaction for table recreation
+            $this->pdo->beginTransaction();
+            
+            try {
+                // Create a temporary table with the same structure plus the foreign key
+                $tempTable = $table . "_temp_" . uniqid();
+                $createTempSql = "CREATE TABLE \"$tempTable\" (" . implode(", ", $columns) . ", $foreignKeyConstraint)";
+                $this->pdo->exec($createTempSql);
+                
+                // Copy data from old table to new table
+                $this->pdo->exec("INSERT INTO \"$tempTable\" SELECT * FROM \"$table\"");
+                
+                // Drop old table
+                $this->pdo->exec("DROP TABLE \"$table\"");
+                
+                // Rename temp table to original name
+                $this->pdo->exec("ALTER TABLE \"$tempTable\" RENAME TO \"$table\"");
+                
+                // Recreate any indexes that were on the original table
+                $indexes = $this->pdo->query("PRAGMA index_list(\"$tempTable\")")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($indexes as $index) {
+                    // Skip sqlite_autoindex which are auto-created
+                    if (strpos($index['name'], 'sqlite_autoindex_') === 0) {
+                        continue;
+                    }
+                    
+                    $indexInfo = $this->pdo->query("PRAGMA index_info(\"{$index['name']}\")")->fetchAll(PDO::FETCH_ASSOC);
+                    $indexColumns = [];
+                    foreach ($indexInfo as $indexColumn) {
+                        $indexColumns[] = "\"{$indexColumn['name']}\"";
+                    }
+                    
+                    $unique = $index['unique'] ? 'UNIQUE' : '';
+                    $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" (" . implode(", ", $indexColumns) . ")");
+                }
+                
+                $this->pdo->commit();
+            } catch (Exception $e) {
+                $this->pdo->rollBack();
+                throw new \RuntimeException("Failed to add foreign key constraint: " . $e->getMessage());
+            }
+        }
+        
+        return $this;
     }
 }

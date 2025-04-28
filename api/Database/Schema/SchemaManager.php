@@ -241,4 +241,41 @@ interface SchemaManager
      * Note: Accuracy varies by engine
      */
     public function getTableSize(string $table): int;
+
+    /**
+     * Adds foreign key constraints to tables
+     * 
+     * Creates foreign key constraints with:
+     * - Support for multiple constraints in one call
+     * - ON DELETE behavior specification
+     * - ON UPDATE behavior specification
+     * - Custom constraint naming
+     * 
+     * Example:
+     * ```php
+     * $schema->addForeignKey([
+     *     [
+     *         'table' => 'products',
+     *         'column' => 'category_id',
+     *         'references' => 'id',
+     *         'on' => 'categories',
+     *         'onDelete' => 'CASCADE',
+     *         'onUpdate' => 'CASCADE',
+     *         'name' => 'fk_products_category'
+     *     ],
+     *     [
+     *         'table' => 'products',
+     *         'column' => 'user_id',
+     *         'references' => 'id',
+     *         'on' => 'users',
+     *         'onDelete' => 'RESTRICT'
+     *     ]
+     * ]);
+     * ```
+     * 
+     * @param array $foreignKeys Array of foreign key definitions
+     * @return self For method chaining
+     * @throws \RuntimeException On constraint creation failure
+     */
+    public function addForeignKey(array $foreignKeys): self;
 }

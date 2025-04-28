@@ -355,13 +355,13 @@ class Router
                 $dispatcher->pipe(new AuthenticationMiddleware(
                     true, // requires admin
                     $authManager, // using our new authentication manager
-                    ['jwt', 'api_key'] // try multiple auth methods in sequence
+                    ['admin', 'jwt', 'api_key'] // try each auth method in sequence until one succeeds
                 ));
             } elseif (in_array($routeName, self::$protectedRoutes)) {
                 $dispatcher->pipe(new AuthenticationMiddleware(
                     false, // standard authentication
                     $authManager, // using our new authentication manager
-                    ['jwt', 'api_key'] // try multiple auth methods in sequence
+                    ['jwt', 'api_key'] // try each auth method in sequence until one succeeds
                 ));
             }
             

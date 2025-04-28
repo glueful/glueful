@@ -129,11 +129,9 @@ class AdminController {
             if (!$userData) {
                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
             }
-
-            $userData['is_admin'] = true;
             
             // Log the admin access
-            $this->authManager->logAccess($userData, $request);
+            $this->authManager->logAccess($userData['user'], $request);
             
             return Response::ok($userData, 'Login successful')->send();
 
@@ -385,10 +383,15 @@ class AdminController {
             
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
-                ->orderBy(['created_at' => 'DESC'])
+                ->orderBy(['id' => 'DESC'])
                 ->paginate($page, $perPage);
             
+            // Get detailed column metadata using SchemaManager
+            $columns = $this->schemaManager->getTableColumns($table['name']);
+            // error_log("Columns: " . json_encode($columns));
 
+            $results['columns'] = $columns;
+            // error_log("Results: " . json_encode($results));
             return Response::ok($results, 'Data retrieved successfully')->send();
 
         } catch (\Exception $e) {
@@ -989,8 +992,20 @@ class AdminController {
      */
     private function authenticate(SymfonyRequest $request): ?array
     {
-        // For admin routes, prefer admin-specific authentication
-        return $this->authManager->authenticateWithProviders(['admin', 'jwt'], $request);
+        // For admin routes, try admin provider first, then either jwt OR api_key (not both)
+        $userData = $this->authManager->authenticateWithProvider('admin', $request);
+        
+        if (!$userData) {
+            // If admin auth fails, try jwt
+            $userData = $this->authManager->authenticateWithProvider('jwt', $request);
+            
+            // If jwt fails, try api_key as a last resort
+            if (!$userData) {
+                $userData = $this->authManager->authenticateWithProvider('api_key', $request);
+            }
+        }
+        
+        return $userData;
     }
     
     /**
