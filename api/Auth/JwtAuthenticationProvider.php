@@ -61,23 +61,26 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
+        // Get the actual user data from the nested structure if available
+        $user = $userData['user'] ?? $userData;
+        
         // First check if there's an explicit is_admin flag in the user data
-        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
-            error_log("Admin access granted through is_admin flag for user: " . ($userData['username'] ?? 'unknown'));
+        if (isset($user['is_admin']) && $user['is_admin'] === true) {
+            error_log("Admin access granted through is_admin flag for user: " . ($user['username'] ?? 'unknown'));
             return true;
         }
         
         // Also check for superuser role as before
-        if (isset($userData['roles']) && is_array($userData['roles'])) {
-            foreach ($userData['roles'] as $role) {
+        if (isset($user['roles']) && is_array($user['roles'])) {
+            foreach ($user['roles'] as $role) {
                 if (isset($role['name']) && $role['name'] === 'superuser') {
                     return true;
                 }
             }
         }
         
-        error_log("Admin access denied for user: " . ($userData['username'] ?? 'unknown') . 
-                  ", roles: " . (isset($userData['roles']) ? json_encode($userData['roles']) : 'none'));
+        error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') . 
+                  ", roles: " . (isset($user['roles']) ? json_encode($user['roles']) : 'none'));
         
         return false;
     }
