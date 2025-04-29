@@ -1073,11 +1073,13 @@ class AdminController {
                 ? 'Query executed successfully' 
                 : 'Query executed successfully, ' . count($results) . ' rows affected';
 
-            return Response::ok([
+            $responseData = [
+                'query' => $sql,
                 'results' => $results,
-                'count' => count($results),
-                'query' => $sql
-            ], $message)->send();
+                'count' => count($results)
+            ];
+            
+            return Response::ok($responseData, $message)->send();
 
         } catch (\PDOException $e) {
             error_log("SQL Error: " . $e->getMessage());
