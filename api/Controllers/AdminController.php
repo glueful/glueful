@@ -1095,4 +1095,40 @@ class AdminController {
             )->send();
         }
     }
+
+    /**
+     * Get columns information for a specific table
+     * 
+     * @param array $params Route parameters containing table name
+     * @return mixed HTTP response with column metadata
+     */
+    public function getColumns(array $params): mixed
+    {
+        try {
+            if (!isset($params['name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $params['name'];
+            
+            // Get detailed column metadata using SchemaManager
+            $columns = $this->schemaManager->getTableColumns($tableName);
+            
+            if (empty($columns)) {
+                return Response::error("No columns found or table '$tableName' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            return Response::ok([
+                'table' => $tableName,
+                'columns' => $columns
+            ], 'Table columns retrieved successfully')->send();
+
+        } catch (\Exception $e) {
+            error_log("Get columns error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get table columns: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
 }

@@ -164,6 +164,21 @@ Router::group('/admin', function() use ($controller) {
         Router::post('/table/column/drop', function (Request $request) use ($controller){
             return $controller->dropColumn($request);
         });
+
+        /**
+         * @route GET /admin/db/table/{name}/columns
+         * @tag Database
+         * @summary Get table columns
+         * @description Retrieves column metadata for a specific table
+         * @requiresAuth true
+         * @param name path string true "Table name"
+         * @response 200 application/json "Table columns" {table:string="Table name", columns:array=[{name:string="Column name", type:string="Column type", nullable:boolean="Whether column can be null", default:string="Default value"}]}
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
+        Router::get('/table/{name}/columns', function (array $params) use ($controller){
+            return $controller->getColumns($params);
+        });
     }, requiresAdminAuth: true);
 
     
