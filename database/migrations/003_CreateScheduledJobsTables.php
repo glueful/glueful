@@ -48,6 +48,7 @@ class CreateScheduledJobsTables implements MigrationInterface
             'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'DATETIME NULL'
         ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'name'],
             ['type' => 'INDEX', 'column' => 'next_run'],
             ['type' => 'INDEX', 'column' => 'is_enabled']
@@ -74,7 +75,6 @@ class CreateScheduledJobsTables implements MigrationInterface
                 'column' => 'job_uuid',
                 'references' => 'uuid',
                 'on' => 'scheduled_jobs',
-                'onDelete' => 'CASCADE'
             ]
         ]);
     }

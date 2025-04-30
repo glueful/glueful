@@ -103,7 +103,6 @@ class CreateInitialSchema implements MigrationInterface
                 'column' => 'role_uuid',
                 'references' => 'uuid',
                 'on' => 'roles',
-                'onDelete' => 'CASCADE'
             ]
         ]);
 
@@ -124,7 +123,6 @@ class CreateInitialSchema implements MigrationInterface
                 'column' => 'user_uuid',
                 'references' => 'uuid',
                 'on' => 'users',
-                'onDelete' => 'CASCADE'
             ]
         ]);
 
@@ -199,13 +197,11 @@ class CreateInitialSchema implements MigrationInterface
                 'column' => 'user_uuid',
                 'references' => 'uuid',
                 'on' => 'users',
-                'onDelete' => 'CASCADE'
             ],
             [
                 'column' => 'role_uuid',
                 'references' => 'uuid',
                 'on' => 'roles',
-                'onDelete' => 'CASCADE'
             ]
         ]);
 

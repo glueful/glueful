@@ -1024,4 +1024,75 @@ class AdminController {
         // Verify user has superuser role
         return $this->roleRepo->userHasRole($userData['uuid'], 'superuser');
     }
+
+    /**
+     * Execute a raw SQL query
+     * 
+     * Executes a raw SQL query against the database and returns the results.
+     * Limited to admin users with appropriate permissions.
+     * 
+     * @return mixed HTTP response
+     */
+    public function executeQuery(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['query'])) {
+                return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Get the SQL query from the request
+            $sql = trim($data['query']);
+            $params = $data['params'] ?? [];
+
+            // Safety checks
+            if (empty($sql)) {
+                return Response::error('SQL query cannot be empty', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Prevent destructive operations if the safety flag is not set
+            $isSafeQuery = $data['allow_write'] ?? false;
+            $firstWord = strtoupper(explode(' ', $sql)[0]);
+            if (!$isSafeQuery && in_array($firstWord, ['DELETE', 'TRUNCATE', 'DROP', 'ALTER', 'UPDATE', 'INSERT'])) {
+                return Response::error(
+                    'Write operations require explicit allow_write flag for safety',
+                    Response::HTTP_FORBIDDEN
+                )->send();
+            }
+
+            // Log the query attempt for security purposes
+            error_log("Admin SQL query execution: " . substr($sql, 0, 200) . (strlen($sql) > 200 ? '...' : ''));
+
+            // Execute the query and get results
+            $results = $this->queryBuilder->rawQuery($sql, $params);
+
+            // For write operations, get the affected rows count
+            $isReadOperation = in_array($firstWord, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN']);
+            $message = $isReadOperation 
+                ? 'Query executed successfully' 
+                : 'Query executed successfully, ' . count($results) . ' rows affected';
+
+            $responseData = [
+                'query' => $sql,
+                'results' => $results,
+                'count' => count($results)
+            ];
+            
+            return Response::ok($responseData, $message)->send();
+
+        } catch (\PDOException $e) {
+            error_log("SQL Error: " . $e->getMessage());
+            return Response::error(
+                'SQL Error: ' . $e->getMessage(),
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        } catch (\Exception $e) {
+            error_log("Execute query error: " . $e->getMessage());
+            return Response::error(
+                'Failed to execute query: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
 }

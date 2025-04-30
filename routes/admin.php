@@ -51,6 +51,10 @@ Router::group('/admin', function() use ($controller) {
     });
 
     Router::group('/db', function() use ($controller) {
+
+        Router::post('/query', function (Request $request) use ($controller){
+            return $controller->executeQuery($request);
+        });
         /**
          * @route GET /admin/db/tables
          * @tag Database
