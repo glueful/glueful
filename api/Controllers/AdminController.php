@@ -1665,4 +1665,209 @@ class AdminController {
             )->send();
         }
     }
+
+    /**
+     * Update table schema with multiple operations
+     * 
+     * Processes multiple schema changes in a single request:
+     * - Add/delete columns
+     * - Add/delete indexes
+     * - Add/delete foreign keys
+     * 
+     * @return mixed HTTP response
+     */
+    public function updateTableSchema(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $results = [
+                'added_columns' => [],
+                'deleted_columns' => [],
+                'added_indexes' => [],
+                'deleted_indexes' => [],
+                'added_foreign_keys' => [],
+                'deleted_foreign_keys' => [],
+                'failed_operations' => []
+            ];
+
+            // Process column deletions first to avoid constraint conflicts
+            if (!empty($data['deleted_columns'])) {
+                foreach ($data['deleted_columns'] as $column) {
+                    try {
+                        $success = $this->schemaManager->dropColumn($tableName, $column);
+                        if ($success) {
+                            $results['deleted_columns'][] = $column;
+                        } else {
+                            $results['failed_operations'][] = "Failed to delete column: $column";
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Failed to delete column '$column': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to delete column: $column - " . $e->getMessage();
+                    }
+                }
+            }
+
+            // Process index deletions
+            if (!empty($data['deleted_indexes'])) {
+                foreach ($data['deleted_indexes'] as $index) {
+                    try {
+                        $success = $this->schemaManager->dropIndex($tableName, $index);
+                        if ($success) {
+                            $results['deleted_indexes'][] = $index;
+                        } else {
+                            $results['failed_operations'][] = "Failed to delete index: $index";
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Failed to delete index '$index': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to delete index: $index - " . $e->getMessage();
+                    }
+                }
+            }
+
+            // Process foreign key deletions
+            if (!empty($data['deleted_foreign_keys'])) {
+                foreach ($data['deleted_foreign_keys'] as $constraintName) {
+                    try {
+                        $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
+                        if ($success) {
+                            $results['deleted_foreign_keys'][] = $constraintName;
+                        } else {
+                            $results['failed_operations'][] = "Failed to delete foreign key: $constraintName";
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Failed to delete foreign key '$constraintName': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " . $e->getMessage();
+                    }
+                }
+            }
+
+            // Process new columns
+            if (!empty($data['columns'])) {
+                foreach ($data['columns'] as $column) {
+                    if (!isset($column['name']) || !isset($column['type'])) {
+                        $results['failed_operations'][] = "Invalid column definition";
+                        continue;
+                    }
+
+                    try {
+                        $columnDef = ['type' => $column['type']];
+                        
+                        // Handle column options
+                        if (isset($column['options'])) {
+                            if (isset($column['options']['nullable'])) {
+                                $columnDef['nullable'] = $column['options']['nullable'] === 'NULL';
+                            }
+                            if (isset($column['options']['default'])) {
+                                $columnDef['default'] = $column['options']['default'];
+                            }
+                        }
+
+                        $success = $this->schemaManager->addColumn($tableName, $column['name'], $columnDef);
+                        if ($success) {
+                            $results['added_columns'][] = $column['name'];
+                        } else {
+                            $results['failed_operations'][] = "Failed to add column: " . $column['name'];
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add column: {$column['name']} - " . $e->getMessage();
+                    }
+                }
+            }
+
+            // Process new indexes
+            if (!empty($data['indexes'])) {
+                $formattedIndexes = array_map(function($index) use ($tableName) {
+                    return [
+                        'table' => $tableName,
+                        'column' => $index['column'],
+                        'type' => $index['type'],
+                        // Generate a standard index name if not provided
+                        'name' => $index['name'] ?? sprintf(
+                            "%s_%s_%s",
+                            $tableName,
+                            is_array($index['column']) ? implode('_', $index['column']) : $index['column'],
+                            strtolower($index['type']) === 'unique' ? 'unq' : 'idx'
+                        )
+                    ];
+                }, $data['indexes']);
+
+                try {
+                    $success = $this->schemaManager->addIndex($formattedIndexes);
+                    if ($success) {
+                        $results['added_indexes'] = array_map(function($index) {
+                            return $index['name'];
+                        }, $formattedIndexes);
+                    } else {
+                        $results['failed_operations'][] = "Failed to add indexes";
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to add indexes: " . $e->getMessage());
+                    $results['failed_operations'][] = "Failed to add indexes: " . $e->getMessage();
+                }
+            }
+
+            // Process new foreign keys
+            if (!empty($data['foreign_keys'])) {
+                foreach ($data['foreign_keys'] as $fk) {
+                    if (!isset($fk['column']) || !isset($fk['references']) || !isset($fk['on'])) {
+                        $results['failed_operations'][] = "Invalid foreign key definition";
+                        continue;
+                    }
+
+                    try {
+                        $fkDef = [
+                            'table' => $tableName,
+                            'column' => $fk['column'],
+                            'references' => $fk['references'],
+                            'on' => $fk['on'],
+                            // Optional ON DELETE/UPDATE actions
+                            'onDelete' => $fk['onDelete'] ?? null,
+                            'onUpdate' => $fk['onUpdate'] ?? null,
+                            // Generate a standard constraint name if not provided
+                            'name' => $fk['name'] ?? sprintf(
+                                "fk_%s_%s",
+                                $tableName,
+                                is_array($fk['column']) ? implode('_', $fk['column']) : $fk['column']
+                            )
+                        ];
+
+                        $success = $this->schemaManager->addForeignKey([$fkDef]);
+                        if ($success) {
+                            $results['added_foreign_keys'][] = $fkDef['name'];
+                        } else {
+                            $results['failed_operations'][] = "Failed to add foreign key on column: " . $fk['column'];
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Failed to add foreign key on column '{$fk['column']}']: " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add foreign key: {$fk['column']} - " . $e->getMessage();
+                    }
+                }
+            }
+
+            // Return appropriate response based on results
+            if (empty($results['failed_operations'])) {
+                return Response::ok($results, 'Table schema updated successfully')->send();
+            } else {
+                // Some operations failed, but others might have succeeded
+                return Response::ok(
+                    $results,
+                    'Some schema update operations completed with warnings'
+                )->send();
+            }
+
+        } catch (\Exception $e) {
+            error_log("Update table schema error: " . $e->getMessage());
+            return Response::error(
+                'Failed to update table schema: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
 }
