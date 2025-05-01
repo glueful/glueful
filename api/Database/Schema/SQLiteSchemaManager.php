@@ -437,6 +437,7 @@ class SQLiteSchemaManager implements SchemaManager
                     if (isset($formattedColumns[$columnName])) {
                         $formattedColumns[$columnName]['relationships'][] = [
                             'constraint' => "fk_{$table}_{$columnName}_{$fk['id']}", // SQLite doesn't name constraints, create synthetic name
+                            'column' => $columnName,
                             'references_table' => $fk['table'],
                             'references_column' => $fk['to'],
                             'on_update' => $fk['on_update'] ?: 'NO ACTION',

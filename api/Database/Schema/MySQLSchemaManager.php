@@ -366,6 +366,7 @@ class MySQLSchemaManager implements SchemaManager
                 if (isset($formattedColumns[$columnName])) {
                     $formattedColumns[$columnName]['relationships'][] = [
                         'constraint' => $fk['constraint_name'],
+                        'column' => $columnName,
                         'references_table' => $fk['ref_table'],
                         'references_column' => $fk['ref_column'],
                         'on_update' => $fk['on_update'],
