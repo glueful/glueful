@@ -669,4 +669,156 @@ class SQLiteSchemaManager implements SchemaManager
         
         return $this;
     }
+
+    /**
+     * Drop foreign key constraint from SQLite table
+     * 
+     * SQLite does not support altering foreign key constraints after table creation.
+     * This method implements a workaround by:
+     * 1. Creating a new temporary table without the foreign key
+     * 2. Copying all data from the original table
+     * 3. Dropping the original table
+     * 4. Renaming the temporary table to the original name
+     * 5. Recreating all indexes
+     * 
+     * @param string $table Target table containing the constraint
+     * @param string $constraintName Name of the foreign key constraint to remove
+     * @return bool True if constraint was successfully removed
+     * @throws Exception If constraint removal fails
+     */
+    public function dropForeignKey(string $table, string $constraintName): bool
+    {
+        // Check if foreign keys are enabled
+        $foreignKeysEnabled = (bool) $this->pdo->query("PRAGMA foreign_keys")->fetchColumn();
+        if (!$foreignKeysEnabled) {
+            $this->enableForeignKeyChecks();
+        }
+
+        // Start transaction for table recreation
+        $this->pdo->beginTransaction();
+
+        try {
+            // First, get the current table schema information
+            $tableInfo = $this->pdo->query("PRAGMA table_info(\"$table\")")->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($tableInfo)) {
+                throw new \RuntimeException("Table '$table' does not exist");
+            }
+
+            // Get all foreign keys for this table
+            $foreignKeys = $this->pdo->query("PRAGMA foreign_key_list(\"$table\")")->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($foreignKeys)) {
+                throw new \RuntimeException("No foreign keys exist on table '$table'");
+            }
+
+            // SQLite doesn't store constraint names, so we have to match by column and reference
+            // We'll use the id of the foreign key as an identifier
+            $foreignKeyToRemove = null;
+            $targetId = null;
+
+            // Extract ID from constraint name if it follows our naming convention
+            if (preg_match('/fk_' . preg_quote($table, '/') . '_[^_]+_(\d+)$/', $constraintName, $matches)) {
+                $targetId = (int)$matches[1];
+            }
+
+            foreach ($foreignKeys as $fk) {
+                // If we have a target ID, use it for matching
+                if ($targetId !== null && $fk['id'] === $targetId) {
+                    $foreignKeyToRemove = $fk;
+                    break;
+                }
+                
+                // Otherwise, try to match by generating a constraint name
+                $syntheticName = "fk_{$table}_{$fk['from']}_{$fk['id']}";
+                if ($syntheticName === $constraintName) {
+                    $foreignKeyToRemove = $fk;
+                    break;
+                }
+            }
+
+            if (!$foreignKeyToRemove) {
+                throw new \RuntimeException("Foreign key constraint '$constraintName' not found on table '$table'");
+            }
+
+            // Get all column definitions for the new table, excluding the foreign key to remove
+            $columns = [];
+            foreach ($tableInfo as $column) {
+                $name = $column['name'];
+                $type = $column['type'];
+                $notNull = $column['notnull'] ? 'NOT NULL' : '';
+                $default = $column['dflt_value'] ? "DEFAULT {$column['dflt_value']}" : '';
+                $pk = $column['pk'] ? 'PRIMARY KEY' : '';
+                
+                $columns[] = "\"$name\" $type $notNull $default $pk";
+            }
+
+            // Get CREATE TABLE SQL to preserve all other constraints
+            $createTableSql = $this->pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='$table'")->fetchColumn();
+            
+            // Create a temporary table without the foreign key to be removed
+            $tempTable = $table . "_temp_" . uniqid();
+            
+            // Build the new table definition with all foreign keys except the one to remove
+            $newForeignKeyConstraints = [];
+            foreach ($foreignKeys as $fk) {
+                if ($fk['id'] === $foreignKeyToRemove['id']) {
+                    continue; // Skip the foreign key we're removing
+                }
+                
+                $fkDef = "FOREIGN KEY (\"{$fk['from']}\") REFERENCES \"{$fk['table']}\" (\"{$fk['to']}\")";
+                
+                if ($fk['on_delete'] !== 'NO ACTION') {
+                    $fkDef .= " ON DELETE {$fk['on_delete']}";
+                }
+                
+                if ($fk['on_update'] !== 'NO ACTION') {
+                    $fkDef .= " ON UPDATE {$fk['on_update']}";
+                }
+                
+                $newForeignKeyConstraints[] = $fkDef;
+            }
+            
+            // Create the new table with all columns and remaining foreign keys
+            $createTempSql = "CREATE TABLE \"$tempTable\" (" . 
+                            implode(", ", $columns) . 
+                            (empty($newForeignKeyConstraints) ? "" : ", " . implode(", ", $newForeignKeyConstraints)) . 
+                            ")";
+            $this->pdo->exec($createTempSql);
+            
+            // Copy data from old table to new table
+            $this->pdo->exec("INSERT INTO \"$tempTable\" SELECT * FROM \"$table\"");
+            
+            // Get all indexes from the original table
+            $indexes = $this->pdo->query("PRAGMA index_list(\"$table\")")->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Drop old table
+            $this->pdo->exec("DROP TABLE \"$table\"");
+            
+            // Rename temp table to original name
+            $this->pdo->exec("ALTER TABLE \"$tempTable\" RENAME TO \"$table\"");
+            
+            // Recreate any indexes that were on the original table
+            foreach ($indexes as $index) {
+                // Skip sqlite_autoindex which are auto-created
+                if (strpos($index['name'], 'sqlite_autoindex_') === 0) {
+                    continue;
+                }
+                
+                $indexInfo = $this->pdo->query("PRAGMA index_info(\"{$index['name']}\")")->fetchAll(PDO::FETCH_ASSOC);
+                $indexColumns = [];
+                foreach ($indexInfo as $indexColumn) {
+                    $indexColumns[] = "\"{$indexColumn['name']}\"";
+                }
+                
+                $unique = $index['unique'] ? 'UNIQUE' : '';
+                $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" (" . implode(", ", $indexColumns) . ")");
+            }
+            
+            $this->pdo->commit();
+            return true;
+            
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            throw new Exception("Error dropping foreign key: " . $e->getMessage());
+        }
+    }
 }

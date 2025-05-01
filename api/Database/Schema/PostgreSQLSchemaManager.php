@@ -708,5 +708,49 @@ class PostgreSQLSchemaManager extends SchemaManager
         
         return $this;
     }
+
+    /**
+     * Drop foreign key constraint from PostgreSQL table
+     * 
+     * Removes the specified foreign key constraint using PostgreSQL's
+     * ALTER TABLE DROP CONSTRAINT syntax.
+     * 
+     * @param string $table Target table containing the constraint
+     * @param string $constraintName Name of the foreign key constraint to remove
+     * @return bool True if constraint was successfully removed
+     * @throws Exception If constraint removal fails
+     */
+    public function dropForeignKey(string $table, string $constraintName): bool
+    {
+        try {
+            // First check if the constraint exists
+            $checkQuery = "
+                SELECT COUNT(*) 
+                FROM pg_constraint c
+                JOIN pg_class t ON c.conrelid = t.oid
+                WHERE t.relname = :table
+                  AND c.conname = :constraint_name
+                  AND c.contype = 'f'
+            ";
+            $stmt = $this->pdo->prepare($checkQuery);
+            $stmt->execute([
+                'table' => $table,
+                'constraint_name' => $constraintName
+            ]);
+            
+            if ($stmt->fetchColumn() == 0) {
+                throw new \RuntimeException("Foreign key constraint '{$constraintName}' does not exist on table '{$table}'");
+            }
+            
+            // Use double quotes for identifiers in PostgreSQL
+            $sql = "ALTER TABLE \"{$table}\" DROP CONSTRAINT \"{$constraintName}\"";
+            return $this->pdo->exec($sql) !== false;
+        } catch (Exception $e) {
+            if ($e instanceof \RuntimeException) {
+                throw $e; // Re-throw the specific exception about constraint not existing
+            }
+            throw new Exception("Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage());
+        }
+    }
 }
 
