@@ -357,7 +357,6 @@ class ApiDefinitionGenerator {
             $dbResource = $targetDb ?? $this->dbResource;
             $this->log("--- Generating JSON: dbres=$dbResource ---");
 
-            
             // Get all tables from the database
             $tables = $this->schema->getTables();
 
@@ -366,12 +365,27 @@ class ApiDefinitionGenerator {
                 $columns = $this->schema->getTableColumns($table);
 
                 $fields = [];
-                foreach ($columns as $col) {
-                    $fields[] = [
-                        'Field' => $col['Field'],
-                        'Type' => $col['Type'],
-                        'Null' => $col['Null'] ? 'YES' : 'NO'
-                    ];
+                foreach ($columns as $columnName => $col) {
+                    // Handle different format of column data from SchemaManager
+                    // Extract key information and normalize to expected format
+                    if (isset($col['name'])) {
+                        // Format when column data uses 'name', 'type', etc. keys
+                        $fields[] = [
+                            'Field' => $col['name'],
+                            'Type' => $col['type'] ?? '',
+                            'Null' => isset($col['nullable']) && $col['nullable'] ? 'YES' : 'NO'
+                        ];
+                    } else if (isset($col['Field'])) {
+                        // Old format that already has 'Field', 'Type', 'Null' keys
+                        $fields[] = $col;
+                    } else {
+                        // Use column name as fallback when the structure is unexpected
+                        $fields[] = [
+                            'Field' => $columnName,
+                            'Type' => is_string($col) ? $col : 'VARCHAR',
+                            'Null' => 'NO'
+                        ];
+                    }
                 }
                 
                 $this->generateTableDefinitionFromColumns($dbResource, $table, $fields);

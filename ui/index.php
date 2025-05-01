@@ -3,11 +3,15 @@ require_once __DIR__ . '/../api/bootstrap.php';
 $baseUrl = config('paths.api_base_url');
 $appName = config('app.name');
 $domain = config('paths.domain');
+$dbEngine = config('database.engine');
+$db = config('database.'.$dbEngine.'.db');
 
 $data = [
     'appName' => $appName,
     'domain' => $domain,
     'apiBaseUrl' => $baseUrl,
+    'dbEngine' => $dbEngine,
+    'db' => $db,
 ];
 
 $jsonData = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

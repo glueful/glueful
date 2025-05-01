@@ -199,17 +199,89 @@ class AdminController {
             }
 
             $tableName = $data['table_name'];
-            $columns = $data['columns'];
+            $columnsData = $data['columns'];
+            
+            // Convert columns array to the format expected by SchemaManager
+            $columns = [];
+            foreach ($columnsData as $column) {
+                if (!isset($column['name']) || !isset($column['type'])) {
+                    continue;
+                }
+                
+                $columnName = $column['name'];
+                $columnType = $column['type'];
+                $options = $column['options'] ?? [];
+                
+                // Build column definition using the type directly from frontend
+                $columnDef = $columnType;
+                
+                // Add PRIMARY KEY if specified
+                if (isset($options['primary']) && $options['primary']) {
+                    $columnDef .= " " . (is_string($options['primary']) ? $options['primary'] : "PRIMARY KEY");
+                }
+                
+                // Add AUTO_INCREMENT if specified
+                if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
+                    $columnDef .= " " . (is_string($options['autoIncrement']) ? $options['autoIncrement'] : "AUTO_INCREMENT");
+                }
+                
+                // Handle nullable property - now accepting direct SQL constraints
+                if (isset($options['nullable'])) {
+                    if (is_string($options['nullable'])) {
+                        // If it's a string like "NULL" or "NOT NULL", use it directly
+                        $columnDef .= " " . $options['nullable'];
+                    } else {
+                        // If it's a boolean, convert to appropriate SQL
+                        $columnDef .= $options['nullable'] ? " NULL" : " NOT NULL";
+                    }
+                }
+                // Add DEFAULT if provided
+                if (isset($options['default']) && $options['default'] !== null && $options['default'] !== '') {
+                    // Handle special DEFAULT value CURRENT_TIMESTAMP
+                    if ($options['default'] === 'CURRENT_TIMESTAMP') {
+                        $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
+                    } else {
+                        $columnDef .= " DEFAULT " . (is_numeric($options['default']) ? $options['default'] : "'{$options['default']}'");
+                    }
+                }
+                
+                $columns[$columnName] = $columnDef;
+            }
 
-            $result = $this->schemaManager->createTable($tableName, $columns);
+            // Build the schema operation with proper method chaining
+            $schemaManager = $this->schemaManager->createTable($tableName, $columns);
+            
+            // Add indexes if provided
+            if (isset($data['indexes']) && !empty($data['indexes'])) {
+                // Make sure each index has the table property set
+                $indexes = array_map(function($index) use ($tableName) {
+                    if (!isset($index['table'])) {
+                        $index['table'] = $tableName;
+                    }
+                    return $index;
+                }, $data['indexes']);
+                
+                $schemaManager = $schemaManager->addIndex($indexes);
+            }
 
-            if (!$result['success']) {
-                return Response::error($result['message'], Response::HTTP_BAD_REQUEST)->send();
+            // Add foreign keys if provided
+            if (isset($data['foreign_keys']) && !empty($data['foreign_keys'])) {
+                // Make sure each foreign key has the table property set
+                $foreignKeys = array_map(function($fk) use ($tableName) {
+                    if (!isset($fk['table'])) {
+                        $fk['table'] = $tableName;
+                    }
+                    return $fk;
+                }, $data['foreign_keys']);
+                
+                $schemaManager->addForeignKey($foreignKeys);
             }
 
             return Response::ok([
                 'table' => $tableName,
-                'columns' => $columns
+                'columns' => $columnsData,
+                'indexes' => $data['indexes'] ?? [],
+                'foreign_keys' => $data['foreign_keys'] ?? []
             ], 'Table created successfully')->send();
 
         } catch (\Exception $e) {
@@ -220,7 +292,7 @@ class AdminController {
             )->send();
         }
     }
-
+    
     /**
      * Drop database table
      */
