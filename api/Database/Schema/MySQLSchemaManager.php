@@ -366,6 +366,7 @@ class MySQLSchemaManager implements SchemaManager
                 if (isset($formattedColumns[$columnName])) {
                     $formattedColumns[$columnName]['relationships'][] = [
                         'constraint' => $fk['constraint_name'],
+                        'column' => $columnName,
                         'references_table' => $fk['ref_table'],
                         'references_column' => $fk['ref_column'],
                         'on_update' => $fk['on_update'],
@@ -487,5 +488,41 @@ class MySQLSchemaManager implements SchemaManager
         }
         
         return $this;
+    }
+
+    /**
+     * Drop foreign key constraint from MySQL table
+     * 
+     * Removes specified foreign key constraint using MySQL's 
+     * ALTER TABLE DROP FOREIGN KEY syntax.
+     * 
+     * @param string $table Target table containing the constraint
+     * @param string $constraintName Name of the foreign key constraint to remove
+     * @return bool True if constraint was successfully removed
+     * @throws \PDOException If constraint removal fails
+     */
+    public function dropForeignKey(string $table, string $constraintName): bool
+    {
+        // Check if the constraint exists first
+        $stmt = $this->pdo->prepare("
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+            WHERE CONSTRAINT_SCHEMA = DATABASE() 
+              AND TABLE_NAME = :table 
+              AND CONSTRAINT_NAME = :constraint_name 
+              AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+        ");
+        $stmt->execute([
+            'table' => $table,
+            'constraint_name' => $constraintName
+        ]);
+        
+        if ($stmt->fetchColumn() == 0) {
+            throw new \RuntimeException("Foreign key constraint '$constraintName' does not exist on table '$table'");
+        }
+        
+        // Foreign key exists, so drop it
+        $sql = "ALTER TABLE `$table` DROP FOREIGN KEY `$constraintName`";
+        return (bool) $this->pdo->exec($sql);
     }
 }

@@ -243,6 +243,22 @@ interface SchemaManager
     public function getTableSize(string $table): int;
 
     /**
+     * Drops (removes) a foreign key constraint from a table
+     * 
+     * Removes the specified foreign key constraint while preserving the data.
+     * Different databases handle this operation differently:
+     * - MySQL: Uses ALTER TABLE DROP FOREIGN KEY syntax
+     * - PostgreSQL: Uses ALTER TABLE DROP CONSTRAINT syntax
+     * - SQLite: Requires table recreation (more complex)
+     * 
+     * @param string $table Target table containing the constraint
+     * @param string $constraintName Name of the foreign key constraint to remove
+     * @return bool True if the constraint was successfully removed
+     * @throws \RuntimeException If constraint removal fails or constraint doesn't exist
+     */
+    public function dropForeignKey(string $table, string $constraintName): bool;
+
+    /**
      * Adds foreign key constraints to tables
      * 
      * Creates foreign key constraints with:

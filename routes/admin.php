@@ -112,8 +112,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::get('/table/size', function (Request $request) use ($controller){
-            return $controller->getTableSize($request);
+        Router::get('/table/{name}/size', function (array $params) use ($controller){
+            return $controller->getTableSize($params);
         });
 
         /**
@@ -166,6 +166,38 @@ Router::group('/admin', function() use ($controller) {
         });
 
         /**
+         * @route POST /admin/db/table/index/drop
+         * @tag Database
+         * @summary Drop index from table
+         * @description Removes an index from an existing database table
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" index_name:string="Index name" {required=table_name,index_name}
+         * @response 200 application/json "Index dropped successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or index not found"
+         */
+        Router::post('/table/index/drop', function (Request $request) use ($controller){
+            return $controller->dropIndex($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/foreign-key/drop
+         * @tag Database
+         * @summary Drop foreign key from table
+         * @description Removes a foreign key constraint from an existing database table
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" constraint_name:string="Constraint name" {required=table_name,constraint_name}
+         * @response 200 application/json "Foreign key constraint dropped successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or constraint not found"
+         */
+        Router::post('/table/foreign-key/drop', function (Request $request) use ($controller){
+            return $controller->dropForeignKey($request);
+        });
+
+        /**
          * @route GET /admin/db/table/{name}/columns
          * @tag Database
          * @summary Get table columns
@@ -178,6 +210,136 @@ Router::group('/admin', function() use ($controller) {
          */
         Router::get('/table/{name}/columns', function (array $params) use ($controller){
             return $controller->getColumns($params);
+        });
+
+        /**
+         * @route POST /admin/db/table/index/add
+         * @tag Database
+         * @summary Add index to table
+         * @description Adds a new index to an existing database table
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" index:object={column:string="Column name", type:string="Index type (INDEX or UNIQUE)"} {required=table_name,index}
+         * @response 200 application/json "Index added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         * @response 409 application/json "Index already exists"
+         */
+        Router::post('/table/index/add', function (Request $request) use ($controller){
+            return $controller->addIndex($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/foreign-key/add
+         * @tag Database
+         * @summary Add foreign key to table
+         * @description Adds a new foreign key constraint to an existing database table
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" foreign_key:object={column:string="Column name", references:string="Referenced column", on:string="Referenced table"} {required=table_name,foreign_key}
+         * @response 200 application/json "Foreign key constraint added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         * @response 409 application/json "Foreign key constraint already exists"
+         */
+        Router::post('/table/foreign-key/add', function (Request $request) use ($controller){
+            return $controller->addForeignKey($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/column/add-batch
+         * @tag Database
+         * @summary Add multiple columns to table
+         * @description Adds multiple columns to an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" columns:array=[{name:string="Column name", type:string="Column type", options:object={nullable:boolean="Whether column can be null", default:string="Default value"}}] {required=table_name,columns}
+         * @response 200 application/json "Columns added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
+        Router::post('/table/column/add-batch', function (Request $request) use ($controller){
+            return $controller->addColumn($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/column/drop-batch
+         * @tag Database
+         * @summary Drop multiple columns from table
+         * @description Removes multiple columns from an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" column_names:array=[string="Column name"] {required=table_name,column_names}
+         * @response 200 application/json "Columns dropped successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or column not found"
+         */
+        Router::post('/table/column/drop-batch', function (Request $request) use ($controller){
+            return $controller->dropColumn($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/index/drop-batch
+         * @tag Database
+         * @summary Drop multiple indexes from table
+         * @description Removes multiple indexes from an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" index_names:array=[string="Index name"] {required=table_name,index_names}
+         * @response 200 application/json "Indexes dropped successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or index not found"
+         */
+        Router::post('/table/index/drop-batch', function (Request $request) use ($controller){
+            return $controller->dropIndex($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/foreign-key/drop-batch
+         * @tag Database
+         * @summary Drop multiple foreign keys from table
+         * @description Removes multiple foreign key constraints from an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" constraint_names:array=[string="Constraint name"] {required=table_name,constraint_names}
+         * @response 200 application/json "Foreign key constraints dropped successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table or constraint not found"
+         */
+        Router::post('/table/foreign-key/drop-batch', function (Request $request) use ($controller){
+            return $controller->dropForeignKey($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/index/add-batch
+         * @tag Database
+         * @summary Add multiple indexes to table
+         * @description Adds multiple indexes to an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" indexes:array=[{column:string="Column name", type:string="Index type (INDEX or UNIQUE)"}] {required=table_name,indexes}
+         * @response 200 application/json "Indexes added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
+        Router::post('/table/index/add-batch', function (Request $request) use ($controller){
+            return $controller->addIndex($request);
+        });
+
+        /**
+         * @route POST /admin/db/table/foreign-key/add-batch
+         * @tag Database
+         * @summary Add multiple foreign keys to table
+         * @description Adds multiple foreign key constraints to an existing database table in a single operation
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" foreign_keys:array=[{column:string="Column name", references:string="Referenced column", on:string="Referenced table"}] {required=table_name,foreign_keys}
+         * @response 200 application/json "Foreign key constraints added successfully"
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
+        Router::post('/table/foreign-key/add-batch', function (Request $request) use ($controller){
+            return $controller->addForeignKey($request);
         });
     }, requiresAdminAuth: true);
 

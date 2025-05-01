@@ -323,69 +323,533 @@ class AdminController {
     }
 
     /**
-     * Add column to existing table
+     * Add index(es) to an existing table
+     * 
+     * Allows adding a single index or multiple indexes in batch.
+     * 
+     * @return mixed HTTP response
      */
-    public function addColumn(): mixed
+    public function addIndex(): mixed
     {
         try {
             $data = Request::getPostData();
             
-            if (!isset($data['table_name']) || !isset($data['column'])) {
-                return Response::error('Table name and column details are required', Response::HTTP_BAD_REQUEST)->send();
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            $result = $this->schemaManager->addColumn(
-                $data['table_name'],
-                $data['column']['name'],
-                $data['column']['type'],
-                $data['column']['options'] ?? []
-            );
-
-            if (!$result['success']) {
-                return Response::error($result['message'], Response::HTTP_BAD_REQUEST)->send();
+            if (!isset($data['index']) && !isset($data['indexes'])) {
+                return Response::error('Index definition is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            return Response::ok([
-                'table' => $data['table_name'],
-                'column' => $data['column']
-            ], 'Column added successfully')->send();
-
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single index and array of indexes
+            $indexes = isset($data['indexes']) ? $data['indexes'] : [$data['index']];
+            
+            // Ensure we have an array
+            if (!is_array($indexes)) {
+                $indexes = [$indexes];
+            }
+            
+            // Convert the simple index format to the format expected by SchemaManager
+            $formattedIndexes = [];
+            foreach ($indexes as $index) {
+                if (!isset($index['column']) || !isset($index['type'])) {
+                    $failed[] = $index['column'] ?? 'unnamed column';
+                    continue;
+                }
+                
+                // Create a properly formatted index definition that the SchemaManager expects
+                $formattedIndex = [
+                    'table' => $tableName,
+                    'column' => $index['column'],
+                    'type' => strtolower($index['type']) == 'unique' ? 'unique' : 'index'
+                ];
+                
+                // Generate an index name if not provided
+                if (!isset($index['name'])) {
+                    $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
+                    $indexType = strtolower($index['type']) == 'unique' ? 'unq' : 'idx';
+                    $formattedIndex['name'] = "{$tableName}_{$columnStr}_{$indexType}";
+                } else {
+                    $formattedIndex['name'] = $index['name'];
+                }
+                
+                $formattedIndexes[] = $formattedIndex;
+                
+                try {
+                    // Add the index
+                    $success = $this->schemaManager->addIndex([$formattedIndex]);
+                    
+                    if ($success) {
+                        $results[] = $formattedIndex['name'];
+                    } else {
+                        $failed[] = $formattedIndex['name'];
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to add index on column '{$index['column']}': " . $e->getMessage());
+                    $failed[] = $formattedIndex['name'];
+                }
+            }
+            
+            // Check if all indexes were added successfully
+            if (empty($failed)) {
+                // All indexes were added successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'indexes_added' => $results
+                ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully')->send();
+            } else if (empty($results)) {
+                // All indexes failed to add
+                return Response::error(
+                    'Failed to add index(es): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some indexes were added, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'indexes_added' => $results,
+                    'indexes_failed' => $failed
+                ], 'Some indexes were added successfully, but others failed')->send();
+            }
         } catch (\Exception $e) {
-            error_log("Add column error: " . $e->getMessage());
+            error_log("Add index error: " . $e->getMessage());
             return Response::error(
-                'Failed to add column: ' . $e->getMessage(),
+                'Failed to add index(es): ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
     }
 
     /**
-     * Drop column from table
+     * Add column(s) to existing table
+     * 
+     * Allows adding a single column or multiple columns in batch.
+     * 
+     * @return mixed HTTP response
+     */
+    public function addColumn(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['column']) && !isset($data['columns'])) {
+                return Response::error('Column details are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single column and array of columns
+            $columns = isset($data['columns']) ? $data['columns'] : [$data['column']];
+            
+            // Ensure we have an array
+            if (!is_array($columns)) {
+                $columns = [$columns];
+            }
+            
+            // Add each column
+            foreach ($columns as $column) {
+                if (!isset($column['name']) || !isset($column['type'])) {
+                    $failed[] = $column['name'] ?? 'unnamed column';
+                    continue;
+                }
+                
+                try {
+                    $result = $this->schemaManager->addColumn(
+                        $tableName,
+                        $column['name'],
+                        $column['type'],
+                        $column['options'] ?? []
+                    );
+                    
+                    if ($result['success'] ?? false) {
+                        $results[] = $column['name'];
+                    } else {
+                        $failed[] = $column['name'];
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
+                    $failed[] = $column['name'];
+                }
+            }
+            
+            // Check if all columns were added successfully
+            if (empty($failed)) {
+                // All columns were added successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'columns_added' => $results
+                ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully')->send();
+            } else if (empty($results)) {
+                // All columns failed to add
+                return Response::error(
+                    'Failed to add column(s): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some columns were added, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'columns_added' => $results,
+                    'columns_failed' => $failed
+                ], 'Some columns were added successfully, but others failed')->send();
+            }
+        } catch (\Exception $e) {
+            error_log("Add column error: " . $e->getMessage());
+            return Response::error(
+                'Failed to add column(s): ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Drop column(s) from table
+     * 
+     * Allows dropping a single column or multiple columns in batch.
+     * 
+     * @return mixed HTTP response
      */
     public function dropColumn(): mixed
     {
         try {
             $data = Request::getPostData();
             
-            if (!isset($data['table_name']) || !isset($data['column_name'])) {
-                return Response::error('Table and column names are required', Response::HTTP_BAD_REQUEST)->send();
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            $result = $this->schemaManager->dropColumn(
-                $data['table_name'],
-                $data['column_name']
-            );
-
-            if (!$result['success']) {
-                return Response::error($result['message'], Response::HTTP_BAD_REQUEST)->send();
+            if (!isset($data['column_name']) && !isset($data['column_names'])) {
+                return Response::error('Column name(s) are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            return Response::ok(null, 'Column dropped successfully')->send();
-
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single column and array of columns
+            $columnNames = isset($data['column_names']) ? $data['column_names'] : [$data['column_name']];
+            
+            // Ensure we have an array
+            if (!is_array($columnNames)) {
+                $columnNames = [$columnNames];
+            }
+            
+            // Drop each column
+            foreach ($columnNames as $columnName) {
+                try {
+                    // Use the SchemaManager's dropColumn method
+                    $result = $this->schemaManager->dropColumn($tableName, $columnName);
+                    
+                    if ($result['success'] ?? false) {
+                        $results[] = $columnName;
+                    } else {
+                        $failed[] = $columnName;
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to drop column '$columnName': " . $e->getMessage());
+                    $failed[] = $columnName;
+                }
+            }
+            
+            // Check if all columns were dropped successfully
+            if (empty($failed)) {
+                // All columns were dropped successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'columns_dropped' => $results
+                ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully')->send();
+            } else if (empty($results)) {
+                // All columns failed to drop
+                return Response::error(
+                    'Failed to drop column(s): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some columns were dropped, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'columns_dropped' => $results,
+                    'columns_failed' => $failed
+                ], 'Some columns were dropped successfully, but others failed')->send();
+            }
         } catch (\Exception $e) {
             error_log("Drop column error: " . $e->getMessage());
             return Response::error(
-                'Failed to drop column: ' . $e->getMessage(),
+                'Failed to drop column(s): ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Drop index(es) from table
+     * 
+     * Allows dropping a single index or multiple indexes in batch.
+     * 
+     * @return mixed HTTP response
+     */
+    public function dropIndex(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['index_name']) && !isset($data['index_names'])) {
+                return Response::error('Index name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single index and array of indexes
+            $indexNames = isset($data['index_names']) ? $data['index_names'] : [$data['index_name']];
+            
+            // Ensure we have an array
+            if (!is_array($indexNames)) {
+                $indexNames = [$indexNames];
+            }
+            
+            // Drop each index
+            foreach ($indexNames as $indexName) {
+                try {
+                    // Use the SchemaManager's dropIndex method
+                    $success = $this->schemaManager->dropIndex($tableName, $indexName);
+                    
+                    if ($success) {
+                        $results[] = $indexName;
+                    } else {
+                        $failed[] = $indexName;
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to drop index '$indexName': " . $e->getMessage());
+                    $failed[] = $indexName;
+                }
+            }
+            
+            // Check if all indexes were dropped successfully
+            if (empty($failed)) {
+                // All indexes were dropped successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'indexes_dropped' => $results
+                ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully')->send();
+            } else if (empty($results)) {
+                // All indexes failed to drop
+                return Response::error(
+                    'Failed to drop index(es): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some indexes were dropped, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'indexes_dropped' => $results,
+                    'indexes_failed' => $failed
+                ], 'Some indexes were dropped successfully, but others failed')->send();
+            }
+        } catch (\Exception $e) {
+            error_log("Drop index error: " . $e->getMessage());
+            return Response::error(
+                'Failed to drop index(es): ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Drop foreign key constraint(s) from table
+     * 
+     * Allows dropping a single constraint or multiple constraints in batch.
+     * 
+     * @return mixed HTTP response
+     */
+    public function dropForeignKey(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['constraint_name']) && !isset($data['constraint_names'])) {
+                return Response::error('Constraint name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single constraint and array of constraints
+            $constraintNames = isset($data['constraint_names']) ? $data['constraint_names'] : [$data['constraint_name']];
+            
+            // Ensure we have an array
+            if (!is_array($constraintNames)) {
+                $constraintNames = [$constraintNames];
+            }
+            
+            // Drop each constraint
+            foreach ($constraintNames as $constraintName) {
+                try {
+                    // Use the SchemaManager's dropForeignKey method
+                    $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
+                    
+                    if ($success) {
+                        $results[] = $constraintName;
+                    } else {
+                        $failed[] = $constraintName;
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to drop foreign key '$constraintName': " . $e->getMessage());
+                    $failed[] = $constraintName;
+                }
+            }
+            
+            // Check if all constraints were dropped successfully
+            if (empty($failed)) {
+                // All constraints were dropped successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'constraints_dropped' => $results
+                ], count($results) > 1 ? 'Foreign key constraints dropped successfully' : 'Foreign key constraint dropped successfully')->send();
+            } else if (empty($results)) {
+                // All constraints failed to drop
+                return Response::error(
+                    'Failed to drop foreign key constraint(s): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some constraints were dropped, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'constraints_dropped' => $results,
+                    'constraints_failed' => $failed
+                ], 'Some foreign key constraints were dropped successfully, but others failed')->send();
+            }
+        } catch (\Exception $e) {
+            error_log("Drop foreign key error: " . $e->getMessage());
+            return Response::error(
+                'Failed to drop foreign key constraint(s): ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Add foreign key constraint(s) to an existing table
+     * 
+     * Allows adding a single foreign key or multiple foreign keys in batch.
+     * The expected format is:
+     * {
+     *   "column": "id",
+     *   "references": "uuid",
+     *   "on": "users"
+     * }
+     * 
+     * @return mixed HTTP response
+     */
+    public function addForeignKey(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+            
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['foreign_key']) && !isset($data['foreign_keys'])) {
+                return Response::error('Foreign key definition is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $results = [];
+            $failed = [];
+            
+            // Handle both single foreign key and array of foreign keys
+            $foreignKeys = isset($data['foreign_keys']) ? $data['foreign_keys'] : [$data['foreign_key']];
+            
+            // Ensure we have an array
+            if (!is_array($foreignKeys)) {
+                $foreignKeys = [$foreignKeys];
+            }
+            
+            // Process each foreign key
+            foreach ($foreignKeys as $fk) {
+                if (!isset($fk['column']) || !isset($fk['references']) || !isset($fk['on'])) {
+                    $failed[] = $fk['column'] ?? 'unnamed foreign key';
+                    continue;
+                }
+                
+                try {
+                    // Convert the simple format to the format expected by SchemaManager
+                    $formattedFk = [
+                        'table' => $tableName,
+                        'column' => $fk['column'],
+                        'reference_table' => $fk['on'],
+                        'reference_column' => $fk['references'],
+                    ];
+                    
+                    // Generate a constraint name if not provided
+                    if (!isset($fk['name'])) {
+                        $formattedFk['name'] = "fk_{$tableName}_{$fk['column']}";
+                    } else {
+                        $formattedFk['name'] = $fk['name'];
+                    }
+                    
+                    // Use the SchemaManager's addForeignKey method
+                    $success = $this->schemaManager->addForeignKey([$formattedFk]);
+                    
+                    if ($success) {
+                        $results[] = $formattedFk['name'];
+                    } else {
+                        $failed[] = $formattedFk['name'];
+                    }
+                } catch (\Exception $e) {
+                    error_log("Failed to add foreign key for column '{$fk['column']}': " . $e->getMessage());
+                    $failed[] = $fk['column'];
+                }
+            }
+            
+            // Check if all foreign keys were added successfully
+            if (empty($failed)) {
+                // All foreign keys were added successfully
+                return Response::ok([
+                    'table' => $tableName,
+                    'constraints_added' => $results
+                ], count($results) > 1 ? 'Foreign key constraints added successfully' : 'Foreign key constraint added successfully')->send();
+            } else if (empty($results)) {
+                // All foreign keys failed to add
+                return Response::error(
+                    'Failed to add foreign key(s): ' . implode(', ', $failed), 
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            } else {
+                // Some foreign keys were added, but some failed
+                return Response::ok([
+                    'table' => $tableName,
+                    'constraints_added' => $results,
+                    'constraints_failed' => $failed
+                ], 'Some foreign key constraints were added successfully, but others failed')->send();
+            }
+        } catch (\Exception $e) {
+            error_log("Add foreign key error: " . $e->getMessage());
+            return Response::error(
+                'Failed to add foreign key(s): ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
@@ -412,19 +876,17 @@ class AdminController {
     /**
      * Get table size information
      */
-    public function getTableSize(): mixed
+    public function getTableSize(?array $table): mixed
     {
         try {
-            $data = Request::getPostData();
-            
-            if (!isset($data['table_name'])) {
+            if (!isset($table['name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            $size = $this->schemaManager->getTableSize($data['table_name']);
+            $size = $this->schemaManager->getTableSize($table['name']);
             
             return Response::ok([
-                'table' => $data['table_name'],
+                'table' => $table['name'],
                 'size' => $size
             ], 'Table size retrieved successfully')->send();
 
