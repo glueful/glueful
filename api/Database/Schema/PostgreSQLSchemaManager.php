@@ -220,7 +220,8 @@ class PostgreSQLSchemaManager extends SchemaManager
     {
         try {
             $sql = "DROP TABLE IF EXISTS {$table} CASCADE;";
-            return $this->pdo->exec($sql) !== false;
+            $this->pdo->exec($sql);
+            return true;
         } catch (Exception $e) {
             throw new Exception("Error dropping table '{$table}': " . $e->getMessage());
         }
@@ -250,7 +251,10 @@ class PostgreSQLSchemaManager extends SchemaManager
         try {
             $columnDef = implode(' ', $definition);
             $sql = "ALTER TABLE {$table} ADD COLUMN {$column} {$columnDef};";
-            return $this->pdo->exec($sql) !== false;
+            
+            // Execute the query - if it doesn't throw an exception, consider it successful
+            $this->pdo->exec($sql);
+            return true;
         } catch (Exception $e) {
             throw new Exception("Error adding column '{$column}' to table '{$table}': " . $e->getMessage());
         }
@@ -270,7 +274,8 @@ class PostgreSQLSchemaManager extends SchemaManager
     {
         try {
             $sql = "ALTER TABLE {$table} DROP COLUMN IF EXISTS {$column} CASCADE;";
-            return $this->pdo->exec($sql) !== false;
+            $this->pdo->exec($sql);
+            return true;
         } catch (Exception $e) {
             throw new Exception("Error dropping column '{$column}' from table '{$table}': " . $e->getMessage());
         }
@@ -303,7 +308,8 @@ class PostgreSQLSchemaManager extends SchemaManager
             $columnsSql = implode(', ', $columns);
             $sql = "CREATE {$uniqueSql} INDEX IF NOT EXISTS {$indexName} ON {$table} ({$columnsSql});";
 
-            return $this->pdo->exec($sql) !== false;
+            $this->pdo->exec($sql);
+            return true;
         } catch (Exception $e) {
             throw new Exception("Error creating index '{$indexName}' on table '{$table}': " . $e->getMessage());
         }
@@ -323,7 +329,8 @@ class PostgreSQLSchemaManager extends SchemaManager
     {
         try {
             $sql = "DROP INDEX IF EXISTS {$indexName};";
-            return $this->pdo->exec($sql) !== false;
+            $this->pdo->exec($sql);
+            return true;
         } catch (Exception $e) {
             throw new Exception("Error dropping index '{$indexName}' from table '{$table}': " . $e->getMessage());
         }

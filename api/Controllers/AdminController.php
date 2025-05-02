@@ -1769,13 +1769,14 @@ class AdminController {
                         }
 
                         $success = $this->schemaManager->addColumn($tableName, $column['name'], $columnDef);
+                        
                         if ($success) {
                             $results['added_columns'][] = $column['name'];
                         } else {
                             $results['failed_operations'][] = "Failed to add column: " . $column['name'];
                         }
                     } catch (\Exception $e) {
-                        error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
+                        error_log("Failed to add column '{$column['name']}']: " . $e->getMessage());
                         $results['failed_operations'][] = "Failed to add column: {$column['name']} - " . $e->getMessage();
                     }
                 }
@@ -1827,15 +1828,6 @@ class AdminController {
                             'column' => $fk['column'],
                             'references' => $fk['references'],
                             'on' => $fk['on'],
-                            // Optional ON DELETE/UPDATE actions
-                            'onDelete' => $fk['onDelete'] ?? null,
-                            'onUpdate' => $fk['onUpdate'] ?? null,
-                            // Generate a standard constraint name if not provided
-                            'name' => $fk['name'] ?? sprintf(
-                                "fk_%s_%s",
-                                $tableName,
-                                is_array($fk['column']) ? implode('_', $fk['column']) : $fk['column']
-                            )
                         ];
 
                         $success = $this->schemaManager->addForeignKey([$fkDef]);
