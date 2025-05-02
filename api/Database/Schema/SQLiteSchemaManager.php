@@ -522,6 +522,31 @@ class SQLiteSchemaManager implements SchemaManager
     }
 
     /**
+     * Check if a table exists in the database
+     * 
+     * Uses sqlite_master table for reliable checking.
+     * 
+     * @param string $table Name of the table to check
+     * @return bool True if the table exists, false otherwise
+     * @throws \RuntimeException If the check cannot be completed due to database errors
+     */
+    public function tableExists(string $table): bool
+    {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT COUNT(*) 
+                FROM sqlite_master 
+                WHERE type = 'table' 
+                AND name = :table
+            ");
+            $stmt->execute(['table' => $table]);
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Failed to check if table '$table' exists: " . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
      * Calculate SQLite storage size
      * 
      * Includes:
@@ -540,6 +565,35 @@ class SQLiteSchemaManager implements SchemaManager
         ");
         $stmt->execute(['table' => $table]);
         return (int) $stmt->fetchColumn();
+    }
+    
+    /**
+     * Get the total number of rows in a SQLite table
+     * 
+     * Features:
+     * - Direct COUNT(*) query against table
+     * - Handles quoted table names
+     * - Optimized for SQLite's query planner
+     * 
+     * Note: For large tables, this operation may be expensive
+     * as SQLite needs to perform a full table scan
+     * 
+     * @param string $table Name of the table to count rows from
+     * @return int Number of rows in the table
+     * @throws \RuntimeException If table doesn't exist
+     */
+    public function getTableRowCount(string $table): int
+    {
+        try {
+            // SQLite doesn't have table statistics, so we use COUNT(*)
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM "' . $table . '"');
+            $stmt->execute();
+            $result = $stmt->fetchColumn();
+            
+            return (int)($result ?: 0);
+        } catch (Exception $e) {
+            throw new \RuntimeException("Failed to get row count for table '$table': " . $e->getMessage(), 0, $e);
+        }
     }
 
     /**

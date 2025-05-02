@@ -735,7 +735,7 @@ class QueryBuilder
         $this->logger->logEvent("Executing paginated query", [
             'page' => $page,
             'per_page' => $perPage,
-            'query' => substr($this->query, 0, 100) . '...'
+            'query' => is_string($this->query) ? substr($this->query, 0, 100) . '...' : 'Complex query'
         ], 'debug');
 
         $offset = ($page - 1) * $perPage;
@@ -1124,5 +1124,50 @@ class QueryBuilder
         $stmt = $this->prepareAndExecute($sql, $values);
         
         return $stmt->rowCount();
+    }
+
+    /**
+     * Get only the first result from the query
+     * 
+     * Features:
+     * - Optimizes query with LIMIT 1
+     * - Returns a single record (not an array of records)
+     * - Returns null if no records found
+     * 
+     * @return array|null The first record from the query or null if none found
+     * @throws PDOException On query execution failure
+     * 
+     * @example
+     * ```php
+     * // Get the first matching user
+     * $user = $query->select('users', ['*'])
+     *     ->where(['status' => 'active'])
+     *     ->orderBy(['created_at' => 'DESC'])
+     *     ->first();
+     * ```
+     */
+    public function first(): ?array
+    {
+        // Remove any existing LIMIT clause
+        $this->query = preg_replace('/\sLIMIT\s\d+(\sOFFSET\s\d+)?/i', '', $this->query);
+        
+        // Add LIMIT 1 for optimization
+        $this->query .= " LIMIT 1";
+        
+        $timerId = $this->logger->startTiming('first');
+        try {
+            $stmt = $this->pdo->prepare($this->query);
+            $stmt->execute($this->bindings);
+            
+            // Log successful query
+            $this->logger->logQuery($this->query, $this->bindings, $timerId);
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result ?: null;
+        } catch (PDOException $e) {
+            // Log failed query
+            $this->logger->logQuery($this->query, $this->bindings, $timerId, $e);
+            throw $e;
+        }
     }
 }

@@ -1862,4 +1862,133 @@ class AdminController {
             )->send();
         }
     }
+
+    /**
+     * Get comprehensive database statistics
+     * 
+     * Returns database statistics including tables with their schemas, sizes, row counts,
+     * and other metrics useful for database monitoring and visualization.
+     * 
+     * @return mixed HTTP response
+     */
+    public function getDatabaseStats(): mixed
+    {
+        try {
+            // Get list of all tables with schema information
+            $tables = $this->schemaManager->getTables(true); // Pass true to include schema info
+            
+            if (empty($tables)) {
+                return Response::ok(['tables' => []], 'No tables found in database')->send();
+            }
+            
+            $tableData = [];
+            
+            // Get size information for each table
+            foreach ($tables as $table) {
+                // Check if the result includes schema information already
+                $tableName = is_array($table) ? $table['name'] : $table;
+                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public'; // Default to 'public' if not specified
+                
+                try {
+                    $size = $this->schemaManager->getTableSize($tableName);
+                    $rowCount = $this->schemaManager->getTableRowCount($tableName);
+                    
+                    $tableData[] = [
+                        'table_name' => $tableName,
+                        'schema' => $schema,
+                        'size' => $size,
+                        'rows' => $rowCount,
+                        'avg_row_size' => $rowCount > 0 ? round($size / $rowCount) : 0
+                    ];
+                } catch (\Exception $e) {
+                    // If we can't get size for a specific table, include it with null values
+                    error_log("Error getting size for table {$tableName}: " . $e->getMessage());
+                    $tableData[] = [
+                        'table_name' => $tableName,
+                        'schema' => $schema,
+                        'size' => null,
+                        'rows' => null,
+                        'avg_row_size' => null,
+                        'error' => 'Failed to retrieve size information'
+                    ];
+                }
+            }
+            
+            // Sort tables by size in descending order
+            usort($tableData, function($a, $b) {
+                // Handle null values in comparison
+                if ($a['size'] === null) return 1;
+                if ($b['size'] === null) return -1;
+                return $b['size'] <=> $a['size'];
+            });
+            
+            return Response::ok([
+                'tables' => $tableData,
+                'total_tables' => count($tables)
+            ], 'Database statistics retrieved successfully')->send();
+
+        } catch (\Exception $e) {
+            error_log("Get database stats error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get database statistics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Get comprehensive API metrics and statistics
+     * 
+     * Returns detailed metrics about API usage including endpoint performance,
+     * request volumes, error rates, and rate limiting information.
+     * 
+     * @return mixed HTTP response
+     */
+    public function getApiMetrics(): mixed
+    {
+        try {
+            // Use the real API metrics service to get metrics
+            $metricsService = new \Glueful\Services\ApiMetricsService();
+            $endpointMetrics = $metricsService->getApiMetrics();
+            
+            return Response::ok($endpointMetrics, 'API metrics retrieved successfully')->send();
+
+        } catch (\Exception $e) {
+            error_log("Get API metrics error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get API metrics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+    
+    /**
+     * Reset API metrics statistics
+     * 
+     * Clears stored metrics data for API endpoints.
+     * 
+     * @return mixed HTTP response
+     */
+    public function resetApiMetrics(): mixed
+    {
+        try {
+            $metricsService = new \Glueful\Services\ApiMetricsService();
+            $success = $metricsService->resetApiMetrics();
+            
+            if ($success) {
+                return Response::ok(null, 'API metrics reset successfully')->send();
+            } else {
+                return Response::error(
+                    'Failed to reset API metrics',
+                    Response::HTTP_INTERNAL_SERVER_ERROR
+                )->send();
+            }
+        } catch (\Exception $e) {
+            error_log("Reset API metrics error: " . $e->getMessage());
+            return Response::error(
+                'Failed to reset API metrics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
 }

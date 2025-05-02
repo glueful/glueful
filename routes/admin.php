@@ -55,6 +55,21 @@ Router::group('/admin', function() use ($controller) {
         Router::post('/query', function (Request $request) use ($controller){
             return $controller->executeQuery($request);
         });
+        
+        /**
+         * @route GET /admin/db/stats
+         * @tag Database
+         * @summary Get comprehensive database statistics
+         * @description Retrieves detailed statistics for all tables in the database including size, schema, row counts, and other metrics
+         * @requiresAuth true
+         * @response 200 application/json "Database statistics retrieved successfully" {tables:array=[{table_name:string="Table name", schema:string="Database schema", size:integer="Size in bytes", rows:integer="Row count", avg_row_size:integer="Average row size in bytes"}], total_tables:integer="Total number of tables"}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/stats', function (Request $request) use ($controller){
+            return $controller->getDatabaseStats($request);
+        });
+        
         /**
          * @route GET /admin/db/tables
          * @tag Database
@@ -685,5 +700,35 @@ Router::group('/admin', function() use ($controller) {
         });
     }, requiresAdminAuth: true);
     
+    Router::group('/system', function() use ($controller) {
+        /**
+         * @route GET /admin/system/api-metrics
+         * @tag API Monitoring
+         * @summary Get API metrics
+         * @description Retrieves comprehensive metrics about API usage including endpoint performance,
+         * request volumes, error rates, and rate limiting information
+         * @requiresAuth true
+         * @response 200 application/json "API metrics retrieved successfully" {endpoints:array, total_requests:integer, avg_response_time:number, error_rate:number}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/api-metrics', function (Request $request) use ($controller){
+            return $controller->getApiMetrics($request);
+        });
+        
+        /**
+         * @route POST /admin/system/api-metrics/reset
+         * @tag API Monitoring
+         * @summary Reset API metrics
+         * @description Resets all collected API metrics data
+         * @requiresAuth true
+         * @response 200 application/json "API metrics reset successfully"
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::post('/api-metrics/reset', function (Request $request) use ($controller){
+            return $controller->resetApiMetrics($request);
+        });
+    }, requiresAdminAuth: true);
 });
 
