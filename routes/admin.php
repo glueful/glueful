@@ -341,6 +341,22 @@ Router::group('/admin', function() use ($controller) {
         Router::post('/table/foreign-key/add-batch', function (Request $request) use ($controller){
             return $controller->addForeignKey($request);
         });
+
+        /**
+         * @route POST /admin/db/table/schema/update
+         * @tag Database
+         * @summary Update table schema
+         * @description Updates table schema with multiple operations including adding/removing columns, indexes, and foreign keys
+         * @requiresAuth true
+         * @requestBody table_name:string="Table name" columns:array=[{name:string,type:string,options:object}] indexes:array=[{column:string,type:string}] foreign_keys:array=[{column:string,references:string,on:string}] deleted_columns:array=[string] deleted_indexes:array=[string] deleted_foreign_keys:array=[string] {required=table_name}
+         * @response 200 application/json "Schema updated successfully" {added_columns:array,deleted_columns:array,added_indexes:array,deleted_indexes:array,added_foreign_keys:array,deleted_foreign_keys:array}
+         * @response 400 application/json "Invalid request format"
+         * @response 403 application/json "Permission denied"
+         * @response 404 application/json "Table not found"
+         */
+        Router::post('/table/schema/update', function (Request $request) use ($controller){
+            return $controller->updateTableSchema($request);
+        });
     }, requiresAdminAuth: true);
 
     

@@ -190,7 +190,8 @@ class MySQLSchemaManager implements SchemaManager
      */
     public function dropTable(string $table): bool
     {
-        return (bool) $this->pdo->exec("DROP TABLE IF EXISTS `$table`");
+        $this->pdo->exec("DROP TABLE IF EXISTS `$table`");
+        return true;
     }
 
     /**
@@ -212,7 +213,10 @@ class MySQLSchemaManager implements SchemaManager
         $sql = "ALTER TABLE `$table` ADD `$column` {$definition['type']} " .
                (!empty($definition['nullable']) ? 'NULL' : 'NOT NULL') .
                (!empty($definition['default']) ? " DEFAULT '{$definition['default']}'" : '');
-        return (bool) $this->pdo->exec($sql);
+        
+        // Execute the query - if it doesn't throw an exception, consider it successful
+        $this->pdo->exec($sql);
+        return true;
     }
 
     /**
@@ -227,7 +231,8 @@ class MySQLSchemaManager implements SchemaManager
      */
     public function dropColumn(string $table, string $column): bool
     {
-        return (bool) $this->pdo->exec("ALTER TABLE `$table` DROP COLUMN `$column`");
+        $this->pdo->exec("ALTER TABLE `$table` DROP COLUMN `$column`");
+        return true;
     }
 
     /**
@@ -261,7 +266,8 @@ class MySQLSchemaManager implements SchemaManager
      */
     public function dropIndex(string $table, string $indexName): bool
     {
-        return (bool) $this->pdo->exec("DROP INDEX `$indexName` ON `$table`");
+        $this->pdo->exec("DROP INDEX `$indexName` ON `$table`");
+        return true;
     }
     
     /**
@@ -523,6 +529,7 @@ class MySQLSchemaManager implements SchemaManager
         
         // Foreign key exists, so drop it
         $sql = "ALTER TABLE `$table` DROP FOREIGN KEY `$constraintName`";
-        return (bool) $this->pdo->exec($sql);
+        $this->pdo->exec($sql);
+        return true;
     }
 }
