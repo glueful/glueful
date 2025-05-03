@@ -12,6 +12,10 @@ use Glueful\Helpers\ExtensionsManager;
 
 /**
  * Social Login Extension
+ * @description Provides social authentication through Google, Facebook and GitHub
+ * @license MIT
+ * @version 1.0.0
+ * @author Glueful <your.email@example.com>
  * 
  * Provides social authentication capabilities for Glueful:
  * - Google OAuth authentication
@@ -163,7 +167,7 @@ class SocialLogin extends \Glueful\Extensions
     public static function getMetadata(): array
     {
         return [
-            'name' => 'SocialLogin',
+            'name' => 'Social Login',
             'description' => 'Provides social authentication through Google, Facebook and GitHub',
             'version' => '1.0.0',
             'author' => 'Glueful Extensions Team',

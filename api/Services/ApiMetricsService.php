@@ -283,8 +283,6 @@ class ApiMetricsService
      */
     public function getApiMetrics(): array
     {
-        error_log("API Metrics DEBUG: getApiMetrics called from " . debug_backtrace()[1]['class'] . "::" . debug_backtrace()[1]['function']);
-        
         // First, flush any pending metrics
         $this->flushMetrics();
         

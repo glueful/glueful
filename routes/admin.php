@@ -352,6 +352,7 @@ Router::group('/admin', function() use ($controller) {
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
+         * @response 409 application/json "Foreign key constraint already exists"
          */
         Router::post('/table/foreign-key/add-batch', function (Request $request) use ($controller){
             return $controller->addForeignKey($request);
@@ -728,6 +729,21 @@ Router::group('/admin', function() use ($controller) {
          */
         Router::post('/api-metrics/reset', function (Request $request) use ($controller){
             return $controller->resetApiMetrics($request);
+        });
+
+        /**
+         * @route GET /admin/system/health
+         * @tag System Monitoring
+         * @summary Get system health metrics
+         * @description Retrieves comprehensive metrics about the system's health including PHP information,
+         * database status, file system metrics, memory usage, cache status, extension status, and more
+         * @requiresAuth true
+         * @response 200 application/json "System health metrics retrieved successfully" {php:object, memory:object, database:object, file_system:object, cache:object, extensions:object, server_load:object}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/health', function (Request $request) use ($controller){
+            return $controller->systemHealth();
         });
     }, requiresAdminAuth: true);
 });

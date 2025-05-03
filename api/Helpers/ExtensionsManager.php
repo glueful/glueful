@@ -510,11 +510,13 @@ class ExtensionsManager {
     public static function getEnabledExtensions(): array
     {
         $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        
         if (!file_exists($configFile)) {
             return [];
         }
         
         $config = include $configFile;
+        error_log("Enabled extensions:".json_encode($config['enabled'] ?? []));
         return $config['enabled'] ?? [];
     }
     

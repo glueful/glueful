@@ -984,6 +984,7 @@ class AdminController {
             $extensionData = [];
             $extensionConfigFile = ExtensionsManager::getConfigPath();
             $enabledExtensions = ExtensionsManager::getEnabledExtensions($extensionConfigFile);
+            
             if (empty($extensions)) {
                 return Response::ok([], 'No extensions found')->send();
             }
@@ -991,16 +992,26 @@ class AdminController {
             foreach ($extensions as $extension) {
                 $reflection = new \ReflectionClass($extension);
                 $shortName = $reflection->getShortName();
+                
+                // Get metadata from the extension class if the method exists
+                $metadata = [];
+                if (method_exists($extension, 'getMetadata')) {
+                    $metadata = $extension::getMetadata();
+                }
+                
+                // Use name from metadata if available, otherwise use the short class name
+                $extensionName = isset($metadata['name']) ? $metadata['name'] : $shortName;
+                
                 $isEnabled = in_array($shortName, $enabledExtensions);
                 $extensionData[] = [
-                    'name' => $shortName,
-                    'description' => ExtensionsManager::getExtensionMetadata($shortName, 'description'),
-                    'version' => ExtensionsManager::getExtensionMetadata($shortName, 'version'),
-                    'author' => ExtensionsManager::getExtensionMetadata($shortName, 'author'),
-                    'status' => $isEnabled ? 'enabled' : 'disabled',
+                    'name' => $extensionName,
+                    'description' => $metadata['description'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'description'),
+                    'version' => $metadata['version'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'version'),
+                    'author' => $metadata['author'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'author'),
+                    'enabled' => $isEnabled,
                 ];
             }
-            return Response::ok($extensionData, 'Extensions retrieved successfully')->send();
+            return Response::ok(['extensions' => $extensionData], 'Extensions retrieved successfully')->send();
 
         } catch (\Exception $e) {
             error_log("Get extensions error: " . $e->getMessage());
@@ -1990,5 +2001,257 @@ class AdminController {
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
+    }
+
+    /**
+     * Get system health metrics
+     * 
+     * Provides comprehensive metrics about the system's health including:
+     * - PHP information and version
+     * - Database connection status and statistics
+     * - File system storage metrics
+     * - Memory usage
+     * - Cache status
+     * - Extension status
+     * - Recent errors/logs
+     * - Application uptime
+     * 
+     * @return mixed HTTP response with system health metrics
+     */
+    public function systemHealth(): mixed
+    {
+        try {
+            $metrics = [];
+            
+            // PHP information
+            $metrics['php'] = [
+                'version' => phpversion(),
+                'memory_limit' => ini_get('memory_limit'),
+                'max_execution_time' => ini_get('max_execution_time'),
+                'upload_max_filesize' => ini_get('upload_max_filesize'),
+                'post_max_size' => ini_get('post_max_size'),
+                'extensions' => get_loaded_extensions(),
+            ];
+            
+            // Memory usage
+            $metrics['memory'] = [
+                'current_usage' => $this->formatBytes(memory_get_usage(true)),
+                'peak_usage' => $this->formatBytes(memory_get_peak_usage(true)),
+            ];
+            
+            // Database health
+            try {
+                $dbStartTime = microtime(true);
+                $databaseTables = $this->schemaManager->getTables();
+                $dbResponseTime = microtime(true) - $dbStartTime;
+                
+                $metrics['database'] = [
+                    'status' => 'connected',
+                    'response_time_ms' => round($dbResponseTime * 1000, 2),
+                    'table_count' => count($databaseTables),
+                ];
+                
+                // Get database size (total of all tables)
+                $totalSize = 0;
+                foreach ($databaseTables as $table) {
+                    $tableSize = $this->schemaManager->getTableSize($table);
+                    $totalSize += $tableSize['size_bytes'] ?? 0;
+                }
+                $metrics['database']['total_size'] = $this->formatBytes($totalSize);
+                
+            } catch (\Exception $e) {
+                $metrics['database'] = [
+                    'status' => 'error',
+                    'error' => $e->getMessage()
+                ];
+            }
+            
+            // File system metrics
+            $storagePath = realpath(__DIR__ . '/../../storage');
+            $metrics['file_system'] = [
+                'storage_path' => $storagePath,
+                'storage_free_space' => $this->formatBytes(disk_free_space($storagePath)),
+                'storage_total_space' => $this->formatBytes(disk_total_space($storagePath)),
+                'storage_usage_percent' => round((1 - disk_free_space($storagePath) / disk_total_space($storagePath)) * 100, 2) . '%'
+            ];
+            
+            // Check for log files
+            $logPath = realpath(__DIR__ . '/../../storage/logs');
+            if ($logPath && is_dir($logPath)) {
+                $logFiles = glob($logPath . '/*.log');
+                $recentLogs = [];
+                
+                if (!empty($logFiles)) {
+                    // Get the most recent log file
+                    usort($logFiles, function($a, $b) {
+                        return filemtime($b) - filemtime($a);
+                    });
+                    
+                    $mostRecentLog = $logFiles[0];
+                    // Get the last 10 lines from the most recent log file
+                    $recentLogContent = file_exists($mostRecentLog) ? 
+                        array_slice(file($mostRecentLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -10) : [];
+                    
+                    $recentLogs = [
+                        'file' => basename($mostRecentLog),
+                        'last_modified' => date('Y-m-d H:i:s', filemtime($mostRecentLog)),
+                        'recent_entries' => $recentLogContent
+                    ];
+                }
+                
+                $metrics['logs'] = [
+                    'log_file_count' => count($logFiles),
+                    'recent_logs' => $recentLogs
+                ];
+            }
+            
+            // Cache status
+            if (function_exists('\apcu_cache_info')) {
+                try {
+                    $cacheInfo = \apcu_cache_info(true);
+                    $metrics['cache'] = [
+                        'type' => 'APCu',
+                        'status' => 'enabled',
+                        'memory_usage' => $this->formatBytes($cacheInfo['mem_size']),
+                        'hit_rate' => $cacheInfo['num_hits'] > 0 ? 
+                            round($cacheInfo['num_hits'] / ($cacheInfo['num_hits'] + $cacheInfo['num_misses']) * 100, 2) . '%' : '0%',
+                    ];
+                } catch (\Exception $e) {
+                    $metrics['cache'] = [
+                        'type' => 'APCu',
+                        'status' => 'error',
+                        'error' => $e->getMessage()
+                    ];
+                }
+            } else {
+                // Check if Redis is available
+                if (class_exists('Redis')) {
+                    try {
+                        $redis = new \Redis();
+                        $redis->connect('127.0.0.1', 6379, 1);
+                        $info = $redis->info();
+                        $metrics['cache'] = [
+                            'type' => 'Redis',
+                            'status' => 'enabled',
+                            'version' => $info['redis_version'] ?? 'unknown',
+                            'memory_usage' => isset($info['used_memory']) ? $this->formatBytes((int)$info['used_memory']) : 'unknown',
+                            'connected_clients' => $info['connected_clients'] ?? 0,
+                        ];
+                        $redis->close();
+                    } catch (\Exception $e) {
+                        $metrics['cache'] = [
+                            'type' => 'Redis',
+                            'status' => 'error',
+                            'error' => $e->getMessage()
+                        ];
+                    }
+                } else {
+                    $metrics['cache'] = [
+                        'type' => 'unknown',
+                        'status' => 'not configured'
+                    ];
+                }
+            }
+            
+            // Extensions status
+            $extensions = ExtensionsManager::getLoadedExtensions();
+            $enabledExtensions = ExtensionsManager::getEnabledExtensions(ExtensionsManager::getConfigPath());
+            
+            $extensionStatus = [];
+            foreach ($extensions as $extension) {
+                $reflection = new \ReflectionClass($extension);
+                $shortName = $reflection->getShortName();
+                $extensionStatus[] = [
+                    'name' => $shortName,
+                    'status' => in_array($shortName, $enabledExtensions) ? 'enabled' : 'disabled',
+                    'version' => ExtensionsManager::getExtensionMetadata($shortName, 'version'),
+                ];
+            }
+            
+            $metrics['extensions'] = [
+                'total_count' => count($extensions),
+                'enabled_count' => count($enabledExtensions),
+                'extensions' => $extensionStatus
+            ];
+            
+            // Server load
+            if (function_exists('sys_getloadavg')) {
+                $load = sys_getloadavg();
+                $metrics['server_load'] = [
+                    '1min' => $load[0],
+                    '5min' => $load[1],
+                    '15min' => $load[2]
+                ];
+            }
+            
+            // Application uptime (if possible)
+            if (function_exists('posix_times')) {
+                $uptime = posix_times();
+                $metrics['app_uptime'] = [
+                    'system_seconds' => $uptime['ticks'],
+                    'formatted' => $this->formatUptime($uptime['ticks'])
+                ];
+            }
+            
+            // Current time and timezone
+            $metrics['time'] = [
+                'current' => date('Y-m-d H:i:s'),
+                'timezone' => date_default_timezone_get()
+            ];
+
+            return Response::ok($metrics, 'System health metrics retrieved successfully')->send();
+
+        } catch (\Exception $e) {
+            error_log("System health check error: " . $e->getMessage());
+            return Response::error(
+                'Failed to retrieve system health metrics: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+    
+    /**
+     * Format bytes to human-readable format
+     * 
+     * @param int|float $bytes Number of bytes
+     * @param int $precision Precision of rounding
+     * @return string Formatted size with unit
+     */
+    private function formatBytes($bytes, int $precision = 2): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        
+        $bytes = max((float)$bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+        
+        $bytes /= (1 << (10 * $pow));
+        
+        return round($bytes, $precision) . ' ' . $units[$pow];
+    }
+    
+    /**
+     * Format system uptime to human-readable format
+     * 
+     * @param int $seconds Uptime in seconds
+     * @return string Formatted uptime
+     */
+    private function formatUptime(int $seconds): string
+    {
+        $days = floor($seconds / 86400);
+        $seconds %= 86400;
+        
+        $hours = floor($seconds / 3600);
+        $seconds %= 3600;
+        
+        $minutes = floor($seconds / 60);
+        $seconds %= 60;
+        
+        $result = '';
+        if ($days > 0) {
+            $result .= $days . ' days, ';
+        }
+        
+        return $result . sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
     }
 }
