@@ -280,4 +280,39 @@ class EmailChannel implements NotificationChannel
     {
         return $this->formatter;
     }
+    
+    /**
+     * Get the current size of the email queue
+     * 
+     * Returns the number of emails currently pending in the queue.
+     * This method checks the queue directory for pending emails.
+     * 
+     * @return int|null Number of emails in queue, or null if queue system not available
+     */
+    public function getQueueSize(): ?int
+    {
+        try {
+            // Check if queue feature is enabled
+            if (empty($this->config['queue']['enabled'])) {
+                return 0;
+            }
+            
+            // Get queue directory from config or use default
+            $queueDir = $this->config['queue']['directory'] ?? 
+                (__DIR__ . '/../../storage/queue/emails');
+                
+            // If queue directory doesn't exist, return 0
+            if (!is_dir($queueDir)) {
+                return 0;
+            }
+            
+            // Count email files in the queue directory
+            $queueFiles = glob($queueDir . '/*.json');
+            return count($queueFiles);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to get email queue size: ' . $e->getMessage());
+            return null;
+        }
+    }
 }
