@@ -153,6 +153,8 @@ class EmailNotification extends \Glueful\Extensions
             'name' => 'Email Notification',
             'description' => 'Provides email notification capabilities using SMTP/PHPMailer',
             'version' => '1.0.0',
+            'type' => 'core',
+            'requiredBy' => ['NotificationSystem'],
             'author' => 'Glueful Extensions Team',
             'requires' => [
                 'glueful' => '>=1.0.0',

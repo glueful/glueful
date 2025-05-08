@@ -65,14 +65,15 @@ class ExtensionsCommand extends Command
      * Command options
      */
     protected array $options = [
-        'list'       => 'List all installed extensions',
-        'info'       => 'Show detailed information about an extension',
-        'enable'     => 'Enable an extension',
-        'disable'    => 'Disable an extension',
-        'create'     => 'Create a new extension scaffold',
-        'install'    => 'Install extension from URL or archive file',
-        'validate'   => 'Validate an extension structure and dependencies',
-        'namespaces' => 'Show all registered extension namespaces'
+        'list'          => 'List all installed extensions',
+        'info'          => 'Show detailed information about an extension',
+        'enable'        => 'Enable an extension',
+        'disable'       => 'Disable an extension',
+        'create'        => 'Create a new extension scaffold',
+        'install'       => 'Install extension from URL or archive file',
+        'validate'      => 'Validate an extension structure and dependencies',
+        'namespaces'    => 'Show all registered extension namespaces',
+        'delete'        => 'Delete an extension completely'
     ];
     
     /**
@@ -156,6 +157,14 @@ class ExtensionsCommand extends Command
                     $this->showNamespaces();
                     break;
 
+                case 'delete':
+                    if (empty($extensionName)) {
+                        $this->error('Extension name is required for delete action');
+                        return Command::INVALID;
+                    }
+                    $this->deleteExtension($extensionName);
+                    break;
+
                 default:
                     $this->error("Action not implemented: $action");
                     return Command::FAILURE;
@@ -187,16 +196,21 @@ class ExtensionsCommand extends Command
             return;
         }
 
-        // Load enabled extensions from config
+        // Load config with tiered extension information
         $extensionConfigFile = $this->getConfigPath();
-        $enabledExtensions = $this->getEnabledExtensions($extensionConfigFile);
+        $config = $this->loadConfig($extensionConfigFile);
+        $enabledExtensions = $config['enabled'] ?? [];
+        $coreExtensions = $config['core'] ?? [];
+        $optionalExtensions = $config['optional'] ?? [];
         
         // Create a table header
         $this->line(
-            Utils::padColumn('Name', 30) . 
-            Utils::padColumn('Status', 15) 
+            Utils::padColumn('Name', 25) . 
+            Utils::padColumn('Status', 12) .
+            Utils::padColumn('Type', 10) .
+            Utils::padColumn('Description', 40)
         );
-        $this->line(str_repeat('-', 80));
+        $this->line(str_repeat('-', 87));
         
         // Display each extension
         foreach ($extensions as $extension) {
@@ -205,15 +219,41 @@ class ExtensionsCommand extends Command
             $isEnabled = in_array($shortName, $enabledExtensions);
             $status = $isEnabled ? $this->colorText('Enabled', 'green') : $this->colorText('Disabled', 'yellow');
             
-            // Get description from docblock
-            $description = $this->getExtensionMetadata($reflection, 'description');
+            // Determine if core or optional
+            $isCore = in_array($shortName, $coreExtensions);
+            $type = $isCore ? $this->colorText('Core', 'cyan') : 'Optional';
+            
+            // Get description from docblock or metadata
+            $description = '';
+            if (method_exists($extension, 'getMetadata')) {
+                try {
+                    $metadata = $extension::getMetadata();
+                    $description = $metadata['description'] ?? '';
+                } catch (\Throwable $e) {
+                    // Fall back to docblock if metadata method fails
+                }
+            }
+            
+            if (empty($description)) {
+                $description = $this->getExtensionMetadata($reflection, 'description');
+            }
+            
+            // Truncate description if too long
+            if (strlen($description) > 40) {
+                $description = substr($description, 0, 37) . '...';
+            }
             
             $this->line(
-                Utils::padColumn($shortName, 30) . 
-                Utils::padColumn($status, 15)
-                
+                Utils::padColumn($shortName, 25) . 
+                Utils::padColumn($status, 12) .
+                Utils::padColumn($type, 10) .
+                Utils::padColumn($description, 40)
             );
         }
+        
+        $this->line("\nTotal: " . count($extensions) . " extensions (" . 
+            count(array_intersect($enabledExtensions, $coreExtensions)) . " core, " . 
+            (count($enabledExtensions) - count(array_intersect($enabledExtensions, $coreExtensions))) . " optional)");
     }
 
     /**
@@ -232,29 +272,105 @@ class ExtensionsCommand extends Command
         }
 
         $reflection = new \ReflectionClass($extension);
+        $shortName = $reflection->getShortName();
         
-        $this->info("Extension: {$reflection->getShortName()}");
+        $configFile = $this->getConfigPath();
+        $config = $this->loadConfig($configFile);
+        
+        // Check if this is a core extension
+        $isCoreExtension = in_array($shortName, $config['core'] ?? []);
+        $isEnabled = in_array($shortName, $config['enabled'] ?? []);
+        
+        $this->info("Extension: " . $shortName . ($isCoreExtension ? " " . $this->colorText("[CORE]", "cyan") : ""));
         $this->line(str_repeat('=', 50));
         
-        // Get metadata
-        $description = $this->getExtensionMetadata($reflection, 'description');
-        $version = $this->getExtensionMetadata($reflection, 'version', '1.0.0');
-        $author = $this->getExtensionMetadata($reflection, 'author', 'Unknown');
+        // Get basic metadata
+        $description = '';
+        $version = '';
+        $author = '';
+        $requiredBy = [];
+        $dependencies = [];
         
-        // Check status
-        $isEnabled = in_array(
-            $reflection->getShortName(), 
-            $this->getEnabledExtensions($this->getConfigPath())
-        );
+        // Try to get metadata from getMetadata() method first
+        if (method_exists($extension, 'getMetadata')) {
+            try {
+                $metadata = $extension::getMetadata();
+                $description = $metadata['description'] ?? '';
+                $version = $metadata['version'] ?? '';
+                $author = $metadata['author'] ?? '';
+                $requiredBy = $metadata['requiredBy'] ?? [];
+                
+                if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
+                    $dependencies = $metadata['requires']['extensions'];
+                }
+                
+                // Get any additional dependencies from getDependencies() method
+                if (method_exists($extension, 'getDependencies')) {
+                    $additionalDeps = $extension::getDependencies();
+                    $dependencies = array_unique(array_merge($dependencies, $additionalDeps));
+                }
+            } catch (\Throwable $e) {
+                // Fall back to docblock if metadata method fails
+            }
+        }
+        
+        // Fall back to docblock for basic metadata if needed
+        if (empty($description)) {
+            $description = $this->getExtensionMetadata($reflection, 'description');
+        }
+        if (empty($version)) {
+            $version = $this->getExtensionMetadata($reflection, 'version', '1.0.0');
+        }
+        if (empty($author)) {
+            $author = $this->getExtensionMetadata($reflection, 'author', 'Unknown');
+        }
+        
+        // Format status with color
         $status = $isEnabled ? $this->colorText('Enabled', 'green') : $this->colorText('Disabled', 'yellow');
+        $type = $isCoreExtension ? $this->colorText('Core', 'cyan') : 'Optional';
         
         // Display information
         $this->line("Description: $description");
         $this->line("Version:     $version");
         $this->line("Author:      $author");
         $this->line("Status:      $status");
+        $this->line("Type:        $type");
         $this->line("Class:       $extension");
         $this->line("File:        " . $reflection->getFileName());
+        
+        // Display components that require this extension
+        if (!empty($requiredBy)) {
+            $this->info("\nRequired by:");
+            foreach ($requiredBy as $component) {
+                $this->line("- $component");
+            }
+        }
+        
+        // Display extension dependencies
+        if (!empty($dependencies)) {
+            $this->info("\nDependencies:");
+            foreach ($dependencies as $dependency) {
+                $dependencyEnabled = in_array($dependency, $config['enabled'] ?? []);
+                $status = $dependencyEnabled 
+                    ? $this->colorText('(enabled)', 'green') 
+                    : $this->colorText('(disabled)', 'red');
+                $this->line("- $dependency $status");
+            }
+        } else {
+            $this->line("\nNo dependencies required");
+        }
+        
+        // Display extensions that depend on this one
+        $dependentExtensions = $this->findDependentExtensions($shortName);
+        if (!empty($dependentExtensions)) {
+            $this->info("\nExtensions depending on this:");
+            foreach ($dependentExtensions as $dependent) {
+                $this->line("- $dependent");
+            }
+            if ($isEnabled) {
+                $this->warning("Disabling this extension will affect the extensions listed above.");
+            }
+        }
         
         // Display lifecycle methods
         $this->info("\nLifecycle Methods:");
@@ -284,6 +400,13 @@ class ExtensionsCommand extends Command
                 }
                 $this->line("- " . $method->getName() . '(' . implode(', ', $params) . ')');
             }
+        }
+        
+        // Special warning for core extensions that are disabled
+        if ($isCoreExtension && !$isEnabled) {
+            $this->warning("\n⚠️ WARNING: This is a core extension that is currently disabled!");
+            $this->warning("Some system functionality may not be working properly.");
+            $this->tip("To enable: php glueful extensions enable $shortName");
         }
     }
 
@@ -355,12 +478,73 @@ class ExtensionsCommand extends Command
             return;
         }
         
+        // Check if this is a core extension
+        $isCoreExtension = in_array($shortName, $config['core'] ?? []);
+        
+        if ($isCoreExtension) {
+            $this->warning($this->colorText("⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!", 'red'));
+            $this->warning("Disabling this extension may break essential system features.");
+            
+            // List components that depend on this extension
+            if (method_exists($extension, 'getMetadata')) {
+                $metadata = $extension::getMetadata();
+                if (isset($metadata['requiredBy']) && !empty($metadata['requiredBy'])) {
+                    $this->warning("This extension is required by:");
+                    foreach ($metadata['requiredBy'] as $component) {
+                        $this->line("  - " . $this->colorText($component, 'yellow'));
+                    }
+                }
+            }
+            
+            // Check for dependent extensions
+            $dependentExtensions = $this->findDependentExtensions($shortName);
+            if (!empty($dependentExtensions)) {
+                $this->warning("The following enabled extensions depend on '$shortName':");
+                foreach ($dependentExtensions as $dependent) {
+                    $this->line("  - " . $this->colorText($dependent, 'yellow'));
+                }
+                
+                if (!$this->confirm("Are you sure you want to disable this extension?")) {
+                    $this->info("Operation cancelled");
+                    return;
+                }
+            }
+            
+            // Ask for confirmation
+            if (!$this->confirm("Are you absolutely sure you want to disable this core extension?")) {
+                $this->info("Operation cancelled");
+                return;
+            }
+            
+            $this->warning($this->colorText("Proceeding with disabling core extension '$shortName'...", 'red'));
+        } else {
+            // Check for dependent extensions for non-core extensions too
+            $dependentExtensions = $this->findDependentExtensions($shortName);
+            if (!empty($dependentExtensions)) {
+                $this->warning("The following enabled extensions depend on '$shortName':");
+                foreach ($dependentExtensions as $dependent) {
+                    $this->line("  - " . $this->colorText($dependent, 'yellow'));
+                }
+                
+                if (!$this->confirm("Are you sure you want to disable this extension?")) {
+                    $this->info("Operation cancelled");
+                    return;
+                }
+            }
+        }
+        
+        // All checks passed, disable the extension
         $enabledExtensions = array_diff($enabledExtensions, [$shortName]);
         $config['enabled'] = $enabledExtensions;
         
         $this->saveConfig($configFile, $config);
         
-        $this->success("Extension '$shortName' has been disabled");
+        if ($isCoreExtension) {
+            $this->success("Core extension '$shortName' has been disabled");
+            $this->warning($this->colorText("⚠️ Caution: You have disabled a core extension. Some system functionality may not work properly.", 'red'));
+        } else {
+            $this->success("Extension '$shortName' has been disabled");
+        }
     }
 
     /**
@@ -425,7 +609,7 @@ class ExtensionsCommand extends Command
         
         $this->tip("To validate your extension structure, run: php glueful extensions validate $installedName");
     }
-    
+
     /**
      * Sanitize a string to a valid extension name
      * 
@@ -442,7 +626,7 @@ class ExtensionsCommand extends Command
         
         return $name;
     }
-    
+
     /**
      * Check if an extension name is valid
      * 
@@ -453,7 +637,7 @@ class ExtensionsCommand extends Command
     {
         return preg_match('/^[A-Z][a-zA-Z0-9]*$/', $name) === 1;
     }
-    
+
     /**
      * Show a confirmation prompt
      * 
@@ -580,9 +764,10 @@ class ExtensionsCommand extends Command
      * @return string|null Full extension class name or null if not found
      */
     protected function findExtension(string $extensionName): ?string
-    {   
+    {
         $extensions = ExtensionsManager::getLoadedExtensions();
         error_log(print_r($extensions, true));
+        
         foreach ($extensions as $extension) {
             $reflection = new \ReflectionClass($extension);
             if ($reflection->getShortName() === $extensionName) {
@@ -684,284 +869,6 @@ class ExtensionsCommand extends Command
         return file_put_contents($file, $content) !== false;
     }
 
-    /**
-     * Generate extension class content
-     * 
-     * @param string $extensionName Extension name
-     * @return string Generated class content
-     */
-    protected function generateExtensionClass(string $extensionName): string
-    {
-        return "<?php
-    declare(strict_types=1);
-
-    namespace Glueful\\Extensions;
-
-    use Glueful\\Http\\Response;
-    use Glueful\\Http\\Router;
-    use Glueful\\Helpers\\Request;
-
-/**
- * $extensionName Extension
- * 
- * @description Add your extension description here
- * @version 1.0.0
- * @author Your Name <your.email@example.com>
- */
-class $extensionName extends \\Glueful\\Extensions
-{
-    /**
-     * Extension configuration
-     */
-    private static array \$config = [];
-    
-    /**
-     * Initialize extension
-     * 
-     * Called when the extension is loaded
-     * 
-     * @return void
-     */
-    public static function initialize(): void
-    {
-        // Load configuration if available
-        if (file_exists(__DIR__ . '/config.php')) {
-            self::\$config = require __DIR__ . '/config.php';
-        }
-        
-        // Additional initialization code here
-    }
-    
-    /**
-     * Register extension-provided services
-     * 
-     * @return void
-     */
-    public static function registerServices(): void
-    {
-        // Register services here
-    }
-    
-    /**
-     * Register extension-provided middleware
-     * 
-     * @return void
-     */
-    public static function registerMiddleware(): void
-    {
-        // Register middleware here
-    }
-    
-    /**
-     * Process extension request
-     * 
-     * Main request handler for extension endpoints.
-     * 
-     * @param array \$getParams Query parameters
-     * @param array \$postParams Post data
-     * @return array Extension response
-     */
-    public static function process(array \$getParams, array \$postParams): array
-    {
-        // Example implementation of the process method
-        \$action = \$getParams['action'] ?? 'default';
-        
-        return match(\$action) {
-            'greet' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'message' => self::greet(\$getParams['name'] ?? 'World')
-                ]
-            ],
-            'default' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'extension' => '$extensionName',
-                    'message' => 'Extension is working properly'
-                ]
-            ],
-            default => [
-                'success' => false,
-                'code' => 400,
-                'error' => 'Unknown action: ' . \$action
-            ]
-        };
-    }
-    
-    /**
-     * Get extension metadata
-     * 
-     * This method follows the Glueful Extension Metadata Standard.
-     * 
-     * @return array Extension metadata for admin interface and marketplace
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            // Required fields
-            'name' => '$extensionName',
-            'description' => 'Add your extension description here',
-            'version' => '1.0.0',
-            'author' => 'Your Name',
-            'requires' => [
-                'glueful' => '>=1.0.0',
-                'php' => '>=8.1.0',
-                'extensions' => [],
-                'dependencies' => []
-            ],
-            
-            // Optional fields - uncomment and customize as needed
-            // 'homepage' => 'https://example.com/$extensionName',
-            // 'documentation' => 'https://docs.example.com/extensions/$extensionName',
-            // 'license' => 'MIT',
-            // 'keywords' => ['keyword1', 'keyword2', 'keyword3'],
-            // 'category' => 'utilities',
-            
-            'features' => [
-                'Feature 1 description',
-                'Feature 2 description',
-                'Feature 3 description'
-            ],
-            
-            'compatibility' => [
-                'browsers' => ['Chrome', 'Firefox', 'Safari', 'Edge'],
-                'environments' => ['production', 'development'],
-                'conflicts' => []
-            ],
-            
-            'settings' => [
-                'configurable' => true,
-                'has_admin_ui' => false,
-                'setup_required' => false,
-                'default_config' => [
-                    // Default configuration values
-                    'setting1' => 'default_value',
-                    'setting2' => true
-                ]
-            ],
-            
-            'support' => [
-                'email' => 'your.email@example.com',
-                'issues' => 'https://github.com/yourusername/$extensionName/issues'
-            ]
-        ];
-    }
-    
-    /**
-     * Get extension dependencies
-     * 
-     * Returns a list of other extensions this extension depends on.
-     * 
-     * @return array List of extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        // By default, get dependencies from metadata
-        \$metadata = self::getMetadata();
-        return \$metadata['requires']['extensions'] ?? [];
-    }
-    
-    /**
-     * Check environment-specific configuration
-     * 
-     * Determines if the extension should be enabled in the current environment.
-     * 
-     * @param string \$environment Current environment (dev, staging, production)
-     * @return bool Whether the extension should be enabled in this environment
-     */
-    public static function isEnabledForEnvironment(string \$environment): bool
-    {
-        // By default, enable in all environments
-        // Override this method to enable only in specific environments
-        return true;
-    }
-    
-    /**
-     * Validate extension health
-     * 
-     * Checks if the extension is functioning correctly.
-     * 
-     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
-     */
-    public static function checkHealth(): array
-    {
-        \$healthy = true;
-        \$issues = [];
-        
-        // Example health check - verify config is loaded correctly
-        if (empty(self::\$config) && file_exists(__DIR__ . '/config.php')) {
-            \$healthy = false;
-            \$issues[] = 'Configuration could not be loaded properly';
-        }
-        
-        // Add your own health checks here
-        
-        return [
-            'healthy' => \$healthy,
-            'issues' => \$issues,
-            'metrics' => [
-                'memory_usage' => memory_get_usage(true),
-                'execution_time' => 0, // You could track this with microtime()
-                'database_queries' => 0, // Track queries if your extension uses the database
-                'cache_usage' => 0 // Track cache usage if applicable
-            ]
-        ];
-    }
-    
-    /**
-     * Get extension resource usage
-     * 
-     * Returns information about resources used by this extension.
-     * 
-     * @return array Resource usage metrics
-     */
-    public static function getResourceUsage(): array
-    {
-        // Customize with your own resource metrics
-        return [
-            'memory_usage' => memory_get_usage(true),
-            'execution_time' => 0,
-            'database_queries' => 0,
-            'cache_usage' => 0
-        ];
-    }
-    
-    /**
-     * Get extension configuration
-     * 
-     * @return array Current configuration
-     */
-    public static function getConfig(): array
-    {
-        return self::\$config;
-    }
-    
-    /**
-     * Set extension configuration
-     * 
-     * @param array \$config New configuration
-     * @return void
-     */
-    public static function setConfig(array \$config): void
-    {
-        self::\$config = \$config;
-    }
-    
-    /**
-     * Example extension method
-     * 
-     * @param string \$name Name parameter
-     * @return string Greeting message
-     */
-    public static function greet(string \$name): string
-    {
-        return \"Hello, {\$name}! Welcome to the $extensionName extension.\";
-    }
-}
-";
-    }
 
     /**
      * Generate README.md content
@@ -1054,13 +961,13 @@ Examples:
   php glueful extensions info MyExtension
   php glueful extensions enable PaymentGateway
   php glueful extensions disable Analytics
-  php glueful extensions create NewFeature
+  php glueful extensions create MyExtension
   php glueful extensions install https://example.com/extension.zip MyExtension
   php glueful extensions validate MyExtension
   php glueful extensions namespaces
 HELP;
     }
-    
+
     /**
      * Show command help
      * 
@@ -1088,7 +995,6 @@ HELP;
             return;
         }
         
-        // Display each namespace and its path
         foreach ($namespaces as $namespace => $paths) {
             $this->info($namespace);
             
@@ -1491,5 +1397,150 @@ HELP;
     protected function tip(string $message): void
     {
         $this->line($this->colorText("💡 $message", 'cyan'));
+    }
+
+    /**
+     * Find extensions that depend on the given extension
+     *
+     * @param string $extensionName The name of the extension
+     * @return array List of extension names that depend on this extension
+     */
+    protected function findDependentExtensions(string $extensionName): array
+    {
+        $dependentExtensions = [];
+        $enabledExtensions = $this->getEnabledExtensions($this->getConfigPath());
+        
+        foreach (ExtensionsManager::getLoadedExtensions() as $otherExtension) {
+            $otherReflection = new \ReflectionClass($otherExtension);
+            $otherName = $otherReflection->getShortName();
+            
+            // Skip if not enabled
+            if (!in_array($otherName, $enabledExtensions)) {
+                continue;
+            }
+            
+            // Skip if it's the extension itself
+            if ($otherName === $extensionName) {
+                continue;
+            }
+            
+            try {
+                // Check in getDependencies method
+                if ($otherReflection->hasMethod('getDependencies')) {
+                    $otherDependencies = $otherExtension::getDependencies();
+                    if (in_array($extensionName, $otherDependencies)) {
+                        $dependentExtensions[] = $otherName;
+                        continue; // Skip further checks for this extension
+                    }
+                }
+                
+                // Check in getMetadata method
+                if ($otherReflection->hasMethod('getMetadata')) {
+                    $otherMetadata = $otherExtension::getMetadata();
+                    if (isset($otherMetadata['requires']) && 
+                        isset($otherMetadata['requires']['extensions']) &&
+                        in_array($extensionName, $otherMetadata['requires']['extensions'])) {
+                        if (!in_array($otherName, $dependentExtensions)) {
+                            $dependentExtensions[] = $otherName;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Skip extensions with errors
+                continue;
+            }
+        }
+        
+        return $dependentExtensions;
+    }
+
+    /**
+     * Delete an extension
+     * 
+     * @param string $extensionName Extension name
+     * @return void
+     */
+    protected function deleteExtension(string $extensionName): void
+    {
+        $extension = $this->findExtension($extensionName);
+        
+        if (!$extension) {
+            $this->error("Extension '$extensionName' not found");
+            return;
+        }
+
+        $reflection = new \ReflectionClass($extension);
+        $shortName = $reflection->getShortName();
+        $extensionDir = dirname($reflection->getFileName());
+        
+        // Check if the extension is enabled
+        $configFile = $this->getConfigPath();
+        $config = $this->loadConfig($configFile);
+        $isEnabled = in_array($shortName, $config['enabled'] ?? []);
+        $isCoreExtension = in_array($shortName, $config['core'] ?? []);
+        
+        // Show warnings for enabled or core extensions
+        if ($isEnabled) {
+            $this->warning("Extension '$shortName' is currently enabled.");
+            $this->line("You should disable it first with: php glueful extensions disable $shortName");
+            
+            if (!$this->confirm("Do you want to continue anyway?")) {
+                $this->info("Operation cancelled");
+                return;
+            }
+        }
+        
+        if ($isCoreExtension) {
+            $this->warning($this->colorText("⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!", 'red'));
+            $this->warning("Deleting this extension will break essential system features.");
+            $this->warning("Only proceed if you're absolutely sure what you're doing.");
+            
+            if (!$this->confirm("Are you absolutely sure you want to delete this core extension?")) {
+                $this->info("Operation cancelled");
+                return;
+            }
+            
+            $this->warning($this->colorText("Proceeding with deleting core extension '$shortName'...", 'red'));
+        }
+        
+        // Check for dependent extensions
+        $dependentExtensions = $this->findDependentExtensions($shortName);
+        if (!empty($dependentExtensions)) {
+            $this->warning("The following enabled extensions depend on '$shortName':");
+            foreach ($dependentExtensions as $dependent) {
+                $this->line("  - " . $this->colorText($dependent, 'yellow'));
+            }
+            $this->warning("Deleting this extension will break these dependent extensions.");
+            
+            if (!$this->confirm("Are you sure you want to delete this extension?")) {
+                $this->info("Operation cancelled");
+                return;
+            }
+        }
+        
+        // Final confirmation before deletion
+        $this->info("This will completely remove the extension directory:");
+        $this->line("  " . $extensionDir);
+        
+        if (!$this->confirm("Are you sure you want to permanently delete this extension?")) {
+            $this->info("Operation cancelled");
+            return;
+        }
+        
+        // Use ExtensionsManager to delete the extension
+        $force = true; // Force deletion since we've already confirmed
+        $result = ExtensionsManager::deleteExtension($shortName, $force);
+        
+        if (!$result['success']) {
+            $this->error($result['message']);
+            return;
+        }
+        
+        $this->success($result['message']);
+        
+        // Suggest possible next steps
+        if (!empty($dependentExtensions)) {
+            $this->tip("You may need to update or remove the dependent extensions that relied on this extension.");
+        }
     }
 }

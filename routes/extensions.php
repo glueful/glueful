@@ -112,4 +112,21 @@ Router::group('/extensions', function() use ($controller) {
     Router::get('/metrics', function (Request $request) use ($controller){
         return $controller->getExtensionMetrics();
     });
+
+    /**
+     * @route POST /extensions/delete
+     * @tag Extensions
+     * @summary Delete extension
+     * @description Completely removes an extension from the filesystem
+     * @requiresAuth true
+     * @requestBody extension:string="Extension name" force:boolean="Force deletion even if enabled or core (optional)" {required=extension}
+     * @response 200 application/json "Extension deleted successfully"
+     * @response 400 application/json "Invalid request format or cannot delete extension"
+     * @response 403 application/json "Permission denied"
+     * @response 404 application/json "Extension not found"
+     * @response 500 application/json "Failed to delete extension"
+     */
+    Router::post('/delete', function (Request $request) use ($controller){
+        return $controller->deleteExtension();
+    });
 });

@@ -405,6 +405,7 @@ class ExtensionsManager {
      * Enable an extension
      * 
      * Enables an extension and verifies that all dependencies are met.
+     * Also properly categorizes it as core or optional based on metadata.
      * 
      * @param string $extensionName Extension name
      * @return array Success status and any messages
@@ -422,7 +423,12 @@ class ExtensionsManager {
         
         // Get config file
         $configFile = self::getConfigPath();
-        $config = file_exists($configFile) ? include $configFile : ['enabled' => []];
+        $config = file_exists($configFile) ? include $configFile : ['enabled' => [], 'core' => [], 'optional' => []];
+        
+        // Ensure config has the required arrays for tiered structure
+        if (!isset($config['core'])) $config['core'] = [];
+        if (!isset($config['optional'])) $config['optional'] = [];
+        if (!isset($config['enabled'])) $config['enabled'] = [];
         
         // Check if already enabled
         if (in_array($extensionName, $config['enabled'] ?? [])) {
@@ -436,6 +442,34 @@ class ExtensionsManager {
         $dependencyResults = self::checkDependenciesForEnable($extensionName);
         if (!$dependencyResults['success']) {
             return $dependencyResults;
+        }
+        
+        // Determine if the extension is core or optional if not already categorized
+        if (!in_array($extensionName, $config['core']) && !in_array($extensionName, $config['optional'])) {
+            // Get metadata to see if extension type is specified
+            $isCore = false;
+            try {
+                if (method_exists($extensionClass, 'getMetadata')) {
+                    $metadata = $extensionClass::getMetadata();
+                    $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
+                    
+                    // If the type isn't explicitly specified, check if other core APIs depend on it
+                    if (!isset($metadata['type']) && isset($metadata['requiredBy']) && !empty($metadata['requiredBy'])) {
+                        $isCore = true;
+                    }
+                }
+            } catch (\Throwable $e) {
+                self::debug("Error getting metadata for $extensionName: " . $e->getMessage());
+            }
+            
+            // Add to appropriate category
+            if ($isCore) {
+                $config['core'][] = $extensionName;
+                self::debug("Adding $extensionName to core extensions");
+            } else {
+                $config['optional'][] = $extensionName;
+                self::debug("Adding $extensionName to optional extensions");
+            }
         }
         
         // All checks passed, enable the extension
@@ -459,11 +493,13 @@ class ExtensionsManager {
      * Disable an extension
      * 
      * Disables an extension and checks if any enabled extensions depend on it.
+     * Provides warnings when attempting to disable core extensions.
      * 
      * @param string $extensionName Extension name
+     * @param bool $force Force disable even if it's a core extension
      * @return array Success status and any messages
      */
-    public static function disableExtension(string $extensionName): array
+    public static function disableExtension(string $extensionName, bool $force = false): array
     {
         // Get config file
         $configFile = self::getConfigPath();
@@ -486,6 +522,22 @@ class ExtensionsManager {
             ];
         }
         
+        // Check if this is a core extension
+        $isCoreExtension = in_array($extensionName, $config['core'] ?? []);
+        
+        if ($isCoreExtension && !$force) {
+            // This is a core extension and we're not forcing disable
+            return [
+                'success' => false,
+                'message' => "Cannot disable core extension '$extensionName'. This extension is required for core functionality.",
+                'details' => [
+                    'is_core' => true,
+                    'can_force' => true,
+                    'warning' => "Disabling this extension may break core system functionality. Use force=true parameter to override."
+                ]
+            ];
+        }
+        
         // Check for dependent extensions
         $dependencyResults = self::checkDependenciesForDisable($extensionName);
         if (!$dependencyResults['success']) {
@@ -503,9 +555,17 @@ class ExtensionsManager {
             ];
         }
         
+        $message = "Extension '$extensionName' has been disabled successfully";
+        
+        // Add warning for core extensions that were force-disabled
+        if ($isCoreExtension) {
+            $message .= " (WARNING: This is a core extension and some system functionality may not work properly)";
+        }
+        
         return [
             'success' => true,
-            'message' => "Extension '$extensionName' has been disabled successfully"
+            'message' => $message,
+            'is_core' => $isCoreExtension
         ];
     }
 
@@ -603,6 +663,8 @@ class ExtensionsManager {
     private static function createConfigFile(string $configFile): bool
     {
         $defaultConfig = [
+            'core' => [],
+            'optional' => [],
             'enabled' => [],
             'paths' => [
                 'extensions' => config('paths.project_extensions'),
@@ -738,6 +800,8 @@ class ExtensionsManager {
         
         $extensions = self::getLoadedExtensions();
         $enabledExtensions = self::getEnabledExtensions();
+        $coreExtensions = self::getCoreExtensions();
+        $optionalExtensions = self::getOptionalExtensions();
         
         // Create nodes for all extensions
         foreach ($extensions as $extensionClass) {
@@ -746,11 +810,17 @@ class ExtensionsManager {
             
             try {
                 $metadata = $extensionClass::getMetadata();
+                
+                // Determine if core or optional
+                $extensionType = in_array($shortName, $coreExtensions) ? 'core' : 'optional';
+                
                 $graph['nodes'][] = [
                     'id' => $shortName,
                     'name' => $metadata['name'] ?? $shortName,
                     'enabled' => in_array($shortName, $enabledExtensions),
-                    'version' => $metadata['version'] ?? '1.0.0'
+                    'type' => $extensionType,
+                    'version' => $metadata['version'] ?? '1.0.0',
+                    'description' => $metadata['description'] ?? ''
                 ];
                 
                 // Get dependencies and create edges
@@ -827,10 +897,16 @@ class ExtensionsManager {
      * Get extensions enabled for specific environment
      * 
      * @param string|null $environment Environment name (dev, staging, production)
+     * @param bool $includeForcedCoreExtensions Whether to include all core extensions in production
      * @return array List of extensions enabled for the environment
      */
-    public static function getEnabledExtensionsForEnvironment(?string $environment = null): array
+    public static function getEnabledExtensionsForEnvironment(?string $environment = null, bool $includeForcedCoreExtensions = true): array
     {
+        // If no environment specified, detect from app config
+        if ($environment === null) {
+            $environment = config('app.environment', 'production');
+        }
+        
         // Get default enabled extensions
         $enabledExtensions = self::getEnabledExtensions();
         
@@ -839,7 +915,13 @@ class ExtensionsManager {
         
         if (!empty($envConfig) && isset($envConfig['enabled'])) {
             // Environment config completely overrides the default if specified
-            return $envConfig['enabled'];
+            $enabledExtensions = $envConfig['enabled'];
+        }
+        
+        // For production environment, ensure all core extensions are enabled
+        if ($includeForcedCoreExtensions && $environment === 'production') {
+            $coreExtensions = self::getCoreExtensions();
+            $enabledExtensions = array_unique(array_merge($enabledExtensions, $coreExtensions));
         }
         
         return $enabledExtensions;
@@ -1684,14 +1766,24 @@ class ExtensionsManager {
             
             // Add system-populated fields (store these in database eventually)
             $reflection = new \ReflectionClass($extensionClass);
+            
+            // Determine if the extension is core or optional
+            $extensionType = self::isCoreExtension($extensionName) ? 'core' : 'optional';
+            
             $metadata['_system'] = [
                 'class_name' => $extensionClass,
                 'file_path' => $reflection->getFileName(),
                 'directory' => dirname($reflection->getFileName()),
                 'enabled' => self::isExtensionEnabled($extensionName),
+                'type' => $extensionType,
                 'installed_date' => filemtime($reflection->getFileName()),
                 'last_updated' => filemtime($reflection->getFileName())
             ];
+            
+            // Ensure the type is consistently available in both the main metadata and _system
+            if (!isset($metadata['type'])) {
+                $metadata['type'] = $extensionType;
+            }
             
             // Create placeholder for marketplace data (to be populated by external system)
             if (!isset($metadata['rating'])) {
@@ -1726,10 +1818,16 @@ class ExtensionsManager {
      * and metadata following the Glueful Extension Metadata Standard.
      * 
      * @param string $extensionName Extension name
+     * @param string $extensionType Type of extension (core or optional)
      * @return string Generated class content
      */
-    public static function generateExtensionClass(string $extensionName): string
+    public static function generateExtensionClass(string $extensionName, string $extensionType = 'optional'): string
     {
+        // Validate extension type
+        if (!in_array($extensionType, ['core', 'optional'])) {
+            $extensionType = 'optional'; // Default to optional if invalid type provided
+        }
+        
         return "<?php
     declare(strict_types=1);
 
@@ -1843,6 +1941,7 @@ class $extensionName extends \\Glueful\\Extensions
             'description' => 'Add your extension description here',
             'version' => '1.0.0',
             'author' => 'Your Name',
+            'type' => '$extensionType', // Indicates whether this is a core or optional extension
             'requires' => [
                 'glueful' => '>=1.0.0',
                 'php' => '>=8.1.0',
@@ -2192,5 +2291,856 @@ return [
             return rmdir($dir);
         }
         return false;
+    }
+
+    /**
+     * Get all core extensions from config
+     * 
+     * @param string|null $configFile Optional config file path
+     * @return array List of core extension names
+     */
+    public static function getCoreExtensions(?string $configFile = null): array
+    {
+        if ($configFile === null) {
+            $configFile = self::getConfigPath();
+        }
+        
+        if (!file_exists($configFile)) {
+            return [];
+        }
+        
+        $config = include $configFile;
+        return $config['core'] ?? [];
+    }
+    
+    /**
+     * Get all optional extensions from config
+     * 
+     * @param string|null $configFile Optional config file path
+     * @return array List of optional extension names
+     */
+    public static function getOptionalExtensions(?string $configFile = null): array
+    {
+        if ($configFile === null) {
+            $configFile = self::getConfigPath();
+        }
+        
+        if (!file_exists($configFile)) {
+            return [];
+        }
+        
+        $config = include $configFile;
+        return $config['optional'] ?? [];
+    }
+    
+    /**
+     * Check if an extension is a core extension
+     * 
+     * @param string $extensionName Extension name to check
+     * @return bool True if it's a core extension
+     */
+    public static function isCoreExtension(string $extensionName): bool
+    {
+        $coreExtensions = self::getCoreExtensions();
+        return in_array($extensionName, $coreExtensions);
+    }
+
+    /**
+     * Delete an extension from the filesystem
+     * 
+     * Completely removes an extension directory and its files.
+     * This also updates the configuration to remove references to the extension.
+     * 
+     * @param string $extensionName Extension name to delete
+     * @param bool $force Force deletion even if the extension is enabled or is a core extension
+     * @return array Success status and any messages
+     */
+    public static function deleteExtension(string $extensionName, bool $force = false): array
+    {
+        // Check if extension exists
+        $extensionClass = self::findExtension($extensionName);
+        if (!$extensionClass) {
+            return [
+                'success' => false, 
+                'message' => "Extension '$extensionName' not found"
+            ];
+        }
+        
+        $reflection = new \ReflectionClass($extensionClass);
+        $extensionDir = dirname($reflection->getFileName());
+        
+        // Verify this is a real extension directory under the extensions path
+        $extensionsPath = config('paths.project_extensions');
+        if (!str_starts_with($extensionDir, $extensionsPath)) {
+            return [
+                'success' => false,
+                'message' => "Cannot delete extension: Directory '$extensionDir' is not in the extensions path"
+            ];
+        }
+        
+        // Check if extension is enabled
+        $isEnabled = self::isExtensionEnabled($extensionName);
+        
+        if ($isEnabled && !$force) {
+            return [
+                'success' => false,
+                'message' => "Cannot delete extension '$extensionName': Extension is currently enabled. Disable it first or use force=true parameter.",
+                'details' => [
+                    'is_enabled' => true,
+                    'can_force' => true
+                ]
+            ];
+        }
+        
+        // Check if this is a core extension
+        $isCoreExtension = self::isCoreExtension($extensionName);
+        
+        if ($isCoreExtension && !$force) {
+            return [
+                'success' => false,
+                'message' => "Cannot delete core extension '$extensionName'. This extension is required for core functionality.",
+                'details' => [
+                    'is_core' => true,
+                    'can_force' => true,
+                    'warning' => "Deleting this extension may break core system functionality. Use force=true parameter to override."
+                ]
+            ];
+        }
+        
+        // Check for dependent extensions
+        $dependencyResults = self::checkDependenciesForDisable($extensionName);
+        if (!$dependencyResults['success'] && !$force) {
+            return [
+                'success' => false,
+                'message' => "Cannot delete extension '$extensionName': Other extensions depend on it. " .
+                             "Disable dependent extensions first or use force=true parameter.",
+                'details' => $dependencyResults['details'] ?? []
+            ];
+        }
+        
+        // Remove from configuration
+        $configUpdated = false;
+        $configFile = self::getConfigPath();
+        if (file_exists($configFile)) {
+            $config = include $configFile;
+            
+            if (isset($config['enabled'])) {
+                $config['enabled'] = array_diff($config['enabled'], [$extensionName]);
+                $configUpdated = true;
+            }
+            
+            if (isset($config['core'])) {
+                $config['core'] = array_diff($config['core'], [$extensionName]);
+                $configUpdated = true;
+            }
+            
+            if (isset($config['optional'])) {
+                $config['optional'] = array_diff($config['optional'], [$extensionName]);
+                $configUpdated = true;
+            }
+            
+            if ($configUpdated) {
+                self::saveConfig($configFile, $config);
+            }
+        }
+        
+        // Delete the extension directory
+        try {
+            $success = self::rrmdir($extensionDir);
+            
+            if (!$success) {
+                return [
+                    'success' => false,
+                    'message' => "Failed to delete extension directory: $extensionDir",
+                    'details' => [
+                        'directory' => $extensionDir,
+                        'config_updated' => $configUpdated
+                    ]
+                ];
+            }
+            
+            // Reload extensions after deletion
+            self::$loadedExtensions = [];
+            
+            $message = "Extension '$extensionName' has been deleted successfully";
+            if ($isCoreExtension) {
+                $message .= " (WARNING: This was a core extension and some system functionality may not work properly)";
+            }
+            
+            return [
+                'success' => true,
+                'message' => $message,
+                'details' => [
+                    'directory_deleted' => $extensionDir,
+                    'was_enabled' => $isEnabled,
+                    'was_core' => $isCoreExtension,
+                    'config_updated' => $configUpdated
+                ]
+            ];
+            
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => "Error deleting extension: " . $e->getMessage(),
+                'details' => [
+                    'directory' => $extensionDir,
+                    'error' => $e->getMessage()
+                ]
+            ];
+        }
+    }
+
+    /**
+     * Update an extension from URL or archive file
+     * 
+     * Updates an existing extension with new files from the provided source.
+     * Maintains extension configuration when possible.
+     * 
+     * @param string $extensionName Extension name to update
+     * @param string $source Source URL or file path for updated files
+     * @param bool $preserveConfig Whether to preserve existing configuration
+     * @return array Result with success status and messages
+     */
+    public static function updateExtension(string $extensionName, string $source, bool $preserveConfig = true): array
+    {
+        // Check if extension exists
+        $extensionClass = self::findExtension($extensionName);
+        if (!$extensionClass) {
+            return [
+                'success' => false,
+                'message' => "Extension '$extensionName' not found"
+            ];
+        }
+        
+        $reflection = new \ReflectionClass($extensionClass);
+        $extensionDir = dirname($reflection->getFileName());
+        
+        // Validate source URL or file path
+        if (!filter_var($source, FILTER_VALIDATE_URL) && !file_exists($source)) {
+            return [
+                'success' => false,
+                'message' => "Invalid source URL or file path: $source"
+            ];
+        }
+        
+        // Backup existing configuration if needed
+        $configBackup = null;
+        if ($preserveConfig) {
+            $configFile = "$extensionDir/config.php";
+            if (file_exists($configFile)) {
+                try {
+                    $configBackup = include $configFile;
+                    self::debug("Backed up configuration for $extensionName");
+                } catch (\Throwable $e) {
+                    self::debug("Failed to back up configuration: " . $e->getMessage());
+                }
+            }
+        }
+        
+        // Create a temporary directory for the update
+        $tempDir = sys_get_temp_dir() . '/glueful_update_' . md5($extensionName . time());
+        if (!mkdir($tempDir, 0755, true)) {
+            return [
+                'success' => false,
+                'message' => "Failed to create temporary directory for update"
+            ];
+        }
+        
+        // Download or copy the update archive
+        $archiveFile = self::downloadOrCopyArchive($source);
+        
+        if (!$archiveFile) {
+            // Clean up temporary directory
+            self::rrmdir($tempDir);
+            
+            return [
+                'success' => false,
+                'message' => "Failed to download or copy archive from: $source"
+            ];
+        }
+        
+        // Extract the archive to the temporary directory
+        $extractResult = self::extractArchive($archiveFile, $tempDir);
+        
+        // Clean up temporary archive file
+        @unlink($archiveFile);
+        
+        if (!$extractResult) {
+            // Clean up temporary directory
+            self::rrmdir($tempDir);
+            
+            return [
+                'success' => false,
+                'message' => "Failed to extract update archive"
+            ];
+        }
+        
+        // Check if the update contains the necessary files
+        $mainClassFile = "$tempDir/$extensionName.php";
+        $foundMainFile = file_exists($mainClassFile);
+        
+        if (!$foundMainFile) {
+            // Try to find any PHP file that might be the main extension file
+            $phpFiles = glob("$tempDir/*.php");
+            
+            if (empty($phpFiles)) {
+                // Clean up temporary directory
+                self::rrmdir($tempDir);
+                
+                return [
+                    'success' => false,
+                    'message' => "No PHP files found in the update archive."
+                ];
+            }
+            
+            // If we find a single PHP file, assume it's the main file
+            if (count($phpFiles) === 1) {
+                $existingFile = $phpFiles[0];
+                rename($existingFile, $mainClassFile);
+                $foundMainFile = true;
+            } else {
+                // Multiple PHP files found, check if any has the extension name
+                foreach ($phpFiles as $phpFile) {
+                    $fileName = basename($phpFile);
+                    if (stripos($fileName, $extensionName) !== false) {
+                        rename($phpFile, $mainClassFile);
+                        $foundMainFile = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (!$foundMainFile) {
+            // Clean up temporary directory
+            self::rrmdir($tempDir);
+            
+            return [
+                'success' => false,
+                'message' => "Could not find main extension file in the update archive."
+            ];
+        }
+        
+        // Check if the extension was enabled before updating
+        $wasEnabled = self::isExtensionEnabled($extensionName);
+        
+        // Backup the old extension directory
+        $backupDir = $extensionDir . '_backup_' . date('YmdHis');
+        if (!rename($extensionDir, $backupDir)) {
+            // Clean up temporary directory
+            self::rrmdir($tempDir);
+            
+            return [
+                'success' => false,
+                'message' => "Failed to backup existing extension directory"
+            ];
+        }
+        
+        // Move the updated files to the extension directory
+        if (!rename($tempDir, $extensionDir)) {
+            // Restore from backup if the move fails
+            rename($backupDir, $extensionDir);
+            
+            return [
+                'success' => false,
+                'message' => "Failed to move updated files to extension directory"
+            ];
+        }
+        
+        // Restore configuration if needed
+        if ($preserveConfig && $configBackup !== null) {
+            $configFile = "$extensionDir/config.php";
+            $content = "<?php\nreturn " . var_export($configBackup, true) . ";\n";
+            
+            if (file_put_contents($configFile, $content) === false) {
+                self::debug("Failed to restore configuration for $extensionName");
+            } else {
+                self::debug("Successfully restored configuration for $extensionName");
+            }
+        }
+        
+        // Force reload the extensions to include the updated one
+        self::$loadedExtensions = [];
+        self::loadExtensions();
+        
+        // Validate the updated extension
+        $validationResult = self::validateExtension($extensionName);
+        $updateResult = [
+            'success' => true,
+            'message' => "Extension '$extensionName' has been updated successfully",
+            'was_enabled' => $wasEnabled,
+            'validation' => $validationResult
+        ];
+        
+        // Try to re-enable the extension if it was enabled before
+        if ($wasEnabled) {
+            $enableResult = self::enableExtension($extensionName);
+            $updateResult['enabled'] = $enableResult['success'];
+            
+            if (!$enableResult['success']) {
+                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " . $enableResult['message'];
+            }
+        }
+        
+        // Clean up the backup directory if everything went well
+        if ($updateResult['success']) {
+            self::rrmdir($backupDir);
+        } else {
+            $updateResult['backup'] = "The previous version was backed up to: $backupDir";
+        }
+        
+        return $updateResult;
+    }
+
+    /**
+     * Check for available extension updates
+     * 
+     * Queries update sources to determine if any installed extensions
+     * have updates available. Compares installed version with latest
+     * available version for each extension.
+     * 
+     * @param bool $checkAll Whether to check all extensions or only enabled ones
+     * @param string|null $extensionName Optional specific extension to check
+     * @return array Results with available updates information
+     */
+    public static function checkExtensionUpdates(bool $checkAll = false, ?string $extensionName = null): array
+    {
+        $results = [
+            'updates_available' => false,
+            'extensions' => [],
+            'last_checked' => date('Y-m-d H:i:s'),
+            'total_updates' => 0
+        ];
+        
+        // Determine which extensions to check
+        $extensionsToCheck = [];
+        
+        if ($extensionName !== null) {
+            // Check specific extension only
+            $extensionClass = self::findExtension($extensionName);
+            if ($extensionClass) {
+                $extensionsToCheck[] = $extensionName;
+            } else {
+                return [
+                    'success' => false,
+                    'message' => "Extension '$extensionName' not found",
+                    'updates_available' => false,
+                    'extensions' => []
+                ];
+            }
+        } else {
+            // Check all enabled extensions or all installed extensions
+            if ($checkAll) {
+                $extensionsToCheck = array_map(function($class) {
+                    $reflection = new \ReflectionClass($class);
+                    return $reflection->getShortName();
+                }, self::getLoadedExtensions());
+            } else {
+                $extensionsToCheck = self::getEnabledExtensions();
+            }
+        }
+        
+        // Fetch update information from extension registry/repository
+        $updateSources = self::getUpdateSources();
+        
+        // Check each extension for updates
+        foreach ($extensionsToCheck as $extName) {
+            $extensionClass = self::findExtension($extName);
+            
+            if (!$extensionClass) {
+                continue; // Skip if class not found
+            }
+            
+            try {
+                // Get current version from extension metadata
+                $metadata = $extensionClass::getMetadata();
+                $currentVersion = $metadata['version'] ?? '1.0.0';
+                
+                // Check each update source for this extension
+                $latestVersion = $currentVersion;
+                $updateInfo = null;
+                $updateAvailable = false;
+                
+                foreach ($updateSources as $source) {
+                    $sourceInfo = self::checkUpdateSource($extName, $currentVersion, $source);
+                    
+                    // If this source has a newer version than what we've found so far
+                    if ($sourceInfo['has_update'] && 
+                        version_compare($sourceInfo['latest_version'], $latestVersion, '>')) {
+                        
+                        $latestVersion = $sourceInfo['latest_version'];
+                        $updateInfo = $sourceInfo;
+                        $updateAvailable = true;
+                    }
+                }
+                
+                // Add to results
+                $results['extensions'][$extName] = [
+                    'current_version' => $currentVersion,
+                    'latest_version' => $latestVersion,
+                    'update_available' => $updateAvailable,
+                    'update_info' => $updateInfo
+                ];
+                
+                // Increment total if update is available
+                if ($updateAvailable) {
+                    $results['total_updates']++;
+                    $results['updates_available'] = true;
+                }
+                
+            } catch (\Throwable $e) {
+                self::debug("Error checking updates for $extName: " . $e->getMessage());
+                
+                $results['extensions'][$extName] = [
+                    'error' => "Failed to check updates: " . $e->getMessage(),
+                    'update_available' => false
+                ];
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Get update sources for extensions
+     * 
+     * Returns a list of configured update sources where
+     * the system can check for extension updates.
+     * 
+     * @return array List of update sources (URLs and custom handlers)
+     */
+    private static function getUpdateSources(): array
+    {
+        // Default update sources
+        $sources = [
+            [
+                'name' => 'Official Glueful Repository',
+                'url' => 'https://extensions.glueful.dev/api/v1/updates',
+                'type' => 'api'
+            ]
+        ];
+        
+        // Get additional sources from config
+        $configSources = config('extensions.update_sources', []);
+        if (!empty($configSources) && is_array($configSources)) {
+            $sources = array_merge($sources, $configSources);
+        }
+        
+        return $sources;
+    }
+    
+    /**
+     * Check a specific update source for extension updates
+     * 
+     * @param string $extensionName Extension name to check
+     * @param string $currentVersion Current installed version
+     * @param array $source Update source information
+     * @return array Update information
+     */
+    private static function checkUpdateSource(
+        string $extensionName, 
+        string $currentVersion, 
+        array $source
+    ): array
+    {
+        $result = [
+            'name' => $source['name'] ?? 'Unknown Source',
+            'has_update' => false,
+            'latest_version' => $currentVersion,
+            'download_url' => null,
+            'release_notes' => null,
+            'release_date' => null,
+            'source' => $source['url'] ?? null
+        ];
+        
+        try {
+            // Different handling based on source type
+            $sourceType = $source['type'] ?? 'api';
+            
+            switch($sourceType) {
+                case 'api':
+                    // Query API endpoint for update information
+                    $updateInfo = self::queryUpdateAPI($extensionName, $currentVersion, $source);
+                    
+                    if ($updateInfo && isset($updateInfo['version'])) {
+                        $result['latest_version'] = $updateInfo['version'];
+                        $result['has_update'] = version_compare($updateInfo['version'], $currentVersion, '>');
+                        $result['download_url'] = $updateInfo['download_url'] ?? null;
+                        $result['release_notes'] = $updateInfo['release_notes'] ?? null;
+                        $result['release_date'] = $updateInfo['release_date'] ?? null;
+                    }
+                    break;
+                    
+                case 'github':
+                    // Check GitHub repository for latest release
+                    $updateInfo = self::checkGitHubRelease($extensionName, $currentVersion, $source);
+                    
+                    if ($updateInfo && isset($updateInfo['version'])) {
+                        $result['latest_version'] = $updateInfo['version'];
+                        $result['has_update'] = version_compare($updateInfo['version'], $currentVersion, '>');
+                        $result['download_url'] = $updateInfo['download_url'] ?? null;
+                        $result['release_notes'] = $updateInfo['release_notes'] ?? null;
+                        $result['release_date'] = $updateInfo['release_date'] ?? null;
+                    }
+                    break;
+                    
+                case 'local':
+                    // Check local directory for updates
+                    $updateInfo = self::checkLocalSource($extensionName, $currentVersion, $source);
+                    
+                    if ($updateInfo && isset($updateInfo['version'])) {
+                        $result['latest_version'] = $updateInfo['version'];
+                        $result['has_update'] = version_compare($updateInfo['version'], $currentVersion, '>');
+                        $result['download_url'] = $updateInfo['download_url'] ?? null;
+                        $result['release_notes'] = $updateInfo['release_notes'] ?? null;
+                        $result['release_date'] = $updateInfo['release_date'] ?? null;
+                    }
+                    break;
+                    
+                default:
+                    self::debug("Unknown update source type: $sourceType");
+                    break;
+            }
+        } catch (\Throwable $e) {
+            self::debug("Error checking update source {$source['name']}: " . $e->getMessage());
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Query an update API for extension update information
+     * 
+     * @param string $extensionName Extension name to check
+     * @param string $currentVersion Current installed version
+     * @param array $source Update source information
+     * @return array|null Update information or null if no update found
+     */
+    private static function queryUpdateAPI(
+        string $extensionName, 
+        string $currentVersion, 
+        array $source
+    ): ?array
+    {
+        if (empty($source['url'])) {
+            return null;
+        }
+        
+        $url = $source['url'];
+        
+        // Add query parameters
+        $url = rtrim($url, '?&') . '?' . http_build_query([
+            'extension' => $extensionName,
+            'version' => $currentVersion,
+            'glueful_version' => config('app.version', '1.0.0'),
+            'php_version' => PHP_VERSION
+        ]);
+        
+        // Set up curl request
+        $ch = curl_init($url);
+        
+        if (!$ch) {
+            self::debug("Failed to initialize curl for update check");
+            return null;
+        }
+        
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
+        
+        // Set authorization header if provided
+        if (isset($source['auth_token'])) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $source['auth_token']
+            ]);
+        }
+        
+        $response = curl_exec($ch);
+        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($statusCode !== 200 || empty($response)) {
+            self::debug("Update API returned status code $statusCode");
+            return null;
+        }
+        
+        // Parse response
+        try {
+            $data = json_decode($response, true);
+            
+            // Validate response format
+            if (!isset($data['version'])) {
+                return null;
+            }
+            
+            return $data;
+        } catch (\Throwable $e) {
+            self::debug("Failed to parse update API response: " . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Check GitHub repository for extension updates
+     * 
+     * @param string $extensionName Extension name to check
+     * @param string $currentVersion Current installed version
+     * @param array $source Update source with GitHub repository information
+     * @return array|null Update information or null if no update found
+     */
+    private static function checkGitHubRelease(
+        string $extensionName, 
+        string $currentVersion, 
+        array $source
+    ): ?array
+    {
+        if (empty($source['repository'])) {
+            return null;
+        }
+        
+        $repo = $source['repository'];
+        $apiUrl = "https://api.github.com/repos/$repo/releases/latest";
+        
+        // Set up curl request
+        $ch = curl_init($apiUrl);
+        
+        if (!$ch) {
+            self::debug("Failed to initialize curl for GitHub update check");
+            return null;
+        }
+        
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
+        
+        // Set GitHub token if provided
+        if (isset($source['github_token'])) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: token ' . $source['github_token']
+            ]);
+        }
+        
+        $response = curl_exec($ch);
+        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($statusCode !== 200 || empty($response)) {
+            self::debug("GitHub API returned status code $statusCode");
+            return null;
+        }
+        
+        // Parse response
+        try {
+            $data = json_decode($response, true);
+            
+            // GitHub releases use tag_name for version
+            if (!isset($data['tag_name'])) {
+                return null;
+            }
+            
+            // Remove 'v' prefix if present
+            $version = ltrim($data['tag_name'], 'v');
+            
+            // Find zip asset
+            $downloadUrl = null;
+            if (isset($data['assets']) && is_array($data['assets'])) {
+                foreach ($data['assets'] as $asset) {
+                    if (isset($asset['browser_download_url']) && 
+                        (str_ends_with($asset['browser_download_url'], '.zip') || 
+                         str_ends_with($asset['browser_download_url'], '.tar.gz'))) {
+                        $downloadUrl = $asset['browser_download_url'];
+                        break;
+                    }
+                }
+            }
+            
+            // If no specific asset found, use the source code zip
+            if ($downloadUrl === null && isset($data['zipball_url'])) {
+                $downloadUrl = $data['zipball_url'];
+            }
+            
+            return [
+                'version' => $version,
+                'download_url' => $downloadUrl,
+                'release_notes' => $data['body'] ?? null,
+                'release_date' => $data['published_at'] ?? null
+            ];
+            
+        } catch (\Throwable $e) {
+            self::debug("Failed to parse GitHub API response: " . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Check local directory for extension updates
+     * 
+     * @param string $extensionName Extension name to check
+     * @param string $currentVersion Current installed version
+     * @param array $source Local source directory information
+     * @return array|null Update information or null if no update found
+     */
+    private static function checkLocalSource(
+        string $extensionName, 
+        string $currentVersion, 
+        array $source
+    ): ?array
+    {
+        if (empty($source['directory']) || !is_dir($source['directory'])) {
+            return null;
+        }
+        
+        $directory = rtrim($source['directory'], '/\\');
+        
+        // Look for the extension in the directory
+        $extensionDir = "$directory/$extensionName";
+        
+        if (!is_dir($extensionDir)) {
+            return null;
+        }
+        
+        // Look for metadata file or main extension file
+        $metadataFile = "$extensionDir/metadata.json";
+        $mainClassFile = "$extensionDir/$extensionName.php";
+        
+        if (file_exists($metadataFile)) {
+            // Parse metadata file
+            try {
+                $metadata = json_decode(file_get_contents($metadataFile), true);
+                
+                if (isset($metadata['version'])) {
+                    return [
+                        'version' => $metadata['version'],
+                        'download_url' => "file://$extensionDir",
+                        'release_notes' => $metadata['release_notes'] ?? null,
+                        'release_date' => $metadata['release_date'] ?? date('Y-m-d', filemtime($metadataFile))
+                    ];
+                }
+            } catch (\Throwable $e) {
+                self::debug("Failed to parse local metadata: " . $e->getMessage());
+            }
+        }
+        
+        // Try to extract version from main class file
+        if (file_exists($mainClassFile)) {
+            $content = file_get_contents($mainClassFile);
+            
+            if (preg_match('/@version\s+([0-9.]+)/', $content, $matches)) {
+                $version = $matches[1];
+                
+                if (version_compare($version, $currentVersion, '>')) {
+                    return [
+                        'version' => $version,
+                        'download_url' => "file://$extensionDir",
+                        'release_notes' => null,
+                        'release_date' => date('Y-m-d', filemtime($mainClassFile))
+                    ];
+                }
+            }
+        }
+        
+        return null;
     }
 }
