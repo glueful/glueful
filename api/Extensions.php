@@ -127,6 +127,7 @@ abstract class Extensions implements IExtensions
             'description' => $description,
             'version' => $version,
             'author' => $author,
+            'type' => 'optional', //core or optional
             'requires' => [
                 'glueful' => '>=1.0.0',
                 'php' => '>=8.1.0',
