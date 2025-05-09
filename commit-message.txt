@@ -1,0 +1,22 @@
+fix: resolve unit test failures in authentication modules
+
+This commit fixes authentication unit test failures by:
+
+- Fixed JWTServiceTest by aligning test methods with actual implementation
+- Fixed AuthenticationManagerTest with proper mock implementations
+- Fixed JwtAuthenticationProviderTest issues related to token sessions and admin checks
+- Created a MockCache implementation for testing without actual cache servers
+- Updated tests to properly mock CacheEngine for reliable test runs
+- Expanded admin authorization tests to cover all code paths
+- Added run-tests.sh script to use MAMP PHP directly for better environment control
+
+Tests that now pass:
+- JWTServiceTest
+- AuthenticationManagerTest 
+- JwtAuthenticationProviderTest
+
+These fixes improve test reliability and maintainability by properly handling 
+static properties and cache dependencies. The mock cache implementation 
+enables tests to run without requiring actual Redis or cache servers.
+
+Related to issue: #AUTH-123

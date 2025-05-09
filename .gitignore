@@ -4,3 +4,4 @@ vendor
 .env
 docs/swagger.json
 ui/env.json
+.phpunit.cache/
