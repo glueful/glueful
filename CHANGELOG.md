@@ -17,7 +17,7 @@ All notable changes to the Glueful framework will be documented in this file.
 - Improved session management in token-based authentication
 - Enhanced admin role verification with proper nested user structure support
 
-## [0.22.0] - 2025-05-01
+## [0.22.0] - 2025-05-09
 
 ### Added
 - Complete PHPUnit integration with separate test suites
