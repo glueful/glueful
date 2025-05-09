@@ -1,0 +1,69 @@
+name: PHP CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate:
+    name: PHP Validation
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        php-versions: ['8.0', '8.1', '8.2']
+        
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-versions }}
+        extensions: mbstring, intl, zip, pdo_mysql
+        coverage: xdebug
+        tools: composer:v2
+    
+    - name: Validate composer.json
+      run: composer validate --strict
+      
+    - name: Cache Composer packages
+      id: composer-cache
+      uses: actions/cache@v3
+      with:
+        path: vendor
+        key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php-
+    
+    - name: Install dependencies
+      run: composer install --prefer-dist --no-progress
+    
+    - name: Check PHP syntax
+      run: find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n1 php -l
+      
+    - name: Check coding standards
+      run: |
+        if [ -f vendor/bin/phpcs ]; then
+          vendor/bin/phpcs --standard=PSR12 src
+        else
+          echo "PHP_CodeSniffer not installed - skipping coding standards check"
+        fi
+      
+    - name: Run test suite
+      run: |
+        if [ -f vendor/bin/phpunit ]; then
+          vendor/bin/phpunit --coverage-text
+        else
+          echo "PHPUnit not installed - skipping tests"
+        fi
+        
+    - name: Static analysis
+      run: |
+        if [ -f vendor/bin/phpstan ]; then
+          vendor/bin/phpstan analyse src --level=5
+        else
+          echo "PHPStan not installed - skipping static analysis"
+        fi
