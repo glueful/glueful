@@ -95,6 +95,7 @@ class API
      * - Database connections
      * - Cache services
      * - Configuration
+     * - API metrics collection
      * 
      * @return void
      */
@@ -113,6 +114,11 @@ class API
             
             define('CONFIG_LOADED', true);
         }
+        
+        // Initialize API metrics middleware for tracking and analyzing API usage
+        self::getLogger()->debug("Initializing API metrics collection...");
+        $apiMetricsMiddleware = new \Glueful\Http\Middleware\ApiMetricsMiddleware();
+        \Glueful\Http\Router::addMiddleware($apiMetricsMiddleware);
         
         // Initialize authentication providers
         self::getLogger()->debug("Initializing authentication services...");

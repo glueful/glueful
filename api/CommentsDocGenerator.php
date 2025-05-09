@@ -127,20 +127,6 @@ class CommentsDocGenerator
         // Define output file path
         $outputFile = $this->routesOutputPath . '/' . strtolower($routeName) . '.json';
         
-        // Check for manual OpenAPI definition files
-        if (!$forceGenerate) {
-            $possibleManualFiles = [
-                // Check in the docs directory for a manual definition
-                $this->routesOutputPath . '/' . strtolower($routeName) . '.json',
-            ];
-            
-            foreach ($possibleManualFiles as $manualFile) {
-                if (file_exists($manualFile)) {
-                    return $manualFile;
-                }
-            }
-        }
-        
         // Parse routes file to extract doc comments
         $this->parseRouteDocComments($routeFile);
         
@@ -276,38 +262,6 @@ class CommentsDocGenerator
         
         // Define output file path
         $outputFile = $extDocsDir . '/' . strtolower($extensionName) . '.json';
-        
-        // Check for metadata file that defines routes
-        $metadataFile = dirname($routeFile) . '/metadata.json';
-        if (file_exists($metadataFile) && !$forceGenerate) {
-            $metadata = json_decode(file_get_contents($metadataFile), true);
-            if (isset($metadata['openapi']) || isset($metadata['routes'])) {
-                // Use metadata as documentation source
-                file_put_contents($outputFile, json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-                return $outputFile;
-            }
-        }
-        
-        // Check for manual OpenAPI definition files
-        if (!$forceGenerate) {
-            $possibleManualFiles = [
-                // Check in the extension directory for a schema file
-                dirname($routeFile) . '/schema.json',
-                dirname($routeFile) . '/openapi.json',
-                // Check in the docs directory
-                $extDocsDir . '/' . strtolower($extensionName) . '.json',
-            ];
-            
-            foreach ($possibleManualFiles as $manualFile) {
-                if (file_exists($manualFile)) {
-                    // Copy the manually created definition file
-                    if ($manualFile !== $outputFile) {
-                        copy($manualFile, $outputFile);
-                    }
-                    return $outputFile;
-                }
-            }
-        }
         
         // Parse routes file to extract doc comments
         $this->parseRouteDocComments($routeFile);

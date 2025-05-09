@@ -98,24 +98,35 @@ class EmailVerification
     public function sendVerificationEmail(string $email, string $otp): array
     {
         try {
-            // if ($this->isRateLimited($email)) {
-            //     error_log("Rate limit exceeded for email: $email");
-            //     return [
-            //         'success' => false,
-            //         'message' => 'Too many failed attempts. Please try again later.',
-            //         'error_code' => 'rate_limited'
-            //     ];
-            // }
+            // Check if EmailNotification extension is enabled
+            $extensionManager = new \Glueful\Helpers\ExtensionsManager();
+            if (!$extensionManager->isExtensionEnabled('EmailNotification')) {
+                error_log("EmailNotification extension is not enabled");
+                return [
+                    'success' => false,
+                    'message' => 'Email notifications are not configured in the system. Please contact the administrator.',
+                    'error_code' => 'email_extension_disabled'
+                ];
+            }
+            
+            if ($this->isRateLimited($email)) {
+                error_log("Rate limit exceeded for email: $email");
+                return [
+                    'success' => false,
+                    'message' => 'Too many failed attempts. Please try again later.',
+                    'error_code' => 'rate_limited'
+                ];
+            }
 
             // Increment daily request counter
-            // if (!$this->incrementDailyRequests($email)) {
-            //     error_log("Daily limit exceeded for email: $email");
-            //     return [
-            //         'success' => false,
-            //         'message' => 'Daily verification limit reached. Please try again tomorrow.',
-            //         'error_code' => 'daily_limit_exceeded'
-            //     ];
-            // }
+            if (!$this->incrementDailyRequests($email)) {
+                error_log("Daily limit exceeded for email: $email");
+                return [
+                    'success' => false,
+                    'message' => 'Daily verification limit reached. Please try again tomorrow.',
+                    'error_code' => 'daily_limit_exceeded'
+                ];
+            }
 
             // Store OTP in Redis before sending email
             $hashedOTP = OTP::hashOTP($otp);
@@ -415,6 +426,17 @@ class EmailVerification
     {
         try {
             $verifier = new self();
+            
+            // Check if EmailNotification extension is enabled
+            $extensionManager = new \Glueful\Helpers\ExtensionsManager();
+            if (!$extensionManager->isExtensionEnabled('EmailNotification')) {
+                error_log("EmailNotification extension is not enabled for password reset");
+                return [
+                    'success' => false,
+                    'message' => 'Password reset via email is not available. Please contact the administrator.',
+                    'error_code' => 'email_extension_disabled'
+                ];
+            }
             
             if (!$verifier->isValidEmail($email)) {
                 return [

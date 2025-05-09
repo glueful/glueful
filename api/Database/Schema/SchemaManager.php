@@ -229,6 +229,15 @@ interface SchemaManager
     public function getVersion(): string;
 
     /**
+     * Check if a table exists in the database
+     * 
+     * @param string $table Name of the table to check
+     * @return bool True if the table exists, false otherwise
+     * @throws \RuntimeException If the check cannot be completed due to database errors
+     */
+    public function tableExists(string $table): bool;
+
+    /**
      * Calculate table storage metrics
      * 
      * Returns size information including:
@@ -241,6 +250,23 @@ interface SchemaManager
      * Note: Accuracy varies by engine
      */
     public function getTableSize(string $table): int;
+
+    /**
+     * Get the total number of rows in a table
+     * 
+     * Returns the count of records in the specified table.
+     * Implementation may use:
+     * - COUNT(*) query
+     * - Table statistics when available
+     * - Engine-specific optimizations
+     * 
+     * Note: For large tables, this operation may be expensive
+     * 
+     * @param string $table Name of the table to count rows from
+     * @return int Number of rows in the table
+     * @throws \RuntimeException If table doesn't exist or access denied
+     */
+    public function getTableRowCount(string $table): int;
 
     /**
      * Drops (removes) a foreign key constraint from a table

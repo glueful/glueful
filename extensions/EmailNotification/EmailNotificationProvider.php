@@ -322,4 +322,116 @@ class EmailNotificationProvider implements NotificationExtension
         $this->config[$key] = $value;
         return $this;
     }
+    
+    /**
+     * Get resource metrics for this provider
+     * 
+     * Returns information about email sending metrics like:
+     * - Emails sent count
+     * - Success rate
+     * - Average delivery time
+     * 
+     * @return array Email provider metrics
+     */
+    public function getMetrics(): array
+    {
+        // Default metrics
+        $metrics = [
+            'emails_sent' => 0,
+            'emails_failed' => 0,
+            'success_rate' => 100,
+            'avg_delivery_time' => 0,
+            'last_email_sent' => null,
+            'email_queue_size' => 0,
+            'most_common_types' => [],
+            'read_rate' => 0
+        ];
+        
+        try {
+            // Use QueryBuilder instead of direct SQL
+            $connection = new \Glueful\Database\Connection();
+            $queryBuilder = new \Glueful\Database\QueryBuilder(
+                $connection->getPDO(),
+                $connection->getDriver(),
+                new \Glueful\Database\QueryLogger()
+            );
+            
+            // Count total emails sent through email channel
+            $sentEmails = $queryBuilder
+                ->select('notifications')
+                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereNotNull('sent_at')
+                ->count('notifications');
+                
+            $metrics['emails_sent'] = $sentEmails;
+            
+            // Count failed emails (those with error data)
+            $failedEmails = $queryBuilder
+                ->select('notifications')
+                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereRaw("JSON_CONTAINS(data, 'true', '$.error')")
+                ->count('notifications');
+                
+            $metrics['emails_failed'] = $failedEmails;
+            
+            // Calculate success rate if we have data
+            if (($metrics['emails_sent'] + $metrics['emails_failed']) > 0) {
+                $metrics['success_rate'] = round(
+                    ($metrics['emails_sent'] / ($metrics['emails_sent'] + $metrics['emails_failed'])) * 100, 
+                    2
+                );
+            }
+            
+            // Get last sent email timestamp
+            $lastSentEmail = $queryBuilder
+                ->select('notifications', ['sent_at'])
+                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereNotNull('sent_at')
+                ->orderBy(['sent_at' => 'DESC'])
+                ->limit(1)
+                ->first();
+                
+            $metrics['last_email_sent'] = $lastSentEmail ? $lastSentEmail['sent_at'] : null;
+            
+            // Calculate read rate
+            $readEmails = $queryBuilder
+                ->select('notifications')
+                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereNotNull('read_at')
+                ->count('notifications');
+                
+            if ($metrics['emails_sent'] > 0) {
+                $metrics['read_rate'] = round(($readEmails / $metrics['emails_sent']) * 100, 2);
+            }
+            
+            // Get most common notification types for emails
+            // We'll use a raw query for this aggregation as it's more complex
+            $commonTypes = $queryBuilder->rawQuery("
+                SELECT type, COUNT(*) as count 
+                FROM notifications 
+                WHERE JSON_CONTAINS(data, '\"email\"', '$.channels')
+                GROUP BY type
+                ORDER BY count DESC
+                LIMIT 5
+            ");
+            
+            $metrics['most_common_types'] = array_column($commonTypes, 'count', 'type');
+            
+            // Get email queue size - scheduled emails not yet sent
+            $queueSize = $queryBuilder
+                ->select('notifications')
+                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereNotNull('scheduled_at')
+                ->whereNull('sent_at')
+                ->count('notifications');
+                
+            $metrics['email_queue_size'] = $queueSize;
+            
+        } catch (\Exception $e) {
+            $this->logger->error("Error getting email metrics from database: " . $e->getMessage());
+            // Return default metrics on error
+        }
+        
+        return $metrics;
+    }
 }

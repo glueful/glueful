@@ -409,6 +409,31 @@ class MySQLSchemaManager implements SchemaManager
     {
         return $this->pdo->getAttribute(\PDO::ATTR_SERVER_VERSION);
     }
+    
+    /**
+     * Check if a table exists in the database
+     * 
+     * Uses information_schema for efficient checking.
+     * 
+     * @param string $table Name of the table to check
+     * @return bool True if the table exists, false otherwise
+     * @throws \RuntimeException If the check cannot be completed due to database errors
+     */
+    public function tableExists(string $table): bool
+    {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT COUNT(*) 
+                FROM information_schema.tables 
+                WHERE table_schema = DATABASE() 
+                AND table_name = :table
+            ");
+            $stmt->execute(['table' => $table]);
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Failed to check if table '$table' exists: " . $e->getMessage(), 0, $e);
+        }
+    }
 
     /**
      * Gets table size with detailed metrics
@@ -430,6 +455,49 @@ class MySQLSchemaManager implements SchemaManager
             ? (int) ($status['Data_length'] + $status['Index_length'])
             : 0;
     }
+
+    /**
+     * Gets the total number of rows in a table
+     * 
+     * Uses optimized approach:
+     * - For InnoDB: Uses statistics when possible
+     * - For MyISAM: Uses exact row count from table metadata
+     * - Falls back to COUNT(*) when needed
+     * 
+     * @param string $table Name of the table to count rows from
+     * @return int Number of rows in the table
+     * @throws \RuntimeException If table doesn't exist
+     */
+    public function getTableRowCount(string $table): int
+    {
+        try {
+            // First try to get from information_schema for potentially faster results
+            // (especially for large tables where COUNT(*) would be expensive)
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    table_rows
+                FROM 
+                    information_schema.tables 
+                WHERE 
+                    table_schema = DATABASE() 
+                    AND table_name = :table
+            ");
+            $stmt->execute(['table' => $table]);
+            $result = $stmt->fetchColumn();
+            
+            // If table_rows is NULL or unreliable, fall back to COUNT(*)
+            if ($result === false || $result === null) {
+                $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM `$table`");
+                $stmt->execute();
+                $result = $stmt->fetchColumn();
+            }
+            
+            return (int)($result ?: 0);
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Failed to get row count for table '$table': " . $e->getMessage(), 0, $e);
+        }
+    }
+
     /**
      * Adds foreign key constraints to MySQL tables
      * 

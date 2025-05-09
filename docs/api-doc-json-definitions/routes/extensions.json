@@ -1,0 +1,269 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Extensions Routes",
+        "description": "API documentation for Extensions routes",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/extensions": {
+            "get": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "List extensions",
+                "description": "Retrieves a list of all available extensions with their status",
+                "responses": {
+                    "200": {
+                        "description": "List of extensions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "extensions": {
+                                            "type": "array"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/extensions/enable": {
+            "post": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Enable extension",
+                "description": "Enables a specific extension",
+                "responses": {
+                    "200": {
+                        "description": "Extension enabled successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Extension not found"
+                    },
+                    "500": {
+                        "description": "Failed to enable extension"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "extension": {
+                                        "type": "string",
+                                        "description": "Extension name"
+                                    }
+                                },
+                                "required": [
+                                    "extension"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/extensions/disable": {
+            "post": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Disable extension",
+                "description": "Disables a specific extension",
+                "responses": {
+                    "200": {
+                        "description": "Extension disabled successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Extension not found"
+                    },
+                    "500": {
+                        "description": "Failed to disable extension"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "extension": {
+                                        "type": "string",
+                                        "description": "Extension name"
+                                    }
+                                },
+                                "required": [
+                                    "extension"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/extensions/{name}/health": {
+            "post": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Get extension health",
+                "description": "Checks the health status of a specific extension",
+                "responses": {
+                    "200": {
+                        "description": "Extension health status retrieved successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Extension not found"
+                    },
+                    "500": {
+                        "description": "Failed to get extension health"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "extension": {
+                                        "type": "string",
+                                        "description": "Extension name"
+                                    }
+                                },
+                                "required": [
+                                    "extension"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/extensions/dependencies": {
+            "get": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Get extension dependencies",
+                "description": "Retrieves the dependency graph for all extensions",
+                "responses": {
+                    "200": {
+                        "description": "Extension dependencies retrieved successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Failed to get extension dependencies"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/extensions/metrics": {
+            "get": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Get extension metrics",
+                "description": "Retrieves resource usage metrics for enabled extensions",
+                "responses": {
+                    "200": {
+                        "description": "Extension metrics retrieved successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Failed to get extension metrics"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Extensions",
+            "description": "Operations related to Extensions"
+        }
+    ]
+}

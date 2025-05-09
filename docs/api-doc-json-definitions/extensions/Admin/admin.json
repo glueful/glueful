@@ -1,8 +1,8 @@
 {
     "openapi": "3.0.0",
     "info": {
-        "title": "Admin Routes",
-        "description": "API documentation for Admin routes",
+        "title": "Admin API",
+        "description": "API documentation for Admin extension",
         "version": "1.0.0"
     },
     "paths": {
@@ -81,6 +81,43 @@
                         "description": "Not authenticated"
                     }
                 }
+            }
+        },
+        "/admin/db/stats": {
+            "get": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Get comprehensive database statistics",
+                "description": "Retrieves detailed statistics for all tables in the database including size, schema, row counts, and other metrics",
+                "responses": {
+                    "200": {
+                        "description": "Database statistics retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tables": {
+                                            "type": "array"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/admin/db/tables": {
@@ -479,50 +516,16 @@
                 ]
             }
         },
-        "/admin/extensions": {
-            "get": {
-                "tags": [
-                    "Extensions"
-                ],
-                "summary": "List all extensions",
-                "description": "Retrieves a list of all available extensions and their status",
-                "responses": {
-                    "200": {
-                        "description": "List of extensions",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "extensions": {
-                                            "type": "array"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Permission denied"
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/admin/extensions/enable": {
+        "/admin/db/table/index/drop": {
             "post": {
                 "tags": [
-                    "Extensions"
+                    "Database"
                 ],
-                "summary": "Enable extension",
-                "description": "Enables a specific extension",
+                "summary": "Drop index from table",
+                "description": "Removes an index from an existing database table",
                 "responses": {
                     "200": {
-                        "description": "Extension enabled successfully"
+                        "description": "Index dropped successfully"
                     },
                     "400": {
                         "description": "Invalid request format"
@@ -531,10 +534,7 @@
                         "description": "Permission denied"
                     },
                     "404": {
-                        "description": "Extension not found"
-                    },
-                    "500": {
-                        "description": "Failed to enable extension"
+                        "description": "Table or index not found"
                     }
                 },
                 "requestBody": {
@@ -544,13 +544,18 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {
+                                    "table_name": {
                                         "type": "string",
-                                        "description": "Extension name"
+                                        "description": "Table name"
+                                    },
+                                    "index_name": {
+                                        "type": "string",
+                                        "description": "Index name"
                                     }
                                 },
                                 "required": [
-                                    "name"
+                                    "table_name",
+                                    "index_name"
                                 ]
                             }
                         }
@@ -563,16 +568,16 @@
                 ]
             }
         },
-        "/admin/extensions/disable": {
+        "/admin/db/table/foreign-key/drop": {
             "post": {
                 "tags": [
-                    "Extensions"
+                    "Database"
                 ],
-                "summary": "Disable extension",
-                "description": "Disables a specific extension",
+                "summary": "Drop foreign key from table",
+                "description": "Removes a foreign key constraint from an existing database table",
                 "responses": {
                     "200": {
-                        "description": "Extension disabled successfully"
+                        "description": "Foreign key constraint dropped successfully"
                     },
                     "400": {
                         "description": "Invalid request format"
@@ -581,10 +586,7 @@
                         "description": "Permission denied"
                     },
                     "404": {
-                        "description": "Extension not found"
-                    },
-                    "500": {
-                        "description": "Failed to disable extension"
+                        "description": "Table or constraint not found"
                     }
                 },
                 "requestBody": {
@@ -594,13 +596,656 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {
+                                    "table_name": {
                                         "type": "string",
-                                        "description": "Extension name"
+                                        "description": "Table name"
+                                    },
+                                    "constraint_name": {
+                                        "type": "string",
+                                        "description": "Constraint name"
                                     }
                                 },
                                 "required": [
-                                    "name"
+                                    "table_name",
+                                    "constraint_name"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/{name}/columns": {
+            "get": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Get table columns",
+                "description": "Retrieves column metadata for a specific table",
+                "responses": {
+                    "200": {
+                        "description": "Table columns",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "table": {
+                                            "type": "string",
+                                            "description": "Table name"
+                                        },
+                                        "columns": {
+                                            "type": "array"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "description": "Table name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/index/add": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Add index to table",
+                "description": "Adds a new index to an existing database table",
+                "responses": {
+                    "200": {
+                        "description": "Index added successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    },
+                    "409": {
+                        "description": "Index already exists"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "index": {
+                                        "type": "object"
+                                    },
+                                    "column": {
+                                        "type": "string",
+                                        "description": "Column name"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Index type (INDEX or UNIQUE)"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "index"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/foreign-key/add": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Add foreign key to table",
+                "description": "Adds a new foreign key constraint to an existing database table",
+                "responses": {
+                    "200": {
+                        "description": "Foreign key constraint added successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    },
+                    "409": {
+                        "description": "Foreign key constraint already exists"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "foreign_key": {
+                                        "type": "object"
+                                    },
+                                    "column": {
+                                        "type": "string",
+                                        "description": "Column name"
+                                    },
+                                    "references": {
+                                        "type": "string",
+                                        "description": "Referenced column"
+                                    },
+                                    "on": {
+                                        "type": "string",
+                                        "description": "Referenced table"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "foreign_key"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/column/add-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Add multiple columns to table",
+                "description": "Adds multiple columns to an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Columns added successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "columns": {
+                                        "type": "array"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Column name"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Column type"
+                                    },
+                                    "options": {
+                                        "type": "object"
+                                    },
+                                    "nullable": {
+                                        "type": "boolean",
+                                        "description": "Whether column can be null"
+                                    },
+                                    "default": {
+                                        "type": "string",
+                                        "description": "Default value"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "columns"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/column/drop-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Drop multiple columns from table",
+                "description": "Removes multiple columns from an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Columns dropped successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table or column not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "column_names": {
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "column_names"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/index/drop-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Drop multiple indexes from table",
+                "description": "Removes multiple indexes from an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Indexes dropped successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table or index not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "index_names": {
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "index_names"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/foreign-key/drop-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Drop multiple foreign keys from table",
+                "description": "Removes multiple foreign key constraints from an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Foreign key constraints dropped successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table or constraint not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "constraint_names": {
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "constraint_names"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/index/add-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Add multiple indexes to table",
+                "description": "Adds multiple indexes to an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Indexes added successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "indexes": {
+                                        "type": "array"
+                                    },
+                                    "column": {
+                                        "type": "string",
+                                        "description": "Column name"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Index type (INDEX or UNIQUE)"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "indexes"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/foreign-key/add-batch": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Add multiple foreign keys to table",
+                "description": "Adds multiple foreign key constraints to an existing database table in a single operation",
+                "responses": {
+                    "200": {
+                        "description": "Foreign key constraints added successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    },
+                    "409": {
+                        "description": "Foreign key constraint already exists"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "foreign_keys": {
+                                        "type": "array"
+                                    },
+                                    "column": {
+                                        "type": "string",
+                                        "description": "Column name"
+                                    },
+                                    "references": {
+                                        "type": "string",
+                                        "description": "Referenced column"
+                                    },
+                                    "on": {
+                                        "type": "string",
+                                        "description": "Referenced table"
+                                    }
+                                },
+                                "required": [
+                                    "table_name",
+                                    "foreign_keys"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/db/table/schema/update": {
+            "post": {
+                "tags": [
+                    "Database"
+                ],
+                "summary": "Update table schema",
+                "description": "Updates table schema with multiple operations including adding/removing columns, indexes, and foreign keys",
+                "responses": {
+                    "200": {
+                        "description": "Schema updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "added_columns": {
+                                            "type": "array"
+                                        },
+                                        "deleted_columns": {
+                                            "type": "array"
+                                        },
+                                        "added_indexes": {
+                                            "type": "array"
+                                        },
+                                        "deleted_indexes": {
+                                            "type": "array"
+                                        },
+                                        "added_foreign_keys": {
+                                            "type": "array"
+                                        },
+                                        "deleted_foreign_keys": {
+                                            "type": "array"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request format"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Table not found"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "Table name"
+                                    },
+                                    "columns": {
+                                        "type": "array"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    },
+                                    "options": {
+                                        "type": "object"
+                                    },
+                                    "indexes": {
+                                        "type": "array"
+                                    },
+                                    "column": {
+                                        "type": "string"
+                                    },
+                                    "foreign_keys": {
+                                        "type": "array"
+                                    },
+                                    "references": {
+                                        "type": "string"
+                                    },
+                                    "on": {
+                                        "type": "string"
+                                    },
+                                    "deleted_columns": {
+                                        "type": "array"
+                                    },
+                                    "deleted_indexes": {
+                                        "type": "array"
+                                    },
+                                    "deleted_foreign_keys": {
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "table_name"
                                 ]
                             }
                         }
@@ -1481,6 +2126,132 @@
                     }
                 ]
             }
+        },
+        "/admin/system/api-metrics": {
+            "get": {
+                "tags": [
+                    "API Monitoring"
+                ],
+                "summary": "Get API metrics",
+                "description": "Retrieves comprehensive metrics about API usage including endpoint performance,",
+                "responses": {
+                    "200": {
+                        "description": "API metrics retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "endpoints": {
+                                            "type": "array"
+                                        },
+                                        "total_requests": {
+                                            "type": "integer"
+                                        },
+                                        "avg_response_time": {
+                                            "type": "number"
+                                        },
+                                        "error_rate": {
+                                            "type": "number"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/system/api-metrics/reset": {
+            "post": {
+                "tags": [
+                    "API Monitoring"
+                ],
+                "summary": "Reset API metrics",
+                "description": "Resets all collected API metrics data",
+                "responses": {
+                    "200": {
+                        "description": "API metrics reset successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/system/health": {
+            "get": {
+                "tags": [
+                    "System Monitoring"
+                ],
+                "summary": "Get system health metrics",
+                "description": "Retrieves comprehensive metrics about the system's health including PHP information,",
+                "responses": {
+                    "200": {
+                        "description": "System health metrics retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "php": {
+                                            "type": "object"
+                                        },
+                                        "memory": {
+                                            "type": "object"
+                                        },
+                                        "database": {
+                                            "type": "object"
+                                        },
+                                        "file_system": {
+                                            "type": "object"
+                                        },
+                                        "cache": {
+                                            "type": "object"
+                                        },
+                                        "extensions": {
+                                            "type": "object"
+                                        },
+                                        "server_load": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "500": {
+                        "description": "Server error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
         }
     },
     "components": {
@@ -1502,10 +2273,6 @@
             "description": "Operations related to Database"
         },
         {
-            "name": "Extensions",
-            "description": "Operations related to Extensions"
-        },
-        {
             "name": "Migrations",
             "description": "Operations related to Migrations"
         },
@@ -1524,6 +2291,14 @@
         {
             "name": "Roles",
             "description": "Operations related to Roles"
+        },
+        {
+            "name": "API Monitoring",
+            "description": "Operations related to API Monitoring"
+        },
+        {
+            "name": "System Monitoring",
+            "description": "Operations related to System Monitoring"
         }
     ]
 }

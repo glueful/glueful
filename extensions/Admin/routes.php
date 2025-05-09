@@ -16,12 +16,18 @@
  */
 
 use Glueful\Http\Router;
-use Glueful\Controllers\AdminController;
+use Glueful\Controllers\{AdminController, DatabaseController, MigrationsController, JobsController, PermissionsController, MetricsController};
 use Symfony\Component\HttpFoundation\Request;
 
-$controller = new AdminController();
+$adminController = new AdminController();
+$dbController = new DatabaseController();
+$migrationsController = new MigrationsController();
+$jobsController = new JobsController();
+$permissionsController = new PermissionsController();
+$metricsController = new MetricsController();
 
-Router::group('/admin', function() use ($controller) {
+
+Router::group('/admin', function() use ($adminController, $dbController, $migrationsController, $jobsController, $permissionsController, $metricsController) {
     /**
      * @route POST /admin/login
      * @tag Authentication
@@ -33,8 +39,8 @@ Router::group('/admin', function() use ($controller) {
      * @response 401 application/json "Invalid credentials"
      * @response 429 application/json "Too many login attempts"
      */
-    Router::post('/login', function (Request $request) use ($controller){
-        return $controller->login($request);
+    Router::post('/login', function (Request $request) use ($adminController){
+        return $adminController->login($request);
     });
 
     /**
@@ -46,15 +52,30 @@ Router::group('/admin', function() use ($controller) {
      * @response 200 application/json "Logout successful"
      * @response 401 application/json "Not authenticated"
      */
-    Router::post('/logout', function (Request $request) use ($controller){
-        return $controller->logout($request);
+    Router::post('/logout', function (Request $request) use ($adminController){
+        return $adminController->logout($request);
     });
 
-    Router::group('/db', function() use ($controller) {
+    Router::group('/db', function() use ($dbController) {
 
-        Router::post('/query', function (Request $request) use ($controller){
-            return $controller->executeQuery($request);
+        Router::post('/query', function (Request $request) use ($dbController){
+            return $dbController->executeQuery($request);
         });
+        
+        /**
+         * @route GET /admin/db/stats
+         * @tag Database
+         * @summary Get comprehensive database statistics
+         * @description Retrieves detailed statistics for all tables in the database including size, schema, row counts, and other metrics
+         * @requiresAuth true
+         * @response 200 application/json "Database statistics retrieved successfully" {tables:array=[{table_name:string="Table name", schema:string="Database schema", size:integer="Size in bytes", rows:integer="Row count", avg_row_size:integer="Average row size in bytes"}], total_tables:integer="Total number of tables"}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/stats', function (Request $request) use ($dbController){
+            return $dbController->getDatabaseStats($request);
+        });
+        
         /**
          * @route GET /admin/db/tables
          * @tag Database
@@ -64,8 +85,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of tables" {tables:array=[{name:string="Table name", rows:integer="Row count", created:string="Creation date"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/tables', function (Request $request) use ($controller){
-            return $controller->getTables($request);
+        Router::get('/tables', function (Request $request) use ($dbController){
+            return $dbController->getTables($request);
         });
 
         /**
@@ -80,8 +101,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 409 application/json "Table already exists"
          */
-        Router::post('/table/create', function (Request $request) use ($controller){
-            return $controller->createTable($request);
+        Router::post('/table/create', function (Request $request) use ($dbController){
+            return $dbController->createTable($request);
         });
 
         /**
@@ -96,8 +117,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::post('/table/drop', function (Request $request) use ($controller){
-            return $controller->dropTable($request);
+        Router::post('/table/drop', function (Request $request) use ($dbController){
+            return $dbController->dropTable($request);
         });
 
         /**
@@ -112,8 +133,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::get('/table/{name}/size', function (array $params) use ($controller){
-            return $controller->getTableSize($params);
+        Router::get('/table/{name}/size', function (array $params) use ($dbController){
+            return $dbController->getTableSize($params);
         });
 
         /**
@@ -127,9 +148,9 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::get('/table/{name}', function (array $params) use ($controller){
+        Router::get('/table/{name}', function (array $params) use ($dbController){
             // $params = $request->getRouteParams();
-            return $controller->getTableData($params);
+            return $dbController->getTableData($params);
         });
 
         /**
@@ -145,8 +166,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 404 application/json "Table not found"
          * @response 409 application/json "Column already exists"
          */
-        Router::post('/table/column/add', function (Request $request) use ($controller){
-            return $controller->addColumn($request);
+        Router::post('/table/column/add', function (Request $request) use ($dbController){
+            return $dbController->addColumn($request);
         });
 
         /**
@@ -161,8 +182,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or column not found"
          */
-        Router::post('/table/column/drop', function (Request $request) use ($controller){
-            return $controller->dropColumn($request);
+        Router::post('/table/column/drop', function (Request $request) use ($dbController){
+            return $dbController->dropColumn($request);
         });
 
         /**
@@ -177,8 +198,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or index not found"
          */
-        Router::post('/table/index/drop', function (Request $request) use ($controller){
-            return $controller->dropIndex($request);
+        Router::post('/table/index/drop', function (Request $request) use ($dbController){
+            return $dbController->dropIndex($request);
         });
 
         /**
@@ -193,8 +214,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or constraint not found"
          */
-        Router::post('/table/foreign-key/drop', function (Request $request) use ($controller){
-            return $controller->dropForeignKey($request);
+        Router::post('/table/foreign-key/drop', function (Request $request) use ($dbController){
+            return $dbController->dropForeignKey($request);
         });
 
         /**
@@ -208,8 +229,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::get('/table/{name}/columns', function (array $params) use ($controller){
-            return $controller->getColumns($params);
+        Router::get('/table/{name}/columns', function (array $params) use ($dbController){
+            return $dbController->getColumns($params);
         });
 
         /**
@@ -225,8 +246,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 404 application/json "Table not found"
          * @response 409 application/json "Index already exists"
          */
-        Router::post('/table/index/add', function (Request $request) use ($controller){
-            return $controller->addIndex($request);
+        Router::post('/table/index/add', function (Request $request) use ($dbController){
+            return $dbController->addIndex($request);
         });
 
         /**
@@ -242,8 +263,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 404 application/json "Table not found"
          * @response 409 application/json "Foreign key constraint already exists"
          */
-        Router::post('/table/foreign-key/add', function (Request $request) use ($controller){
-            return $controller->addForeignKey($request);
+        Router::post('/table/foreign-key/add', function (Request $request) use ($dbController){
+            return $dbController->addForeignKey($request);
         });
 
         /**
@@ -258,8 +279,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::post('/table/column/add-batch', function (Request $request) use ($controller){
-            return $controller->addColumn($request);
+        Router::post('/table/column/add-batch', function (Request $request) use ($dbController){
+            return $dbController->addColumn($request);
         });
 
         /**
@@ -274,8 +295,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or column not found"
          */
-        Router::post('/table/column/drop-batch', function (Request $request) use ($controller){
-            return $controller->dropColumn($request);
+        Router::post('/table/column/drop-batch', function (Request $request) use ($dbController){
+            return $dbController->dropColumn($request);
         });
 
         /**
@@ -290,8 +311,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or index not found"
          */
-        Router::post('/table/index/drop-batch', function (Request $request) use ($controller){
-            return $controller->dropIndex($request);
+        Router::post('/table/index/drop-batch', function (Request $request) use ($dbController){
+            return $dbController->dropIndex($request);
         });
 
         /**
@@ -306,8 +327,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table or constraint not found"
          */
-        Router::post('/table/foreign-key/drop-batch', function (Request $request) use ($controller){
-            return $controller->dropForeignKey($request);
+        Router::post('/table/foreign-key/drop-batch', function (Request $request) use ($dbController){
+            return $dbController->dropForeignKey($request);
         });
 
         /**
@@ -322,8 +343,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::post('/table/index/add-batch', function (Request $request) use ($controller){
-            return $controller->addIndex($request);
+        Router::post('/table/index/add-batch', function (Request $request) use ($dbController){
+            return $dbController->addIndex($request);
         });
 
         /**
@@ -337,9 +358,10 @@ Router::group('/admin', function() use ($controller) {
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
+         * @response 409 application/json "Foreign key constraint already exists"
          */
-        Router::post('/table/foreign-key/add-batch', function (Request $request) use ($controller){
-            return $controller->addForeignKey($request);
+        Router::post('/table/foreign-key/add-batch', function (Request $request) use ($dbController){
+            return $dbController->addForeignKey($request);
         });
 
         /**
@@ -354,62 +376,14 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
-        Router::post('/table/schema/update', function (Request $request) use ($controller){
-            return $controller->updateTableSchema($request);
+        Router::post('/table/schema/update', function (Request $request) use ($dbController){
+            return $dbController->updateTableSchema($request);
         });
     }, requiresAdminAuth: true);
 
+    // Extensions routes have been moved to routes/extensions.php
     
-    Router::group('/extensions', function() use ($controller) {
-        /**
-         * @route GET /admin/extensions
-         * @tag Extensions
-         * @summary List all extensions
-         * @description Retrieves a list of all available extensions and their status
-         * @requiresAuth true
-         * @response 200 application/json "List of extensions" {extensions:array=[{name:string="Extension name", enabled:boolean="Whether extension is enabled", version:string="Extension version", description:string="Extension description"}]}
-         * @response 403 application/json "Permission denied"
-         */
-        Router::get('/', function (Request $request) use ($controller){
-            return $controller->getExtensions($request);
-        });
-
-        /**
-         * @route POST /admin/extensions/enable
-         * @tag Extensions
-         * @summary Enable extension
-         * @description Enables a specific extension
-         * @requiresAuth true
-         * @requestBody name:string="Extension name" {required=name}
-         * @response 200 application/json "Extension enabled successfully"
-         * @response 400 application/json "Invalid request format"
-         * @response 403 application/json "Permission denied"
-         * @response 404 application/json "Extension not found"
-         * @response 500 application/json "Failed to enable extension"
-         */
-        Router::post('/enable', function (Request $request) use ($controller){
-            return $controller->enableExtension($request);
-        });
-
-        /**
-         * @route POST /admin/extensions/disable
-         * @tag Extensions
-         * @summary Disable extension
-         * @description Disables a specific extension
-         * @requiresAuth true
-         * @requestBody name:string="Extension name" {required=name}
-         * @response 200 application/json "Extension disabled successfully"
-         * @response 400 application/json "Invalid request format"
-         * @response 403 application/json "Permission denied"
-         * @response 404 application/json "Extension not found"
-         * @response 500 application/json "Failed to disable extension"
-         */
-        Router::post('/disable', function (Request $request) use ($controller){
-            return $controller->disableExtension($request);
-        });
-    }, requiresAdminAuth: true);
-
-    Router::group('/migrations', function() use ($controller) {
+    Router::group('/migrations', function() use ($migrationsController) {
         /**
          * @route GET /admin/migrations
          * @tag Migrations
@@ -419,8 +393,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of migrations" {migrations:array=[{id:integer="Migration ID", name:string="Migration name", batch:integer="Migration batch", executed_at:string="Execution timestamp"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/', function (Request $request) use ($controller){
-            return $controller->getMigrations($request);
+        Router::get('/', function (Request $request) use ($migrationsController){
+            return $migrationsController->getMigrations($request);
         });
 
         /**
@@ -432,12 +406,12 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of pending migrations" {migrations:array=[{name:string="Migration name", path:string="Migration file path"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/pending', function (Request $request) use ($controller){
-            return $controller->getPendingMigrations($request);
+        Router::get('/pending', function (Request $request) use ($migrationsController){
+            return $migrationsController->getPendingMigrations($request);
         });
     }, requiresAdminAuth: true);
 
-    Router::group('/jobs', function() use ($controller) {
+    Router::group('/jobs', function() use ($jobsController) {
         /**
          * @route GET /admin/jobs
          * @tag Jobs
@@ -447,8 +421,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of scheduled jobs" {jobs:array=[{id:integer="Job ID", name:string="Job name", command:string="Job command", schedule:string="Job schedule", next_run:string="Next scheduled run", last_run:string="Last run timestamp", status:string="Job status"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/', function (Request $request) use ($controller){
-            return $controller->getScheduledJobs($request);
+        Router::get('/', function (Request $request) use ($jobsController){
+            return $jobsController->getScheduledJobs($request);
         });
 
         /**
@@ -460,8 +434,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "Jobs executed" {executed:array=[{id:integer="Job ID", name:string="Job name", status:string="Execution status"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::post('/run-due', function (Request $request) use ($controller){
-            return $controller->runDueJobs($request);
+        Router::post('/run-due', function (Request $request) use ($jobsController){
+            return $jobsController->runDueJobs($request);
         });
 
         /**
@@ -473,8 +447,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "Jobs executed" {executed:array=[{id:integer="Job ID", name:string="Job name", status:string="Execution status"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::post('/run-all', function (Request $request) use ($controller){
-            return $controller->runAllJobs($request);
+        Router::post('/run-all', function (Request $request) use ($jobsController){
+            return $jobsController->runAllJobs($request);
         });
 
         /**
@@ -489,8 +463,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Job not found"
          */
-        Router::post('/run', function (Request $request) use ($controller){
-            return $controller->runJob($request);
+        Router::post('/run', function (Request $request) use ($jobsController){
+            return $jobsController->runJob($request);
         });
 
         /**
@@ -504,12 +478,12 @@ Router::group('/admin', function() use ($controller) {
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
          */
-        Router::post('/create-job', function (Request $request) use ($controller){
-            return $controller->createJob($request);
+        Router::post('/create-job', function (Request $request) use ($jobsController){
+            return $jobsController->createJob($request);
         });
     }, requiresAdminAuth: true);
 
-    Router::group('/configs', function() use ($controller) {
+    Router::group('/configs', function() use ($adminController) {
         /**
          * @route GET /admin/configs
          * @tag Configuration
@@ -519,8 +493,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of configuration files" {configs:array=[{name:string="Config filename", path:string="Config file path"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/', function (Request $request) use ($controller){
-            return $controller->getAllConfigs($request);
+        Router::get('/', function (Request $request) use ($adminController){
+            return $adminController->getAllConfigs($request);
         });
 
         /**
@@ -534,8 +508,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Configuration file not found"
          */
-        Router::get('/{filename}', function (Request $request) use ($controller){
-            return $controller->getConfig($request);
+        Router::get('/{filename}', function (Request $request) use ($adminController){
+            return $adminController->getConfig($request);
         });
 
         /**
@@ -551,8 +525,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Configuration file not found"
          */
-        Router::put('/{filename}', function (Request $request) use ($controller){
-            return $controller->updateConfig($request);
+        Router::put('/{filename}', function (Request $request) use ($adminController){
+            return $adminController->updateConfig($request);
         });
 
         /**
@@ -567,12 +541,12 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 409 application/json "Configuration file already exists"
          */
-        Router::post('/create', function (Request $request) use ($controller){
-            return $controller->createConfig($request);
+        Router::post('/create', function (Request $request) use ($adminController){
+            return $adminController->createConfig($request);
         });
     }, requiresAdminAuth: true);
 
-    Router::group('/permissions', function() use ($controller) {
+    Router::group('/permissions', function() use ($permissionsController) {
         /**
          * @route GET /admin/permissions
          * @tag Permissions
@@ -582,8 +556,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 200 application/json "List of permissions" {permissions:array=[{id:integer="Permission ID", name:string="Permission name", description:string="Permission description"}]}
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/', function (Request $request) use ($controller){
-            return $controller->getPermissions($request);
+        Router::get('/', function (Request $request) use ($permissionsController){
+            return $permissionsController->getPermissions($request);
         });
 
         /**
@@ -598,8 +572,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 409 application/json "Permission already exists"
          */
-        Router::post('/create', function (Request $request) use ($controller) {
-            return $controller->createPermission($request);
+        Router::post('/create', function (Request $request) use ($permissionsController) {
+            return $permissionsController->createPermission($request);
         });
         
         /**
@@ -614,8 +588,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Permission not found"
          */
-        Router::put('/update', function (Request $request) use ($controller) {
-            return $controller->updatePermission($request);
+        Router::put('/update', function (Request $request) use ($permissionsController) {
+            return $permissionsController->updatePermission($request);
         });
         
         /**
@@ -630,8 +604,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Role or permission not found"
          */
-        Router::post('/assign-to-role', function (Request $request) use ($controller) {
-            return $controller->assignPermissionsToRole($request);
+        Router::post('/assign-to-role', function (Request $request) use ($permissionsController) {
+            return $permissionsController->assignPermissionsToRole($request);
         });
         
         /**
@@ -646,12 +620,12 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Role not found"
          */
-        Router::put('/update-role-permissions', function (Request $request) use ($controller) {
-            return $controller->updateRolePermissions($request);
+        Router::put('/update-role-permissions', function (Request $request) use ($permissionsController) {
+            return $permissionsController->updateRolePermissions($request);
         });
     }, requiresAdminAuth: true);
 
-    Router::group('/roles', function() use ($controller) {
+    Router::group('/roles', function() use ($permissionsController) {
         /**
          * @route POST /admin/roles/assign-to-user
          * @tag Roles
@@ -664,8 +638,8 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "User or role not found"
          */
-        Router::post('/assign-to-user', function (Request $request) use ($controller) {
-            return $controller->assignRolesToUser($request);
+        Router::post('/assign-to-user', function (Request $request) use ($permissionsController) {
+            return $permissionsController->assignRolesToUser($request);
         });
         
         /**
@@ -680,10 +654,55 @@ Router::group('/admin', function() use ($controller) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "User or role not found"
          */
-        Router::put('/remove-user-roles', function (Request $request) use ($controller) {
-            return $controller->removeUserRole($request);
+        Router::put('/remove-user-roles', function (Request $request) use ($permissionsController) {
+            return $permissionsController->removeUserRole($request);
         });
     }, requiresAdminAuth: true);
     
+    Router::group('/system', function() use ($metricsController) {
+        /**
+         * @route GET /admin/system/api-metrics
+         * @tag API Monitoring
+         * @summary Get API metrics
+         * @description Retrieves comprehensive metrics about API usage including endpoint performance,
+         * request volumes, error rates, and rate limiting information
+         * @requiresAuth true
+         * @response 200 application/json "API metrics retrieved successfully" {endpoints:array, total_requests:integer, avg_response_time:number, error_rate:number}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/api-metrics', function (Request $request) use ($metricsController){
+            return $metricsController->getApiMetrics($request);
+        });
+        
+        /**
+         * @route POST /admin/system/api-metrics/reset
+         * @tag API Monitoring
+         * @summary Reset API metrics
+         * @description Resets all collected API metrics data
+         * @requiresAuth true
+         * @response 200 application/json "API metrics reset successfully"
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::post('/api-metrics/reset', function (Request $request) use ($metricsController){
+            return $metricsController->resetApiMetrics($request);
+        });
+
+        /**
+         * @route GET /admin/system/health
+         * @tag System Monitoring
+         * @summary Get system health metrics
+         * @description Retrieves comprehensive metrics about the system's health including PHP information,
+         * database status, file system metrics, memory usage, cache status, extension status, and more
+         * @requiresAuth true
+         * @response 200 application/json "System health metrics retrieved successfully" {php:object, memory:object, database:object, file_system:object, cache:object, extensions:object, server_load:object}
+         * @response 403 application/json "Permission denied"
+         * @response 500 application/json "Server error"
+         */
+        Router::get('/health', function (Request $request) use ($metricsController){
+            return $metricsController->systemHealth();
+        });
+    }, requiresAdminAuth: true);
 });
 

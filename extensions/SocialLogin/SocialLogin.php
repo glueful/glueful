@@ -12,6 +12,10 @@ use Glueful\Helpers\ExtensionsManager;
 
 /**
  * Social Login Extension
+ * @description Provides social authentication through Google, Facebook and GitHub
+ * @license MIT
+ * @version 1.0.0
+ * @author Glueful <your.email@example.com>
  * 
  * Provides social authentication capabilities for Glueful:
  * - Google OAuth authentication
@@ -163,7 +167,7 @@ class SocialLogin extends \Glueful\Extensions
     public static function getMetadata(): array
     {
         return [
-            'name' => 'SocialLogin',
+            'name' => 'Social Login',
             'description' => 'Provides social authentication through Google, Facebook and GitHub',
             'version' => '1.0.0',
             'author' => 'Glueful Extensions Team',
@@ -173,5 +177,134 @@ class SocialLogin extends \Glueful\Extensions
                 'extensions' => []
             ]
         ];
+    }
+    
+    /**
+     * Get extension dependencies
+     * 
+     * Returns a list of other extensions this extension depends on.
+     * 
+     * @return array List of extension dependencies
+     */
+    public static function getDependencies(): array
+    {
+        // Currently no dependencies on other extensions
+        return [];
+    }
+    
+    /**
+     * Check environment-specific configuration
+     * 
+     * Determines if the extension should be enabled in the current environment.
+     * 
+     * @param string $environment Current environment (dev, staging, production)
+     * @return bool Whether the extension should be enabled in this environment
+     */
+    public static function isEnabledForEnvironment(string $environment): bool
+    {
+        // Enable in all environments by default
+        // Could be customized based on environment-specific requirements
+        return true;
+    }
+    
+    /**
+     * Validate extension health
+     * 
+     * Checks if the extension is functioning correctly by verifying:
+     * - Required configuration values are present
+     * - OAuth providers can be initialized
+     * - Necessary dependencies are available
+     * 
+     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
+     */
+    public static function checkHealth(): array
+    {
+        $healthy = true;
+        $issues = [];
+        $metrics = [
+            'memory_usage' => memory_get_usage(true),
+            'execution_time' => 0,
+            'database_queries' => 0,
+            'cache_usage' => 0
+        ];
+        
+        // Start execution time tracking
+        $startTime = microtime(true);
+        
+        // Check configuration
+        if (empty(self::$config)) {
+            self::loadConfig();
+            if (empty(self::$config)) {
+                $healthy = false;
+                $issues[] = 'Failed to load extension configuration';
+            }
+        }
+        
+        // Check provider dependencies
+        $enabledProviders = self::$config['enabled_providers'] ?? [];
+        foreach ($enabledProviders as $provider) {
+            switch ($provider) {
+                case 'google':
+                    if (!class_exists('Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider')) {
+                        $healthy = false;
+                        $issues[] = 'Google Auth Provider class not found';
+                    }
+                    break;
+                    
+                case 'facebook':
+                    if (!class_exists('Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider')) {
+                        $healthy = false;
+                        $issues[] = 'Facebook Auth Provider class not found';
+                    }
+                    break;
+                    
+                case 'github':
+                    if (!class_exists('Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider')) {
+                        $healthy = false;
+                        $issues[] = 'GitHub Auth Provider class not found';
+                    }
+                    break;
+            }
+        }
+        
+        // Check if authentication system is available
+        try {
+            $authManager = AuthBootstrap::getManager();
+            if (!$authManager) {
+                $healthy = false;
+                $issues[] = 'Authentication manager not available';
+            }
+        } catch (\Exception $e) {
+            $healthy = false;
+            $issues[] = 'Error accessing authentication system: ' . $e->getMessage();
+        }
+        
+        // Calculate execution time
+        $metrics['execution_time'] = microtime(true) - $startTime;
+        
+        return [
+            'healthy' => $healthy,
+            'issues' => $issues,
+            'metrics' => $metrics
+        ];
+    }
+    
+    /**
+     * Get extension resource usage
+     * 
+     * Returns information about resources used by this extension.
+     * 
+     * @return array Resource usage metrics
+     */
+    public static function getResourceUsage(): array
+    {
+        // Basic resource measurements
+        $metrics = [
+            'memory_usage' => memory_get_usage(true),
+            'peak_memory_usage' => memory_get_peak_usage(true),
+            'provider_count' => count(self::$config['enabled_providers'] ?? [])
+        ];
+        
+        return $metrics;
     }
 }
