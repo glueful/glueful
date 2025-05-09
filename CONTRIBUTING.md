@@ -5,7 +5,6 @@ Thank you for considering contributing to Glueful! This document outlines the pr
 - [glueful/glueful](https://github.com/glueful/glueful.git) - Main PHP framework
 - [glueful/admin](https://github.com/glueful/admin.git) - Admin UI (Vue 3)
 - [glueful/docs](https://github.com/glueful/docs.git) - Documentation
-- [glueful/extensions](https://github.com/glueful/extensions.git) - Official extensions
 
 ## Table of Contents
 
