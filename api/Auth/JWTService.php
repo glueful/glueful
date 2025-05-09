@@ -104,6 +104,11 @@ class JWTService
     {
         self::initialize();
 
+        // Check if token is invalidated
+        if (isset(self::$invalidatedTokens[$token])) {
+            return null;
+        }
+        
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
             return null;

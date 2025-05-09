@@ -2,6 +2,11 @@
 
 A modern, secure, and scalable API framework designed for building robust PHP applications.
 
+![Version](https://img.shields.io/badge/version-0.22.0-blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PHP Version](https://img.shields.io/badge/php-%3E%3D8.2-purple)](https://www.php.net/)
+[![Tests](https://img.shields.io/badge/tests-passing-green)]()
+
 ## Core Features
 
 - Modern PHP architecture (PHP 8.2+)
@@ -15,6 +20,7 @@ A modern, secure, and scalable API framework designed for building robust PHP ap
 - Audit logging for security events
 - File storage and management
 - Modular extension system
+- Comprehensive testing infrastructure
 
 ## Requirements
 
