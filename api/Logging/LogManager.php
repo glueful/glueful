@@ -56,8 +56,11 @@ use Psr\Log\NullLogger;
  * 
  * @package Glueful\Logging
  */
-class LogManager implements LoggerInterface
+class LogManager implements LoggerInterface, LogManagerInterface
 {
+    /** @var self|null Singleton instance */
+    private static ?self $instance = null;
+
     /** @var Logger Monolog logger instance */
     private Logger $logger;
 
@@ -202,6 +205,41 @@ class LogManager implements LoggerInterface
         
         // Set up memory monitoring
         $this->setupMemoryMonitoring();
+    }
+
+     /**
+     * Get singleton instance
+     * 
+     * @return self
+     */
+    public static function getInstance(): self
+    {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        
+        return self::$instance;
+    }
+    
+    /**
+     * Reset instance (for testing)
+     * 
+     * @return void
+     */
+    public static function resetInstance(): void
+    {
+        self::$instance = null;
+    }
+    
+    /**
+     * Get a logger for a specific channel
+     * 
+     * @param string $channel
+     * @return LoggerInterface
+     */
+    public function getLogger(string $channel): LoggerInterface
+    {
+        return $this->channel($channel);
     }
 
     /**

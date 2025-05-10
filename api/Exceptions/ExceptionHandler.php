@@ -1,192 +1,208 @@
 <?php
-
-declare(strict_types=1);
-
 namespace Glueful\Exceptions;
-use Throwable;
 
-/**
- * Global exception handler for the API
- * 
- * Handles all uncaught exceptions and errors, providing consistent
- * error responses and logging across the application.
- */
+use Glueful\Logging\LogManagerInterface;
+use Glueful\Logging\LogManager;
+
 class ExceptionHandler
 {
-
-    /** @var array<string, string> Exception type to channel mapping */
+    /**
+     * @var LogManagerInterface|null
+     */
+    private static ?LogManagerInterface $logManager = null;
+    
+    /**
+     * @var bool Flag to disable exit for testing
+     */
+    private static bool $testMode = false;
+    
+    /**
+     * @var array|null Captured response for testing
+     */
+    private static ?array $testResponse = null;
+    
+    /**
+     * Map of exception types to log channels
+     * @var array<string, string>
+     */
     private static array $channelMap = [
         ValidationException::class => 'validation',
         AuthenticationException::class => 'auth',
         NotFoundException::class => 'http',
         ApiException::class => 'api',
-        'default' => 'error'  // Default channel for unhandled exceptions
+        'default' => 'error',
     ];
-
+    
     /**
-     * Register all error and exception handlers
+     * Enable or disable test mode (disables exit calls)
      * 
-     * Sets up exception handling, error handling, shutdown functions,
-     * and initializes the logger instance.
+     * @param bool $enabled
+     * @return void
      */
-    public static function register(): void
+    public static function setTestMode(bool $enabled): void
     {
-        
-        set_exception_handler([self::class, 'handleException']);
-        register_shutdown_function([self::class, 'handleShutdown']);
-        set_error_handler([self::class, 'handleError']);
+        self::$testMode = $enabled;
+        self::$testResponse = null; // Reset test response
     }
-
+    
+    /**
+     * Get the last captured response in test mode
+     * 
+     * @return array|null
+     */
+    public static function getTestResponse(): ?array
+    {
+        return self::$testResponse;
+    }
+    
+    /**
+     * Set the log manager instance for testing
+     * 
+     * @param LogManagerInterface|null $logManager
+     */
+    public static function setLogManager(?LogManagerInterface $logManager): void
+    {
+        self::$logManager = $logManager;
+    }
+    
+    /**
+     * Get the log manager instance
+     * 
+     * @return LogManagerInterface
+     */
+    private static function getLogManager(): LogManagerInterface
+    {
+        if (self::$logManager === null) {
+            self::$logManager = LogManager::getInstance();
+        }
+        
+        return self::$logManager;
+    }
+    
     /**
      * Handle uncaught exceptions
      * 
-     * Logs exception details and returns appropriate HTTP response based on
-     * exception type. Different exception types result in different HTTP
-     * status codes and response formats.
-     * 
-     * @param Throwable $exception The uncaught exception
-     */
-    public static function handleException(Throwable $exception): void
-    {
-        // Prepare context for logging
-        $context = [
-            'file' => $exception->getFile(),
-            'line' => $exception->getLine(),
-            'trace' => $exception->getTraceAsString(),
-            'type' => get_class($exception)
-        ];
-
-        // Determine logging channel based on exception type
-        $channel = self::$channelMap[get_class($exception)] ?? self::$channelMap['default'];
-
-        // Log based on exception type
-        switch (true) {
-            case $exception instanceof ValidationException:
-               
-                self::outputJsonResponse(422, 'Validation Error', $exception->getErrors());
-                break;
-
-            case $exception instanceof AuthenticationException:
-                
-                self::outputJsonResponse(401, 'Unauthorized', $exception->getMessage());
-                break;
-
-            case $exception instanceof NotFoundException:
-                self::outputJsonResponse(404, 'Not Found', $exception->getMessage());
-                break;
-
-            case $exception instanceof ApiException:
-                self::outputJsonResponse($exception->getStatusCode(), $exception->getMessage(), $exception->getData());
-                break;
-
-            default:
-                self::outputJsonResponse(500, 'Internal Server Error');
-                break;
-        }
-    }
-
-    /**
-     * Handle fatal errors during script shutdown
-     * 
-     * Catches fatal PHP errors that would otherwise not be caught by the
-     * exception handler.
-     */
-    public static function handleShutdown(): void
-    {
-        $error = error_get_last();
-        if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-            self::outputJsonResponse(500, 'Internal Server Error');
-        }
-    }
-
-    /**
-     * Convert PHP errors to exceptions
-     * 
-     * Transforms PHP errors into ErrorException instances that can be
-     * handled by the exception handler.
-     * 
-     * @param int $severity Error severity level
-     * @param string $message Error message
-     * @param string $file File where error occurred
-     * @param int $line Line number where error occurred
-     * @return bool Always returns false to ensure error is logged
-     * @throws \ErrorException
-     */
-    public static function handleError(int $severity, string $message, string $file, int $line): bool
-    {
-        if (!(error_reporting() & $severity)) {
-            return false;
-        }
-        throw new \ErrorException($message, 0, $severity, $file, $line);
-    }
-
-    /**
-     * Log error details to the appropriate channel
-     *
-     * Centralizes error logging across the application.
-     * This method can be called from other parts of the application
-     * to ensure consistent error handling.
-     * 
-     * @param Throwable $exception The exception to log
-     * @param array $context Additional context information
+     * @param \Throwable $exception
      * @return void
      */
-    public static function logError(Throwable $exception, array $context = []): void
+    public static function handleException(\Throwable $exception): void
     {
-        // Ensure we have at least basic context information
-        $context = array_merge([
-            'file' => $exception->getFile(),
-            'line' => $exception->getLine(),
-            'trace' => $exception->getTraceAsString(),
-            'type' => get_class($exception)
-        ], $context);
-
-        // Determine logging channel based on exception type
-        $channel = self::$channelMap[get_class($exception)] ?? self::$channelMap['default'];
-
-        // Log to application logger if available
-        if (class_exists('\\Glueful\\Logging\\LogManager')) {
-            try {
-                $logger = call_user_func(['\\Glueful\\Logging\\LogManager', 'getLogger'], $channel);
-                $logger->error($exception->getMessage(), $context);
-                return;
-            } catch (\Throwable $e) {
-                // Fall back to error_log if logger fails
+        // Log the error
+        self::logError($exception);
+        
+        // Determine appropriate status code and message
+        $statusCode = 500;
+        $message = 'Server Error';
+        $data = null;
+        
+        if ($exception instanceof ApiException) {
+            $statusCode = $exception->getStatusCode();
+            $message = $exception->getMessage();
+            $data = $exception->getData();
+        } elseif ($exception instanceof ValidationException) {
+            $statusCode = 422;
+            $message = 'Validation Error';
+            $data = $exception->getErrors();
+        } elseif ($exception instanceof AuthenticationException) {
+            $statusCode = 401;
+            $message = $exception->getMessage();
+        } elseif ($exception instanceof NotFoundException) {
+            $statusCode = 404;
+            $message = $exception->getMessage();
+        }
+        
+        // Output the JSON response
+        self::outputJsonResponse($statusCode, $message, $data);
+    }
+    
+    /**
+     * Log an exception to the appropriate channel
+     * 
+     * @param \Throwable $exception
+     * @param array $customContext Optional additional context for the log
+     * @return void
+     */
+    public static function logError(\Throwable $exception, array $customContext = []): void
+    {
+        // Get the appropriate log channel based on exception type
+        $channel = self::$channelMap['default'];
+        
+        foreach (self::$channelMap as $exceptionClass => $mappedChannel) {
+            if ($exceptionClass === 'default') {
+                continue;
+            }
+            
+            if ($exception instanceof $exceptionClass) {
+                $channel = $mappedChannel;
+                break;
             }
         }
         
-        // Fall back to PHP's error log
-        error_log(sprintf(
-            "[%s] Exception: %s, Message: %s, File: %s, Line: %d", 
-            $channel,
-            get_class($exception),
-            $exception->getMessage(),
-            $exception->getFile(),
-            $exception->getLine()
-        ));
+        // Build the context array with exception information
+        $context = [
+            'exception' => $exception,
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
+            'trace' => $exception->getTraceAsString(),
+            'type' => get_class($exception)
+        ];
+        
+        // Merge custom context if provided
+        if (!empty($customContext)) {
+            $context = array_merge($context, $customContext);
+        }
+        
+        try {
+            // Get log manager and log the exception
+            $logManager = self::getLogManager();
+            
+            // Get logger for the specific channel and log the exception
+            $logger = $logManager->getLogger($channel);
+            $logger->error($exception->getMessage(), $context);
+        } catch (\Throwable $e) {
+            // Fallback to error_log if logging fails
+            error_log("Error logging exception: {$exception->getMessage()} - {$e->getMessage()}");
+            error_log($exception->getTraceAsString());
+        }
     }
-
+    
     /**
-     * Output a JSON formatted error response
+     * Output a JSON response and exit
      * 
-     * Sets appropriate HTTP status code and headers, then outputs
-     * JSON encoded error details.
-     * 
-     * @param int $statusCode HTTP status code
-     * @param string $message Error message
-     * @param mixed $data Additional error data
+     * @param int $statusCode
+     * @param string $message
+     * @param mixed $data
+     * @return void
      */
-    private static function outputJsonResponse(int $statusCode, string $message, mixed $data = null): void
+    private static function outputJsonResponse(int $statusCode, string $message, $data = null): void
     {
+        // Build response array
         $response = [
             'status' => $statusCode,
             'message' => $message,
-            'data' => $data
         ];
-
+        
+        // Add data if provided
+        if ($data !== null) {
+            $response['data'] = $data;
+        }
+        
+        if (self::$testMode) {
+            // In test mode, capture the response instead of outputting it
+            self::$testResponse = $response;
+            return; // Don't output or exit
+        }
+        
+        // Set HTTP response code
         http_response_code($statusCode);
+        
+        // Set JSON content type
         header('Content-Type: application/json');
+        
+        // Output JSON
         echo json_encode($response);
+        
+        // Exit
         exit;
     }
 }
