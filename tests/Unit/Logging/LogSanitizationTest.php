@@ -3,11 +3,9 @@
 namespace Tests\Unit\Logging;
 
 use PHPUnit\Framework\TestCase;
-use Glueful\Logging\LogManager;
 use Tests\Unit\Logging\Mocks\MockLogManager;
 use Tests\Unit\Logging\Mocks\MockLogSanitizer;
 use ReflectionClass;
-use ReflectionMethod;
 
 /**
  * Test for LogManager sanitization functionality
@@ -36,6 +34,7 @@ class LogSanitizationTest extends TestCase
      */
     public function testSanitizeSensitiveData(): void
     {
+        // Create a real instance of MockLogManager (not a PHPUnit mock)
         $logger = new MockLogManager();
         
         // Create test context with sensitive data
@@ -54,7 +53,7 @@ class LogSanitizationTest extends TestCase
             ]
         ];
         
-        // Use our mock's exposed sanitization method
+        // Use our MockLogManager's sanitization method
         $sanitized = $logger->sanitizeContext($context);
         
         // Check that sensitive fields were redacted
@@ -77,6 +76,7 @@ class LogSanitizationTest extends TestCase
      */
     public function testSanitizeJsonStrings(): void
     {
+        // Create a real instance of MockLogManager
         $logger = new MockLogManager();
         
         // Create test context with JSON string containing sensitive data
@@ -91,7 +91,7 @@ class LogSanitizationTest extends TestCase
             'normal_field' => 'normal_value'
         ];
         
-        // Use our mock's exposed sanitization method
+        // Use MockLogManager's sanitization method
         $sanitized = $logger->sanitizeContext($context);
         
         // Check that the JSON string was sanitized
@@ -136,7 +136,7 @@ class LogSanitizationTest extends TestCase
         // Create test environment
         $_SERVER['REQUEST_URI'] = '/test/endpoint';
         
-        // Use our mock's exposed enrichment method directly
+        // Use our MockLogManager's enrichment method directly
         $enriched = $logger->enrichContext([]);
         
         // Check that fields available in our mock are added
@@ -155,22 +155,17 @@ class LogSanitizationTest extends TestCase
      */
     public function testBatchModeSanitization(): void
     {
-        // Create a mock of our MockLogManager that tracks sanitization calls
-        $logger = $this->getMockBuilder(MockLogManager::class)
-            ->onlyMethods(['sanitizeContext'])
-            ->getMock();
+        // Instead of using getMockBuilder, we'll use MockLogSanitizer directly
+        $context = ['test' => 'data'];
+        $sanitized = MockLogSanitizer::sanitizeContext($context);
         
-        // The sanitizeContext method should exist and be callable
-        $logger->expects($this->once())
-            ->method('sanitizeContext')
-            ->willReturnCallback(function ($context) {
-                return array_merge($context, ['sanitized' => true]);
-            });
+        // Check that sanitization was performed
+        $this->assertEquals($context['test'], $sanitized['test']);
         
-        // Call the method to verify it exists
-        $result = $logger->sanitizeContext(['test' => 'data']);
-        $this->assertArrayHasKey('sanitized', $result);
-        $this->assertTrue($result['sanitized']);
+        // For verification, let's add a sensitive field
+        $context['password'] = 'secret';
+        $sanitized = MockLogSanitizer::sanitizeContext($context);
+        $this->assertEquals('[REDACTED]', $sanitized['password']);
     }
     
     /**
@@ -190,29 +185,19 @@ class LogSanitizationTest extends TestCase
      */
     public function testSanitizationAndEnrichment(): void
     {
-        // Create a mock of our MockLogManager
-        $logger = $this->getMockBuilder(MockLogManager::class)
-            ->onlyMethods(['sanitizeContext', 'enrichContext'])
-            ->getMock();
-            
-        // Set up expectations for sanitize
-        $logger->expects($this->once())
-            ->method('sanitizeContext')
-            ->with(['password' => 'secret'])
-            ->willReturn(['password' => '[REDACTED]']);
-            
-        // Set up expectations for enrich
-        $logger->expects($this->once())
-            ->method('enrichContext')
-            ->with(['password' => '[REDACTED]'])
-            ->willReturn(['password' => '[REDACTED]', 'enriched' => true]);
-            
-        // Call the methods directly to verify they work together
-        $sanitized = $logger->sanitizeContext(['password' => 'secret']);
-        $enriched = $logger->enrichContext($sanitized);
+        // Test with the static methods directly
+        $context = ['password' => 'secret'];
         
-        // Check the expected transformations were applied
-        $this->assertEquals('[REDACTED]', $enriched['password']);
-        $this->assertTrue($enriched['enriched']);
+        // Apply sanitization
+        $sanitized = MockLogSanitizer::sanitizeContext($context);
+        $this->assertEquals('[REDACTED]', $sanitized['password']);
+        
+        // Apply enrichment
+        $enriched = MockLogSanitizer::enrichContext($sanitized);
+        
+        // Check that both transformations were applied
+        $this->assertEquals('[REDACTED]', $enriched['password']); // Still redacted
+        $this->assertArrayHasKey('memory_usage', $enriched); // Enriched with memory usage
+        $this->assertArrayHasKey('hostname', $enriched); // Enriched with hostname
     }
 }
