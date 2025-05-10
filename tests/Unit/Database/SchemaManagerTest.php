@@ -3,6 +3,7 @@ namespace Tests\Unit\Database;
 
 use Tests\TestCase;
 use Glueful\Database\Connection;
+use Tests\Unit\Database\Mocks\MockSQLiteConnection;
 
 /**
  * SchemaManager Unit Tests
@@ -10,9 +11,9 @@ use Glueful\Database\Connection;
 class SchemaManagerTest extends TestCase
 {
     /**
-     * @var Connection
+     * @var MockSQLiteConnection
      */
-    protected Connection $connection;
+    protected MockSQLiteConnection $connection;
     
     /**
      * Set up the test environment
@@ -21,12 +22,8 @@ class SchemaManagerTest extends TestCase
     {
         parent::setUp();
         
-        // Set up SQLite in-memory database
-        $_ENV['DB_CONNECTION'] = 'sqlite';
-        $_ENV['DB_DATABASE'] = ':memory:';
-        
-        // Create connection
-        $this->connection = new Connection();
+        // Create mock SQLite in-memory connection
+        $this->connection = new MockSQLiteConnection();
     }
     
     /**
