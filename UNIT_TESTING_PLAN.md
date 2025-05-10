@@ -57,16 +57,26 @@
 - **Test response formatting**: Check that exceptions produce correctly formatted API responses
 - **Test logging integration**: Ensure exceptions are properly logged
 
-## 6. Repository Layer
+## 6. Repository Layer ✅
 
-### UserRepository
+### UserRepository ✅
 - **Test user retrieval**: Verify users can be fetched by ID, username, email, etc.
 - **Test role associations**: Check that user-role relationships are properly maintained
 - **Test password handling**: Ensure password hashing and validation works correctly
 
-### RoleRepository
+### RoleRepository ✅
 - **Test RBAC functionality**: Verify role-based access control works as expected
 - **Test permission assignment**: Check that permissions can be assigned to roles
+
+### PermissionRepository ✅
+- **Test permission retrieval**: Verify permissions can be fetched for specific roles
+- **Test permission checks**: Verify methods to check if roles have specific permissions
+- **Test permission assignment**: Ensure permissions can be assigned to and revoked from roles
+
+### NotificationRepository ✅
+- **Test notification storage**: Verify notifications are properly saved to the database
+- **Test notification retrieval**: Ensure notifications can be fetched by various criteria
+- **Test preference management**: Verify notification preferences can be saved and retrieved
 
 ## 7. Logging System
 

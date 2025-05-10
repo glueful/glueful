@@ -16,7 +16,7 @@ use Psr\Log\LoggerInterface;
 class ExceptionHandlerTest extends TestCase
 {
     /**
-     * @var \PHPUnit\Framework\MockObject\MockObject|LogManagerInterface
+     * @var \PHPUnit\Framework\MockObject\MockObject&\Glueful\Logging\LogManagerInterface
      */
     private $mockLogManager;
     

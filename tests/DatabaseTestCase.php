@@ -25,8 +25,8 @@ abstract class DatabaseTestCase extends TestCase
     {
         parent::setUp();
         
-        // Create a new database connection for testing
-        $this->connection = new Connection();
+        // Create a new database connection for testing using our mock
+        $this->connection = new \Tests\Mocks\MockConnection();
         $this->db = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
         
         // Run migrations to set up the test database schema
@@ -40,8 +40,50 @@ abstract class DatabaseTestCase extends TestCase
      */
     protected function runMigrations(): void
     {
-        // Implementation would connect to your migration system
-        // For SQLite in-memory, you'd run all migrations from scratch
+        $pdo = $this->connection->getPDO();
+        
+        // Create notifications table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT NOT NULL,
+            type TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            content TEXT NULL,
+            data TEXT NULL,
+            priority TEXT DEFAULT 'normal',
+            notifiable_type TEXT NOT NULL,
+            notifiable_id TEXT NOT NULL,
+            read_at TIMESTAMP NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL
+        )");
+        
+        // Create notification_preferences table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notification_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT NOT NULL,
+            notifiable_type TEXT NOT NULL,
+            notifiable_id TEXT NOT NULL,
+            notification_type TEXT NOT NULL,
+            channels TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            settings TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL
+        )");
+        
+        // Create notification_templates table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notification_templates (
+            id TEXT PRIMARY KEY,
+            uuid TEXT NOT NULL,
+            name TEXT NOT NULL,
+            notification_type TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            content TEXT NOT NULL,
+            parameters TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL
+        )");
     }
     
     /**
