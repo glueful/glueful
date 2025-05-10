@@ -61,6 +61,9 @@ class Validator
      */
     public function validate(object $dto): bool
     {
+        // Reset errors before validation
+        $this->reset();
+        
         $reflection = new ReflectionClass($dto);
 
         foreach ($reflection->getProperties() as $property) {
@@ -71,7 +74,8 @@ class Validator
             $value = $property->getValue($dto);
             // Apply Sanitization First
             $value = $this->sanitize($property, $value);
-            $value = $property->getValue($dto);
+            // Update the property value in the DTO after sanitization
+            $property->setValue($dto, $value);
             $this->applyRules($property, $value);
         }
 
@@ -138,6 +142,13 @@ class Validator
     {
         [$ruleName, $params] = $this->parseRule($rule);
 
+        // Check for custom rule
+        if (isset($this->customRules[$ruleName])) {
+            $this->applyCustomRule($property, $value, $ruleName, $params);
+            return;
+        }
+        
+        // Apply built-in rules
         match ($ruleName) {
             'required' => $this->validateRequired($property, $value),
             'string' => $this->validateString($property, $value),
@@ -178,9 +189,11 @@ class Validator
      */
     private function validateRequired(ReflectionProperty $property, mixed $value): void
     {
-        if (empty($value)) {
+        // Special handling for values that might be falsely evaluated as empty but are valid
+        if ($value === null || $value === '') {
             $this->errors[$property->getName()][] = "{$property->getName()} is required.";
         }
+        // Numeric zero and boolean false are considered valid values
     }
 
     /**
@@ -191,8 +204,17 @@ class Validator
      */
     private function validateString(ReflectionProperty $property, mixed $value): void
     {
-        if (!is_string($value)) {
+        // Special handling for null values
+        if ($value === null) {
             $this->errors[$property->getName()][] = "{$property->getName()} must be a string.";
+            return;
+        }
+        
+        // Convert to string for display in error messages
+        $displayValue = is_array($value) ? 'array' : (is_object($value) ? get_class($value) : (string)$value);
+        
+        if (!is_string($value)) {
+            $this->errors[$property->getName()][] = "{$property->getName()} must be a string, got: " . gettype($value) . " ($displayValue)";
         }
     }
 
@@ -257,7 +279,8 @@ class Validator
      */
     private function validateBetween(ReflectionProperty $property, mixed $value, int $min, int $max): void
     {
-        if ($value < $min || $value > $max) {
+        // For numeric values, check if they're in the range
+        if (is_numeric($value) && ($value < $min || $value > $max)) {
             $this->errors[$property->getName()][] = "{$property->getName()} must be between $min and $max.";
         }
     }
@@ -272,7 +295,18 @@ class Validator
      */
     private function validateEmail(ReflectionProperty $property, mixed $value): void
     {
-        if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+        // First check if it's a string
+        if (!is_string($value)) {
+            $this->errors[$property->getName()][] = "{$property->getName()} must be a string for email validation.";
+            return;
+        }
+        
+        // More strict email validation
+        // Regular expression to validate email format and reject special characters in local part
+        $isValid = preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $value) &&
+                  filter_var($value, FILTER_VALIDATE_EMAIL);
+                  
+        if (!$isValid) {
             $this->errors[$property->getName()][] = "{$property->getName()} must be a valid email.";
         }
     }
@@ -288,7 +322,7 @@ class Validator
     */
     private function validateIn(ReflectionProperty $property, mixed $value, array $options): void
     {
-       if (!in_array($value, $options)) {
+       if (!in_array($value, $options, true)) { // Using strict comparison
            $this->errors[$property->getName()][] = "{$property->getName()} must be one of: " . implode(', ', $options);
        }
     }
@@ -303,5 +337,73 @@ class Validator
     public function errors(): array
     {
         return $this->errors;
+    }
+    
+    /**
+     * Reset validation errors
+     * 
+     * Clears all validation error messages.
+     * 
+     * @return self For method chaining
+     */
+    public function reset(): self
+    {
+        $this->errors = [];
+        return $this;
+    }
+    
+    /** @var array Custom validation rules */
+    private array $customRules = [];
+    
+    /**
+     * Add custom validation rule
+     * 
+     * @param string $name Rule name
+     * @param callable $callback Validation callback function(mixed $value): bool
+     * @param string $message Error message template
+     * @return self For method chaining
+     */
+    public function addRule(string $name, callable $callback, string $message): self
+    {
+        $this->customRules[$name] = [
+            'callback' => $callback,
+            'message' => $message
+        ];
+        
+        return $this;
+    }
+    // Second applyRule method removed to avoid duplicate declaration
+    
+    /**
+     * Apply custom validation rule
+     * 
+     * @param ReflectionProperty $property Property being validated
+     * @param mixed $value Value to validate
+     * @param string $ruleName Name of the custom rule
+     * @param array $params Parameters for the rule
+     */
+    private function applyCustomRule(ReflectionProperty $property, mixed $value, string $ruleName, array $params): void
+    {
+        if (!isset($this->customRules[$ruleName])) {
+            $this->errors[$property->getName()][] = "Unknown custom rule: $ruleName";
+            return;
+        }
+        
+        $rule = $this->customRules[$ruleName];
+        $callback = $rule['callback'];
+        
+        // Make sure the callback is callable
+        if (!is_callable($callback)) {
+            $this->errors[$property->getName()][] = "Invalid callback for rule: $ruleName";
+            return;
+        }
+        
+        // Execute the custom validation and force boolean result
+        $result = (bool)$callback($value, ...$params);
+        if (!$result) {
+            // Replace :attribute placeholder with property name in the message
+            $message = str_replace(':attribute', $property->getName(), $rule['message']);
+            $this->errors[$property->getName()][] = $message;
+        }
     }
 }
