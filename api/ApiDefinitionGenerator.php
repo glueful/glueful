@@ -759,8 +759,4 @@ class ApiDefinitionGenerator {
         return $results;
     }
 }
-
-// Run the generator
-$generator = new ApiDefinitionGenerator();
-$generator->generate();
 ?>
