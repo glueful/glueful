@@ -99,4 +99,55 @@ abstract class TestCase extends BaseTestCase
         $property->setAccessible(true);
         $property->setValue(null, $value);
     }
+    
+    /**
+     * Set static mock methods for a class
+     * 
+     * @param string $className The class name to mock
+     * @param array $methods The methods to mock and their return values
+     * @return void
+     */
+    protected function setStaticMockMethods(string $className, array $methods): void
+    {
+        foreach ($methods as $methodName => $returnValue) {
+            $this->setStaticMethodMock($className, $methodName, $returnValue);
+        }
+    }
+    
+    /**
+     * Set a static method to return a specific value
+     * 
+     * @param string $className The class name
+     * @param string $methodName The method name
+     * @param mixed $returnValue The value to return
+     * @return void
+     */
+    protected function setStaticMethodMock(string $className, string $methodName, $returnValue): void
+    {
+        // For RateLimiter class, we have a special case implementation
+        if ($className === \Glueful\Security\RateLimiter::class) {
+            $this->mockRateLimiterStaticMethod($methodName, $returnValue);
+            return;
+        }
+        
+        // For other classes, implement a generic approach if needed
+        throw new \RuntimeException(
+            "Static method mocking for class {$className} not implemented. " .
+            "Add specific implementation in TestCase::setStaticMethodMock."
+        );
+    }
+    
+    /**
+     * Mock a static method in the RateLimiter class
+     * 
+     * @param string $methodName The method to mock
+     * @param mixed $returnValue The value to return
+     * @return void
+     */
+    private function mockRateLimiterStaticMethod(string $methodName, $returnValue): void
+    {
+        // Store the mock in a static property for test access
+        $mockProperty = "__mock_{$methodName}";
+        $this->setPrivateStaticProperty(\Glueful\Security\RateLimiter::class, $mockProperty, $returnValue);
+    }
 }
