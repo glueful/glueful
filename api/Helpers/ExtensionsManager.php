@@ -1806,18 +1806,15 @@ class ExtensionsManager
                 'installed_date' => filemtime($reflection->getFileName()),
                 'last_updated' => filemtime($reflection->getFileName())
             ];
-
             // Ensure the type is consistently available in both the main metadata and _system
             // Initialize metadata as an array if it's not already
             if (!is_array($metadata)) {
                 $metadata = [];
             }
-            
             // Use array_key_exists to check if the key exists before accessing it
             if (is_array($metadata) && !array_key_exists('type', $metadata)) {
                 $metadata['type'] = $extensionType;
             }
-
             // Create placeholder for marketplace data (to be populated by external system)
             // Check if rating key exists and set default if it doesn't
             if (!array_key_exists('rating', $metadata)) {
@@ -1827,7 +1824,6 @@ class ExtensionsManager
                     'distribution' => []
                 ];
             }
-
             // Check if stats key exists and set default if it doesn't
             if (!array_key_exists('stats', $metadata)) {
                 $metadata['stats'] = [
