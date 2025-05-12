@@ -672,10 +672,11 @@ class SQLiteSchemaManager implements SchemaManager
 
             // Format the foreign key constraint
             $columnStr = is_array($column) ? implode("\", \"", $column) : $column;
-            $referencesColumnStr = is_array($referencesColumn) 
-                ? implode("\", \"", $referencesColumn) 
+            $referencesColumnStr = is_array($referencesColumn)
+                ? implode("\", \"", $referencesColumn)
                 : $referencesColumn;
-            $foreignKeyConstraint = "FOREIGN KEY (\"$columnStr\") REFERENCES \"$referencesTable\" (\"$referencesColumnStr\")";
+            $foreignKeyConstraint = "FOREIGN KEY (\"$columnStr\") " .
+                "REFERENCES \"$referencesTable\" (\"$referencesColumnStr\")";
 
             // Add ON DELETE/UPDATE clauses if specified
             if (isset($foreignKey['onDelete'])) {

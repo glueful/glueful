@@ -326,10 +326,10 @@ class NotificationTemplate implements JsonSerializable
             $data['notification_type'],
             $data['channel'],
             $data['content'],
-            isset($data['parameters']) 
-                ? (is_string($data['parameters']) 
-                    ? json_decode($data['parameters'], true) 
-                    : $data['parameters']) 
+            isset($data['parameters'])
+                ? (is_string($data['parameters'])
+                    ? json_decode($data['parameters'], true)
+                    : $data['parameters'])
                 : null,
             $data['uuid'] ?? null
         );

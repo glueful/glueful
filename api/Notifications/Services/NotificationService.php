@@ -133,14 +133,14 @@ class NotificationService
                         if ($channelResult['status'] === 'success') {
                             // Calculate delivery time if applicable
                             $creationTime = $this->metricsService->getNotificationCreationTime(
-                                $notification->getUuid(), 
+                                $notification->getUuid(),
                                 $channel
                             );
                             if ($creationTime) {
                                 $deliveryTime = time() - $creationTime;
                                 $this->metricsService->trackDeliveryTime(
-                                    $notification->getUuid(), 
-                                    $channel, 
+                                    $notification->getUuid(),
+                                    $channel,
                                     $deliveryTime
                                 );
                             }

@@ -434,7 +434,8 @@ class LogManager implements LoggerInterface, LogManagerInterface
                 // since RotatingFileHandler doesn't have a setMaxFiles method
                 if ($strategy === 'weekly') {
                     $this->warning(
-                        'Weekly rotation strategy selected. Note: Requires restarting the application to apply maxFiles setting.',
+                        'Weekly rotation strategy selected. ' .
+                        'Note: Requires restarting the application to apply maxFiles setting.',
                         ['strategy' => $strategy]
                     );
                     // We can't modify maxFiles after instantiation, but we set the property for future reference
@@ -1074,8 +1075,19 @@ class LogManager implements LoggerInterface, LogManagerInterface
      * @param bool $bubble Whether to bubble logs up to higher handlers
      * @return RotatingFileHandler The configured handler
      */
-    private function createRotatingHandler(string $filename, $level = Level::Debug, bool $bubble = true): RotatingFileHandler
-    {
+    /**
+     * Create a RotatingFileHandler with the current rotation settings
+     *
+     * @param string $filename Log file path
+     * @param Level|int $level Minimum log level for this handler
+     * @param bool $bubble Whether to bubble logs up to higher handlers
+     * @return RotatingFileHandler The configured handler
+     */
+    private function createRotatingHandler(
+        string $filename,
+        $level = Level::Debug,
+        bool $bubble = true
+    ): RotatingFileHandler {
         $dateFormat = match ($this->rotationStrategy) {
             'monthly' => RotatingFileHandler::FILE_PER_MONTH,
             // For weekly, we use daily format but set maxFiles=7

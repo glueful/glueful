@@ -252,7 +252,7 @@ class MySQLSchemaManager implements SchemaManager
     {
         $indexType = $unique ? 'UNIQUE' : 'INDEX';
         $columnList = implode(", ", array_map(
-            fn($col) => "`$col`", 
+            fn($col) => "`$col`",
             $columns
         ));
         $sql = "CREATE $indexType `$indexName` ON `$table` ($columnList)";

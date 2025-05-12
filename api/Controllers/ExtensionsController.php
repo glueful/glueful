@@ -60,9 +60,12 @@ class ExtensionsController
 
                 $extensionData[] = [
                     'name' => $extensionName,
-                    'description' => $metadata['description'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'description'),
-                    'version' => $metadata['version'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'version'),
-                    'author' => $metadata['author'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'author'),
+                    'description' => $metadata['description'] ??
+                        ExtensionsManager::getExtensionMetadata($shortName, 'description'),
+                    'version' => $metadata['version'] ??
+                        ExtensionsManager::getExtensionMetadata($shortName, 'version'),
+                    'author' => $metadata['author'] ??
+                        ExtensionsManager::getExtensionMetadata($shortName, 'author'),
                     'enabled' => $isEnabled,
                     'tier' => $tierType,  // Added tier type information
                     'isCoreExtension' => in_array($shortName, $coreExtensions),  // Explicit flag

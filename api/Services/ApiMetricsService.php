@@ -530,13 +530,13 @@ class ApiMetricsService
                     'ip' => 'VARCHAR(45) NOT NULL' // IPv6 compatible
                 ])->addIndex([
                     [
-                        'type' => 'INDEX', 
-                        'column' => 'timestamp', 
+                        'type' => 'INDEX',
+                        'column' => 'timestamp',
                         'name' => 'idx_' . $this->metricsTable . '_timestamp'
                     ],
                     [
-                        'type' => 'INDEX', 
-                        'column' => ['endpoint', 'method'], 
+                        'type' => 'INDEX',
+                        'column' => ['endpoint', 'method'],
                         'name' => 'idx_' . $this->metricsTable . '_endpoint_method'
                     ]
                 ]);
@@ -556,13 +556,13 @@ class ApiMetricsService
                     'last_called' => 'DATETIME NULL'
                 ])->addIndex([
                     [
-                        'type' => 'UNIQUE', 
-                        'column' => ['date', 'endpoint_key'], 
+                        'type' => 'UNIQUE',
+                        'column' => ['date', 'endpoint_key'],
                         'name' => 'idx_' . $this->dailyMetricsTable . '_date_endpoint_key'
                     ],
                     [
-                        'type' => 'INDEX', 
-                        'column' => 'date', 
+                        'type' => 'INDEX',
+                        'column' => 'date',
                         'name' => 'idx_' . $this->dailyMetricsTable . '_date'
                     ]
                 ]);
@@ -580,8 +580,8 @@ class ApiMetricsService
                     'usage_percentage' => 'FLOAT NOT NULL'
                 ])->addIndex([
                     [
-                        'type' => 'UNIQUE', 
-                        'column' => ['ip', 'endpoint'], 
+                        'type' => 'UNIQUE',
+                        'column' => ['ip', 'endpoint'],
                         'name' => 'idx_' . $this->rateLimitsTable . '_ip_endpoint'
                     ]
                 ]);

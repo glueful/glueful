@@ -364,8 +364,8 @@ class MetricsController
      */
     private function getRedisMemoryUsage(array $info): string
     {
-        return isset($info['used_memory']) 
-            ? $this->formatBytes((int)$info['used_memory']) 
+        return isset($info['used_memory'])
+            ? $this->formatBytes((int)$info['used_memory'])
             : 'unknown';
     }
 

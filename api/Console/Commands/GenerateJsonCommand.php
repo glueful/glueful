@@ -2,8 +2,10 @@
 
 namespace Glueful\Console\Commands;
 
+// phpcs:disable PSR1.Files.SideEffects
 // Load the API Definition Generator via the loader
 require_once __DIR__ . '/../../apiDefinitionLoader.php';
+// phpcs:enable PSR1.Files.SideEffects
 
 use Glueful\Console\Command;
 use Glueful\ApiDefinitionGenerator;

@@ -653,7 +653,7 @@ class QueryBuilder
             "DELETE FROM " . $this->driver->wrapIdentifier($table) . " WHERE ";
 
         $whereConditions = array_map(
-            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", 
+            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?",
             array_keys($conditions)
         );
         $sql .= implode(" AND ", $whereConditions);
@@ -674,7 +674,7 @@ class QueryBuilder
     {
         $tableName = $this->driver->wrapIdentifier($table);
         $whereConditions = array_map(
-            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", 
+            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?",
             array_keys($conditions)
         );
         $sql = "UPDATE $tableName SET deleted_at = NULL WHERE " . implode(" AND ", $whereConditions);

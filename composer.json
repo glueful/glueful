@@ -78,6 +78,8 @@
         "test": "vendor/bin/phpunit",
         "test:unit": "vendor/bin/phpunit --testsuite Unit",
         "test:integration": "vendor/bin/phpunit --testsuite Integration",
-        "test:coverage": "vendor/bin/phpunit --coverage-html coverage"
+        "test:coverage": "vendor/bin/phpunit --coverage-html coverage",
+        "phpcs": "vendor/bin/phpcs",
+        "phpcbf": "vendor/bin/phpcbf"
     }
 }

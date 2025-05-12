@@ -184,15 +184,17 @@ class NotificationDispatcher
                 ];
 
                 $this->log(
-                    'error', 
-                    "Failed to send notification {$notification->getId()} via channel {$channelName}: {$e->getMessage()}", 
+                    'error',
+                    "Failed to send notification {$notification->getId()} via channel {$channelName}: " .
+                    "{$e->getMessage()}",
                     [
                     'notification_id' => $notification->getId(),
                     'notifiable_id' => $notifiable->getNotifiableId(),
                     'channel' => $channelName,
                     'exception' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
-                ]);
+                    ]
+                );
 
                 // Trigger failed event
                 $this->triggerFailedEvent($notification, $notifiable, $channelName, 'exception', $e);
@@ -326,11 +328,10 @@ class NotificationDispatcher
      * @return array Channels to use
      */
     protected function resolveChannels(
-        Notification $notification, 
-        Notifiable $notifiable, 
+        Notification $notification,
+        Notifiable $notifiable,
         ?array $explicitChannels
-    ): array
-    {
+    ): array {
         // If channels are explicitly specified, use those
         if ($explicitChannels !== null && !empty($explicitChannels)) {
             return $explicitChannels;
@@ -369,12 +370,11 @@ class NotificationDispatcher
      * @return array Processed notification data
      */
     protected function processBeforeSend(
-        array $data, 
-        Notifiable $notifiable, 
-        string $channel, 
+        array $data,
+        Notifiable $notifiable,
+        string $channel,
         string $notificationType
-    ): array
-    {
+    ): array {
         foreach ($this->extensions as $extension) {
             if (in_array($notificationType, $extension->getSupportedNotificationTypes())) {
                 $data = $extension->beforeSend($data, $notifiable, $channel);
@@ -395,13 +395,12 @@ class NotificationDispatcher
      * @return void
      */
     protected function processAfterSend(
-        array $data, 
-        Notifiable $notifiable, 
-        string $channel, 
-        bool $success, 
+        array $data,
+        Notifiable $notifiable,
+        string $channel,
+        bool $success,
         string $notificationType
-    ): void
-    {
+    ): void {
         foreach ($this->extensions as $extension) {
             if (in_array($notificationType, $extension->getSupportedNotificationTypes())) {
                 $extension->afterSend($data, $notifiable, $channel, $success);
@@ -446,19 +445,18 @@ class NotificationDispatcher
      * @return void
      */
     protected function triggerFailedEvent(
-        Notification $notification, 
-        Notifiable $notifiable, 
-        string $channel, 
-        string $reason, 
+        Notification $notification,
+        Notifiable $notifiable,
+        string $channel,
+        string $reason,
         ?Throwable $exception = null
-    ): void
-    {
+    ): void {
         // Create the event object
         $event = new NotificationFailed(
-            $notification, 
-            $notifiable, 
-            $channel, 
-            $reason, 
+            $notification,
+            $notifiable,
+            $channel,
+            $reason,
             $exception
         );
 

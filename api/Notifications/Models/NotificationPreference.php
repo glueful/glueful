@@ -396,12 +396,12 @@ class NotificationPreference implements JsonSerializable
             $data['notifiable_type'],
             $data['notifiable_id'],
             $data['notification_type'],
-            isset($data['channels']) 
-                ? (is_string($data['channels']) ? json_decode($data['channels'], true) : $data['channels']) 
+            isset($data['channels'])
+                ? (is_string($data['channels']) ? json_decode($data['channels'], true) : $data['channels'])
                 : null,
             isset($data['enabled']) ? (bool)$data['enabled'] : true,
-            isset($data['settings']) 
-                ? (is_string($data['settings']) ? json_decode($data['settings'], true) : $data['settings']) 
+            isset($data['settings'])
+                ? (is_string($data['settings']) ? json_decode($data['settings'], true) : $data['settings'])
                 : null,
             $data['uuid'] ?? null
         );

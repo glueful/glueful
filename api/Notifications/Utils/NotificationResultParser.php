@@ -102,7 +102,7 @@ class NotificationResultParser
                                     if (isset($channel['message'])) {
                                         $errorMessage = 'System error: ' . $channel['message'];
                                     } else {
-                                        $errorMessage = 'An unexpected error occurred while sending the ' . 
+                                        $errorMessage = 'An unexpected error occurred while sending the ' .
                                             $channelName . '.';
                                     }
                                     break;
