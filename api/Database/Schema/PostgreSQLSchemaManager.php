@@ -750,8 +750,8 @@ class PostgreSQLSchemaManager extends SchemaManager
 
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("\",\"", $column) : $column;
-            $referencesColumnStr = is_array($referencesColumn) 
-                ? implode("\",\"", $referencesColumn) 
+            $referencesColumnStr = is_array($referencesColumn)
+                ? implode("\",\"", $referencesColumn)
                 : $referencesColumn;
 
             $sql = "ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$constraintName}\" 

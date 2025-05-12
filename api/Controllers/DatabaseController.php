@@ -76,8 +76,8 @@ class DatabaseController
 
                 // Add AUTO_INCREMENT if specified
                 if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
-                    $autoIncValue = is_string($options['autoIncrement']) 
-                        ? $options['autoIncrement'] 
+                    $autoIncValue = is_string($options['autoIncrement'])
+                        ? $options['autoIncrement']
                         : "AUTO_INCREMENT";
                     $columnDef .= " " . $autoIncValue;
                 }
@@ -98,8 +98,8 @@ class DatabaseController
                     if ($options['default'] === 'CURRENT_TIMESTAMP') {
                         $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
                     } else {
-                        $defaultValue = is_numeric($options['default']) 
-                            ? $options['default'] 
+                        $defaultValue = is_numeric($options['default'])
+                            ? $options['default']
                             : "'{$options['default']}'";
                         $columnDef .= " DEFAULT " . $defaultValue;
                     }
@@ -720,12 +720,13 @@ class DatabaseController
             // Check if all foreign keys were added successfully
             if (empty($failed)) {
                 // All foreign keys were added successfully
-                return Response::ok([
+                return Response::ok(
+                    [
                     'table' => $tableName,
                     'constraints_added' => $results
-                ], 
-                    count($results) > 1 
-                        ? 'Foreign key constraints added successfully' 
+                    ],
+                    count($results) > 1
+                        ? 'Foreign key constraints added successfully'
                         : 'Foreign key constraint added successfully'
                 )->send();
             } elseif (empty($results)) {
@@ -777,8 +778,8 @@ class DatabaseController
 
             // Handle both single constraint and array of constraints
             $hasMultipleConstraints = isset($data['constraint_names']);
-            $constraintNames = $hasMultipleConstraints 
-                ? $data['constraint_names'] 
+            $constraintNames = $hasMultipleConstraints
+                ? $data['constraint_names']
                 : [$data['constraint_name']];
 
             // Ensure we have an array
@@ -806,12 +807,13 @@ class DatabaseController
             // Check if all constraints were dropped successfully
             if (empty($failed)) {
                 // All constraints were dropped successfully
-                return Response::ok([
+                return Response::ok(
+                    [
                     'table' => $tableName,
                     'constraints_dropped' => $results
-                ], 
-                    count($results) > 1 
-                        ? 'Foreign key constraints dropped successfully' 
+                    ],
+                    count($results) > 1
+                        ? 'Foreign key constraints dropped successfully'
                         : 'Foreign key constraint dropped successfully'
                 )->send();
             } elseif (empty($results)) {
@@ -984,7 +986,8 @@ class DatabaseController
                     } catch (\Exception $e) {
                         $errorMsg = "Failed to delete foreign key '$constraintName': " . $e->getMessage();
                         error_log($errorMsg);
-                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " . $e->getMessage();
+                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " .
+                            $e->getMessage();
                     }
                 }
             }
@@ -1082,7 +1085,8 @@ class DatabaseController
                     } catch (\Exception $e) {
                         $columnName = $fk['column'];
                         error_log("Failed to add foreign key on column '$columnName': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to add foreign key: $columnName - " . $e->getMessage();
+                        $errorMsg = "Failed to add foreign key: $columnName - " . $e->getMessage();
+                        $results['failed_operations'][] = $errorMsg;
                     }
                 }
             }

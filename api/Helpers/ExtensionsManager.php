@@ -259,7 +259,8 @@ class ExtensionsManager
             $subdirPath = $extensionPath . '/' . $dir;
             if (is_dir($subdirPath)) {
                 // Register a fallback namespace to catch misreferenced classes
-                // For example: Glueful\Extensions\GithubAuthProvider -> extensions/SocialLogin/Providers/GithubAuthProvider
+                // For example: Glueful\Extensions\GithubAuthProvider ->
+                // extensions/SocialLogin/Providers/GithubAuthProvider
                 $aliasNamespace = "Glueful\\Extensions\\";
                 $classLoader->addPsr4(
                     $aliasNamespace,
@@ -462,9 +463,11 @@ class ExtensionsManager
                     $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
 
                     // If the type isn't explicitly specified, check if other core APIs depend on it
-                    if (!isset($metadata['type']) 
-                        && isset($metadata['requiredBy']) 
-                        && !empty($metadata['requiredBy'])) {
+                    if (
+                        !isset($metadata['type'])
+                        && isset($metadata['requiredBy'])
+                        && !empty($metadata['requiredBy'])
+                    ) {
                         $isCore = true;
                     }
                 }
@@ -539,7 +542,8 @@ class ExtensionsManager
             // This is a core extension and we're not forcing disable
             return [
                 'success' => false,
-                'message' => "Cannot disable core extension '$extensionName'. This extension is required for core functionality.",
+                'message' => "Cannot disable core extension '$extensionName'. "
+                    . "This extension is required for core functionality.",
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
@@ -914,8 +918,7 @@ class ExtensionsManager
     public static function getEnabledExtensionsForEnvironment(
         ?string $environment = null,
         bool $includeForcedCoreExtensions = true
-    ): array
-    {
+    ): array {
         // If no environment specified, detect from app config
         if ($environment === null) {
             $environment = config('app.environment', 'production');
@@ -1676,9 +1679,11 @@ class ExtensionsManager
                     }
 
                     // URL validation
-                    if (isset($rules['validate']) 
-                        && $rules['validate'] === 'url' 
-                        && !filter_var($metadata[$field], FILTER_VALIDATE_URL)) {
+                    if (
+                        isset($rules['validate'])
+                        && $rules['validate'] === 'url'
+                        && !filter_var($metadata[$field], FILTER_VALIDATE_URL)
+                    ) {
                         $warnings[] = "Field '$field' must be a valid URL";
                     }
                 }
@@ -1703,7 +1708,10 @@ class ExtensionsManager
                 if (is_dir($screenshotsDir)) {
                     $screenshotsCount = count(glob($screenshotsDir . '/*.{png,jpg,jpeg,gif}', GLOB_BRACE));
 
-                    if ($screenshotsCount > 0 && (!isset($metadata['screenshots']) || empty($metadata['screenshots']))) {
+                    if (
+                        $screenshotsCount > 0 &&
+                        (!isset($metadata['screenshots']) || empty($metadata['screenshots']))
+                    ) {
                         $warnings[] = "Extension has $screenshotsCount screenshots in directory " .
                             "but none defined in metadata";
                     }
@@ -2417,7 +2425,8 @@ return [
         if ($isCoreExtension && !$force) {
             return [
                 'success' => false,
-                'message' => "Cannot delete core extension '$extensionName'. This extension is required for core functionality.",
+                'message' => "Cannot delete core extension '$extensionName'. "
+                    . "This extension is required for core functionality.",
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
@@ -2697,7 +2706,7 @@ return [
             $updateResult['enabled'] = $enableResult['success'];
 
             if (!$enableResult['success']) {
-                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " . 
+                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " .
                 $enableResult['message'];
             }
         }

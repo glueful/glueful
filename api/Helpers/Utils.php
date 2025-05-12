@@ -253,10 +253,10 @@ class Utils
     {
         return str_pad($text, $length);
     }
-    
+
     /**
      * Initialize the cache engine
-     * 
+     *
      * @param string $prefix Prefix for cache keys
      * @return void
      */

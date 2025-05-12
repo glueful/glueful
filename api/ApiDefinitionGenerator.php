@@ -110,8 +110,7 @@ class ApiDefinitionGenerator
         ?string $specificDatabase = null,
         ?string $tableName = null,
         bool $forceGenerate = false
-    ): void
-    {
+    ): void {
         $this->generateDatabaseDefinitions($specificDatabase);
 
         if ($tableName) {

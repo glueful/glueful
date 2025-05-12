@@ -83,36 +83,36 @@ class Router
 
 
     public static function get(
-        string $path, 
-        callable $handler, 
-        bool $requiresAuth = false, 
+        string $path,
+        callable $handler,
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
         self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
     public static function post(
-        string $path, 
-        callable $handler, 
-        bool $requiresAuth = false, 
+        string $path,
+        callable $handler,
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
         self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
     public static function put(
-        string $path, 
-        callable $handler, 
-        bool $requiresAuth = false, 
+        string $path,
+        callable $handler,
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
         self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
     public static function delete(
-        string $path, 
-        callable $handler, 
-        bool $requiresAuth = false, 
+        string $path,
+        callable $handler,
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
         self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth);
@@ -143,10 +143,10 @@ class Router
      * @param bool $requiresAdminAuth Apply admin authentication to all routes in this group
      */
     public static function group(
-        string $prefix, 
-        callable $callback, 
-        array $middleware = [], 
-        bool $requiresAuth = false, 
+        string $prefix,
+        callable $callback,
+        array $middleware = [],
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ): void {
         // Normalize prefix
@@ -201,10 +201,10 @@ class Router
      * @param array $options Additional route options (middleware, public access, etc.)
      */
     private static function addRoute(
-        string $path, 
-        array $methods, 
-        callable $handler, 
-        bool $requiresAuth = false, 
+        string $path,
+        array $methods,
+        callable $handler,
+        bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
         // Get the current group context
@@ -353,8 +353,9 @@ class Router
                 $parametersInfo = $reflection->getParameters();
 
                 // Check if there are parameters before trying to access them
-                if (!empty($parametersInfo) && 
-                    $parametersInfo[0]->getType() && 
+                if (
+                    !empty($parametersInfo) &&
+                    $parametersInfo[0]->getType() &&
                     $parametersInfo[0]->getType()->getName() === Request::class
                 ) {
                     $result = call_user_func($controller, $request);

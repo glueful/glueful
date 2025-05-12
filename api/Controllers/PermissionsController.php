@@ -100,13 +100,14 @@ class PermissionsController
             $data = Request::getPostData();
 
             if (!isset($data['model']) || !isset($data['permissions']) || !is_array($data['permissions'])) {
-                return Response::error('Model name and permissions array are required', Response::HTTP_BAD_REQUEST)->send();
+                $msg = 'Model name and permissions array are required';
+                return Response::error($msg, Response::HTTP_BAD_REQUEST)->send();
             }
 
             $model = $data['model'];
             $permissions = $data['permissions'];
             $description = $data['description'] ?? null;
-            
+
             $result = $this->permissionRepo->createPermission(
                 $model,
                 $permissions,

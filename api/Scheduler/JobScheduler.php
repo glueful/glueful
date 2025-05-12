@@ -134,11 +134,11 @@ class JobScheduler
                 ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
-                ['type' => 'FOREIGN KEY', 
-                    'column' => 'job_uuid', 
-                    'table' => 'job_executions', 
-                    'references' => 'uuid', 
-                    'on' => 'scheduled_jobs', 
+                ['type' => 'FOREIGN KEY',
+                    'column' => 'job_uuid',
+                    'table' => 'job_executions',
+                    'references' => 'uuid',
+                    'on' => 'scheduled_jobs',
                     'onDelete' => 'CASCADE'
                 ]
             ]);

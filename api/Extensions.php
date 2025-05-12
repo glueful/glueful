@@ -308,8 +308,7 @@ abstract class Extensions implements IExtensions
                 $currentVersion = $matches[1];
                 $currentDate = $matches[2] ?? null;
                 $currentChanges = [];
-            } // Match list items for changes
-            elseif ($currentVersion && preg_match('/^\s*[*-]\s+(.+)$/', $line, $matches)) {
+            } elseif ($currentVersion && preg_match('/^\s*[*-]\s+(.+)$/', $line, $matches)) {
                 $currentChanges[] = trim($matches[1]);
             }
         }

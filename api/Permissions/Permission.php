@@ -14,16 +14,16 @@ enum Permission: string
 {
     /** View/Read permission - Allows reading/viewing resource data */
     case VIEW = 'A';
-    
+
     /** Save/Create permission - Allows creating new resources */
     case SAVE = 'B';
-    
+
     /** Delete permission - Allows deleting existing resources */
     case DELETE = 'C';
-    
+
     /** Edit/Update permission - Allows modifying existing resources */
     case EDIT = 'D';
-    
+
     /**
      * Get all available permissions
      *

@@ -517,7 +517,9 @@ class NotificationsController
             $channelName = $params['channel'];
 
             // Check if the channel exists
-            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
+            $availableChannels = $this->notificationService->getDispatcher()
+                ->getChannelManager()
+                ->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
                 $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
@@ -572,7 +574,9 @@ class NotificationsController
             $channelName = $params['channel'];
 
             // Check if the channel exists
-            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
+            $availableChannels = $this->notificationService->getDispatcher()
+                ->getChannelManager()
+                ->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
                 $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
