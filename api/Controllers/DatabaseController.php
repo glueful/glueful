@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Controllers;
@@ -10,7 +11,7 @@ use Glueful\Database\{Connection, QueryBuilder};
 
 /**
  * Database Controller
- * 
+ *
  * Handles all database-related operations including:
  * - Table creation and management
  * - Column operations
@@ -19,63 +20,65 @@ use Glueful\Database\{Connection, QueryBuilder};
  * - Schema updates
  * - Database statistics
  * - Query execution
- * 
+ *
  * @package Glueful\Controllers
  */
-class DatabaseController {
+class DatabaseController
+{
     private SchemaManager $schemaManager;
     private QueryBuilder $queryBuilder;
 
     /**
      * Initialize Database Controller
      */
-    public function __construct() {
+    public function __construct()
+    {
         $connection = new Connection();
         $this->schemaManager = $connection->getSchemaManager();
         $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
     }
-    
+
     /**
      * Create new database table
-     * 
+     *
      * @return mixed HTTP response
      */
     public function createTable(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name']) || !isset($data['columns'])) {
                 return Response::error('Table name and columns are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             $tableName = $data['table_name'];
             $columnsData = $data['columns'];
-            
+
             // Convert columns array to the format expected by SchemaManager
             $columns = [];
             foreach ($columnsData as $column) {
                 if (!isset($column['name']) || !isset($column['type'])) {
                     continue;
                 }
-                
+
                 $columnName = $column['name'];
                 $columnType = $column['type'];
                 $options = $column['options'] ?? [];
-                
+
                 // Build column definition using the type directly from frontend
                 $columnDef = $columnType;
-                
+
                 // Add PRIMARY KEY if specified
                 if (isset($options['primary']) && $options['primary']) {
                     $columnDef .= " " . (is_string($options['primary']) ? $options['primary'] : "PRIMARY KEY");
                 }
-                
+
                 // Add AUTO_INCREMENT if specified
                 if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
                     $columnDef .= " " . (is_string($options['autoIncrement']) ? $options['autoIncrement'] : "AUTO_INCREMENT");
                 }
-                
+
                 // Handle nullable property - now accepting direct SQL constraints
                 if (isset($options['nullable'])) {
                     if (is_string($options['nullable'])) {
@@ -95,36 +98,36 @@ class DatabaseController {
                         $columnDef .= " DEFAULT " . (is_numeric($options['default']) ? $options['default'] : "'{$options['default']}'");
                     }
                 }
-                
+
                 $columns[$columnName] = $columnDef;
             }
 
             // Build the schema operation with proper method chaining
             $schemaManager = $this->schemaManager->createTable($tableName, $columns);
-            
+
             // Add indexes if provided
             if (isset($data['indexes']) && !empty($data['indexes'])) {
                 // Make sure each index has the table property set
-                $indexes = array_map(function($index) use ($tableName) {
+                $indexes = array_map(function ($index) use ($tableName) {
                     if (!isset($index['table'])) {
                         $index['table'] = $tableName;
                     }
                     return $index;
                 }, $data['indexes']);
-                
+
                 $schemaManager = $schemaManager->addIndex($indexes);
             }
 
             // Add foreign keys if provided
             if (isset($data['foreign_keys']) && !empty($data['foreign_keys'])) {
                 // Make sure each foreign key has the table property set
-                $foreignKeys = array_map(function($fk) use ($tableName) {
+                $foreignKeys = array_map(function ($fk) use ($tableName) {
                     if (!isset($fk['table'])) {
                         $fk['table'] = $tableName;
                     }
                     return $fk;
                 }, $data['foreign_keys']);
-                
+
                 $schemaManager->addForeignKey($foreignKeys);
             }
 
@@ -134,7 +137,6 @@ class DatabaseController {
                 'indexes' => $data['indexes'] ?? [],
                 'foreign_keys' => $data['foreign_keys'] ?? []
             ], 'Table created successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Create table error: " . $e->getMessage());
             return Response::error(
@@ -143,7 +145,7 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Drop database table
      */
@@ -151,7 +153,7 @@ class DatabaseController {
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -163,7 +165,6 @@ class DatabaseController {
             }
 
             return Response::ok(null, 'Table dropped successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Drop table error: " . $e->getMessage());
             return Response::error(
@@ -172,7 +173,7 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Get list of all tables
      */
@@ -181,7 +182,6 @@ class DatabaseController {
         try {
             $tables = $this->schemaManager->getTables();
             return Response::ok($tables, 'Tables retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get tables error: " . $e->getMessage());
             return Response::error(
@@ -202,12 +202,11 @@ class DatabaseController {
             }
 
             $size = $this->schemaManager->getTableSize($table['name']);
-            
+
             return Response::ok([
                 'table' => $table['name'],
                 'size' => $size
             ], 'Table size retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get table size error: " . $e->getMessage());
             return Response::error(
@@ -216,10 +215,10 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Fetch paginated data from a table
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getTableData(?array $table): mixed
@@ -232,18 +231,17 @@ class DatabaseController {
             // Set default values for pagination and filtering
             $page = (int)($data['page'] ?? 1);
             $perPage = (int)($data['per_page'] ?? 25);
-            
+
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
                 ->orderBy(['id' => 'DESC'])
                 ->paginate($page, $perPage);
-            
+
             // Get detailed column metadata using SchemaManager
             $columns = $this->schemaManager->getTableColumns($table['name']);
 
             $results['columns'] = $columns;
             return Response::ok($results, 'Data retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get table data error: " . $e->getMessage());
             return Response::error(
@@ -252,10 +250,10 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Get columns information for a specific table
-     * 
+     *
      * @param array $params Route parameters containing table name
      * @return mixed HTTP response with column metadata
      */
@@ -267,10 +265,10 @@ class DatabaseController {
             }
 
             $tableName = $params['name'];
-            
+
             // Get detailed column metadata using SchemaManager
             $columns = $this->schemaManager->getTableColumns($tableName);
-            
+
             if (empty($columns)) {
                 return Response::error("No columns found or table '$tableName' does not exist", Response::HTTP_NOT_FOUND)->send();
             }
@@ -279,7 +277,6 @@ class DatabaseController {
                 'table' => $tableName,
                 'columns' => $columns
             ], 'Table columns retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get columns error: " . $e->getMessage());
             return Response::error(
@@ -288,19 +285,19 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Add column(s) to existing table
-     * 
+     *
      * Allows adding a single column or multiple columns in batch.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function addColumn(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -312,22 +309,22 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single column and array of columns
             $columns = isset($data['columns']) ? $data['columns'] : [$data['column']];
-            
+
             // Ensure we have an array
             if (!is_array($columns)) {
                 $columns = [$columns];
             }
-            
+
             // Add each column
             foreach ($columns as $column) {
                 if (!isset($column['name']) || !isset($column['type'])) {
                     $failed[] = $column['name'] ?? 'unnamed column';
                     continue;
                 }
-                
+
                 try {
                     $result = $this->schemaManager->addColumn(
                         $tableName,
@@ -335,7 +332,7 @@ class DatabaseController {
                         $column['type'],
                         $column['options'] ?? []
                     );
-                    
+
                     if ($result['success'] ?? false) {
                         $results[] = $column['name'];
                     } else {
@@ -346,7 +343,7 @@ class DatabaseController {
                     $failed[] = $column['name'];
                 }
             }
-            
+
             // Check if all columns were added successfully
             if (empty($failed)) {
                 // All columns were added successfully
@@ -354,10 +351,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'columns_added' => $results
                 ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All columns failed to add
                 return Response::error(
-                    'Failed to add column(s): ' . implode(', ', $failed), 
+                    'Failed to add column(s): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -376,19 +373,19 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Drop column(s) from table
-     * 
+     *
      * Allows dropping a single column or multiple columns in batch.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function dropColumn(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -400,21 +397,21 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single column and array of columns
             $columnNames = isset($data['column_names']) ? $data['column_names'] : [$data['column_name']];
-            
+
             // Ensure we have an array
             if (!is_array($columnNames)) {
                 $columnNames = [$columnNames];
             }
-            
+
             // Drop each column
             foreach ($columnNames as $columnName) {
                 try {
                     // Use the SchemaManager's dropColumn method
                     $result = $this->schemaManager->dropColumn($tableName, $columnName);
-                    
+
                     if ($result['success'] ?? false) {
                         $results[] = $columnName;
                     } else {
@@ -425,7 +422,7 @@ class DatabaseController {
                     $failed[] = $columnName;
                 }
             }
-            
+
             // Check if all columns were dropped successfully
             if (empty($failed)) {
                 // All columns were dropped successfully
@@ -433,10 +430,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'columns_dropped' => $results
                 ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All columns failed to drop
                 return Response::error(
-                    'Failed to drop column(s): ' . implode(', ', $failed), 
+                    'Failed to drop column(s): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -455,19 +452,19 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Add index(es) to an existing table
-     * 
+     *
      * Allows adding a single index or multiple indexes in batch.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function addIndex(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -479,15 +476,15 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single index and array of indexes
             $indexes = isset($data['indexes']) ? $data['indexes'] : [$data['index']];
-            
+
             // Ensure we have an array
             if (!is_array($indexes)) {
                 $indexes = [$indexes];
             }
-            
+
             // Convert the simple index format to the format expected by SchemaManager
             $formattedIndexes = [];
             foreach ($indexes as $index) {
@@ -495,14 +492,14 @@ class DatabaseController {
                     $failed[] = $index['column'] ?? 'unnamed column';
                     continue;
                 }
-                
+
                 // Create a properly formatted index definition that the SchemaManager expects
                 $formattedIndex = [
                     'table' => $tableName,
                     'column' => $index['column'],
                     'type' => strtolower($index['type']) == 'unique' ? 'unique' : 'index'
                 ];
-                
+
                 // Generate an index name if not provided
                 if (!isset($index['name'])) {
                     $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
@@ -511,13 +508,13 @@ class DatabaseController {
                 } else {
                     $formattedIndex['name'] = $index['name'];
                 }
-                
+
                 $formattedIndexes[] = $formattedIndex;
-                
+
                 try {
                     // Add the index
                     $success = $this->schemaManager->addIndex([$formattedIndex]);
-                    
+
                     if ($success) {
                         $results[] = $formattedIndex['name'];
                     } else {
@@ -528,7 +525,7 @@ class DatabaseController {
                     $failed[] = $formattedIndex['name'];
                 }
             }
-            
+
             // Check if all indexes were added successfully
             if (empty($failed)) {
                 // All indexes were added successfully
@@ -536,10 +533,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'indexes_added' => $results
                 ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All indexes failed to add
                 return Response::error(
-                    'Failed to add index(es): ' . implode(', ', $failed), 
+                    'Failed to add index(es): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -558,19 +555,19 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Drop index(es) from table
-     * 
+     *
      * Allows dropping a single index or multiple indexes in batch.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function dropIndex(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -582,21 +579,21 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single index and array of indexes
             $indexNames = isset($data['index_names']) ? $data['index_names'] : [$data['index_name']];
-            
+
             // Ensure we have an array
             if (!is_array($indexNames)) {
                 $indexNames = [$indexNames];
             }
-            
+
             // Drop each index
             foreach ($indexNames as $indexName) {
                 try {
                     // Use the SchemaManager's dropIndex method
                     $success = $this->schemaManager->dropIndex($tableName, $indexName);
-                    
+
                     if ($success) {
                         $results[] = $indexName;
                     } else {
@@ -607,7 +604,7 @@ class DatabaseController {
                     $failed[] = $indexName;
                 }
             }
-            
+
             // Check if all indexes were dropped successfully
             if (empty($failed)) {
                 // All indexes were dropped successfully
@@ -615,10 +612,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'indexes_dropped' => $results
                 ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All indexes failed to drop
                 return Response::error(
-                    'Failed to drop index(es): ' . implode(', ', $failed), 
+                    'Failed to drop index(es): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -637,10 +634,10 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Add foreign key constraint(s) to an existing table
-     * 
+     *
      * Allows adding a single foreign key or multiple foreign keys in batch.
      * The expected format is:
      * {
@@ -648,14 +645,14 @@ class DatabaseController {
      *   "references": "uuid",
      *   "on": "users"
      * }
-     * 
+     *
      * @return mixed HTTP response
      */
     public function addForeignKey(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -667,22 +664,22 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single foreign key and array of foreign keys
             $foreignKeys = isset($data['foreign_keys']) ? $data['foreign_keys'] : [$data['foreign_key']];
-            
+
             // Ensure we have an array
             if (!is_array($foreignKeys)) {
                 $foreignKeys = [$foreignKeys];
             }
-            
+
             // Process each foreign key
             foreach ($foreignKeys as $fk) {
                 if (!isset($fk['column']) || !isset($fk['references']) || !isset($fk['on'])) {
                     $failed[] = $fk['column'] ?? 'unnamed foreign key';
                     continue;
                 }
-                
+
                 try {
                     // Convert the simple format to the format expected by SchemaManager
                     $formattedFk = [
@@ -691,17 +688,17 @@ class DatabaseController {
                         'reference_table' => $fk['on'],
                         'reference_column' => $fk['references'],
                     ];
-                    
+
                     // Generate a constraint name if not provided
                     if (!isset($fk['name'])) {
                         $formattedFk['name'] = "fk_{$tableName}_{$fk['column']}";
                     } else {
                         $formattedFk['name'] = $fk['name'];
                     }
-                    
+
                     // Use the SchemaManager's addForeignKey method
                     $success = $this->schemaManager->addForeignKey([$formattedFk]);
-                    
+
                     if ($success) {
                         $results[] = $formattedFk['name'];
                     } else {
@@ -712,7 +709,7 @@ class DatabaseController {
                     $failed[] = $fk['column'];
                 }
             }
-            
+
             // Check if all foreign keys were added successfully
             if (empty($failed)) {
                 // All foreign keys were added successfully
@@ -720,10 +717,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'constraints_added' => $results
                 ], count($results) > 1 ? 'Foreign key constraints added successfully' : 'Foreign key constraint added successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All foreign keys failed to add
                 return Response::error(
-                    'Failed to add foreign key(s): ' . implode(', ', $failed), 
+                    'Failed to add foreign key(s): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -742,19 +739,19 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Drop foreign key constraint(s) from table
-     * 
+     *
      * Allows dropping a single constraint or multiple constraints in batch.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function dropForeignKey(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -766,21 +763,21 @@ class DatabaseController {
             $tableName = $data['table_name'];
             $results = [];
             $failed = [];
-            
+
             // Handle both single constraint and array of constraints
             $constraintNames = isset($data['constraint_names']) ? $data['constraint_names'] : [$data['constraint_name']];
-            
+
             // Ensure we have an array
             if (!is_array($constraintNames)) {
                 $constraintNames = [$constraintNames];
             }
-            
+
             // Drop each constraint
             foreach ($constraintNames as $constraintName) {
                 try {
                     // Use the SchemaManager's dropForeignKey method
                     $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
-                    
+
                     if ($success) {
                         $results[] = $constraintName;
                     } else {
@@ -791,7 +788,7 @@ class DatabaseController {
                     $failed[] = $constraintName;
                 }
             }
-            
+
             // Check if all constraints were dropped successfully
             if (empty($failed)) {
                 // All constraints were dropped successfully
@@ -799,10 +796,10 @@ class DatabaseController {
                     'table' => $tableName,
                     'constraints_dropped' => $results
                 ], count($results) > 1 ? 'Foreign key constraints dropped successfully' : 'Foreign key constraint dropped successfully')->send();
-            } else if (empty($results)) {
+            } elseif (empty($results)) {
                 // All constraints failed to drop
                 return Response::error(
-                    'Failed to drop foreign key constraint(s): ' . implode(', ', $failed), 
+                    'Failed to drop foreign key constraint(s): ' . implode(', ', $failed),
                     Response::HTTP_BAD_REQUEST
                 )->send();
             } else {
@@ -821,20 +818,20 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Execute a raw SQL query
-     * 
+     *
      * Executes a raw SQL query against the database and returns the results.
      * Limited to admin users with appropriate permissions.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function executeQuery(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['query'])) {
                 return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -866,8 +863,8 @@ class DatabaseController {
 
             // For write operations, get the affected rows count
             $isReadOperation = in_array($firstWord, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN']);
-            $message = $isReadOperation 
-                ? 'Query executed successfully' 
+            $message = $isReadOperation
+                ? 'Query executed successfully'
                 : 'Query executed successfully, ' . count($results) . ' rows affected';
 
             $responseData = [
@@ -875,9 +872,8 @@ class DatabaseController {
                 'results' => $results,
                 'count' => count($results)
             ];
-            
-            return Response::ok($responseData, $message)->send();
 
+            return Response::ok($responseData, $message)->send();
         } catch (\PDOException $e) {
             error_log("SQL Error: " . $e->getMessage());
             return Response::error(
@@ -892,22 +888,22 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Update table schema with multiple operations
-     * 
+     *
      * Processes multiple schema changes in a single request:
      * - Add/delete columns
      * - Add/delete indexes
      * - Add/delete foreign keys
-     * 
+     *
      * @return mixed HTTP response
      */
     public function updateTableSchema(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['table_name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -984,7 +980,7 @@ class DatabaseController {
 
                     try {
                         $columnDef = ['type' => $column['type']];
-                        
+
                         // Handle column options
                         if (isset($column['options'])) {
                             if (isset($column['options']['nullable'])) {
@@ -996,7 +992,7 @@ class DatabaseController {
                         }
 
                         $success = $this->schemaManager->addColumn($tableName, $column['name'], $columnDef);
-                        
+
                         if ($success) {
                             $results['added_columns'][] = $column['name'];
                         } else {
@@ -1011,7 +1007,7 @@ class DatabaseController {
 
             // Process new indexes
             if (!empty($data['indexes'])) {
-                $formattedIndexes = array_map(function($index) use ($tableName) {
+                $formattedIndexes = array_map(function ($index) use ($tableName) {
                     return [
                         'table' => $tableName,
                         'column' => $index['column'],
@@ -1029,7 +1025,7 @@ class DatabaseController {
                 try {
                     $success = $this->schemaManager->addIndex($formattedIndexes);
                     if ($success) {
-                        $results['added_indexes'] = array_map(function($index) {
+                        $results['added_indexes'] = array_map(function ($index) {
                             return $index['name'];
                         }, $formattedIndexes);
                     } else {
@@ -1080,7 +1076,6 @@ class DatabaseController {
                     'Some schema update operations completed with warnings'
                 )->send();
             }
-
         } catch (\Exception $e) {
             error_log("Update table schema error: " . $e->getMessage());
             return Response::error(
@@ -1089,13 +1084,13 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Get comprehensive database statistics
-     * 
+     *
      * Returns database statistics including tables with their schemas, sizes, row counts,
      * and other metrics useful for database monitoring and visualization.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getDatabaseStats(): mixed
@@ -1103,23 +1098,23 @@ class DatabaseController {
         try {
             // Get list of all tables with schema information
             $tables = $this->schemaManager->getTables(true); // Pass true to include schema info
-            
+
             if (empty($tables)) {
                 return Response::ok(['tables' => []], 'No tables found in database')->send();
             }
-            
+
             $tableData = [];
-            
+
             // Get size information for each table
             foreach ($tables as $table) {
                 // Check if the result includes schema information already
                 $tableName = is_array($table) ? $table['name'] : $table;
                 $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public'; // Default to 'public' if not specified
-                
+
                 try {
                     $size = $this->schemaManager->getTableSize($tableName);
                     $rowCount = $this->schemaManager->getTableRowCount($tableName);
-                    
+
                     $tableData[] = [
                         'table_name' => $tableName,
                         'schema' => $schema,
@@ -1140,20 +1135,23 @@ class DatabaseController {
                     ];
                 }
             }
-            
+
             // Sort tables by size in descending order
-            usort($tableData, function($a, $b) {
+            usort($tableData, function ($a, $b) {
                 // Handle null values in comparison
-                if ($a['size'] === null) return 1;
-                if ($b['size'] === null) return -1;
+                if ($a['size'] === null) {
+                    return 1;
+                }
+                if ($b['size'] === null) {
+                    return -1;
+                }
                 return $b['size'] <=> $a['size'];
             });
-            
+
             return Response::ok([
                 'tables' => $tableData,
                 'total_tables' => count($tables)
             ], 'Database statistics retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get database stats error: " . $e->getMessage());
             return Response::error(
@@ -1162,10 +1160,10 @@ class DatabaseController {
             )->send();
         }
     }
-    
+
     /**
      * Format bytes to human-readable format
-     * 
+     *
      * @param int|float $bytes Number of bytes
      * @param int $precision Precision of rounding
      * @return string Formatted size with unit
@@ -1173,13 +1171,13 @@ class DatabaseController {
     private function formatBytes($bytes, int $precision = 2): string
     {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        
+
         $bytes = max((float)$bytes, 0);
         $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
         $pow = min($pow, count($units) - 1);
-        
+
         $bytes /= (1 << (10 * $pow));
-        
+
         return round($bytes, $precision) . ' ' . $units[$pow];
     }
 }

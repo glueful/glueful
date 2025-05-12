@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Logging;
@@ -11,10 +12,9 @@ use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
 
-
 /**
  * Database Log Handler
- * 
+ *
  * Handles writing log records to a database table. Extends Monolog's AbstractProcessingHandler
  * to provide database logging capabilities. Logs are stored in the 'app_logs' table with:
  * - Unique identifiers
@@ -27,7 +27,7 @@ use Glueful\Database\Connection;
  *
  * @package Glueful\Logging
  */
-class DatabaseLogHandler extends AbstractProcessingHandler 
+class DatabaseLogHandler extends AbstractProcessingHandler
 {
     private SchemaManager $schema;
     private QueryBuilder $db;
@@ -41,26 +41,24 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      *
      * @param int $level Minimum logging level (defaults to DEBUG)
      */
-    public function __construct(array $options = []) 
+    public function __construct(array $options = [])
     {
         parent::__construct($options['level'] ?? Level::Debug);
         $connection = new Connection();
         $this->schema = $connection->getSchemaManager();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        
+
         // Ensure logs table exists
         if (isset($options['table'])) {
             $this->table = $options['table'];
         }
         $this->ensureLogsTable();
-        
-        
     }
 
 
     /**
      * Set the database table name for storing log entries
-     * 
+     *
      * @param string $table Table name
      * @return self
      */
@@ -69,7 +67,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         $this->table = $table;
         return $this;
     }
-    
+
 
     /**
      * Write log record to database
@@ -84,7 +82,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      * @param LogRecord $record Log record to write
      * @throws \PDOException If database write fails
      */
-    protected function write(LogRecord $record): void 
+    protected function write(LogRecord $record): void
     {
         try {
             // Insert log entry using SchemaManager
@@ -100,7 +98,6 @@ class DatabaseLogHandler extends AbstractProcessingHandler
                 'exec_time' => $record->context['exec_time'] ?? null,
                 'created_at' => $record->datetime->format('Y-m-d H:i:s')
             ]);
-            
         } catch (\Exception $e) {
             error_log("Failed to write log to database: " . $e->getMessage());
         }

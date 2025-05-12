@@ -1,62 +1,71 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful;
 
 /**
  * API Documentation Generator
- * 
+ *
  * Generates OpenAPI/Swagger documentation from JSON definition files.
  * Handles both table definitions and custom API endpoint documentation.
  */
-class DocGenerator 
+class DocGenerator
 {
     /** @var array OpenAPI paths storage */
     private array $paths = [];
-    
+
     /** @var array OpenAPI schemas storage */
     private array $schemas = [];
-    
+
     /** @var array Extension tags storage */
     private array $extensionTags = [];
 
     /**
      * Generate documentation from table definition
-     * 
+     *
      * Creates API documentation for database table endpoints.
-     * 
+     *
      * @param string $filename JSON definition file path
      */
-    public function generateFromJson(string $filename): void 
+    public function generateFromJson(string $filename): void
     {
         $jsonContent = file_get_contents($filename);
-        if (!$jsonContent) return;
+        if (!$jsonContent) {
+            return;
+        }
 
         $definition = json_decode($jsonContent, true);
-        if (!$definition) return;
+        if (!$definition) {
+            return;
+        }
 
         $tableName = $definition['table']['name'];
         // Use table name directly instead of JSON filename
         $resourcePath = strtolower($tableName);
-        
+
         $this->addPathsFromJson($resourcePath, $tableName, $definition);
         $this->addSchemaFromJson($tableName, $definition);
     }
 
     /**
      * Generate documentation from custom API definition
-     * 
+     *
      * Creates API documentation for custom endpoints.
-     * 
+     *
      * @param string $filename Custom API definition file path
      */
-    public function generateFromDocJson(string $filename): void 
+    public function generateFromDocJson(string $filename): void
     {
         $jsonContent = file_get_contents($filename);
-        if (!$jsonContent) return;
+        if (!$jsonContent) {
+            return;
+        }
 
         $definition = json_decode($jsonContent, true);
-        if (!$definition || !isset($definition['doc'])) return;
+        if (!$definition || !isset($definition['doc'])) {
+            return;
+        }
 
         // Process the documentation definition
         $this->addPathsFromDocJson($definition);
@@ -65,45 +74,45 @@ class DocGenerator
 
     /**
      * Generate documentation from extension definitions
-     * 
+     *
      * Finds and processes OpenAPI definition files in extensions directories.
-     * 
+     *
      * @param string $extensionsPath Path to the extensions directory
      */
-    public function generateFromExtensions(?string $extensionsPath = null): void 
+    public function generateFromExtensions(?string $extensionsPath = null): void
     {
         if ($extensionsPath === null) {
             $extensionsPath = dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
         }
-        
+
         if (!is_dir($extensionsPath)) {
             error_log("Extensions documentation directory not found: $extensionsPath");
             return;
         }
-        
+
         // Scan extension directories
         $extensionDirs = array_filter(glob($extensionsPath . '/*'), 'is_dir');
-        
+
         foreach ($extensionDirs as $extDir) {
             $extName = basename($extDir);
             $extFiles = glob($extDir . '/*.json');
-            
+
             foreach ($extFiles as $extFile) {
                 $this->mergeExtensionDefinition($extFile, $extName);
             }
         }
     }
-    
+
     /**
      * Merge extension OpenAPI definition into main documentation
-     * 
-     * Processes an extension's OpenAPI definition file and merges 
+     *
+     * Processes an extension's OpenAPI definition file and merges
      * its components into the main API documentation.
-     * 
+     *
      * @param string $filePath Path to extension definition file
      * @param string $extName Extension name
      */
-    private function mergeExtensionDefinition(string $filePath, string $extName): void 
+    private function mergeExtensionDefinition(string $filePath, string $extName): void
     {
         $jsonContent = file_get_contents($filePath);
         if (!$jsonContent) {
@@ -116,7 +125,7 @@ class DocGenerator
             error_log("Invalid JSON in extension definition file: $filePath");
             return;
         }
-        
+
         // Merge paths
         if (isset($definition['paths']) && is_array($definition['paths'])) {
             foreach ($definition['paths'] as $path => $methods) {
@@ -124,14 +133,14 @@ class DocGenerator
                 $this->paths[$path] = $methods;
             }
         }
-        
+
         // Merge schemas
         if (isset($definition['components']['schemas']) && is_array($definition['components']['schemas'])) {
             foreach ($definition['components']['schemas'] as $name => $schema) {
                 $this->schemas[$extName . $name] = $schema;
             }
         }
-        
+
         // Merge tags
         if (isset($definition['tags']) && is_array($definition['tags'])) {
             foreach ($definition['tags'] as $tag) {
@@ -143,41 +152,41 @@ class DocGenerator
 
     /**
      * Generate documentation from main routes
-     * 
+     *
      * Finds and processes OpenAPI definition files for main routes.
-     * 
+     *
      * @param string $routesPath Path to the routes documentation directory
      */
-    public function generateFromRoutes(?string $routesPath = null): void 
+    public function generateFromRoutes(?string $routesPath = null): void
     {
         if ($routesPath === null) {
             $routesPath = dirname(__DIR__) . '/docs/api-doc-json-definitions/routes';
         }
-        
+
         if (!is_dir($routesPath)) {
             error_log("Routes documentation directory not found: $routesPath");
             return;
         }
-        
+
         // Process all route documentation files
         $routeFiles = glob($routesPath . '/*.json');
-        
+
         foreach ($routeFiles as $routeFile) {
             $routeName = basename($routeFile, '.json');
             $this->mergeRouteDefinition($routeFile, $routeName);
         }
     }
-    
+
     /**
      * Merge route OpenAPI definition into main documentation
-     * 
-     * Processes a route's OpenAPI definition file and merges 
+     *
+     * Processes a route's OpenAPI definition file and merges
      * its components into the main API documentation.
-     * 
+     *
      * @param string $filePath Path to route definition file
      * @param string $routeName Route file name
      */
-    private function mergeRouteDefinition(string $filePath, string $routeName): void 
+    private function mergeRouteDefinition(string $filePath, string $routeName): void
     {
         $jsonContent = file_get_contents($filePath);
         if (!$jsonContent) {
@@ -190,7 +199,7 @@ class DocGenerator
             error_log("Invalid JSON in route definition file: $filePath");
             return;
         }
-        
+
         // Merge paths
         if (isset($definition['paths']) && is_array($definition['paths'])) {
             foreach ($definition['paths'] as $path => $methods) {
@@ -198,14 +207,14 @@ class DocGenerator
                 $this->paths[$path] = $methods;
             }
         }
-        
+
         // Merge schemas
         if (isset($definition['components']['schemas']) && is_array($definition['components']['schemas'])) {
             foreach ($definition['components']['schemas'] as $name => $schema) {
                 $this->schemas["Route$routeName$name"] = $schema;
             }
         }
-        
+
         // Merge tags
         if (isset($definition['tags']) && is_array($definition['tags'])) {
             foreach ($definition['tags'] as $tag) {
@@ -217,12 +226,12 @@ class DocGenerator
 
     /**
      * Get complete OpenAPI specification
-     * 
+     *
      * Returns the full OpenAPI/Swagger documentation as JSON string.
-     * 
+     *
      * @return string OpenAPI specification JSON
      */
-    public function getSwaggerJson(): string 
+    public function getSwaggerJson(): string
     {
         $swagger = [
             'openapi' => '3.0.0',
@@ -272,14 +281,14 @@ class DocGenerator
 
     /**
      * Add paths from table definition
-     * 
+     *
      * Generates endpoint documentation for standard CRUD operations.
-     * 
+     *
      * @param string $resource API resource name
      * @param string $tableName Database table name
      * @param array $definition Table definition data
      */
-    private function addPathsFromJson(string $resource, string $tableName, array $definition): void 
+    private function addPathsFromJson(string $resource, string $tableName, array $definition): void
     {
         $access = $definition['access']['mode'] ?? 'r';
         $basePath = "/{$resource}";
@@ -402,29 +411,29 @@ class DocGenerator
 
     /**
      * Add paths from custom API definition
-     * 
+     *
      * Generates endpoint documentation for custom API endpoints.
-     * 
+     *
      * @param array $definition Custom API definition
      */
-    private function addPathsFromDocJson(array $definition): void 
+    private function addPathsFromDocJson(array $definition): void
     {
         $docName = $definition['doc']['name'];
         $method = strtolower($definition['doc']['method']);
         $isPublic = $definition['doc']['is_public'] ?? false;
         $consumes = $definition['doc']['consumes'] ?? ['application/json'];
-        
+
         $basePath = "/{$docName}";
         $this->paths[$basePath] = [];
 
         // Build request schema
         $properties = [];
         $required = [];
-        
+
         foreach ($definition['doc']['fields'] as $field) {
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;
-            
+
             $properties[$apiField] = [
                 'type' => $this->inferTypeFromJson($field['type']),
                 'description' => $field['description'] ?? $fieldName
@@ -498,9 +507,9 @@ class DocGenerator
 
     /**
      * Process table fields
-     * 
+     *
      * Validates and processes field definitions from table configuration.
-     * 
+     *
      * @param array $definition Table definition
      * @return array Processed fields
      */
@@ -527,13 +536,13 @@ class DocGenerator
 
     /**
      * Add schema from table definition
-     * 
+     *
      * Creates OpenAPI schemas for table data structures.
-     * 
+     *
      * @param string $tableName Database table name
      * @param array $definition Table definition data
      */
-    private function addSchemaFromJson(string $tableName, array $definition): void 
+    private function addSchemaFromJson(string $tableName, array $definition): void
     {
         $properties = [];
         $required = [];
@@ -543,11 +552,11 @@ class DocGenerator
             // Handle missing fields gracefully
             return;
         }
-        
+
         foreach ($definition['table']['fields'] as $field) {
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;
-            
+
             // Skip ID and UUID fields for POST schema
             if (strtolower($fieldName) === 'id' || strtolower($fieldName) === 'uuid') {
                 continue;
@@ -587,24 +596,24 @@ class DocGenerator
 
     /**
      * Add schema from custom API definition
-     * 
+     *
      * Creates OpenAPI schemas for custom API endpoints.
-     * 
+     *
      * @param array $definition Custom API definition
      * @return string Generated schema name
      */
-    private function addSchemaFromDocJson(array $definition): string 
+    private function addSchemaFromDocJson(array $definition): string
     {
         $docName = $definition['doc']['name'];
         $schemaName = str_replace(['/'], '', ucwords($docName, '/'));
-        
+
         $properties = [];
         $required = [];
 
         foreach ($definition['doc']['fields'] as $field) {
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;
-            
+
             $properties[$apiField] = [
                 'type' => $this->inferTypeFromJson($field['type']),
                 'description' => $field['description'] ?? $fieldName
@@ -643,7 +652,7 @@ class DocGenerator
         if (isset($definition['doc']['consumes']) && in_array('multipart/form-data', $definition['doc']['consumes'])) {
             $this->schemas[$schemaName . 'Multipart'] = [
                 'type' => 'object',
-                'properties' => array_map(function($prop) {
+                'properties' => array_map(function ($prop) {
                     // Convert file properties for multipart
                     if (isset($prop['format']) && $prop['format'] === 'binary') {
                         return [
@@ -662,13 +671,13 @@ class DocGenerator
 
     /**
      * Infer OpenAPI type from database type
-     * 
+     *
      * Maps database column types to OpenAPI data types.
-     * 
+     *
      * @param string $dbType Database column type
      * @return string OpenAPI data type
      */
-    private function inferTypeFromJson(string $dbType): string 
+    private function inferTypeFromJson(string $dbType): string
     {
         // Handle null or empty type
         if (!$dbType) {
@@ -691,12 +700,12 @@ class DocGenerator
 
     /**
      * Get common API parameters
-     * 
+     *
      * Returns standard parameters used across endpoints.
-     * 
+     *
      * @return array Common parameters definition
      */
-    private function getCommonParameters(): array 
+    private function getCommonParameters(): array
     {
         return [
             [
@@ -710,12 +719,12 @@ class DocGenerator
 
     /**
      * Get filter parameters
-     * 
+     *
      * Returns standard filtering and pagination parameters.
-     * 
+     *
      * @return array Filter parameters definition
      */
-    private function getFilterParameters(): array 
+    private function getFilterParameters(): array
     {
         return [
             [
@@ -745,13 +754,13 @@ class DocGenerator
 
     /**
      * Get common response definitions
-     * 
+     *
      * Returns standard API response structures.
-     * 
+     *
      * @param string $tableName Related table name
      * @return array Response definitions
      */
-    private function getCommonResponses(string $tableName): array 
+    private function getCommonResponses(string $tableName): array
     {
         return [
             '200' => [
@@ -803,12 +812,12 @@ class DocGenerator
 
     /**
      * Get error response definitions
-     * 
+     *
      * Returns standard error response structures.
-     * 
+     *
      * @return array Error response definitions
      */
-    private function getErrorResponses(): array 
+    private function getErrorResponses(): array
     {
         return [
             '400' => [
@@ -846,12 +855,12 @@ class DocGenerator
 
     /**
      * Get default OpenAPI schemas
-     * 
+     *
      * Returns base schemas used across the API.
-     * 
+     *
      * @return array Default schemas
      */
-    private function getDefaultSchemas(): array 
+    private function getDefaultSchemas(): array
     {
         return [
             'Error' => [
@@ -892,12 +901,12 @@ class DocGenerator
 
     /**
      * Generate API tags
-     * 
+     *
      * Creates OpenAPI tags for grouping endpoints.
-     * 
+     *
      * @return array Generated tags
      */
-    private function generateTags(): array 
+    private function generateTags(): array
     {
         $tags = [];
         foreach ($this->paths as $path => $methods) {
@@ -914,7 +923,7 @@ class DocGenerator
                 }
             }
         }
-        
+
         // Merge extension tags with auto-generated tags
         return array_values(array_merge($tags, $this->extensionTags));
     }

@@ -6,10 +6,12 @@ use Aws\S3\S3Client;
 use Aws\Exception\AwsException;
 use Glueful\Uploader\UploadException;
 
-class S3Storage implements StorageInterface {
+class S3Storage implements StorageInterface
+{
     private S3Client $client;
 
-    public function __construct() {
+    public function __construct()
+    {
         $config = [
             'version' => 'latest',
             'region'  => config('storage.s3.region'),
@@ -27,7 +29,8 @@ class S3Storage implements StorageInterface {
         $this->client = new S3Client($config);
     }
 
-    public function store(string $sourcePath, string $destinationPath): string {
+    public function store(string $sourcePath, string $destinationPath): string
+    {
         try {
             $this->client->putObject([
                 'Bucket' => config('storage.s3.bucket'),
@@ -41,15 +44,18 @@ class S3Storage implements StorageInterface {
         }
     }
 
-    public function getUrl(string $path): string {
+    public function getUrl(string $path): string
+    {
         return $this->client->getObjectUrl(config('storage.s3.bucket'), $path);
     }
 
-    public function exists(string $path): bool {
+    public function exists(string $path): bool
+    {
         return $this->client->doesObjectExist(config('storage.s3.bucket'), $path);
     }
 
-    public function delete(string $path): bool {
+    public function delete(string $path): bool
+    {
         try {
             $this->client->deleteObject([
                 'Bucket' => config('storage.s3.bucket'),
@@ -61,7 +67,7 @@ class S3Storage implements StorageInterface {
         }
     }
 
-    public function getSignedUrl(string $path, int $expiry = 3600): string 
+    public function getSignedUrl(string $path, int $expiry = 3600): string
     {
         $command = $this->client->getCommand('GetObject', [
             'Bucket' => config('storage.s3.bucket'),

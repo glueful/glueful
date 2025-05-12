@@ -7,7 +7,7 @@ use Glueful\Database\Migrations\MigrationManager;
 
 /**
  * Database Migration System
- * 
+ *
  * Manages database schema version control:
  * - Executes pending migrations
  * - Tracks migration history
@@ -17,7 +17,7 @@ use Glueful\Database\Migrations\MigrationManager;
  * - Supports dry runs
  * - Enforces migration order
  * - Manages dependencies
- * 
+ *
  * @package Glueful\Console\Commands
  */
 class MigrateCommand extends Command
@@ -27,13 +27,13 @@ class MigrateCommand extends Command
 
     /**
      * Initialize Migration Command
-     * 
+     *
      * Sets up migration environment:
      * - Creates migration manager
      * - Validates migration path
      * - Checks database connection
      * - Prepares logging system
-     * 
+     *
      * @throws \RuntimeException If initialization fails
      */
     public function __construct()
@@ -43,12 +43,12 @@ class MigrateCommand extends Command
 
     /**
      * Get Command Name
-     * 
+     *
      * Returns command identifier:
      * - Used as `php glueful db:migrate`
      * - Follows naming standards
      * - Must be unique
-     * 
+     *
      * @return string Command name
      */
     public function getName(): string
@@ -58,12 +58,12 @@ class MigrateCommand extends Command
 
     /**
      * Get Command Description
-     * 
+     *
      * Provides command summary:
      * - Shows in command lists
      * - Single line description
      * - Explains primary purpose
-     * 
+     *
      * @return string Brief description
      */
     public function getDescription(): string
@@ -73,13 +73,13 @@ class MigrateCommand extends Command
 
     /**
      * Get Command Help
-     * 
+     *
      * Details command usage:
      * - Shows syntax options
      * - Lists parameters
      * - Provides examples
      * - Explains behavior
-     * 
+     *
      * @return string Detailed help text
      */
     public function getHelp(): string
@@ -107,7 +107,7 @@ class MigrateCommand extends Command
 
     /**
      * Execute Migration Process
-     * 
+     *
      * Handles migration workflow:
      * - Validates arguments
      * - Checks environment
@@ -115,7 +115,7 @@ class MigrateCommand extends Command
      * - Reports results
      * - Handles errors
      * - Logs operations
-     * 
+     *
      * @param array $args Command arguments
      * @throws \RuntimeException If migration fails
      * @return int Exit code
@@ -126,7 +126,7 @@ class MigrateCommand extends Command
         $dryRun = in_array('--dry-run', $args);
         $fileIndex = array_search('--file', $args);
         $specificFile = $fileIndex !== false ? ($args[$fileIndex + 1] ?? null) : null;
-        
+
         if ($dryRun) {
             $this->info("\nPending Migrations:");
             $this->info("------------------");
@@ -153,7 +153,7 @@ class MigrateCommand extends Command
                     $this->error("Migration file not found: $specificFile");
                     return Command::FAILURE;
                 }
-                
+
                 $result = $this->migrationManager->migrate($fullPath);
                 $this->displayMigrationResult($result, true);
             } else {
@@ -164,20 +164,20 @@ class MigrateCommand extends Command
             $this->error("Migration failed: " . $e->getMessage());
             return Command::FAILURE;
         }
-        
+
         return Command::SUCCESS;
     }
 
     /**
      * Display Migration Results
-     * 
+     *
      * Formats operation output:
      * - Lists successful migrations
      * - Shows failed operations
      * - Provides statistics
      * - Indicates warnings
      * - Reports errors
-     * 
+     *
      * @param array $result Operation results
      * @param bool $isSingle Single file mode
      * @return void
@@ -206,5 +206,4 @@ class MigrateCommand extends Command
         $total = count($result['applied']) + count($result['failed']);
         $this->info("\nMigration complete: {$total} " . ($isSingle ? 'file' : 'files') . " processed");
     }
-
 }

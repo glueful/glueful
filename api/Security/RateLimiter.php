@@ -8,7 +8,7 @@ use Glueful\Cache\CacheEngine;
 
 /**
  * Rate Limiter
- * 
+ *
  * Implements sliding window rate limiting for API requests.
  * Uses cache backend to track and limit request frequencies.
  */
@@ -19,7 +19,7 @@ class RateLimiter
 
     /**
      * Constructor
-     * 
+     *
      * @param string $key Unique identifier for the rate limit
      * @param int $maxAttempts Maximum allowed attempts in window
      * @param int $windowSeconds Time window in seconds
@@ -34,9 +34,9 @@ class RateLimiter
 
     /**
      * Record and validate attempt
-     * 
+     *
      * Tracks new attempt and checks if limit is exceeded.
-     * 
+     *
      * @return bool True if attempt is allowed
      */
     public function attempt(): bool
@@ -63,9 +63,9 @@ class RateLimiter
 
     /**
      * Get remaining attempts
-     * 
+     *
      * Returns number of attempts left in current window.
-     * 
+     *
      * @return int Remaining attempts
      */
     public function remaining(): int
@@ -75,9 +75,9 @@ class RateLimiter
 
     /**
      * Get retry delay
-     * 
+     *
      * Returns seconds until rate limit resets.
-     * 
+     *
      * @return int Seconds until next attempt allowed
      */
     public function getRetryAfter(): int
@@ -88,7 +88,7 @@ class RateLimiter
 
     /**
      * Reset rate limiter
-     * 
+     *
      * Clears all tracking data for this rate limit.
      */
     public function reset(): void
@@ -98,7 +98,7 @@ class RateLimiter
 
     /**
      * Check if limit exceeded
-     * 
+     *
      * @return bool True if rate limit is exceeded
      */
     public function isExceeded(): bool
@@ -108,7 +108,7 @@ class RateLimiter
 
     /**
      * Get cache key
-     * 
+     *
      * @return string Prefixed cache key
      */
     private function getCacheKey(): string
@@ -118,7 +118,7 @@ class RateLimiter
 
     /**
      * Create IP-based rate limiter
-     * 
+     *
      * @param string $ip IP address to track
      * @param int $maxAttempts Maximum attempts allowed
      * @param int $windowSeconds Time window in seconds
@@ -131,7 +131,7 @@ class RateLimiter
 
     /**
      * Create user-based rate limiter
-     * 
+     *
      * @param string $userId User identifier to track
      * @param int $maxAttempts Maximum attempts allowed
      * @param int $windowSeconds Time window in seconds
@@ -144,7 +144,7 @@ class RateLimiter
 
     /**
      * Create endpoint-specific rate limiter
-     * 
+     *
      * @param string $endpoint API endpoint to track
      * @param string $identifier Unique request identifier
      * @param int $maxAttempts Maximum attempts allowed

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Controllers;
@@ -10,21 +11,23 @@ use Glueful\Database\{Connection, QueryBuilder};
 
 /**
  * Permissions Controller
- * 
+ *
  * Handles role and permission management operations:
  * - Listing and creating permissions
  * - Managing role permissions
  * - Assigning and removing user roles
- * 
+ *
  * @package Glueful\Controllers
  */
-class PermissionsController {
+class PermissionsController
+{
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
     private UserRepository $userRepository;
     private QueryBuilder $queryBuilder;
 
-    public function __construct() {
+    public function __construct()
+    {
         $this->userRepository = new UserRepository();
         $this->roleRepo = new RoleRepository();
         $this->permissionRepo = new PermissionRepository();
@@ -35,18 +38,18 @@ class PermissionsController {
 
     /**
      * Get all permissions with pagination
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getPermissions(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             // Set default values for pagination and filtering
             $page = (int)($data['page'] ?? 1);
             $perPage = (int)($data['per_page'] ?? 25);
-            
+
             // Build query for permissions
             $results = $this->queryBuilder
             ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'INNER') // Ensure the JOIN is applied
@@ -58,7 +61,6 @@ class PermissionsController {
             ->paginate($page, $perPage);
 
             return Response::ok($results, 'Permissions retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get permissions error: " . $e->getMessage());
             return Response::error(
@@ -70,7 +72,7 @@ class PermissionsController {
 
     /**
      * Get all roles
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getRoles(): mixed
@@ -89,14 +91,14 @@ class PermissionsController {
 
     /**
      * Create a new permission
-     * 
+     *
      * @return mixed HTTP response
      */
-    public function createPermission(): mixed 
+    public function createPermission(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['model']) || !isset($data['permissions']) || !is_array($data['permissions'])) {
                 return Response::error('Model name and permissions array are required', Response::HTTP_BAD_REQUEST)->send();
             }
@@ -119,15 +121,15 @@ class PermissionsController {
 
     /**
      * Update an existing permission
-     * 
+     *
      * @return mixed HTTP response
      */
     public function updatePermission(): mixed
     {
         try {
             $data = Request::getPostData();
-            
-            if (!isset($data['model']) || !isset($data['permissions']) ) {
+
+            if (!isset($data['model']) || !isset($data['permissions'])) {
                 return Response::error('Model name and permissions are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
@@ -148,7 +150,7 @@ class PermissionsController {
 
     /**
      * Assign permissions to a role
-     * 
+     *
      * @return mixed HTTP response
      */
     public function assignPermissionsToRole(): mixed
@@ -168,7 +170,7 @@ class PermissionsController {
 
     /**
      * Update role permission
-     * 
+     *
      * @return mixed HTTP response
      */
     public function updateRolePermission(): mixed
@@ -188,7 +190,7 @@ class PermissionsController {
 
     /**
      * Remove role permission
-     * 
+     *
      * @return mixed HTTP response
      */
     public function removeRolePermission(): mixed
@@ -210,7 +212,7 @@ class PermissionsController {
 
     /**
      * Assign roles to a user
-     * 
+     *
      * @return mixed HTTP response
      */
     public function assignRolesToUser(): mixed
@@ -230,7 +232,7 @@ class PermissionsController {
 
     /**
      * Remove user role
-     * 
+     *
      * @return mixed HTTP response
      */
     public function removeUserRole(): mixed
@@ -250,7 +252,7 @@ class PermissionsController {
 
     /**
      * Update role's permissions
-     * 
+     *
      * @return mixed HTTP response
      */
     public function updateRolePermissions(): mixed

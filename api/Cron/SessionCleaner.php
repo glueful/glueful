@@ -5,7 +5,7 @@ namespace Glueful\Cron;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 
-// @schedule:  0 0 * * * 
+// @schedule:  0 0 * * *
 // This job runs Daily at midnight
 
 class SessionCleaner
@@ -20,7 +20,8 @@ class SessionCleaner
     private static Connection $connection;
     private static QueryBuilder $queryBuilder;
 
-    public function __construct() {
+    public function __construct()
+    {
         self::$connection = new Connection();
         self::$queryBuilder = new QueryBuilder(self::$connection->getPDO(), self::$connection->getDriver());
     }
@@ -28,7 +29,6 @@ class SessionCleaner
     public function cleanExpiredAccessTokens(): void
     {
         try {
-
             $affected = self::$queryBuilder->delete(
                 'auth_sessions',
                 [
@@ -37,7 +37,7 @@ class SessionCleaner
                 ],
                 false // Use soft delete if enabled
             );
-            
+
             $this->stats['expired_access'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired access tokens: " . $e->getMessage();
@@ -47,7 +47,6 @@ class SessionCleaner
     public function cleanExpiredRefreshTokens(): void
     {
         try {
-            
             $affected = self::$queryBuilder->delete(
                 'auth_sessions',
                 [
@@ -56,7 +55,7 @@ class SessionCleaner
                 ],
                 false // Use real delete instead of soft delete for cleanup
             );
-            
+
             $this->stats['expired_refresh'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired refresh tokens: " . $e->getMessage();
@@ -74,7 +73,7 @@ class SessionCleaner
                 ],
                 false // Use real delete instead of soft delete for cleanup
             );
-            
+
             $this->stats['expired_refresh'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean old revoked sessions: " . $e->getMessage();

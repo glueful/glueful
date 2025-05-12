@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+
 namespace Glueful\Http;
 
 use Symfony\Component\Routing\Route;
@@ -17,10 +18,10 @@ use Glueful\Http\Middleware\AuthenticationMiddleware;
 
 /**
  * Advanced Router Implementation using Symfony's Routing Component with PSR-15 Middleware
- * 
+ *
  * This router provides robust routing capabilities by leveraging Symfony's routing system
  * and PSR-15 compatible middleware architecture.
- * 
+ *
  * Key features include:
  * - Route registration with method constraints (GET, POST, PUT, DELETE)
  * - Route grouping with shared prefixes
@@ -28,41 +29,41 @@ use Glueful\Http\Middleware\AuthenticationMiddleware;
  * - PSR-15 compatible middleware pipeline
  * - Authentication middleware integration
  * - Request context handling
- * 
+ *
  * Usage Example:
  * ```php
  * // Register routes
  * Router::get('/users', [UserController::class, 'list']);
  * Router::post('/users', [UserController::class, 'create']);
- * 
+ *
  * // Add middleware
  * Router::addMiddleware(new CorsMiddleware());
- * 
+ *
  * // Group related routes
  * Router::group('/admin', function() {
  *     Router::get('/stats', [AdminController::class, 'stats']);
  * }, requiresAuth: true, requiresAdminAuth: true);
- * 
+ *
  * // Handle the request
  * $router = Router::getInstance();
  * $response = $router->handleRequest();
  * ```
- * 
+ *
  * @package Glueful\Http
  */
 class Router
-{   
+{
     private static ?Router $instance = null;
     private static RouteCollection $routes;
     private static RequestContext $context;
     private static UrlMatcher $matcher;
-    
+
     /** @var MiddlewareInterface[] PSR-15 middleware stack */
     private static array $middlewareStack = [];
-    
+
     /** @var callable[] Legacy middleware functions (for backward compatibility) */
     private static array $legacyMiddlewares = [];
-    
+
     private static array $protectedRoutes = []; // Routes that require authentication
     private static array $currentGroups = [];
     private static array $currentGroupAuth = [];
@@ -70,7 +71,7 @@ class Router
 
     /**
      * Initialize the Router
-     * 
+     *
      * Sets up the router with a fresh RouteCollection and empty group stack.
      * Should be called before any route registration.
      */
@@ -103,22 +104,22 @@ class Router
 
     /**
      * Create route group with prefix
-     * 
+     *
      * Groups related routes under a common URL prefix.
      * Routes defined within the callback will have the prefix prepended.
      * Supports nested groups and optional authentication.
-     * 
+     *
      * Example:
      * ```php
      * Router::group('/api', function() {
      *     Router::get('/users', [UserController::class, 'index']);
-     *     
+     *
      *     Router::group('/admin', function() {
      *         Router::get('/stats', [AdminController::class, 'stats']);
      *     }, requiresAuth: true, requiresAdminAuth: true);
      * });
      * ```
-     * 
+     *
      * @param string $prefix URL prefix for all routes in group
      * @param callable $callback Function containing route definitions
      * @param array $middleware Optional middleware for all routes in group
@@ -146,19 +147,19 @@ class Router
 
    /**
      * Get current group prefix and authentication settings
-     * 
-     * Combines all active group prefixes into a single path and retrieves 
+     *
+     * Combines all active group prefixes into a single path and retrieves
      * authentication settings for the deepest active group.
-     * 
+     *
      * @return array Contains 'prefix' (string) and 'auth' settings (array with 'auth' and 'admin' keys)
      */
     private static function getCurrentGroupContext(): array
     {
         $prefix = empty(self::$currentGroups) ? '' : implode('', self::$currentGroups);
-        
+
         // Get the latest auth settings or use default values
-        $authSettings = !empty(self::$currentGroupAuth) 
-            ? end(self::$currentGroupAuth) 
+        $authSettings = !empty(self::$currentGroupAuth)
+            ? end(self::$currentGroupAuth)
             : ['auth' => false, 'admin' => false];
 
         return [
@@ -169,10 +170,10 @@ class Router
 
     /**
      * Add a new route to the collection
-     * 
+     *
      * Registers a route with the specified HTTP method, path, and handler.
      * Supports both closure and controller method handlers.
-     * 
+     *
      * @param string $method HTTP method (GET, POST, etc.)
      * @param string $path URL path pattern (e.g., '/users/{id}')
      * @param callable|array $handler Route handler (closure or [Controller::class, 'method'])
@@ -187,7 +188,7 @@ class Router
 
         // Check if group context auth settings exist and are arrays
         $groupAuth = is_array($groupContext['auth']) ? $groupContext['auth'] : ['auth' => false, 'admin' => false];
-        
+
         // Inherit authentication settings from the group if not explicitly set
         $requiresAuth = $requiresAuth || ($groupAuth['auth'] ?? false);
         $requiresAdminAuth = $requiresAdminAuth || ($groupAuth['admin'] ?? false);
@@ -205,27 +206,27 @@ class Router
 
     /**
      * Add a middleware using the legacy interface (for backward compatibility)
-     * 
+     *
      * @param callable $middleware The middleware function
      */
     public static function middleware(callable $middleware)
     {
         self::$legacyMiddlewares[] = $middleware;
     }
-    
+
     /**
      * Add a PSR-15 compatible middleware to the stack
-     * 
+     *
      * @param MiddlewareInterface $middleware The middleware to add
      */
     public static function addMiddleware(MiddlewareInterface $middleware): void
     {
         self::$middlewareStack[] = $middleware;
     }
-    
+
     /**
      * Add multiple PSR-15 compatible middleware to the stack
-     * 
+     *
      * @param array $middlewareList The list of middleware to add
      */
     public static function addMiddlewares(array $middlewareList): void
@@ -236,12 +237,12 @@ class Router
             }
         }
     }
-    
+
     /**
      * Convert legacy middleware functions to PSR-15 compatible middleware
-     * 
+     *
      * This allows for easy migration from the old middleware system to the new PSR-15 compatible one.
-     * 
+     *
      * @return void
      */
     public static function convertLegacyMiddleware(): void
@@ -249,40 +250,40 @@ class Router
         foreach (self::$legacyMiddlewares as $middleware) {
             self::$middlewareStack[] = self::convertToMiddleware($middleware);
         }
-        
+
         // Clear legacy middleware since they've been converted
         self::$legacyMiddlewares = [];
     }
-    
+
     /**
      * Convert a callable to a PSR-15 compatible middleware
-     * 
+     *
      * This allows for smooth transition from the old middleware system
      * to the new PSR-15 compatible one.
-     * 
+     *
      * @param callable $callable The callable to convert
      * @return MiddlewareInterface The converted middleware
      */
     public static function convertToMiddleware(callable $callable): MiddlewareInterface
     {
-        return new class($callable) implements MiddlewareInterface {
+        return new class ($callable) implements MiddlewareInterface {
             private $callable;
-            
+
             public function __construct(callable $callable)
             {
                 $this->callable = $callable;
             }
-            
+
             public function process(Request $request, RequestHandlerInterface $handler): Response
             {
                 // Call the middleware
                 $result = call_user_func($this->callable, $request);
-                
+
                 // If it returns a response, return it
                 if ($result instanceof Response) {
                     return $result;
                 }
-                
+
                 // Otherwise, continue to the next middleware
                 return $handler->handle($request);
             }
@@ -291,14 +292,14 @@ class Router
 
     /**
      * Handle an incoming HTTP request
-     * 
+     *
      * Main entry point for processing requests through the router and middleware:
      * 1. Creates request context from current HTTP request
      * 2. Matches request against registered routes
      * 3. Processes through middleware pipeline
      * 4. Executes appropriate handler with parameters
      * 5. Returns formatted response
-     * 
+     *
      * @param Request $request The request to handle
      * @return array API response array with success/error information
      */
@@ -314,43 +315,43 @@ class Router
             $parameters = self::$matcher->match($pathInfo);
             $routeName = md5($request->getPathInfo() . $request->getMethod());
             $controller = $parameters['_controller'];
-            
+
             // Set up middleware pipeline
-            $dispatcher = new MiddlewareDispatcher(function(Request $request) use ($controller, $parameters) {
+            $dispatcher = new MiddlewareDispatcher(function (Request $request) use ($controller, $parameters) {
                 // Remove internal routing parameters
                 unset($parameters['_controller']);
                 unset($parameters['_route']);
-                
+
                 // Execute controller
                 $reflection = new \ReflectionFunction($controller);
                 $parametersInfo = $reflection->getParameters();
-                
+
                 // Check if there are parameters before trying to access them
                 if (!empty($parametersInfo) && $parametersInfo[0]->getType() && $parametersInfo[0]->getType()->getName() === Request::class) {
                     $result = call_user_func($controller, $request);
                 } else {
                     $result = call_user_func($controller, $parameters);
                 }
-                
+
                 // Convert the result to a Response object
                 if ($result instanceof Response) {
                     return $result;
                 }
-                
+
                 if (is_array($result)) {
                     $statusCode = $result['code'] ?? ($result['success'] ?? true ? 200 : 500);
                     return new JsonResponse($result, $statusCode);
                 }
-                
+
                 return new JsonResponse([
                     'success' => true,
                     'data' => $result
                 ], 200);
             });
-            
+
             // Add authentication middleware if required, using our new abstraction
             $authManager = \Glueful\Auth\AuthBootstrap::getManager();
-            
+
             if (in_array($routeName, self::$adminProtectedRoutes)) {
                 $dispatcher->pipe(new AuthenticationMiddleware(
                     true, // requires admin
@@ -364,25 +365,25 @@ class Router
                     ['jwt', 'api_key'] // try each auth method in sequence until one succeeds
                 ));
             }
-            
+
             // Add PSR-15 middleware to the pipeline
             foreach (self::$middlewareStack as $middleware) {
                 $dispatcher->pipe($middleware);
             }
-            
+
             // Convert and add legacy middleware to the pipeline
             foreach (self::$legacyMiddlewares as $middleware) {
                 $dispatcher->pipe(self::convertToMiddleware($middleware));
             }
-            
+
             // Process the request through the middleware pipeline
             $response = $dispatcher->handle($request);
-            
+
             // Convert the response to an array
             if ($response instanceof JsonResponse) {
                 return json_decode($response->getContent(), true);
             }
-            
+
             return [
                 'success' => true,
                 'data' => $response->getContent(),
@@ -398,7 +399,7 @@ class Router
             // Consolidated exception handling for all other exceptions
             // Log the exception with detailed context
             self::logException($e);
-            
+
             // Return a consistent error response
             return [
                 'success' => false,
@@ -408,14 +409,14 @@ class Router
             ];
         }
     }
-    
+
     /**
      * Log exception details for debugging
-     * 
+     *
      * Logs exception information to help with troubleshooting.
      * Delegates to the main ExceptionHandler if possible, otherwise falls back
      * to basic error logging.
-     * 
+     *
      * @param \Throwable $exception The exception to log
      */
     private static function logException(\Throwable $exception): void
@@ -427,7 +428,7 @@ class Router
             'trace' => $exception->getTraceAsString(),
             'type' => get_class($exception)
         ];
-        
+
         // Try to use the framework's exception handler if available
         if (class_exists('\\Glueful\\Exceptions\\ExceptionHandler')) {
             try {
@@ -438,10 +439,10 @@ class Router
                 // Fall back to error_log if the exception handler fails
             }
         }
-        
+
         // Fall back to basic error logging
         error_log(sprintf(
-            "Exception: %s, Message: %s, File: %s, Line: %d", 
+            "Exception: %s, Message: %s, File: %s, Line: %d",
             get_class($exception),
             $exception->getMessage(),
             $exception->getFile(),
@@ -449,7 +450,7 @@ class Router
         ));
     }
 
-    public static function getInstance(): Router 
+    public static function getInstance(): Router
     {
         if (self::$instance === null) {
             self::$instance = new self();
@@ -459,13 +460,13 @@ class Router
 
     /**
      * Handle an incoming HTTP request
-     * 
+     *
      * Main entry point for processing requests through the router:
      * 1. Creates request context from current HTTP request
      * 2. Matches request against registered routes
      * 3. Executes appropriate handler with parameters
      * 4. Returns formatted response
-     * 
+     *
      * @param Request|null $request Optional Symfony Request object
      * @return array API response array with success/error information
      */
@@ -475,10 +476,10 @@ class Router
         $response = self::dispatch($request);
         return $response;
     }
-    
+
     /**
      * Get all registered routes
-     * 
+     *
      * @return RouteCollection Symfony route collection
      */
     public static function getRoutes(): RouteCollection
@@ -486,4 +487,3 @@ class Router
         return self::$routes;
     }
 }
-

@@ -8,14 +8,14 @@ use Attribute;
 
 /**
  * Validation Rules Attribute
- * 
+ *
  * Defines validation rules for DTO properties.
  * Can be applied multiple times to the same property.
- * 
+ *
  * Example usage:
  * #[Rules(['required', 'string', 'min:3'])]
  * private string $name;
- * 
+ *
  * Available rules:
  * - required: Field must not be empty
  * - string: Must be string type
@@ -30,8 +30,10 @@ class Rules
 {
     /**
      * Constructor
-     * 
+     *
      * @param array $rules Array of validation rules
      */
-    public function __construct(public array $rules) {}
+    public function __construct(public array $rules)
+    {
+    }
 }

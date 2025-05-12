@@ -8,40 +8,41 @@ use Glueful\Scheduler\JobScheduler;
 
 /**
  * Jobs Controller
- * 
+ *
  * Handles scheduled job management operations:
  * - Listing jobs
  * - Running jobs (all, due, or specific)
  * - Creating new jobs
- * 
+ *
  * @package Glueful\Controllers
  */
-class JobsController {
+class JobsController
+{
     private JobScheduler $scheduler;
 
-    public function __construct() {
+    public function __construct()
+    {
         $this->scheduler = JobScheduler::getInstance();
     }
 
     /**
      * Get all jobs with pagination and filtering
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getScheduledJobs(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             // Build base query
             $jobs = $this->scheduler->getJobs();
-           
+
             if (empty($jobs)) {
                 return Response::ok([], 'No jobs found')->send();
             }
-           
-            return Response::ok($jobs, 'Jobs retrieved successfully')->send();
 
+            return Response::ok($jobs, 'Jobs retrieved successfully')->send();
         } catch (\Exception $e) {
             error_log("Get jobs error: " . $e->getMessage());
             return Response::error(
@@ -53,7 +54,7 @@ class JobsController {
 
     /**
      * Run all due jobs
-     * 
+     *
      * @return mixed HTTP response
      */
     public function runDueJobs(): mixed
@@ -72,7 +73,7 @@ class JobsController {
 
     /**
      * Run all jobs regardless of schedule
-     * 
+     *
      * @return mixed HTTP response
      */
     public function runAllJobs(): mixed
@@ -91,7 +92,7 @@ class JobsController {
 
     /**
      * Run a specific job
-     * 
+     *
      * @param string $jobName Name of the job to run
      * @return mixed HTTP response
      */
@@ -111,14 +112,14 @@ class JobsController {
 
     /**
      * Create a new scheduled job
-     * 
+     *
      * @return mixed HTTP response
      */
     public function createJob(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['job_name']) || !isset($data['job_data'])) {
                 return Response::error('Job name and data are required', Response::HTTP_BAD_REQUEST)->send();
             }

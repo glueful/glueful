@@ -8,14 +8,14 @@ use Attribute;
 
 /**
  * Input Sanitization Attribute
- * 
+ *
  * Defines sanitization filters for DTO properties.
  * Applied before validation to clean input data.
- * 
+ *
  * Example usage:
  * #[Sanitize(['trim', 'strip_tags'])]
  * private string $content;
- * 
+ *
  * Available filters:
  * - trim: Remove whitespace from start/end
  * - strip_tags: Remove HTML/PHP tags
@@ -29,8 +29,10 @@ class Sanitize
 {
     /**
      * Constructor
-     * 
+     *
      * @param array $filters Array of sanitization filters to apply
      */
-    public function __construct(public array $filters) {}
+    public function __construct(public array $filters)
+    {
+    }
 }

@@ -1,11 +1,14 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 /**
  * API Entry Point
- * 
+ *
  * This is the main entry point for the API. Handles request routing,
  * CORS headers, and JSON processing.
  */
+
 require_once __DIR__ . '/../api/bootstrap.php';
 
 use Glueful\API;

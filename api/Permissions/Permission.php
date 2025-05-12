@@ -1,15 +1,16 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Permissions;
 
 /**
  * Permission Constants
- * 
+ *
  * Defines standard permission types for API resources.
  * Used for role-based access control (RBAC) throughout the application.
  */
-class Permission 
+class Permission
 {
     /**
      * View/Read permission
@@ -34,16 +35,16 @@ class Permission
      * Allows modifying existing resources
      */
     public const EDIT = 'D';
-    
+
     /**
      * Get all available permissions
-     * 
+     *
      * Returns array of all permission constants in defined order.
      * Used for permission assignment and validation.
-     * 
+     *
      * @return array<string> Array of permission constants
      */
-    public static function getAll(): array 
+    public static function getAll(): array
     {
         return [
             self::VIEW,
@@ -53,5 +54,3 @@ class Permission
         ];
     }
 }
-
-

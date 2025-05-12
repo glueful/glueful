@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Notifications\Models;
@@ -8,10 +9,10 @@ use JsonSerializable;
 
 /**
  * NotificationTemplate Model
- * 
+ *
  * Represents a notification template for formatting notifications on different channels.
  * Maps to the 'notification_templates' table in the database.
- * 
+ *
  * @package Glueful\Notifications\Models
  */
 class NotificationTemplate implements JsonSerializable
@@ -20,50 +21,50 @@ class NotificationTemplate implements JsonSerializable
      * @var string Unique identifier for the template
      */
     private string $id;
-    
+
     /**
      * @var string|null UUID for the template, used for consistent cross-system identification
      */
     private ?string $uuid;
-    
+
     /**
      * @var string Template name/identifier
      */
     private string $name;
-    
+
     /**
      * @var string Type of notification this template applies to
      */
     private string $notificationType;
-    
+
     /**
      * @var string Channel this template is for (email, sms, database, etc.)
      */
     private string $channel;
-    
+
     /**
      * @var string Template content with placeholders
      */
     private string $content;
-    
+
     /**
      * @var array|null Additional parameters for the template
      */
     private ?array $parameters;
-    
+
     /**
      * @var DateTime When the template was created
      */
     private DateTime $createdAt;
-    
+
     /**
      * @var DateTime|null When the template was last updated
      */
     private ?DateTime $updatedAt;
-    
+
     /**
      * NotificationTemplate constructor.
-     * 
+     *
      * @param string $id Unique identifier
      * @param string $name Template name
      * @param string $notificationType Notification type
@@ -91,30 +92,30 @@ class NotificationTemplate implements JsonSerializable
         $this->createdAt = new DateTime();
         $this->updatedAt = null;
     }
-    
+
     /**
      * Get template ID
-     * 
+     *
      * @return string Template unique identifier
      */
     public function getId(): string
     {
         return $this->id;
     }
-    
+
     /**
      * Get template UUID
-     * 
+     *
      * @return string|null Template UUID
      */
     public function getUuid(): ?string
     {
         return $this->uuid;
     }
-    
+
     /**
      * Set template UUID
-     * 
+     *
      * @param string $uuid Template UUID
      * @return self
      */
@@ -124,20 +125,20 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get template name
-     * 
+     *
      * @return string Template name
      */
     public function getName(): string
     {
         return $this->name;
     }
-    
+
     /**
      * Set template name
-     * 
+     *
      * @param string $name Template name
      * @return self
      */
@@ -147,20 +148,20 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get notification type
-     * 
+     *
      * @return string Notification type
      */
     public function getNotificationType(): string
     {
         return $this->notificationType;
     }
-    
+
     /**
      * Set notification type
-     * 
+     *
      * @param string $notificationType Notification type
      * @return self
      */
@@ -170,20 +171,20 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get channel
-     * 
+     *
      * @return string Channel identifier
      */
     public function getChannel(): string
     {
         return $this->channel;
     }
-    
+
     /**
      * Set channel
-     * 
+     *
      * @param string $channel Channel identifier
      * @return self
      */
@@ -193,20 +194,20 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get template content
-     * 
+     *
      * @return string Template content
      */
     public function getContent(): string
     {
         return $this->content;
     }
-    
+
     /**
      * Set template content
-     * 
+     *
      * @param string $content Template content
      * @return self
      */
@@ -216,20 +217,20 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get template parameters
-     * 
+     *
      * @return array|null Template parameters
      */
     public function getParameters(): ?array
     {
         return $this->parameters;
     }
-    
+
     /**
      * Set template parameters
-     * 
+     *
      * @param array|null $parameters Template parameters
      * @return self
      */
@@ -239,51 +240,51 @@ class NotificationTemplate implements JsonSerializable
         $this->updatedAt = new DateTime();
         return $this;
     }
-    
+
     /**
      * Get created timestamp
-     * 
+     *
      * @return DateTime When the template was created
      */
     public function getCreatedAt(): DateTime
     {
         return $this->createdAt;
     }
-    
+
     /**
      * Get updated timestamp
-     * 
+     *
      * @return DateTime|null When the template was last updated
      */
     public function getUpdatedAt(): ?DateTime
     {
         return $this->updatedAt;
     }
-    
+
     /**
      * Render the template with data
-     * 
+     *
      * Replace placeholders in template content with actual values
-     * 
+     *
      * @param array $data Data to use for variable replacement
      * @return string Rendered content
      */
     public function render(array $data): string
     {
         $content = $this->content;
-        
+
         // Handle simple placeholders like {{variable}}
-        $content = preg_replace_callback('/\{\{([^}]+)\}\}/', function($matches) use ($data) {
+        $content = preg_replace_callback('/\{\{([^}]+)\}\}/', function ($matches) use ($data) {
             $key = trim($matches[1]);
             return $data[$key] ?? '';
         }, $content);
-        
+
         return $content;
     }
-    
+
     /**
      * Convert the template to an array
-     * 
+     *
      * @return array Template as array
      */
     public function toArray(): array
@@ -300,20 +301,20 @@ class NotificationTemplate implements JsonSerializable
             'updated_at' => $this->updatedAt ? $this->updatedAt->format('Y-m-d H:i:s') : null,
         ];
     }
-    
+
     /**
      * Prepare the template for JSON serialization
-     * 
+     *
      * @return array
      */
     public function jsonSerialize(): array
     {
         return $this->toArray();
     }
-    
+
     /**
      * Create a template from a database record
-     * 
+     *
      * @param array $data Database record
      * @return self
      */
@@ -328,15 +329,15 @@ class NotificationTemplate implements JsonSerializable
             isset($data['parameters']) ? (is_string($data['parameters']) ? json_decode($data['parameters'], true) : $data['parameters']) : null,
             $data['uuid'] ?? null
         );
-        
+
         if (!empty($data['created_at'])) {
             $template->createdAt = new DateTime($data['created_at']);
         }
-        
+
         if (!empty($data['updated_at'])) {
             $template->updatedAt = new DateTime($data['updated_at']);
         }
-        
+
         return $template;
     }
 }

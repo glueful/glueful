@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Controllers;
@@ -8,21 +9,23 @@ use Glueful\Helpers\{Request, ExtensionsManager};
 
 /**
  * Controller for managing extensions functionality
- * 
+ *
  * Handles all extension-related operations including listing, enabling, disabling,
  * and retrieving extension health and dependency information.
  */
-class ExtensionsController {
+class ExtensionsController
+{
     /**
      * Constructor for ExtensionsController
      */
-    public function __construct() {
+    public function __construct()
+    {
         // Initialize any dependencies
     }
 
     /**
      * Get all extensions with pagination and status
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getExtensions(): mixed
@@ -34,27 +37,27 @@ class ExtensionsController {
             $enabledExtensions = ExtensionsManager::getEnabledExtensions($extensionConfigFile);
             $coreExtensions = ExtensionsManager::getCoreExtensions($extensionConfigFile);
             $optionalExtensions = ExtensionsManager::getOptionalExtensions($extensionConfigFile);
-            
+
             if (empty($extensions)) {
                 return Response::ok([], 'No extensions found')->send();
             }
-            
+
             foreach ($extensions as $extension) {
                 $reflection = new \ReflectionClass($extension);
                 $shortName = $reflection->getShortName();
-                
+
                 // Get metadata from the extension class if the method exists
                 $metadata = [];
                 if (method_exists($extension, 'getMetadata')) {
                     $metadata = $extension::getMetadata();
                 }
-                
+
                 // Use name from metadata if available, otherwise use the short class name
                 $extensionName = isset($metadata['name']) ? $metadata['name'] : $shortName;
-                
+
                 $isEnabled = in_array($shortName, $enabledExtensions);
                 $tierType = in_array($shortName, $coreExtensions) ? 'core' : 'optional';
-                
+
                 $extensionData[] = [
                     'name' => $extensionName,
                     'description' => $metadata['description'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'description'),
@@ -66,14 +69,14 @@ class ExtensionsController {
                     'extensionId' => $shortName, // Include the extension ID for actions
                 ];
             }
-            
+
             // Group extensions by tier for clearer organization
             $groupedExtensions = [
                 'core' => array_filter($extensionData, fn($ext) => $ext['tier'] === 'core'),
                 'optional' => array_filter($extensionData, fn($ext) => $ext['tier'] === 'optional'),
                 'all' => $extensionData
             ];
-            
+
             return Response::ok([
                 'extensions' => $groupedExtensions,
                 'summary' => [
@@ -83,7 +86,6 @@ class ExtensionsController {
                     'optional' => count($optionalExtensions)
                 ]
             ], 'Extensions retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get extensions error: " . $e->getMessage());
             return Response::error(
@@ -95,20 +97,20 @@ class ExtensionsController {
 
     /**
      * Enable an extension
-     * 
+     *
      * @return mixed HTTP response
      */
     public function enableExtension(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['extension'])) {
                 return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             $extensionName = $data['extension'];
-            
+
             if (!ExtensionsManager::extensionExists($extensionName)) {
                 return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
             }
@@ -121,11 +123,11 @@ class ExtensionsController {
 
             if (!$result['success']) {
                 $statusCode = Response::HTTP_BAD_REQUEST;
-                
+
                 // If the issue is related to missing dependencies, return detailed information
                 if (isset($result['details']) && isset($result['details']['missing_dependencies'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'missing_dependencies' => $result['details']['missing_dependencies'],
@@ -135,7 +137,7 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 return Response::error($result['message'], $statusCode)->send();
             }
 
@@ -144,10 +146,9 @@ class ExtensionsController {
                     'extension' => $extensionName,
                     'tier' => $tierType,
                     'isCoreExtension' => $isCoreExtension
-                ], 
+                ],
                 $result['message']
             )->send();
-
         } catch (\Exception $e) {
             error_log("Enable extension error: " . $e->getMessage());
             return Response::error(
@@ -159,20 +160,20 @@ class ExtensionsController {
 
     /**
      * Disable an extension
-     * 
+     *
      * @return mixed HTTP response
      */
     public function disableExtension(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['extension'])) {
                 return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             $extensionName = $data['extension'];
-            
+
             if (!ExtensionsManager::extensionExists($extensionName)) {
                 return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
             }
@@ -180,19 +181,19 @@ class ExtensionsController {
             // Check if it's a core extension
             $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
             $tierType = $isCoreExtension ? 'core' : 'optional';
-            
+
             // If it's a core extension, we may need to handle differently
             $force = isset($data['force']) && $data['force'] === true;
-            
+
             $result = ExtensionsManager::disableExtension($extensionName, $force);
 
             if (!$result['success']) {
                 $statusCode = Response::HTTP_BAD_REQUEST;
-                
+
                 // If the issue is related to dependent extensions, return detailed information
                 if (isset($result['details']) && isset($result['details']['dependent_extensions'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'dependent_extensions' => $result['details']['dependent_extensions'],
@@ -201,11 +202,11 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 // If it's a core extension without force
                 if (isset($result['details']) && isset($result['details']['is_core'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'is_core' => true,
@@ -215,7 +216,7 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 return Response::error($result['message'], $statusCode)->send();
             }
 
@@ -225,10 +226,9 @@ class ExtensionsController {
                     'tier' => $tierType,
                     'isCoreExtension' => $isCoreExtension,
                     'wasForced' => $force
-                ], 
+                ],
                 $result['message']
             )->send();
-
         } catch (\Exception $e) {
             error_log("Disable extension error: " . $e->getMessage());
             return Response::error(
@@ -240,7 +240,7 @@ class ExtensionsController {
 
     /**
      * Get health status for a specific extension
-     * 
+     *
      * @param array|null $extension Extension data from route params
      * @return mixed HTTP response
      */
@@ -252,13 +252,13 @@ class ExtensionsController {
             }
 
             $extensionName = $extension['name'];
-            
+
             if (!ExtensionsManager::extensionExists($extensionName)) {
                 return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
             }
 
             $health = ExtensionsManager::checkExtensionHealth($extensionName);
-            
+
             // Get the tier information
             $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
             $tierType = $isCoreExtension ? 'core' : 'optional';
@@ -273,7 +273,6 @@ class ExtensionsController {
                 'criticality' => $isCoreExtension ? 'critical' : 'standard',
                 'healthImpact' => $isCoreExtension && !$health['healthy'] ? 'system-critical' : 'extension-only'
             ], 'Extension health status retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get extension health error: " . $e->getMessage());
             return Response::error(
@@ -285,42 +284,42 @@ class ExtensionsController {
 
     /**
      * Get extension dependency graph
-     * 
+     *
      * Returns the dependency graph for all extensions showing
      * which extensions depend on each other.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getExtensionDependencies(): mixed
     {
         try {
             $graph = ExtensionsManager::buildDependencyGraph();
-            
+
             // Add summary information about the tiered nature of the dependencies
             $coreNodes = array_filter($graph['nodes'], fn($node) => $node['type'] === 'core');
             $optionalNodes = array_filter($graph['nodes'], fn($node) => $node['type'] === 'optional');
-            
+
             // Categorize edges by tier
             $coreToCoreEdges = [];
             $coreToOptionalEdges = [];
             $optionalToCoreEdges = [];
             $optionalToOptionalEdges = [];
-            
+
             foreach ($graph['edges'] as $edge) {
                 $fromType = $this->getNodeType($graph['nodes'], $edge['from']);
                 $toType = $this->getNodeType($graph['nodes'], $edge['to']);
-                
+
                 if ($fromType === 'core' && $toType === 'core') {
                     $coreToCoreEdges[] = $edge;
-                } else if ($fromType === 'core' && $toType === 'optional') {
+                } elseif ($fromType === 'core' && $toType === 'optional') {
                     $coreToOptionalEdges[] = $edge;
-                } else if ($fromType === 'optional' && $toType === 'core') {
+                } elseif ($fromType === 'optional' && $toType === 'core') {
                     $optionalToCoreEdges[] = $edge;
-                } else if ($fromType === 'optional' && $toType === 'optional') {
+                } elseif ($fromType === 'optional' && $toType === 'optional') {
                     $optionalToOptionalEdges[] = $edge;
                 }
             }
-            
+
             // Enhance the graph with tiered information
             $tieredGraph = [
                 'graph' => $graph,
@@ -347,10 +346,9 @@ class ExtensionsController {
             ];
 
             return Response::ok(
-                $tieredGraph, 
+                $tieredGraph,
                 'Extension dependencies retrieved successfully'
             )->send();
-
         } catch (\Exception $e) {
             error_log("Get extension dependencies error: " . $e->getMessage());
             return Response::error(
@@ -359,10 +357,10 @@ class ExtensionsController {
             )->send();
         }
     }
-    
+
     /**
      * Helper method to get node type from nodes array by ID
-     * 
+     *
      * @param array $nodes Array of nodes
      * @param string $nodeId Node ID to find
      * @return string Node type (core or optional)
@@ -379,21 +377,21 @@ class ExtensionsController {
 
     /**
      * Get resource usage metrics for extensions
-     * 
+     *
      * Returns detailed performance metrics for enabled extensions
      * including memory usage, execution time, and resource utilization
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getExtensionMetrics(): mixed
     {
         try {
             $metrics = ExtensionsManager::getExtensionMetrics();
-            
+
             // Get extension tier information
             $coreExtensions = ExtensionsManager::getCoreExtensions();
             $optionalExtensions = ExtensionsManager::getOptionalExtensions();
-            
+
             // Group metrics by tier
             $coreMetrics = [];
             $optionalMetrics = [];
@@ -401,7 +399,7 @@ class ExtensionsController {
             $totalOptionalMemory = 0;
             $totalCoreExecutionTime = 0;
             $totalOptionalExecutionTime = 0;
-            
+
             foreach ($metrics['extensions'] as $extName => $extMetrics) {
                 if (in_array($extName, $coreExtensions)) {
                     $coreMetrics[$extName] = $extMetrics;
@@ -413,7 +411,7 @@ class ExtensionsController {
                     $totalOptionalExecutionTime += ($extMetrics['execution_time'] ?? 0);
                 }
             }
-            
+
             // Create tiered metrics response
             $tieredMetrics = [
                 'overall' => [
@@ -436,13 +434,13 @@ class ExtensionsController {
                 ],
                 'all_extensions' => $metrics['extensions']
             ];
-            
+
             // Add percentage distributions
             if ($metrics['total_memory_usage'] > 0) {
                 $tieredMetrics['by_tier']['core']['memory_percentage'] = round(($totalCoreMemory / $metrics['total_memory_usage']) * 100, 2);
                 $tieredMetrics['by_tier']['optional']['memory_percentage'] = round(($totalOptionalMemory / $metrics['total_memory_usage']) * 100, 2);
             }
-            
+
             if ($metrics['total_execution_time'] > 0) {
                 $tieredMetrics['by_tier']['core']['execution_time_percentage'] = round(($totalCoreExecutionTime / $metrics['total_execution_time']) * 100, 2);
                 $tieredMetrics['by_tier']['optional']['execution_time_percentage'] = round(($totalOptionalExecutionTime / $metrics['total_execution_time']) * 100, 2);
@@ -452,7 +450,6 @@ class ExtensionsController {
                 $tieredMetrics,
                 'Extension metrics retrieved successfully'
             )->send();
-
         } catch (\Exception $e) {
             error_log("Get extension metrics error: " . $e->getMessage());
             return Response::error(
@@ -464,23 +461,23 @@ class ExtensionsController {
 
     /**
      * Delete an extension
-     * 
-     * Completely removes an extension from the filesystem and 
+     *
+     * Completely removes an extension from the filesystem and
      * updates the configuration to remove references to it.
-     * 
+     *
      * @return mixed HTTP response
      */
     public function deleteExtension(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             if (!isset($data['extension'])) {
                 return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             $extensionName = $data['extension'];
-            
+
             if (!ExtensionsManager::extensionExists($extensionName)) {
                 return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
             }
@@ -488,19 +485,19 @@ class ExtensionsController {
             // Check if it's a core extension
             $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
             $tierType = $isCoreExtension ? 'core' : 'optional';
-            
+
             // Use force parameter if provided
             $force = isset($data['force']) && $data['force'] === true;
-            
+
             $result = ExtensionsManager::deleteExtension($extensionName, $force);
 
             if (!$result['success']) {
                 $statusCode = Response::HTTP_BAD_REQUEST;
-                
+
                 // If the deletion failed due to extension being enabled
                 if (isset($result['details']) && isset($result['details']['is_enabled'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'is_enabled' => true,
@@ -510,11 +507,11 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 // If it's a core extension without force
                 if (isset($result['details']) && isset($result['details']['is_core'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'is_core' => true,
@@ -524,11 +521,11 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 // If there are dependent extensions
                 if (isset($result['details']) && isset($result['details']['dependent_extensions'])) {
                     return Response::error(
-                        $result['message'], 
+                        $result['message'],
                         $statusCode,
                         [
                             'dependent_extensions' => $result['details']['dependent_extensions'],
@@ -538,7 +535,7 @@ class ExtensionsController {
                         ]
                     )->send();
                 }
-                
+
                 return Response::error($result['message'], $statusCode)->send();
             }
 
@@ -549,10 +546,9 @@ class ExtensionsController {
                     'isCoreExtension' => $isCoreExtension,
                     'wasForced' => $force,
                     'details' => $result['details'] ?? []
-                ], 
+                ],
                 $result['message']
             )->send();
-
         } catch (\Exception $e) {
             error_log("Delete extension error: " . $e->getMessage());
             return Response::error(

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Cron;
@@ -12,10 +13,10 @@ use Glueful\Repository\NotificationRepository;
 
 /**
  * NotificationRetryProcessor
- * 
+ *
  * Processes pending notification retries.
  * Intended to be run on a schedule from the scheduler.
- * 
+ *
  * @package Glueful\Cron
  */
 class NotificationRetryProcessor
@@ -24,20 +25,20 @@ class NotificationRetryProcessor
      * @var NotificationRetryService Notification retry service
      */
     private NotificationRetryService $retryService;
-    
+
     /**
      * @var NotificationService Notification service
      */
     private NotificationService $notificationService;
-    
+
     /**
      * @var LogManager|null Logger instance
      */
     private ?LogManager $logger;
-    
+
     /**
      * Constructor
-     * 
+     *
      * @param NotificationRetryService|null $retryService Notification retry service
      * @param NotificationService|null $notificationService Notification service
      * @param LogManager|null $logger Logger instance
@@ -53,7 +54,7 @@ class NotificationRetryProcessor
         } else {
             $this->retryService = $retryService;
         }
-        
+
         // Create notification service if not provided
         if ($notificationService === null) {
             $notificationRepository = new NotificationRepository();
@@ -63,26 +64,26 @@ class NotificationRetryProcessor
         } else {
             $this->notificationService = $notificationService;
         }
-        
+
         $this->logger = $logger;
     }
-    
+
     /**
      * Handle the scheduled job execution
-     * 
+     *
      * @param array $params Command parameters
      * @return array|bool Result of the execution
      */
     public function handle(array $params = [])
     {
         $limit = $params['limit'] ?? 50;
-        
+
         // Ensure retry queue table exists
         $this->retryService->ensureRetryQueueTableExists();
-        
+
         // Process due retries
         $results = $this->retryService->processDueRetries($limit, $this->notificationService);
-        
+
         // Log the results
         if ($this->logger) {
             $this->logger->info("Notification retry processing completed", [
@@ -92,7 +93,7 @@ class NotificationRetryProcessor
                 'removed' => $results['removed']
             ]);
         }
-        
+
         return $results;
     }
 }

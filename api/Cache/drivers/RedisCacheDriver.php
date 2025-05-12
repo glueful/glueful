@@ -8,7 +8,7 @@ use Redis;
 
 /**
  * Redis Cache Driver
- * 
+ *
  * Implements cache operations using Redis backend.
  * Provides sorted set support and automatic serialization.
  */
@@ -19,7 +19,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Constructor
-     * 
+     *
      * @param Redis $redis Configured Redis connection
      */
     public function __construct(Redis $redis)
@@ -29,7 +29,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Add to sorted set
-     * 
+     *
      * @param string $key Set key
      * @param array $scoreValues Score-value pairs
      * @return bool True if added successfully
@@ -41,7 +41,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Remove set members by score
-     * 
+     *
      * @param string $key Set key
      * @param string $min Minimum score
      * @param string $max Maximum score
@@ -54,7 +54,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Get set cardinality
-     * 
+     *
      * @param string $key Set key
      * @return int Number of members
      */
@@ -65,7 +65,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Get set range
-     * 
+     *
      * @param string $key Set key
      * @param int $start Start index
      * @param int $stop End index
@@ -78,7 +78,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Set key expiration
-     * 
+     *
      * @param string $key Cache key
      * @param int $seconds Time until expiration
      * @return bool True if expiration set
@@ -90,7 +90,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Delete key
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted successfully
      */
@@ -101,9 +101,9 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Get cached value
-     * 
+     *
      * Retrieves and unserializes stored value.
-     * 
+     *
      * @param string $key Cache key
      * @return mixed Cached value or null if not found
      */
@@ -115,9 +115,9 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Store value in cache
-     * 
+     *
      * Serializes and stores value with expiration.
-     * 
+     *
      * @param string $key Cache key
      * @param mixed $value Value to store
      * @param int $ttl Time to live in seconds
@@ -130,7 +130,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Delete cached value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted successfully
      */
@@ -141,7 +141,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Increment numeric value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if incremented successfully
      */
@@ -152,7 +152,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Get remaining TTL
-     * 
+     *
      * @param string $key Cache key
      * @return int Remaining time in seconds
      */
@@ -163,7 +163,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
     /**
      * Clear all cached values
-     * 
+     *
      * @return bool True if cache cleared successfully
      */
     public function flush(): bool

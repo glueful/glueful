@@ -6,7 +6,7 @@ namespace Glueful\Cache\Drivers;
 
 /**
  * Cache Driver Interface
- * 
+ *
  * Defines required methods for cache driver implementations.
  * Supports basic caching, sorted sets, and key operations.
  */
@@ -14,7 +14,7 @@ interface CacheDriverInterface
 {
     /**
      * Get cached value
-     * 
+     *
      * @param string $key Cache key
      * @return mixed Cached value or null if not found
      */
@@ -22,7 +22,7 @@ interface CacheDriverInterface
 
     /**
      * Store value in cache
-     * 
+     *
      * @param string $key Cache key
      * @param mixed $value Value to store
      * @param int $ttl Time to live in seconds
@@ -32,7 +32,7 @@ interface CacheDriverInterface
 
     /**
      * Delete cached value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted successfully
      */
@@ -40,7 +40,7 @@ interface CacheDriverInterface
 
     /**
      * Increment numeric value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if incremented successfully
      */
@@ -48,7 +48,7 @@ interface CacheDriverInterface
 
     /**
      * Get remaining TTL
-     * 
+     *
      * @param string $key Cache key
      * @return int Remaining time in seconds
      */
@@ -56,14 +56,14 @@ interface CacheDriverInterface
 
     /**
      * Clear all cached values
-     * 
+     *
      * @return bool True if cache cleared successfully
      */
     public function flush(): bool;
-    
+
     /**
      * Add to sorted set
-     * 
+     *
      * @param string $key Set key
      * @param array $scoreValues Score-value pairs
      * @return bool True if added successfully
@@ -72,7 +72,7 @@ interface CacheDriverInterface
 
     /**
      * Remove set members by score
-     * 
+     *
      * @param string $key Set key
      * @param string $min Minimum score
      * @param string $max Maximum score
@@ -82,7 +82,7 @@ interface CacheDriverInterface
 
     /**
      * Get set cardinality
-     * 
+     *
      * @param string $key Set key
      * @return int Number of members
      */
@@ -90,17 +90,17 @@ interface CacheDriverInterface
 
     /**
      * Get set range
-     * 
+     *
      * @param string $key Set key
      * @param int $start Start index
      * @param int $stop End index
      * @return array Range of members
      */
     public function zrange(string $key, int $start, int $stop): array;
-    
+
     /**
      * Set key expiration
-     * 
+     *
      * @param string $key Cache key
      * @param int $seconds Time until expiration
      * @return bool True if expiration set
@@ -109,7 +109,7 @@ interface CacheDriverInterface
 
     /**
      * Delete key
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted successfully
      */

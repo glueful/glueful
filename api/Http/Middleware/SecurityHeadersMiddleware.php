@@ -9,10 +9,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Security Headers Middleware
- * 
+ *
  * PSR-15 compatible middleware that adds essential security headers to responses.
  * Helps protect against common web vulnerabilities and improves security posture.
- * 
+ *
  * Features:
  * - Content Security Policy (CSP)
  * - Cross-Site Scripting (XSS) Protection
@@ -25,10 +25,10 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
 {
     /** @var array Security header configuration */
     private array $config;
-    
+
     /**
      * Create a new security headers middleware
-     * 
+     *
      * @param array $config Security header configuration
      */
     public function __construct(array $config = [])
@@ -70,10 +70,10 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
             ],
         ], $config);
     }
-    
+
     /**
      * Process the request through the security headers middleware
-     * 
+     *
      * @param Request $request The incoming request
      * @param RequestHandlerInterface $handler The next handler in the pipeline
      * @return Response The response
@@ -82,16 +82,16 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
     {
         // Process the request through the middleware pipeline
         $response = $handler->handle($request);
-        
+
         // Add security headers to the response
         $this->addSecurityHeaders($response, $request);
-        
+
         return $response;
     }
-    
+
     /**
      * Add security headers to the response
-     * 
+     *
      * @param Response $response The response
      * @param Request $request The request (for checking HTTPS)
      */
@@ -101,88 +101,88 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
         if ($this->config['content_security_policy']['enabled']) {
             $this->addContentSecurityPolicy($response);
         }
-        
+
         // X-Content-Type-Options
         if ($this->config['x_content_type_options']) {
             $response->headers->set('X-Content-Type-Options', 'nosniff');
         }
-        
+
         // X-Frame-Options
         if ($this->config['x_frame_options']) {
             $response->headers->set('X-Frame-Options', $this->config['x_frame_options']);
         }
-        
+
         // X-XSS-Protection
         if ($this->config['x_xss_protection']) {
             $response->headers->set('X-XSS-Protection', $this->config['x_xss_protection']);
         }
-        
+
         // Strict-Transport-Security (only for HTTPS requests)
         if ($this->config['strict_transport_security']['enabled'] && $request && $request->isSecure()) {
             $this->addStrictTransportSecurity($response);
         }
-        
+
         // Referrer-Policy
         if ($this->config['referrer_policy']) {
             $response->headers->set('Referrer-Policy', $this->config['referrer_policy']);
         }
-        
+
         // Permissions-Policy
         if ($this->config['permissions_policy']['enabled']) {
             $this->addPermissionsPolicy($response);
         }
     }
-    
+
     /**
      * Add Content Security Policy header
-     * 
+     *
      * @param Response $response The response
      */
     private function addContentSecurityPolicy(Response $response): void
     {
         $directives = [];
-        
+
         foreach ($this->config['content_security_policy']['directives'] as $directive => $sources) {
             $directives[] = $directive . ' ' . implode(' ', $sources);
         }
-        
+
         $headerName = $this->config['content_security_policy']['report_only']
             ? 'Content-Security-Policy-Report-Only'
             : 'Content-Security-Policy';
-        
+
         $response->headers->set($headerName, implode('; ', $directives));
     }
-    
+
     /**
      * Add Strict-Transport-Security header
-     * 
+     *
      * @param Response $response The response
      */
     private function addStrictTransportSecurity(Response $response): void
     {
         $config = $this->config['strict_transport_security'];
         $value = 'max-age=' . $config['max_age'];
-        
+
         if ($config['include_subdomains']) {
             $value .= '; includeSubDomains';
         }
-        
+
         if ($config['preload']) {
             $value .= '; preload';
         }
-        
+
         $response->headers->set('Strict-Transport-Security', $value);
     }
-    
+
     /**
      * Add Permissions-Policy header
-     * 
+     *
      * @param Response $response The response
      */
     private function addPermissionsPolicy(Response $response): void
     {
         $directives = [];
-        
+
         foreach ($this->config['permissions_policy']['directives'] as $directive => $sources) {
             // Format the sources according to the spec
             $formattedSources = array_map(function ($source) {
@@ -194,10 +194,10 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
                     return '"' . $source . '"';
                 }
             }, $sources);
-            
+
             $directives[] = $directive . '=(' . implode(' ', $formattedSources) . ')';
         }
-        
+
         $response->headers->set('Permissions-Policy', implode(', ', $directives));
     }
 }
