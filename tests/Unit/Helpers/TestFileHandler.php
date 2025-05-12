@@ -19,6 +19,8 @@ class TestFileHandler extends OriginalFileHandler
     
     /**
      * Mock auth service for testing
+     * This property is needed for tests but doesn't exist in the original FileHandler class
+     * We explicitly define it here to make the tests work without modifying the original class
      */
     public $auth;
     

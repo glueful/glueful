@@ -7,9 +7,9 @@ use Exception;
 
 /**
  * PostgreSQL Schema Manager Implementation
- * 
+ *
  * Advanced schema manager with PostgreSQL-specific capabilities:
- * 
+ *
  * Core Features:
  * - Multi-schema support with search_path
  * - Table inheritance and partitioning
@@ -17,20 +17,20 @@ use Exception;
  * - Advanced constraints (EXCLUDE, CHECK)
  * - Concurrent index operations
  * - TOAST storage management
- * 
+ *
  * Performance Features:
  * - Parallel query execution
  * - Tablespace management
  * - Vacuum operations
  * - Statistics management
  * - Index-only scans
- * 
+ *
  * Requirements:
  * - PostgreSQL 10.0+
  * - PDO PostgreSQL extension
  * - Superuser or appropriate grants
  * - pg_stat_statements extension
- * 
+ *
  * Example usage:
  * ```php
  * $schema
@@ -46,11 +46,11 @@ use Exception;
  *     ]);
  * ```
  */
-class PostgreSQLSchemaManager extends SchemaManager
+class PostgreSQLSchemaManager implements SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
-    
+
     /** @var string|null Name of the current table being operated on */
     protected ?string $currentTable = null;
 
@@ -61,7 +61,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Create PostgreSQL table with advanced features
-     * 
+     *
      * Supported Features:
      * - Custom column types and domains
      * - Table inheritance (INHERITS)
@@ -71,13 +71,13 @@ class PostgreSQLSchemaManager extends SchemaManager
      * - Column compression
      * - Identity columns
      * - Generated columns
-     * 
+     *
      * Storage Parameters:
      * - fillfactor
      * - autovacuum_*
      * - toast_tuple_target
      * - parallel_workers
-     * 
+     *
      * @throws Exception On syntax error or permission denied
      */
     public function createTable(string $table, array $columns, array $options = []): self
@@ -100,7 +100,7 @@ class PostgreSQLSchemaManager extends SchemaManager
         $sql = "CREATE TABLE IF NOT EXISTS \"$table\" (" . implode(", ", $columnDefinitions) . ")";
 
         $this->pdo->exec($sql);
-        
+
         // Set the current table for chained operations
         $this->currentTable = $table;
 
@@ -109,7 +109,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Add PostgreSQL-specific indexes
-     * 
+     *
      * Index Types:
      * - B-tree (default)
      * - GiST (geometric/custom)
@@ -117,14 +117,14 @@ class PostgreSQLSchemaManager extends SchemaManager
      * - SP-GiST (space partitioned)
      * - BRIN (block range)
      * - Hash
-     * 
+     *
      * Features:
      * - Concurrent creation
      * - Partial indexes
      * - Expression indexes
      * - Covering indexes (INCLUDE)
      * - Custom operators
-     * 
+     *
      * @throws Exception On duplicate or invalid index
      */
     public function addIndex(array $indexes): self
@@ -132,12 +132,12 @@ class PostgreSQLSchemaManager extends SchemaManager
         if (!isset($indexes[0]) || !is_array($indexes[0])) {
             $indexes = [$indexes]; // Convert single index to array format
         }
-    
+
         foreach ($indexes as $index) {
             if (!isset($index['type'], $index['column'])) {
                 throw new \InvalidArgumentException("Each index must have a 'type' and 'column'.");
             }
-            
+
             // If table is not specified, use the current table from chain
             if (!isset($index['table'])) {
                 if ($this->currentTable === null) {
@@ -149,26 +149,27 @@ class PostgreSQLSchemaManager extends SchemaManager
                 // Update current table for chaining
                 $this->currentTable = $table;
             }
-    
+
             $column = $index['column'];
             $type = strtoupper($index['type']);
-    
+
             // Generate a consistent index name for checking
             if (is_array($column)) {
-                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                $columnPart = implode("_", $column);
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_{$columnPart}_idx";
             } else {
                 $indexNameToCheck = "{$table}_{$column}_idx";
             }
-    
+
             // Check if index already exists in PostgreSQL
             $existingIndexes = $this->pdo
                 ->query("SELECT indexname FROM pg_indexes WHERE tablename = '$table'")
                 ->fetchAll(PDO::FETCH_COLUMN);
-    
+
             if (in_array($indexNameToCheck, $existingIndexes)) {
                 continue; // Skip if index exists
             }
-    
+
             if ($type === 'PRIMARY KEY') {
                 // Handle PRIMARY KEY indexes
                 if (is_array($column)) {
@@ -200,18 +201,18 @@ class PostgreSQLSchemaManager extends SchemaManager
                     $sql = "CREATE INDEX \"{$table}_{$column}_idx\" ON \"$table\" (\"$column\")";
                 }
             }
-    
+
             $this->pdo->exec($sql);
         }
-    
+
         return $this;
     }
 
     /**
      * Drop PostgreSQL table
-     * 
+     *
      * Removes table with CASCADE option for dependent objects.
-     * 
+     *
      * @param string $table Table to drop
      * @return bool True if table dropped successfully
      * @throws Exception If table drop fails
@@ -229,7 +230,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Add column with PostgreSQL features
-     * 
+     *
      * Column Features:
      * - All PostgreSQL types
      * - Custom types/domains
@@ -238,12 +239,12 @@ class PostgreSQLSchemaManager extends SchemaManager
      * - Identity columns
      * - Exclusion constraints
      * - LIKE dependency
-     * 
+     *
      * Storage Options:
      * - Compression methods
      * - TOAST strategies
      * - Statistics targets
-     * 
+     *
      * @throws Exception On invalid type or permission denied
      */
     public function addColumn(string $table, string $column, array $definition): bool
@@ -251,7 +252,7 @@ class PostgreSQLSchemaManager extends SchemaManager
         try {
             $columnDef = implode(' ', $definition);
             $sql = "ALTER TABLE {$table} ADD COLUMN {$column} {$columnDef};";
-            
+
             // Execute the query - if it doesn't throw an exception, consider it successful
             $this->pdo->exec($sql);
             return true;
@@ -262,9 +263,9 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Drop column from PostgreSQL table
-     * 
+     *
      * Removes column with CASCADE option for dependencies.
-     * 
+     *
      * @param string $table Target table
      * @param string $column Column to remove
      * @return bool True if column dropped successfully
@@ -283,7 +284,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Creates PostgreSQL index
-     * 
+     *
      * Advanced indexing features:
      * - Concurrent index creation
      * - Partial indexes
@@ -291,9 +292,9 @@ class PostgreSQLSchemaManager extends SchemaManager
      * - Custom operator classes
      * - Index types (btree, hash, gin, gist, etc)
      * - Index storage parameters
-     * 
+     *
      * Note: Concurrent indexing requires transaction management
-     * 
+     *
      * @param string $table Target table
      * @param string $indexName Name for new index
      * @param array $columns Columns to index
@@ -317,9 +318,9 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Drop PostgreSQL index
-     * 
+     *
      * Removes index with CONCURRENTLY option when possible.
-     * 
+     *
      * @param string $table Target table
      * @param string $indexName Index to remove
      * @return bool True if index dropped successfully
@@ -338,20 +339,21 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Get PostgreSQL tables
-     * 
+     *
      * Retrieves tables from information_schema with:
      * - Schema filtering
      * - System table exclusion
      * - Proper escaping
-     * 
+     *
+     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws Exception If table list retrieval fails
      */
-    public function getTables(): array
+    public function getTables(?bool $includeSchema = false): array
     {
         try {
             $query = "
-                SELECT table_name 
+                SELECT table_name" . ($includeSchema ? ", table_schema" : "") . "
                 FROM information_schema.tables 
                 WHERE table_schema = 'public'
                 ORDER BY table_name;
@@ -366,20 +368,20 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Get PostgreSQL table information
-     * 
+     *
      * Returns Metadata:
      * - Column definitions (name, type, nullable, default)
      * - Constraint details (primary, foreign keys, unique)
      * - Index information with types
      * - Relationship data with referenced tables
      * - Column attributes (identity, generated)
-     * 
+     *
      * System Views Used:
      * - information_schema.columns
      * - pg_constraint
      * - pg_indexes
      * - pg_attribute
-     * 
+     *
      * @param string $tableName The table name to get column information for
      * @return array Comprehensive column information including relationships and indexes
      * @throws Exception On invalid table or permission denied
@@ -405,7 +407,7 @@ class PostgreSQLSchemaManager extends SchemaManager
             $columnStmt = $this->pdo->prepare($columnQuery);
             $columnStmt->execute(['table' => $tableName]);
             $columns = $columnStmt->fetchAll(PDO::FETCH_ASSOC);
-            
+
             // Format columns into a more usable structure with column name as key
             $formattedColumns = [];
             foreach ($columns as $column) {
@@ -426,7 +428,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                     'indexes' => []
                 ];
             }
-            
+
             // Get primary key constraints
             try {
                 $pkQuery = "
@@ -441,7 +443,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                 $pkStmt = $this->pdo->prepare($pkQuery);
                 $pkStmt->execute(['table' => $tableName]);
                 $pks = $pkStmt->fetchAll(PDO::FETCH_COLUMN);
-                
+
                 // Mark primary key columns
                 foreach ($pks as $pk) {
                     if (isset($formattedColumns[$pk])) {
@@ -451,7 +453,7 @@ class PostgreSQLSchemaManager extends SchemaManager
             } catch (Exception $e) {
                 // Continue without primary key information
             }
-            
+
             // Get unique constraints
             try {
                 $uniqueQuery = "
@@ -466,7 +468,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                 $uniqueStmt = $this->pdo->prepare($uniqueQuery);
                 $uniqueStmt->execute(['table' => $tableName]);
                 $uniques = $uniqueStmt->fetchAll(PDO::FETCH_COLUMN);
-                
+
                 // Mark unique constraint columns
                 foreach ($uniques as $unique) {
                     if (isset($formattedColumns[$unique])) {
@@ -476,7 +478,7 @@ class PostgreSQLSchemaManager extends SchemaManager
             } catch (Exception $e) {
                 // Continue without unique constraint information
             }
-            
+
             // Get indexes
             try {
                 $indexQuery = "
@@ -501,7 +503,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                 $indexStmt = $this->pdo->prepare($indexQuery);
                 $indexStmt->execute(['table' => $tableName]);
                 $indexes = $indexStmt->fetchAll(PDO::FETCH_ASSOC);
-                
+
                 // Add index information to columns
                 foreach ($indexes as $index) {
                     $columnName = $index['column_name'];
@@ -517,7 +519,7 @@ class PostgreSQLSchemaManager extends SchemaManager
             } catch (Exception $e) {
                 // Continue without index information
             }
-            
+
             // Get foreign key constraints (relationships)
             try {
                 $fkQuery = "
@@ -539,7 +541,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                 $fkStmt = $this->pdo->prepare($fkQuery);
                 $fkStmt->execute(['table' => $tableName]);
                 $foreignKeys = $fkStmt->fetchAll(PDO::FETCH_ASSOC);
-                
+
                 // Map PostgreSQL's action codes to readable text
                 $actionMap = [
                     'a' => 'NO ACTION',
@@ -548,7 +550,7 @@ class PostgreSQLSchemaManager extends SchemaManager
                     'n' => 'SET NULL',
                     'd' => 'SET DEFAULT'
                 ];
-                
+
                 // Add relationship information to columns
                 foreach ($foreignKeys as $fk) {
                     $columnName = $fk['column_name'];
@@ -566,7 +568,7 @@ class PostgreSQLSchemaManager extends SchemaManager
             } catch (Exception $e) {
                 // Continue without foreign key information
             }
-            
+
             return array_values($formattedColumns); // Convert back to indexed array
         } catch (Exception $e) {
             throw new Exception("Error fetching columns for table '{$tableName}': " . $e->getMessage());
@@ -575,13 +577,13 @@ class PostgreSQLSchemaManager extends SchemaManager
 
      /**
      * Manage foreign key enforcement
-     * 
+     *
      * Uses session_replication_role for:
      * - Bulk data loading
      * - Schema changes
      * - Replication setup
      * - Disaster recovery
-     * 
+     *
      * Note: Requires superuser or replication privileges
      */
     public function disableForeignKeyChecks(): void
@@ -596,7 +598,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Gets PostgreSQL version information
-     * 
+     *
      * Returns detailed version data including:
      * - Server version
      * - Compilation options
@@ -609,9 +611,9 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Check if a table exists in the database
-     * 
+     *
      * Uses information_schema for standard-compliant checking.
-     * 
+     *
      * @param string $table Name of the table to check
      * @return bool True if the table exists, false otherwise
      * @throws \RuntimeException If the check cannot be completed due to database errors
@@ -634,19 +636,19 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Calculate PostgreSQL table metrics
-     * 
+     *
      * Size Components:
      * - Main relation size
      * - TOAST relation
      * - Index sizes
      * - FSM and VM sizes
-     * 
+     *
      * Additional Stats:
      * - Bloat estimation
      * - Buffer usage
      * - IO timing
      * - Tuple statistics
-     * 
+     *
      * Note: Requires pg_stat_user_tables access
      */
     public function getTableSize(string $table): int
@@ -660,12 +662,12 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Get the total number of rows in a table
-     * 
+     *
      * Uses optimized approach:
      * - For small tables: Uses exact COUNT(*)
      * - For large tables: Can use statistics when available
      * - Takes into account table visibility rules
-     * 
+     *
      * @param string $table Name of the table to count rows from
      * @return int Number of rows in the table
      * @throws \RuntimeException If table doesn't exist
@@ -685,14 +687,14 @@ class PostgreSQLSchemaManager extends SchemaManager
             ");
             $stmt->execute(['table' => $table]);
             $result = $stmt->fetchColumn();
-            
+
             // If n_live_tup is NULL or statistics are stale, fall back to COUNT(*)
             if ($result === false || $result === null) {
                 $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM \"$table\"");
                 $stmt->execute();
                 $result = $stmt->fetchColumn();
             }
-            
+
             return (int)($result ?: 0);
         } catch (\PDOException $e) {
             throw new \RuntimeException("Failed to get row count for table '$table': " . $e->getMessage(), 0, $e);
@@ -701,7 +703,7 @@ class PostgreSQLSchemaManager extends SchemaManager
 
     /**
      * Adds foreign key constraints to PostgreSQL tables
-     * 
+     *
      * Creates foreign key constraints with:
      * - Support for multiple constraints in one call
      * - ON DELETE behavior specification (CASCADE, SET NULL, RESTRICT, NO ACTION)
@@ -709,10 +711,10 @@ class PostgreSQLSchemaManager extends SchemaManager
      * - Custom constraint naming
      * - Validation options
      * - Match types (FULL, PARTIAL, SIMPLE)
-     * 
-     * When used in a chain after createTable(), the table parameter is optional 
+     *
+     * When used in a chain after createTable(), the table parameter is optional
      * and will use the current table from the previous operation.
-     * 
+     *
      * @param array $foreignKeys Array of foreign key definitions
      * @return self For method chaining
      * @throws Exception On constraint creation failure
@@ -723,7 +725,7 @@ class PostgreSQLSchemaManager extends SchemaManager
         if (!isset($foreignKeys[0]) || !is_array($foreignKeys[0])) {
             $foreignKeys = [$foreignKeys];
         }
-        
+
         foreach ($foreignKeys as $foreignKey) {
             // Check if we're referencing the current table in a chain
             if (!isset($foreignKey['table'])) {
@@ -736,58 +738,61 @@ class PostgreSQLSchemaManager extends SchemaManager
                 // Update current table for possible future chain operations
                 $this->currentTable = $table;
             }
-            
+
             if (!isset($foreignKey['column'], $foreignKey['references'], $foreignKey['on'])) {
                 throw new \InvalidArgumentException("Foreign key must have 'column', 'references', and 'on' defined.");
             }
-            
+
             $column = $foreignKey['column'];
             $referencesTable = $foreignKey['on'];
             $referencesColumn = $foreignKey['references'];
-            $constraintName = $foreignKey['name'] ?? "fk_{$table}_".(is_array($column) ? implode("_", $column) : $column);
-            
+            $nameSuffix = is_array($column) ? implode("_", $column) : $column;
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_{$nameSuffix}";
+
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("\",\"", $column) : $column;
-            $referencesColumnStr = is_array($referencesColumn) ? implode("\",\"", $referencesColumn) : $referencesColumn;
-            
+            $referencesColumnStr = is_array($referencesColumn)
+                ? implode("\",\"", $referencesColumn)
+                : $referencesColumn;
+
             $sql = "ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$constraintName}\" 
                     FOREIGN KEY (\"{$columnStr}\") REFERENCES \"{$referencesTable}\" (\"{$referencesColumnStr}\")";
-            
+
             if (isset($foreignKey['onDelete'])) {
                 $sql .= " ON DELETE {$foreignKey['onDelete']}";
             }
-            
+
             if (isset($foreignKey['onUpdate'])) {
                 $sql .= " ON UPDATE {$foreignKey['onUpdate']}";
             }
-            
+
             // PostgreSQL-specific options
             if (isset($foreignKey['match'])) {
                 $sql .= " MATCH {$foreignKey['match']}"; // SIMPLE, FULL, PARTIAL
             }
-            
+
             if (isset($foreignKey['deferrable']) && $foreignKey['deferrable']) {
                 $sql .= " DEFERRABLE";
-                
+
                 if (isset($foreignKey['initiallyDeferred']) && $foreignKey['initiallyDeferred']) {
                     $sql .= " INITIALLY DEFERRED";
                 } else {
                     $sql .= " INITIALLY IMMEDIATE";
                 }
             }
-            
+
             $this->pdo->exec($sql);
         }
-        
+
         return $this;
     }
 
     /**
      * Drop foreign key constraint from PostgreSQL table
-     * 
+     *
      * Removes the specified foreign key constraint using PostgreSQL's
      * ALTER TABLE DROP CONSTRAINT syntax.
-     * 
+     *
      * @param string $table Target table containing the constraint
      * @param string $constraintName Name of the foreign key constraint to remove
      * @return bool True if constraint was successfully removed
@@ -810,11 +815,13 @@ class PostgreSQLSchemaManager extends SchemaManager
                 'table' => $table,
                 'constraint_name' => $constraintName
             ]);
-            
+
             if ($stmt->fetchColumn() == 0) {
-                throw new \RuntimeException("Foreign key constraint '{$constraintName}' does not exist on table '{$table}'");
+                throw new \RuntimeException(
+                    "Foreign key constraint '{$constraintName}' does not exist on table '{$table}'"
+                );
             }
-            
+
             // Use double quotes for identifiers in PostgreSQL
             $sql = "ALTER TABLE \"{$table}\" DROP CONSTRAINT \"{$constraintName}\"";
             return $this->pdo->exec($sql) !== false;
@@ -822,8 +829,9 @@ class PostgreSQLSchemaManager extends SchemaManager
             if ($e instanceof \RuntimeException) {
                 throw $e; // Re-throw the specific exception about constraint not existing
             }
-            throw new Exception("Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage());
+            throw new Exception(
+                "Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage()
+            );
         }
     }
 }
-

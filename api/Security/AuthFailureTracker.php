@@ -8,7 +8,7 @@ use Glueful\Cache\CacheEngine;
 
 /**
  * Authentication Failure Tracker
- * 
+ *
  * Tracks and manages failed authentication attempts.
  * Implements temporary blocking after excessive failures.
  */
@@ -16,10 +16,10 @@ class AuthFailureTracker
 {
     /** @var string Cache key prefix for failed attempts */
     private const PREFIX = 'auth_fail:';
-    
+
     /**
      * Constructor
-     * 
+     *
      * @param string $key Identifier (user ID or IP)
      * @param int $maxAttempts Maximum failed attempts before blocking
      * @param int $decaySeconds Block duration in seconds
@@ -34,13 +34,13 @@ class AuthFailureTracker
 
     /**
      * Record authentication failure
-     * 
+     *
      * Increments failure count and sets decay timer.
      */
     public function recordFailure(): void
     {
         $key = $this->getCacheKey();
-        $attempts = (int)CacheEngine::get($key) ?? 0;
+        $attempts = (int)(CacheEngine::get($key) ?? 0);
 
         if ($attempts === 0) {
             CacheEngine::set($key, 1, $this->decaySeconds);
@@ -51,17 +51,17 @@ class AuthFailureTracker
 
     /**
      * Get current failure count
-     * 
+     *
      * @return int Number of failed attempts
      */
     public function getFailures(): int
     {
-        return (int)CacheEngine::get($this->getCacheKey()) ?? 0;
+        return (int)(CacheEngine::get($this->getCacheKey()) ?? 0);
     }
 
     /**
      * Reset failure counter
-     * 
+     *
      * Clears all tracked failures for this identifier.
      */
     public function resetFailures(): void
@@ -71,7 +71,7 @@ class AuthFailureTracker
 
     /**
      * Check if authentication is blocked
-     * 
+     *
      * @return bool True if max attempts exceeded
      */
     public function isBlocked(): bool
@@ -81,7 +81,7 @@ class AuthFailureTracker
 
     /**
      * Get remaining block time
-     * 
+     *
      * @return int Seconds until block expires
      */
     public function getRetryAfter(): int
@@ -91,7 +91,7 @@ class AuthFailureTracker
 
     /**
      * Get cache key for identifier
-     * 
+     *
      * @return string Prefixed cache key
      */
     private function getCacheKey(): string
@@ -101,7 +101,7 @@ class AuthFailureTracker
 
     /**
      * Create user-specific tracker
-     * 
+     *
      * @param string $userId User identifier
      * @param int $maxAttempts Maximum allowed failures
      * @param int $decaySeconds Block duration
@@ -114,7 +114,7 @@ class AuthFailureTracker
 
     /**
      * Create IP-specific tracker
-     * 
+     *
      * @param string $ip IP address to track
      * @param int $maxAttempts Maximum allowed failures
      * @param int $decaySeconds Block duration

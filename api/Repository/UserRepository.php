@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Repository;
@@ -10,37 +11,39 @@ use Glueful\Database\QueryBuilder;
 
 /**
  * User Repository
- * 
+ *
  * Handles all database operations related to users:
  * - User retrieval by various identifiers
  * - Profile data management
  * - Role association lookups
  * - Password management
- * 
+ *
  * This repository implements the repository pattern to abstract
  * database operations and provide a clean API for user data access.
- * 
+ *
  * @package Glueful\Repository
  */
-class UserRepository {
+class UserRepository
+{
     /** @var QueryBuilder Database query builder instance */
     private QueryBuilder $queryBuilder;
-    
+
     /** @var Validator Data validator instance */
     private Validator $validator;
-    
+
     /** @var array Standard user fields to retrieve */
     private array $userFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
-    
+
     /** @var array Standard profile fields to retrieve */
     private array $userProfileFields = ['first_name', 'last_name', 'photo_uuid', 'photo_url'];
 
     /**
      * Initialize repository
-     * 
+     *
      * Sets up database connection and dependencies
      */
-    public function __construct() {
+    public function __construct()
+    {
         $connection = new Connection();
         $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->validator = new Validator();
@@ -48,14 +51,15 @@ class UserRepository {
 
     /**
      * Find user by username
-     * 
+     *
      * Retrieves user record using the username identifier.
      * Performs validation on the username format before querying.
-     * 
+     *
      * @param string $username Username to search for
      * @return array|null User data or null if not found, or validation errors array
      */
-    public function findByUsername(string $username): ?array {
+    public function findByUsername(string $username): ?array
+    {
         // Validate username format
         $usernameDTO = new UsernameDTO($username);
         $usernameDTO->username = $username;
@@ -78,16 +82,17 @@ class UserRepository {
 
     /**
      * Find user by email address
-     * 
+     *
      * Retrieves user record using the email identifier.
      * Performs validation on the email format before querying.
-     * 
+     *
      * @param string $email Email address to search for
      * @return array|null User data or null if not found, or validation errors array
      */
-    public function findByEmail(string $email): ?array {
+    public function findByEmail(string $email): ?array
+    {
         // Validate email format
-        $emailDTO = new EmailDTO($email);
+        $emailDTO = new EmailDTO();
         $emailDTO->email = $email;
         if (!$this->validator->validate($emailDTO)) {
             return $this->validator->errors();
@@ -108,14 +113,15 @@ class UserRepository {
 
     /**
      * Find user by UUID
-     * 
+     *
      * Retrieves user record using the unique identifier.
      * Direct lookup without additional validation.
-     * 
+     *
      * @param string $uuid User UUID to search for
      * @return array|null User data or null if not found
      */
-    public function findByUUID(string $uuid): ?array {
+    public function findByUUID(string $uuid): ?array
+    {
         $query = $this->queryBuilder->select('users', $this->userFields)
             ->where(['uuid' => $uuid])
             ->limit(1)
@@ -130,14 +136,15 @@ class UserRepository {
 
     /**
      * Get user profile data
-     * 
+     *
      * Retrieves extended profile information for a user.
      * Includes personal details and profile images.
-     * 
+     *
      * @param string $uuid User UUID to get profile for
      * @return array|null Profile data or null if not found
      */
-    public function getProfile(string $uuid): ?array {
+    public function getProfile(string $uuid): ?array
+    {
         $query = $this->queryBuilder->select('profiles', $this->userProfileFields)
             ->where(['user_uuid' => $uuid])
             ->limit(1)
@@ -152,14 +159,15 @@ class UserRepository {
 
     /**
      * Get user roles
-     * 
+     *
      * Retrieves all roles assigned to a user.
      * Used for authorization and permission checks.
-     * 
+     *
      * @param string $uuid User UUID to get roles for
      * @return array|null Role data or null if none found
      */
-    public function getRoles(string $uuid): ?array {
+    public function getRoles(string $uuid): ?array
+    {
         $query = $this->queryBuilder
         ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN first
         ->select('user_roles_lookup', [
@@ -180,26 +188,27 @@ class UserRepository {
 
    /**
      * Update user password
-     * 
+     *
      * Sets a new password for the user identified by email or UUID.
      * The password should already be hashed before calling this method.
-     * 
+     *
      * Security considerations:
      * - Password should be properly hashed using PasswordHasher
      * - Previous sessions should be invalidated after password change
      * - User identity should be verified before allowing password changes
-     * 
+     *
      * @param string $identifier User's email or UUID
      * @param string $password New password (pre-hashed)
      * @param string|null $identifierType Type of identifier ('email' or 'uuid')
      * @return bool Success status
      */
-    public function setNewPassword(string $identifier, string $password, ?string $identifierType = null): bool {
+    public function setNewPassword(string $identifier, string $password, ?string $identifierType = null): bool
+    {
         // Determine identifier type if not specified
         if ($identifierType === null) {
             $identifierType = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? 'email' : 'uuid';
         }
-        
+
         // Find the user by the appropriate identifier
         $user = null;
         if ($identifierType === 'email') {
@@ -207,11 +216,11 @@ class UserRepository {
         } else {
             $user = $this->findByUUID($identifier);
         }
-        
-        if (!$user || empty($user)) {
+
+        if (!$user) {
             return false; // User not found
         }
-        
+
         // Update the password using update method
         $affected = $this->queryBuilder->update(
             'users',
@@ -221,20 +230,21 @@ class UserRepository {
             ],
             ['uuid' => $user[0]['uuid']]
         );
-        
+
         return $affected > 0;
     }
 
     /**
      * Create new user
-     * 
+     *
      * Inserts a new user record with basic information.
      * Additional profile data should be added separately.
-     * 
+     *
      * @param array $userData User data (username, email, password, etc.)
      * @return string|null New user UUID or null on failure
      */
-    public function create(array $userData): ?string {
+    public function create(array $userData): ?string
+    {
         // Ensure required fields are present
         if (!isset($userData['username']) || !isset($userData['email']) || !isset($userData['password'])) {
             return null;
@@ -243,10 +253,10 @@ class UserRepository {
         // Validate username and email
         $usernameDTO = new UsernameDTO($userData['username']);
         $usernameDTO->username = $userData['username'];
-        
+
         $emailDTO = new EmailDTO();
         $emailDTO->email = $userData['email'];
-        
+
         if (!$this->validator->validate($usernameDTO) || !$this->validator->validate($emailDTO)) {
             return null;
         }
@@ -254,7 +264,7 @@ class UserRepository {
         // Set default values for optional fields
         $userData['status'] = $userData['status'] ?? 'active';
         $userData['created_at'] = $userData['created_at'] ?? date('Y-m-d H:i:s');
-        
+
         // Generate UUID if not provided
         if (!isset($userData['uuid'])) {
             $userData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
@@ -262,70 +272,72 @@ class UserRepository {
 
         // Insert user record
         $success = $this->queryBuilder->insert('users', $userData);
-        
+
         return $success ? $userData['uuid'] : null;
     }
 
     /**
      * Update user information
-     * 
+     *
      * Updates basic user account information.
      * Use this method for username, email, or status changes.
      * For password updates, use setNewPassword() instead.
-     * 
+     *
      * @param string $uuid User UUID to update
      * @param array $userData Updated user data
      * @return bool Success status
      */
-    public function update(string $uuid, array $userData): bool {
+    public function update(string $uuid, array $userData): bool
+    {
         // Ensure user exists
         $user = $this->findByUUID($uuid);
         if (!$user) {
             return false;
         }
-        
+
         // Remove fields that shouldn't be updated directly
         unset($userData['password']);
         unset($userData['uuid']);
-        
+
         // Add updated_at timestamp if not provided
         if (!isset($userData['updated_at'])) {
             $userData['updated_at'] = date('Y-m-d H:i:s');
         }
-        
+
         // Perform update using the update method with conditions
         $affected = $this->queryBuilder->update(
             'users',
             $userData,
             ['uuid' => $uuid]
         );
-        
+
         return $affected > 0;
     }
 
     /**
      * Update user profile
-     * 
+     *
      * Updates or creates user profile information.
      * This includes personal details and preferences.
-     * 
+     *
      * @param string $uuid User UUID
      * @param array $profileData Profile information to update
      * @return bool Success status
      */
-    public function updateProfile(string $uuid, array $profileData): bool {
+    public function updateProfile(string $uuid, array $profileData): bool
+    {
         // Ensure user exists
         $user = $this->findByUUID($uuid);
         if (!$user) {
             return false;
         }
-        
+
         // Add user UUID to profile data
         $profileData['user_uuid'] = $uuid;
-        
+
         // Check if profile exists
         $existingProfile = $this->getProfile($uuid);
-        
+
         if ($existingProfile) {
             // Update existing profile
             return $this->queryBuilder->upsert(
@@ -342,14 +354,15 @@ class UserRepository {
 
     /**
      * Find user by API key
-     * 
+     *
      * Retrieves user record using the API key identifier.
      * Used for API key-based authentication.
-     * 
+     *
      * @param string $apiKey API key to search for
      * @return array|null User data or null if not found
      */
-    public function findByApiKey(string $apiKey): ?array {
+    public function findByApiKey(string $apiKey): ?array
+    {
         // Query database for user with this API key
         $query = $this->queryBuilder->select('users', array_merge($this->userFields, ['api_key', 'api_key_expires_at']))
             ->where(['api_key' => $apiKey])

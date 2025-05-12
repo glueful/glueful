@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Helpers;
@@ -8,20 +9,20 @@ use Glueful\Auth\AuthenticationService;
 use Glueful\APIEngine;
 use Glueful\Uploader\Storage\StorageInterface;
 
-class FileHandler {
-    private AuthenticationService $auth;
+class FileHandler
+{
     private FileUploader $uploader;
 
-    public function __construct() {
-    	$this->uploader = new FileUploader();
-    	$this->auth = new AuthenticationService();
+    public function __construct()
+    {
+        $this->uploader = new FileUploader();
     }
 
-    public function handleFileUpload(array $getParams, array $fileParams): array 
+    public function handleFileUpload(array $getParams, array $fileParams): array
     {
         try {
             $token = AuthenticationService::extractTokenFromRequest();
-        
+
             if (!$token) {
                 return [
                     'success' => false,
@@ -31,7 +32,6 @@ class FileHandler {
             }
 
             return $this->uploader->handleUpload($token, $getParams, $fileParams);
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -41,7 +41,7 @@ class FileHandler {
         }
     }
 
-    public function handleBase64Upload(array $getParams, array $postParams): array 
+    public function handleBase64Upload(array $getParams, array $postParams): array
     {
         try {
             $token = AuthenticationService::extractTokenFromRequest();
@@ -52,12 +52,12 @@ class FileHandler {
                     'code' => 401
                 ];
             }
-            
+
             $_GET['token'] = $token;
-            
+
             // Convert base64 to temp file
             $tmpFile = $this->uploader->handleBase64Upload($postParams['base64']);
-            
+
             $fileParams = [
                 'name' => $getParams['name'] ?? 'upload.jpg',
                 'type' => $getParams['mime_type'] ?? 'image/jpeg',
@@ -70,7 +70,6 @@ class FileHandler {
                 $getParams,
                 ['file' => $fileParams]
             );
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -82,14 +81,14 @@ class FileHandler {
 
     /**
      * Get file blob by UUID
-     * 
+     *
      * Retrieves file information and content by UUID.
      * Supports different response types:
      * - info: Returns file metadata
      * - download: Serves file for download
      * - inline: Displays file in browser
      * - image: Processes and returns image with optional transformations
-     * 
+     *
      * @param string $uuid File UUID
      * @param string $type Response type (info|download|inline|image)
      * @param array $params Additional parameters for image processing
@@ -106,7 +105,7 @@ class FileHandler {
                     'code' => 400
                 ];
             }
-            
+
             // Get file information from database
             $fileInfo = $this->getBlobInfo($uuid);
             if (!$fileInfo) {
@@ -116,15 +115,15 @@ class FileHandler {
                     'code' => 404
                 ];
             }
-            
+
             // Get storage driver based on file storage type
             $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
-            
+
             // Get full URL to the file
             $fullUrl = $storage->getUrl($fileInfo['filepath']);
-            
+
             // Process based on requested type
-            return match($type) {
+            return match ($type) {
                 'info' => [
                     'success' => true,
                     'data' => $this->getBlobAsFile($storage, $fileInfo),
@@ -143,7 +142,6 @@ class FileHandler {
                     'code' => 400
                 ]
             };
-            
         } catch (\Exception $e) {
             error_log("Blob processing error: " . $e->getMessage());
             return [
@@ -153,10 +151,10 @@ class FileHandler {
             ];
         }
     }
-    
+
     /**
      * Get file information from database
-     * 
+     *
      * @param string $uuid File UUID
      * @return array|null File information or null if not found
      */
@@ -168,17 +166,17 @@ class FileHandler {
                 'fields' => 'uuid,filename,filepath,mime_type,file_size,storage_type,created_at,updated_at,status',
                 'uuid' => $uuid
             ]);
-            
+
             return $fileData[0] ?? null;
         } catch (\Exception $e) {
             error_log("Error retrieving file info: " . $e->getMessage());
             return null;
         }
     }
-    
+
     /**
      * Format file information for response
-     * 
+     *
      * @param StorageInterface $storage Storage driver instance
      * @param array $fileInfo Raw file info from database
      * @return array Formatted file information
@@ -198,10 +196,10 @@ class FileHandler {
             'storage_type' => $fileInfo['storage_type'] ?? 'local'
         ];
     }
-    
+
     /**
      * Determine general file type from MIME type
-     * 
+     *
      * @param string $mimeType MIME type of the file
      * @return string General file type (image|video|audio|document|archive|other)
      */
@@ -213,7 +211,8 @@ class FileHandler {
             return 'video';
         } elseif (str_starts_with($mimeType, 'audio/')) {
             return 'audio';
-        } elseif (in_array($mimeType, [
+        } elseif (
+            in_array($mimeType, [
             'application/pdf',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -223,24 +222,27 @@ class FileHandler {
             'application/vnd.openxmlformats-officedocument.presentationml.presentation',
             'text/plain',
             'text/csv'
-        ])) {
+            ])
+        ) {
             return 'document';
-        } elseif (in_array($mimeType, [
+        } elseif (
+            in_array($mimeType, [
             'application/zip',
             'application/x-rar-compressed',
             'application/x-7z-compressed',
             'application/x-tar',
             'application/gzip'
-        ])) {
+            ])
+        ) {
             return 'archive';
         } else {
             return 'other';
         }
     }
-    
+
     /**
      * Serve file for download
-     * 
+     *
      * @param StorageInterface $storage Storage driver
      * @param array $fileInfo File information
      * @return array Response data
@@ -249,7 +251,7 @@ class FileHandler {
     {
         $filename = $fileInfo['filename'] ?? basename($fileInfo['filepath']);
         $mime = $fileInfo['mime_type'] ?? 'application/octet-stream';
-        
+
         // Check if file status is active
         if (isset($fileInfo['status']) && $fileInfo['status'] !== 'active') {
             return [
@@ -258,14 +260,14 @@ class FileHandler {
                 'code' => 403
             ];
         }
-        
+
         // For remote storage (like S3), redirect to signed URL
         if ($storage instanceof \Glueful\Uploader\Storage\S3Storage) {
             $url = $storage->getSignedUrl($fileInfo['filepath'], 300); // 5 min expiry
             header('Location: ' . $url);
             exit;
         }
-        
+
         // For local storage, serve the file
         $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
@@ -276,17 +278,17 @@ class FileHandler {
             readfile($path);
             exit;
         }
-        
+
         return [
             'success' => false,
             'message' => 'File not found on storage',
             'code' => 404
         ];
     }
-    
+
     /**
      * Serve file for inline viewing
-     * 
+     *
      * @param array $fileInfo File information
      * @param StorageInterface $storage Storage driver
      * @return array Response data
@@ -295,7 +297,7 @@ class FileHandler {
     {
         $filename = $fileInfo['filename'] ?? basename($fileInfo['filepath']);
         $mime = $fileInfo['mime_type'] ?? 'application/octet-stream';
-        
+
         // Check if file status is active
         if (isset($fileInfo['status']) && $fileInfo['status'] !== 'active') {
             return [
@@ -304,14 +306,14 @@ class FileHandler {
                 'code' => 403
             ];
         }
-        
+
         // For remote storage (like S3), redirect to signed URL
         if ($storage instanceof \Glueful\Uploader\Storage\S3Storage) {
             $url = $storage->getSignedUrl($fileInfo['filepath'], 300); // 5 min expiry
             header('Location: ' . $url);
             exit;
         }
-        
+
         // For local storage, serve the file
         $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
@@ -322,17 +324,17 @@ class FileHandler {
             readfile($path);
             exit;
         }
-        
+
         return [
             'success' => false,
             'message' => 'File not found on storage',
             'code' => 404
         ];
     }
-    
+
     /**
      * Process image with transformations
-     * 
+     *
      * @param string $src Source image URL
      * @param array $params Image processing parameters
      * @return array Response with processed image data
@@ -354,7 +356,7 @@ class FileHandler {
 
             // Use TimThumb or appropriate image processor
             $thumbnailer = new \Glueful\ImageProcessing\TimThumb($config);
-            
+
             if (!$thumbnailer->processImage($src)) {
                 throw new \RuntimeException("Failed to process image");
             }
@@ -386,7 +388,7 @@ class FileHandler {
             // Use storage driver for caching
             $storage = $this->getStorageDriver('local');
             $cachedPath = 'cache/images/' . $cachedFilename;
-            
+
             if ($storage->store($cachePath, $cachedPath)) {
                 return [
                     'url' => $storage->getUrl($cachedPath),
@@ -406,7 +408,6 @@ class FileHandler {
                 'cached' => false,
                 'error' => null
             ];
-
         } catch (\Exception $e) {
             error_log("Image processing error: " . $e->getMessage());
             return [
@@ -416,12 +417,12 @@ class FileHandler {
             ];
         }
     }
-    
+
     /**
      * Check if a file exists by UUID
-     * 
+     *
      * Verifies if a file exists in the database and optionally on disk
-     * 
+     *
      * @param string $uuid File UUID to check
      * @param bool $checkDisk Whether to also check if file exists on disk/storage
      * @return bool True if file exists, false otherwise
@@ -431,34 +432,33 @@ class FileHandler {
         try {
             // Get file info from database
             $fileInfo = $this->getBlobInfo($uuid);
-            
+
             // If file not found in database, return false
             if (!$fileInfo) {
                 return false;
             }
-            
+
             // If we don't need to check disk, return true as file exists in DB
             if (!$checkDisk) {
                 return true;
             }
-            
+
             // Get storage driver based on file storage type
             $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
-            
+
             // Check if file exists in storage
             return $storage->exists($fileInfo['filepath']);
-            
         } catch (\Exception $e) {
             error_log("Error checking file existence: " . $e->getMessage());
             return false;
         }
     }
-    
+
     /**
      * Delete a file
-     * 
+     *
      * Removes a file from storage and updates database record
-     * 
+     *
      * @param string $uuid UUID of file to delete
      * @return bool True if file was successfully deleted, false otherwise
      */
@@ -469,16 +469,16 @@ class FileHandler {
             if (!$this->fileExists($uuid)) {
                 return false;
             }
-            
+
             // Get file info from database
             $fileInfo = $this->getBlobInfo($uuid);
-            
+
             // Get storage driver based on file storage type
             $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
-            
+
             // Try to delete the physical file
             $fileDeleted = $storage->delete($fileInfo['filepath']);
-            
+
             // Update the file status in the database to deleted
             $dbUpdated = APIEngine::saveData(
                 'blobs',
@@ -488,39 +488,32 @@ class FileHandler {
                     'status' => 'deleted',
                 ]
             );
-            
+
             // Return true if either operation succeeded
             // We consider it successful if we update the DB even if physical delete fails
             return $dbUpdated || $fileDeleted;
-            
         } catch (\Exception $e) {
             error_log("Error deleting file: " . $e->getMessage());
             return false;
         }
     }
-    
+
     /**
      * Get storage driver instance
-     * 
+     *
      * Returns the appropriate storage driver based on configuration
      * or the specified storage type
-     * 
+     *
      * @param string $storageType Storage type (local, s3, etc.)
      * @return StorageInterface Storage driver instance
      */
-    private function getStorageDriver(?string $storageType = null): StorageInterface 
+    private function getStorageDriver(?string $storageType = null): StorageInterface
     {
         // If no storage type is specified, use the configured default
         $storageType = $storageType ?? config('storage.driver', 'local');
-        
-        return match($storageType) {
-            's3' => new \Glueful\Uploader\Storage\S3Storage(
-                config('storage.s3.key'),
-                config('storage.s3.secret'),
-                config('storage.s3.region'),
-                config('storage.s3.bucket'),
-                config('storage.s3.endpoint')
-            ),
+
+        return match ($storageType) {
+            's3' => new \Glueful\Uploader\Storage\S3Storage(),
             default => new \Glueful\Uploader\Storage\LocalStorage(
                 config('paths.uploads'),
                 config('paths.cdn')

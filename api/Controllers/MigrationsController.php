@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Controllers;
@@ -8,11 +9,13 @@ use Glueful\Helpers\Request;
 use Glueful\Database\{Connection, QueryBuilder};
 use Glueful\Database\Migrations\MigrationManager;
 
-class MigrationsController {
+class MigrationsController
+{
     private QueryBuilder $queryBuilder;
     private MigrationManager $migrationManager;
 
-    public function __construct() {
+    public function __construct()
+    {
         $connection = new Connection();
         $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->migrationManager = new MigrationManager();
@@ -20,18 +23,18 @@ class MigrationsController {
 
     /**
      * Get all database migrations with status
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getMigrations(): mixed
     {
         try {
             $data = Request::getPostData();
-            
+
             // Set default values for pagination and filtering
             $page = (int)($data['page'] ?? 1);
             $perPage = (int)($data['per_page'] ?? 25);
-            
+
             // Get migrations from schema manager
             $results = $this->queryBuilder->select('migrations', [
                 'migrations.id',
@@ -45,7 +48,6 @@ class MigrationsController {
             ->paginate($page, $perPage);
 
             return Response::ok($results, 'Migrations retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get migrations error: " . $e->getMessage());
             return Response::error(
@@ -57,7 +59,7 @@ class MigrationsController {
 
     /**
      * Get pending migrations that haven't been executed
-     * 
+     *
      * @return mixed HTTP response
      */
     public function getPendingMigrations(): mixed
@@ -67,7 +69,7 @@ class MigrationsController {
             $pendingMigrations = $this->migrationManager->getPendingMigrations();
 
             // Format the response data
-            $formattedMigrations = array_map(function($migration) {
+            $formattedMigrations = array_map(function ($migration) {
                 return [
                     'name' => basename($migration),
                     'status' => 'pending',
@@ -79,7 +81,6 @@ class MigrationsController {
                 'pending_count' => count($pendingMigrations),
                 'migrations' => $formattedMigrations
             ], 'Pending migrations retrieved successfully')->send();
-
         } catch (\Exception $e) {
             error_log("Get pending migrations error: " . $e->getMessage());
             return Response::error(

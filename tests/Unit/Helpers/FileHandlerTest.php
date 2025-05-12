@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Helpers;
 
 use Tests\TestCase;
@@ -39,11 +40,9 @@ class FileHandlerTest extends TestCase
         // Create the TestFileHandler instance with our wrapper
         $this->fileHandler = new TestFileHandler($this->uploaderWrapper);
         
-        // Inject AuthenticationService mock using reflection
-        // Modern approach that doesn't use the deprecated setAccessible method
-        $reflection = new \ReflectionClass(FileHandler::class);
-        $authProperty = $reflection->getProperty('auth');
-        $authProperty->setValue($this->fileHandler, $this->mockAuth);
+        // Directly set the auth property on our TestFileHandler instance
+        // No need for reflection since we're using our test subclass that has this property
+        $this->fileHandler->auth = $this->mockAuth;
     }
     
     /**

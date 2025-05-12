@@ -8,10 +8,10 @@ use Symfony\Component\HttpFoundation\Request;
 
 /**
  * JWT Authentication Provider
- * 
+ *
  * Implements authentication using JWT tokens and the existing
  * authentication infrastructure in the Glueful framework.
- * 
+ *
  * This provider leverages the TokenManager and SessionCacheManager
  * while providing a standardized interface for authentication.
  */
@@ -19,43 +19,43 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
 {
     /** @var string|null Last authentication error message */
     private ?string $lastError = null;
-    
+
     /**
      * {@inheritdoc}
      */
     public function authenticate(Request $request): ?array
     {
         $this->lastError = null;
-        
+
         try {
             // Extract token from Authorization header
             $token = $this->extractTokenFromRequest($request);
-            
+
             if (!$token) {
                 $this->lastError = 'No authentication token provided';
                 return null;
             }
-            
+
             // Validate token and get session data
             $sessionData = SessionCacheManager::getSession($token);
-            
+
             if (!$sessionData) {
                 $this->lastError = 'Invalid or expired authentication token';
                 return null;
             }
-            
+
             // Store authentication info in request attributes for middleware
             $request->attributes->set('authenticated', true);
             $request->attributes->set('user_id', $sessionData['uuid'] ?? null);
             $request->attributes->set('user_data', $sessionData);
-            
+
             return $sessionData;
         } catch (\Throwable $e) {
             $this->lastError = 'Authentication error: ' . $e->getMessage();
             return null;
         }
     }
-    
+
     /**
      * {@inheritdoc}
      */
@@ -63,13 +63,13 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
     {
         // Get the actual user data from the nested structure if available
         $user = $userData['user'] ?? $userData;
-        
+
         // First check if there's an explicit is_admin flag in the user data
         if (isset($user['is_admin']) && $user['is_admin'] === true) {
             error_log("Admin access granted through is_admin flag for user: " . ($user['username'] ?? 'unknown'));
             return true;
         }
-        
+
         // Also check for superuser role as before
         if (isset($user['roles']) && is_array($user['roles'])) {
             foreach ($user['roles'] as $role) {
@@ -78,13 +78,13 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
                 }
             }
         }
-        
-        error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') . 
+
+        error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') .
                   ", roles: " . (isset($user['roles']) ? json_encode($user['roles']) : 'none'));
-        
+
         return false;
     }
-    
+
     /**
      * {@inheritdoc}
      */
@@ -92,29 +92,29 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
     {
         return $this->lastError;
     }
-    
+
     /**
      * Extract JWT token from request
-     * 
+     *
      * @param Request $request The HTTP request
      * @return string|null The token or null if not found
      */
     private function extractTokenFromRequest(Request $request): ?string
     {
         $authHeader = $request->headers->get('Authorization');
-        
+
         if (!$authHeader) {
             return null;
         }
-        
+
         // Remove 'Bearer ' prefix if present
         if (strpos($authHeader, 'Bearer ') === 0) {
             return substr($authHeader, 7);
         }
-        
+
         return $authHeader;
     }
-    
+
     /**
      * {@inheritdoc}
      */
@@ -128,7 +128,7 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             return false;
         }
     }
-    
+
     /**
      * {@inheritdoc}
      */
@@ -141,13 +141,13 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             if (count($parts) !== 3) {
                 return false;
             }
-            
+
             // Try to decode the header (first part)
             $headerJson = base64_decode(strtr($parts[0], '-_', '+/'));
             if (!$headerJson) {
                 return false;
             }
-            
+
             $header = json_decode($headerJson, true);
             // Check if it has typical JWT header fields
             return is_array($header) && isset($header['alg']) && isset($header['typ']);
@@ -155,16 +155,15 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             return false;
         }
     }
-    
+
     /**
      * {@inheritdoc}
      */
     public function generateTokens(
-        array $userData, 
+        array $userData,
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
-    ): array
-    {
+    ): array {
         try {
             // Use TokenManager to generate token pair
             return TokenManager::generateTokenPair(
@@ -181,7 +180,7 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             ];
         }
     }
-    
+
     /**
      * {@inheritdoc}
      */
@@ -193,7 +192,7 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
                 $this->lastError = 'Invalid refresh token';
                 return null;
             }
-            
+
             // Generate new token pair for existing session
             return $this->generateTokens($sessionData);
         } catch (\Throwable $e) {

@@ -206,7 +206,7 @@ class MockLogManager extends LogManager
      * 
      * @return mixed
      */
-    public function getRotationParameter()
+    public function getRotationParameter(): mixed
     {
         return $this->rotationParameter;
     }

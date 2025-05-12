@@ -4,7 +4,7 @@ namespace Glueful\Console;
 
 /**
  * Base Command Class
- * 
+ *
  * Abstract base class for console commands.
  * Provides common functionality for command-line interface commands.
  */
@@ -15,30 +15,30 @@ abstract class Command
     public const INVALID = 2;
     /**
      * Get command name
-     * 
+     *
      * Returns unique identifier for the command.
-     * 
+     *
      * @return string Command name
      */
     abstract public function getName(): string;
-    
+
     /**
      * Get command description
-     * 
+     *
      * Returns short description of command purpose.
-     * 
+     *
      * @return string Command description
      */
     public function getDescription(): string
     {
         return 'No description available';
     }
-    
+
     /**
      * Get command help text
-     * 
+     *
      * Returns detailed usage instructions.
-     * 
+     *
      * @return string Help text
      */
     public function getHelp(): string
@@ -48,9 +48,9 @@ abstract class Command
 
     /**
      * Execute command
-     * 
+     *
      * Runs command with provided arguments.
-     * 
+     *
      * @param array $args Command arguments
      */
     public function execute(array $args = []): ?int
@@ -61,9 +61,9 @@ abstract class Command
 
     /**
      * Get command argument
-     * 
+     *
      * Retrieves specific argument by name.
-     * 
+     *
      * @param string $name Argument name
      * @return mixed Argument value or null if not found
      */
@@ -74,9 +74,9 @@ abstract class Command
 
     /**
      * Display error message
-     * 
+     *
      * Outputs formatted error to console.
-     * 
+     *
      * @param string $message Error message
      */
     protected function error(string $message): void
@@ -86,9 +86,9 @@ abstract class Command
 
     /**
      * Display info message
-     * 
+     *
      * Outputs formatted information to console.
-     * 
+     *
      * @param string $message Info message
      */
     protected function info(string $message): void
@@ -98,7 +98,7 @@ abstract class Command
 
     /**
      * Output success message in green
-     * 
+     *
      * @param string $message Message to display
      */
     protected function success(string $message): void
@@ -108,7 +108,7 @@ abstract class Command
 
     /**
      * Display warning message in yellow
-     * 
+     *
      * @param string $message Warning message
      */
     protected function warning(string $message): void
@@ -118,7 +118,7 @@ abstract class Command
 
     /**
      * Display tip message in cyan
-     * 
+     *
      * @param string $message Tip message
      */
     protected function tip(string $message): void
@@ -136,9 +136,9 @@ abstract class Command
 
         /**
      * Display a generic output line
-     * 
+     *
      * Outputs a plain line to the console.
-     * 
+     *
      * @param string $message Line message
      */
     protected function line(string $message = ''): void
@@ -148,7 +148,7 @@ abstract class Command
 
     /**
      * Apply color to text for console output
-     * 
+     *
      * @param string $text Text to color
      * @param string $color Color name (supported: black, red, green, yellow, blue, magenta, cyan, white)
      * @return string Colored text for console output

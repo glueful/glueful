@@ -9,40 +9,17 @@ use InvalidArgumentException;
 use GdImage;
 
 /**
- * Image Processing Interface
- * 
- * Defines contract for image processing implementations.
- */
-interface ImageProcessorInterface 
-{
-    public function processImage(string $source): bool;
-    public function outputImage(): void;
-}
-
-/**
- * Cache Interface
- * 
- * Defines contract for image caching implementations.
- */
-interface CacheInterface
-{
-    public function get(string $key): ?string;
-    public function set(string $key, string $data): bool;
-    public function clean(): void;
-}
-
-/**
  * TimThumb Image Processor
- * 
+ *
  * Handles image resizing, caching, and optimization.
  * Supports local and remote images with security measures.
  */
-final class TimThumb implements ImageProcessorInterface 
+final class TimThumb implements ImageProcessorInterface
 {
     private const VERSION = '3.0.0';
     private const ALLOWED_MIME_TYPES = [
         'image/jpeg',
-        'image/png', 
+        'image/png',
         'image/gif'
     ];
 
@@ -69,7 +46,7 @@ final class TimThumb implements ImageProcessorInterface
 
     /**
      * Constructor
-     * 
+     *
      * @param array $config Configuration options
      * @param CacheInterface|null $cache Optional cache implementation
      * @throws InvalidArgumentException If configuration is invalid
@@ -84,7 +61,7 @@ final class TimThumb implements ImageProcessorInterface
         $this->setupEnvironment();
     }
 
-    private function generateSalt(): string 
+    private function generateSalt(): string
     {
         return sprintf(
             '%s-%s',
@@ -115,7 +92,7 @@ final class TimThumb implements ImageProcessorInterface
     {
         $currentLimit = ini_get('memory_limit');
         $requiredLimit = $this->config['memoryLimit'] ?? '128M';
-        
+
         if ($this->returnBytes($currentLimit) < $this->returnBytes($requiredLimit)) {
             ini_set('memory_limit', $requiredLimit);
         }
@@ -126,7 +103,7 @@ final class TimThumb implements ImageProcessorInterface
         $size = trim($size);
         $last = strtolower($size[-1]);
         $size = (int)$size;
-        
+
         return match ($last) {
             'g' => $size * 1024 * 1024 * 1024,
             'm' => $size * 1024 * 1024,
@@ -138,7 +115,7 @@ final class TimThumb implements ImageProcessorInterface
     private function setupCacheDirectory(): void
     {
         $cacheDir = $this->config['cacheDir'] ?? sys_get_temp_dir() . '/timthumb-cache';
-        
+
         if (!is_dir($cacheDir) && !mkdir($cacheDir, 0755, true)) {
             throw new RuntimeException("Failed to create cache directory: $cacheDir");
         }
@@ -148,7 +125,7 @@ final class TimThumb implements ImageProcessorInterface
         }
 
         $this->cacheDirectory = $cacheDir;
-        
+
         // Create .htaccess for security
         $htaccess = $cacheDir . '/.htaccess';
         if (!file_exists($htaccess)) {
@@ -158,9 +135,9 @@ final class TimThumb implements ImageProcessorInterface
 
     /**
      * Process source image
-     * 
+     *
      * Loads, resizes, and caches image based on configuration.
-     * 
+     *
      * @param string $source Image source path or URL
      * @return bool True if processing successful
      * @throws RuntimeException On processing failure
@@ -168,7 +145,7 @@ final class TimThumb implements ImageProcessorInterface
     public function processImage(string $source): bool
     {
         $this->source = $source;
-        
+
         if (!$this->validateSource()) {
             return false;
         }
@@ -216,7 +193,7 @@ final class TimThumb implements ImageProcessorInterface
         return $this->cache->set($this->getCacheKey(), $imageData);
     }
 
-    private function loadImage(): ?GdImage 
+    private function loadImage(): ?GdImage
     {
         if ($this->isExternalSource()) {
             return $this->loadExternalImage();
@@ -255,10 +232,10 @@ final class TimThumb implements ImageProcessorInterface
         if (!$image) {
             throw new RuntimeException("Failed to create PNG image");
         }
-        
+
         imagealphablending($image, true);
         imagesavealpha($image, true);
-        
+
         return $image;
     }
 
@@ -281,10 +258,14 @@ final class TimThumb implements ImageProcessorInterface
 
         // Resize
         imagecopyresampled(
-            $resized, 
+            $resized,
             $source,
-            0, 0, 0, 0,
-            $width, $height,
+            0,
+            0,
+            0,
+            0,
+            $width,
+            $height,
             imagesx($source),
             imagesy($source)
         );
@@ -294,9 +275,9 @@ final class TimThumb implements ImageProcessorInterface
 
     /**
      * Calculate new image dimensions
-     * 
+     *
      * Determines output dimensions while maintaining aspect ratio.
-     * 
+     *
      * @param int $origWidth Original width
      * @param int $origHeight Original height
      * @return array [width, height]
@@ -325,9 +306,9 @@ final class TimThumb implements ImageProcessorInterface
 
     /**
      * Preserve image transparency
-     * 
+     *
      * Ensures transparent areas remain transparent after processing.
-     * 
+     *
      * @param GdImage $image Image resource
      */
     private function preserveTransparency(GdImage $image): void
@@ -340,9 +321,9 @@ final class TimThumb implements ImageProcessorInterface
 
     /**
      * Output processed image
-     * 
+     *
      * Sends image to browser with appropriate headers.
-     * 
+     *
      * @throws RuntimeException If no cached image exists
      */
     public function outputImage(): void
@@ -359,7 +340,7 @@ final class TimThumb implements ImageProcessorInterface
     private function sendHeaders(): void
     {
         $expires = gmdate('D, d M Y H:i:s', time() + 86400) . ' GMT';
-        
+
         header('Content-Type: image/jpeg');
         header('Cache-Control: public, max-age=86400');
         header('Expires: ' . $expires);
@@ -382,26 +363,26 @@ final class TimThumb implements ImageProcessorInterface
     {
         $key = $this->getCacheKey();
         $cached = $this->cache->get($key);
-        
+
         if ($cached !== null) {
             return true;
         }
-        
+
         return false;
     }
 
     /**
      * Load external image
-     * 
+     *
      * Downloads and processes remote images securely.
-     * 
+     *
      * @return GdImage|null Image resource or null on failure
      * @throws RuntimeException On download/processing failure
      */
     private function loadExternalImage(): ?GdImage
     {
         $tempFile = tempnam($this->cacheDirectory, 'thumb_temp_');
-        
+
         try {
             $context = stream_context_create([
                 'http' => [
@@ -423,7 +404,6 @@ final class TimThumb implements ImageProcessorInterface
             $this->toDeletes[] = $tempFile; // Clean up temp file later
 
             return $this->createImage($tempFile);
-            
         } catch (\Exception $e) {
             if (file_exists($tempFile)) {
                 unlink($tempFile);
@@ -435,20 +415,20 @@ final class TimThumb implements ImageProcessorInterface
     private function getLocalImagePath(string $src): string
     {
         $src = ltrim($src, '/');
-        
+
         // Try direct path
         if (is_file($src) && is_readable($src)) {
             return realpath($src);
         }
-        
+
         // Try relative to document root
         $docRoot = $this->getDocumentRoot();
         $fullPath = $docRoot . '/' . $src;
-        
+
         if (is_file($fullPath) && is_readable($fullPath)) {
             return realpath($fullPath);
         }
-        
+
         throw new RuntimeException("Image file not found: $src");
     }
 
@@ -457,7 +437,7 @@ final class TimThumb implements ImageProcessorInterface
         if (!empty($_SERVER['DOCUMENT_ROOT'])) {
             return rtrim($_SERVER['DOCUMENT_ROOT'], '/');
         }
-        
+
         // Fallback to current directory
         return rtrim(dirname(__DIR__, 3), '/');
     }
@@ -465,65 +445,15 @@ final class TimThumb implements ImageProcessorInterface
     private function getMimeType(string $path): string
     {
         $info = @getimagesize($path);
-        
+
         if ($info === false) {
             throw new RuntimeException("Could not determine image type");
         }
-        
+
         if (!isset($info['mime'])) {
             throw new RuntimeException("Missing MIME type information");
         }
-        
+
         return $info['mime'];
-    }
-}
-
-/**
- * File-based Cache Implementation
- * 
- * Handles image caching using filesystem storage.
- */
-final class FileCache implements CacheInterface
-{
-    /**
-     * Constructor
-     * 
-     * @param string $directory Cache directory path
-     * @throws RuntimeException If directory cannot be created
-     */
-    public function __construct(
-        private readonly string $directory
-    ) {
-        if (!is_dir($directory) && !mkdir($directory, 0755, true)) {
-            throw new RuntimeException("Cannot create cache directory");
-        }
-    }
-
-    public function get(string $key): ?string
-    {
-        $file = $this->getFilePath($key);
-        return is_readable($file) ? file_get_contents($file) : null;
-    }
-
-    public function set(string $key, string $data): bool
-    {
-        return file_put_contents($this->getFilePath($key), $data) !== false;
-    }
-
-    public function clean(): void
-    {
-        $files = glob($this->directory . '/*');
-        $now = time();
-        
-        foreach ($files as $file) {
-            if (is_file($file) && $now - filemtime($file) >= 86400) {
-                @unlink($file);
-            }
-        }
-    }
-
-    private function getFilePath(string $key): string
-    {
-        return $this->directory . '/' . $key . '.cache';
     }
 }

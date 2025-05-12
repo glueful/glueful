@@ -1,11 +1,13 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\DTOs;
 
 use Glueful\Validation\Attributes\{Rules, Sanitize};
 
-class ListResourceRequestDTO {
+class ListResourceRequestDTO
+{
     #[Sanitize(['trim', 'sanitize_string'])]
     #[Rules(['string', 'in:name,created_at'])]
     public ?string $fields = '*';

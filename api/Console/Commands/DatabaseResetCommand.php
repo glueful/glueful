@@ -8,7 +8,7 @@ use Glueful\Database\Connection;
 
 /**
  * Database Reset Command
- * 
+ *
  * Provides functionality to reset a database to its initial state:
  * - Safely drops all existing tables
  * - Handles foreign key constraints
@@ -17,21 +17,19 @@ use Glueful\Database\Connection;
  * - Supports dry-run mode
  * - Logs operations
  * - Handles errors gracefully
- * 
+ *
  * @package Glueful\Console\Commands
  */
 class DatabaseResetCommand extends Command
 {
-    private SchemaManager $schema;
-
     /**
      * Get Command Name
-     * 
+     *
      * Returns the identifier used to execute this command:
      * - Used in CLI as `php glueful db:reset`
      * - Must be unique across all commands
      * - Should follow naming conventions
-     * 
+     *
      * @return string Command identifier
      */
     public function getName(): string
@@ -41,12 +39,12 @@ class DatabaseResetCommand extends Command
 
     /**
      * Get Command Description
-     * 
+     *
      * Provides brief summary for help listings:
      * - Single line description
      * - Shown in command lists
      * - Explains command purpose
-     * 
+     *
      * @return string Brief command description
      */
     public function getDescription(): string
@@ -56,13 +54,13 @@ class DatabaseResetCommand extends Command
 
     /**
      * Get Command Help
-     * 
+     *
      * Provides detailed usage instructions:
-     * - Shows command syntax 
+     * - Shows command syntax
      * - Lists available options
      * - Includes usage examples
      * - Documents safety warnings
-     * 
+     *
      * @return string Detailed help text
      */
     public function getHelp(): string
@@ -86,7 +84,7 @@ HELP;
 
     /**
      * Execute Reset Operation
-     * 
+     *
      * Performs complete database reset:
      * - Validates force flag presence
      * - Disables foreign key checks
@@ -95,7 +93,7 @@ HELP;
      * - Handles errors per table
      * - Re-enables foreign key checks
      * - Provides operation feedback
-     * 
+     *
      * @param array $args Command line arguments
      * @throws \RuntimeException If reset operation fails
      * @return int Status code, 0 for success, non-zero for errors
@@ -110,21 +108,21 @@ HELP;
         try {
             $connection = new Connection();
             $schema = $connection->getSchemaManager();
-            
+
             // Get all tables using SHOW TABLES
             // $tables = $pdo->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
             $tables = $schema->getTables();
-            
+
             if (empty($tables)) {
                 $this->info("No tables found to drop.");
                 return Command::SUCCESS;
             }
 
             $this->info("Found " . count($tables) . " tables to drop...\n");
-            
+
             // Disable foreign key checks
             $schema->disableForeignKeyChecks();
-            
+
             // Drop tables in reverse order
             foreach (array_reverse($tables) as $table) {
                 $this->info("Dropping table: $table");
@@ -137,13 +135,13 @@ HELP;
                     error_log("Error while dropping $table: " . $e->getMessage());
                 }
             }
-            
+
             // Re-enable foreign key checks
             $schema->enableForeignKeyChecks();
-            
+
             $this->success("\nDatabase reset complete!");
             $this->info("Run migrations to rebuild the database structure.");
-            
+
             return Command::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Reset failed: " . $e->getMessage());

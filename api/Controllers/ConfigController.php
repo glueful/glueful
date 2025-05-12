@@ -1,26 +1,24 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Controllers;
 
 class ConfigController
 {
-   
-
-
     public function getConfigs(): array
     {
         $configPath = __DIR__ . '/../../config';
         $configFiles = array_diff(scandir($configPath), ['.', '..', 'schedule.php']);
-    
+
         $groupedConfig = [];
-    
+
         foreach ($configFiles as $file) {
             $filePath = $configPath . '/' . $file;
-    
+
             if (pathinfo($file, PATHINFO_EXTENSION) === 'php' && file_exists($filePath)) {
                 $config = require $filePath; // Load the config file
-    
+
                 // Only add if it's an array
                 if (is_array($config)) {
                     $groupedConfig[] = [
@@ -32,7 +30,7 @@ class ConfigController
                 }
             }
         }
-    
+
         return $groupedConfig;
     }
 
@@ -40,11 +38,11 @@ class ConfigController
     {
         $configPath = __DIR__ . '/../../config';
         $filePath = $configPath . '/' . $filename;
-        
+
         if (!file_exists($filePath)) {
             return null;
         }
-        
+
         $config = require $filePath;
         return is_array($config) ? $config : null;
     }
@@ -53,7 +51,7 @@ class ConfigController
     {
         $configPath = __DIR__ . '/../../config';
         $filePath = $configPath . '/' . $filename;
-        
+
         if (!file_exists($filePath)) {
             return false;
         }
@@ -74,7 +72,7 @@ class ConfigController
     {
         $configPath = __DIR__ . '/../../config';
         $filePath = $configPath . '/' . $filename;
-        
+
         // Don't overwrite existing config files
         if (file_exists($filePath)) {
             return false;
@@ -88,7 +86,7 @@ class ConfigController
 
         // Create config content
         $configContent = "<?php\n\nreturn " . var_export($data, true) . ";\n";
-        
+
         // Create config file
         if (!file_put_contents($filePath, $configContent)) {
             return false;
@@ -124,7 +122,7 @@ class ConfigController
         }
     }
 
-    private function findEnvKeyForConfigValue(string $key): ?string
+    private function findEnvKeyForConfigValue(string $key): string
     {
         // Map config keys to potential ENV keys
         // You might want to customize this mapping based on your needs
@@ -134,14 +132,14 @@ class ConfigController
     private function updateEnvLine(array $lines, string $key, $value): array
     {
         $newLine = $key . '=' . (is_string($value) ? '"' . $value . '"' : $value);
-        
+
         foreach ($lines as $i => $line) {
             if (strpos($line, $key . '=') === 0) {
                 $lines[$i] = $newLine;
                 return $lines;
             }
         }
-        
+
         $lines[] = $newLine;
         return $lines;
     }

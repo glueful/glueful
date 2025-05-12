@@ -1,0 +1,32 @@
+parameters:
+    level: 5
+    paths:
+        - api
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        - '#Instanceof between .* and Glueful\\Database\\RawExpression will always evaluate to false\.#'
+        - '#Instanceof between Throwable and Glueful\\Exceptions\\ValidationException will always evaluate to false\.#'
+        - '#Instanceof between Throwable and Glueful\\Exceptions\\AuthenticationException will always evaluate to false\.#'
+        - '#Instanceof between Throwable and Glueful\\Exceptions\\NotFoundException will always evaluate to false\.#'
+        - '#Call to function array_key_exists\(\) with .* will always evaluate to false\.#'
+        - '#Instanceof between mixed and Monolog\\Handler\\AbstractProcessingHandler will always evaluate to false\.#'
+
+        # TimThumb.php specific issues
+        - '#Property Glueful\\ImageProcessing\\TimThumb::\$[a-zA-Z0-9]+ is never read, only written\.#'
+        - '#Property Glueful\\ImageProcessing\\TimThumb::\$docRoot is unused\.#'
+        - '#Negated boolean expression is always false\.#'
+        - '#Method Glueful\\ImageProcessing\\TimThumb::createImage\(\) never returns null so it can be removed from the return type\.#'
+        - '#Match arm is unreachable because previous comparison is always true\.#'
+        - '#Offset ''mime'' on array\{.*\} in isset\(\) always exists and is not nullable\.#'
+
+        # EmailVerification.php issues with unknown class
+        - '#Property Glueful\\Security\\EmailVerification::\$emailProvider has unknown class Glueful\\Extensions\\EmailNotification\\EmailNotificationProvider as its type\.#'
+        - '#Instantiated class Glueful\\Extensions\\EmailNotification\\EmailNotificationProvider not found\.#'
+        - '#Call to method [a-zA-Z0-9_]+\(\) on an unknown class Glueful\\Extensions\\EmailNotification\\EmailNotificationProvider\.#'
+
+        - '#Property .* is never read, only written\.#'
+        - '#Constructor of class Glueful\\Logging\\LogManager has an unused parameter \$logFile\.#'
+        - '#Variable \$messageStr might not be defined\.#'
+        - '#Method .* is unused\.#'
+        - '#Parameter \#1 \$value of static method Monolog\\Level::fromValue\(\) expects 100\|200\|250\|300\|400\|500\|550\|600, int given\.#'
+        

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Notifications\Services;
@@ -13,12 +14,12 @@ use Glueful\Repository\NotificationRepository;
 
 /**
  * Notification Retry Service
- * 
+ *
  * Provides centralized functionality for handling failed notification retries:
  * - Manages retry queue table
  * - Handles scheduling of retries with different backoff strategies
  * - Provides consistent retry behavior across notification channels
- * 
+ *
  * @package Glueful\Notifications\Services
  */
 class NotificationRetryService
@@ -27,31 +28,31 @@ class NotificationRetryService
      * @var QueryBuilder|null Database query builder
      */
     private ?QueryBuilder $queryBuilder;
-    
+
     /**
      * @var LogManager|null Logger instance
      */
     private ?LogManager $logger;
-    
+
     /**
      * @var array Configuration options
      */
     private array $config;
-    
+
     /**
      * @var NotificationRepository|null Notification repository
      */
     private ?NotificationRepository $notificationRepository;
-    
+
     /**
      * NotificationRetryService constructor
-     * 
+     *
      * @param LogManager|null $logger Logger instance
      * @param NotificationRepository|null $notificationRepository Notification repository
      * @param array $config Configuration options
      */
     public function __construct(
-        ?LogManager $logger = null, 
+        ?LogManager $logger = null,
         ?NotificationRepository $notificationRepository = null,
         array $config = []
     ) {
@@ -60,10 +61,10 @@ class NotificationRetryService
         $this->queryBuilder = null; // Lazy initialization
         $this->config = $config;
     }
-    
+
     /**
      * Initialize the database connection
-     * 
+     *
      * @return void
      */
     private function initDatabase(): void
@@ -71,15 +72,15 @@ class NotificationRetryService
         if ($this->queryBuilder === null) {
             $connection = new Connection();
             $this->queryBuilder = new QueryBuilder(
-                $connection->getPDO(), 
+                $connection->getPDO(),
                 $connection->getDriver()
             );
         }
     }
-    
+
     /**
      * Queue a notification for retry
-     * 
+     *
      * @param Notification $notification The notification object
      * @param Notifiable $notifiable The notifiable entity
      * @param string $channel The channel that failed
@@ -90,11 +91,11 @@ class NotificationRetryService
         // Get current retry count from notification data
         $data = $notification->getData() ?? [];
         $retryCount = ($data['retry_count'] ?? 0) + 1;
-        
+
         // Update retry count in notification data
         $data['retry_count'] = $retryCount;
         $notification->setData($data);
-        
+
         // Save the updated notification to persist retry count
         try {
             $this->notificationRepository->save($notification);
@@ -107,20 +108,20 @@ class NotificationRetryService
             }
             return false;
         }
-        
+
         // Calculate next retry time based on backoff strategy
         $delay = $this->calculateRetryDelay($retryCount);
         $nextRetryTime = new DateTime();
         $nextRetryTime->modify("+{$delay} seconds");
-        
+
         // Insert into retry queue table
         try {
             // Initialize QueryBuilder if not already done
             $this->initDatabase();
-            
+
             // Create retry queue table if it doesn't exist
             $this->ensureRetryQueueTableExists();
-            
+
             // Check if this notification is already in the retry queue
             $existingEntry = $this->queryBuilder->select(
                 'notification_retry_queue',
@@ -130,7 +131,7 @@ class NotificationRetryService
                     'channel' => $channel
                 ]
             )->get();
-            
+
             if (empty($existingEntry)) {
                 // Insert new record
                 $this->queryBuilder->insert('notification_retry_queue', [
@@ -159,7 +160,7 @@ class NotificationRetryService
                     ['retry_count', 'retry_at', 'updated_at']
                 );
             }
-            
+
             // Log retry information
             if ($this->logger) {
                 $this->logger->info("{$channel} notification queued for retry", [
@@ -169,7 +170,7 @@ class NotificationRetryService
                     'next_retry' => $nextRetryTime->format('Y-m-d H:i:s')
                 ]);
             }
-            
+
             return true;
         } catch (\Throwable $e) {
             if ($this->logger) {
@@ -181,10 +182,10 @@ class NotificationRetryService
             return false;
         }
     }
-    
+
     /**
      * Calculate retry delay based on retry count and backoff strategy
-     * 
+     *
      * @param int $retryCount Current retry count
      * @return int Delay in seconds before next retry
      */
@@ -192,25 +193,25 @@ class NotificationRetryService
     {
         $baseDelay = $this->config['retry']['delay'] ?? 300; // Default: 5 minutes
         $backoffStrategy = $this->config['retry']['backoff'] ?? 'exponential';
-        
+
         switch ($backoffStrategy) {
             case 'linear':
                 // Linear backoff: baseDelay * retryCount
                 return $baseDelay * $retryCount;
-                
+
             case 'exponential':
                 // Exponential backoff: baseDelay * (2^retryCount)
                 return $baseDelay * (2 ** ($retryCount - 1));
-                
+
             default:
                 // Default to fixed delay
                 return $baseDelay;
         }
     }
-    
+
     /**
      * Ensure the retry queue table exists
-     * 
+     *
      * @return void
      */
     public function ensureRetryQueueTableExists(): void
@@ -218,7 +219,7 @@ class NotificationRetryService
         try {
             $connection = new Connection();
             $schema = $connection->getSchemaManager();
-            
+
             // Check if table exists first
             $tables = $schema->getTables();
             if (!in_array('notification_retry_queue', $tables)) {
@@ -234,24 +235,24 @@ class NotificationRetryService
                     'created_at' => ['type' => 'TIMESTAMP', 'null' => false, 'default' => 'CURRENT_TIMESTAMP'],
                     'updated_at' => ['type' => 'TIMESTAMP', 'null' => true, 'on_update' => 'CURRENT_TIMESTAMP']
                 ]);
-                
+
                 // Add indexes
                 $schema->addIndex([
                     'type' => 'UNIQUE',
                     'columns' => ['notification_id', 'channel'],
                     'table' => 'notification_retry_queue'
                 ]);
-                
+
                 $schema->addIndex([
                     'columns' => ['retry_at'],
                     'table' => 'notification_retry_queue'
                 ]);
-                
+
                 $schema->addIndex([
                     'columns' => ['notification_id'],
                     'table' => 'notification_retry_queue'
                 ]);
-                
+
                 $schema->addIndex([
                     'columns' => ['notifiable_type', 'notifiable_id'],
                     'table' => 'notification_retry_queue'
@@ -265,10 +266,10 @@ class NotificationRetryService
             }
         }
     }
-    
+
     /**
      * Process due retry attempts
-     * 
+     *
      * @param int $limit Maximum number of retries to process at once
      * @param NotificationService $notificationService Notification service to use for sending
      * @return array Statistics about processed retries
@@ -277,7 +278,7 @@ class NotificationRetryService
     {
         $this->initDatabase();
         $now = (new DateTime())->format('Y-m-d H:i:s');
-        
+
         // Get due retries
         $dueRetries = $this->queryBuilder->select(
             'notification_retry_queue',
@@ -289,21 +290,21 @@ class NotificationRetryService
         ->orderBy(['retry_count' => 'ASC', 'retry_at' => 'ASC'])
         ->limit($limit)
         ->get();
-        
+
         $results = [
             'processed' => 0,
             'successful' => 0,
             'failed' => 0,
             'removed' => 0
         ];
-        
+
         if (empty($dueRetries)) {
             return $results;
         }
-        
+
         foreach ($dueRetries as $retry) {
             $results['processed']++;
-            
+
             // Get the notification
             $notification = $this->notificationRepository->findByUuId($retry['notification_id']);
             if (!$notification) {
@@ -312,34 +313,34 @@ class NotificationRetryService
                 $results['removed']++;
                 continue;
             }
-            
+
             // Create notifiable entity directly since getNotifiableEntity is protected
             $notifiable = $this->createNotifiableEntity(
                 $retry['notifiable_type'],
                 $retry['notifiable_id']
             );
-            
+
             if (!$notifiable) {
                 // Remove from queue if notifiable can't be created
                 $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
                 $results['removed']++;
                 continue;
             }
-            
+
             // Try to send again with explicitly specified channel
             $result = $notificationService->getDispatcher()->send(
                 $notification,
                 $notifiable,
                 [$retry['channel']]
             );
-            
+
             if ($result['status'] === 'success') {
                 // Mark as sent and remove from retry queue
                 $notification->markAsSent();
                 $this->notificationRepository->save($notification);
                 $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
                 $results['successful']++;
-                
+
                 if ($this->logger) {
                     $this->logger->info("Retry successful for notification", [
                         'notification_id' => $notification->getId(),
@@ -350,12 +351,12 @@ class NotificationRetryService
             } else {
                 // Check if max retries reached
                 $maxRetries = $this->config['retry']['max_attempts'] ?? 3;
-                
+
                 if ($retry['retry_count'] >= $maxRetries) {
                     // Max retries reached, remove from queue
                     $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
                     $results['removed']++;
-                    
+
                     if ($this->logger) {
                         $this->logger->warning("Max retries reached for notification", [
                             'notification_id' => $notification->getId(),
@@ -370,13 +371,13 @@ class NotificationRetryService
                 }
             }
         }
-        
+
         return $results;
     }
-    
+
     /**
      * Create a notifiable entity from type and ID
-     * 
+     *
      * @param string $type Entity type (e.g., 'user')
      * @param string $id Entity ID
      * @return \Glueful\Notifications\Contracts\Notifiable|null
@@ -387,36 +388,42 @@ class NotificationRetryService
         switch (strtolower($type)) {
             case 'user':
                 // For users, create a basic Notifiable implementation
-                return new class($id) implements \Glueful\Notifications\Contracts\Notifiable {
+                return new class ($id) implements \Glueful\Notifications\Contracts\Notifiable {
                     private string $id;
-                    
-                    public function __construct(string $id) {
+
+                    public function __construct(string $id)
+                    {
                         $this->id = $id;
                     }
-                    
-                    public function routeNotificationFor(string $channel) {
+
+                    public function routeNotificationFor(string $channel)
+                    {
                         return null; // Would need to fetch user data to get actual routing info
                     }
-                    
-                    public function getNotifiableId(): string {
+
+                    public function getNotifiableId(): string
+                    {
                         return $this->id;
                     }
-                    
-                    public function getNotifiableType(): string {
+
+                    public function getNotifiableType(): string
+                    {
                         return 'user';
                     }
-                    
-                    public function shouldReceiveNotification(string $notificationType, string $channel): bool {
+
+                    public function shouldReceiveNotification(string $notificationType, string $channel): bool
+                    {
                         return true; // Default to allowing notifications for retries
                     }
-                    
-                    public function getNotificationPreferences(): array {
+
+                    public function getNotificationPreferences(): array
+                    {
                         return []; // Empty preferences for retries
                     }
                 };
-                
+
             // Add more cases for other entity types as needed
-            
+
             default:
                 // For unknown types, log and return null
                 if ($this->logger) {
@@ -428,10 +435,10 @@ class NotificationRetryService
                 return null;
         }
     }
-    
+
     /**
      * Check if a notification should be retried
-     * 
+     *
      * @param Notification $notification The notification to check
      * @return bool True if the notification should be retried
      */
@@ -441,23 +448,23 @@ class NotificationRetryService
         $data = $notification->getData() ?? [];
         $attempts = $data['retry_count'] ?? 0;
         $maxRetries = $this->config['retry']['max_attempts'] ?? 3;
-        
+
         return $attempts < $maxRetries;
     }
-    
+
     /**
      * Get the configuration
-     * 
+     *
      * @return array Configuration options
      */
     public function getConfig(): array
     {
         return $this->config;
     }
-    
+
     /**
      * Set configuration option
-     * 
+     *
      * @param string $key Configuration key
      * @param mixed $value Configuration value
      * @return self

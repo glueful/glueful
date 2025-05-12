@@ -1,10 +1,11 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Attributes;
 
 #[\Attribute(\Attribute::TARGET_METHOD)]
-class OpenApi 
+class OpenApi
 {
     public function __construct(
         public readonly string $path,
@@ -14,5 +15,6 @@ class OpenApi
         public readonly array $tags = [],
         public readonly array $parameters = [],
         public readonly array $responses = []
-    ) {}
+    ) {
+    }
 }

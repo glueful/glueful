@@ -2,12 +2,17 @@
 
 namespace Glueful\Console\Commands;
 
+// phpcs:disable PSR1.Files.SideEffects
+// Load the API Definition Generator via the loader
+require_once __DIR__ . '/../../apiDefinitionLoader.php';
+// phpcs:enable PSR1.Files.SideEffects
+
 use Glueful\Console\Command;
 use Glueful\ApiDefinitionGenerator;
 
 /**
  * JSON Definition Generator
- * 
+ *
  * Manages API definition file generation:
  * - Creates API endpoint definitions
  * - Generates API documentation
@@ -16,19 +21,19 @@ use Glueful\ApiDefinitionGenerator;
  * - Supports selective generation
  * - Validates output
  * - Maintains consistency
- * 
+ *
  * @package Glueful\Console\Commands
  */
 class GenerateJsonCommand extends Command
 {
     /**
      * Get Command Name
-     * 
+     *
      * Returns command identifier:
      * - Used in CLI as `php glueful generate:json`
      * - Unique command name
      * - Follows naming conventions
-     * 
+     *
      * @return string Command identifier
      */
     public function getName(): string
@@ -38,28 +43,28 @@ class GenerateJsonCommand extends Command
 
     /**
      * Get Command Description
-     * 
+     *
      * Provides overview for help listings:
      * - Single line summary
      * - Shows in command lists
      * - Explains primary purpose
-     * 
+     *
      * @return string Brief description
      */
-    public function getDescription(): string 
+    public function getDescription(): string
     {
         return 'Generate JSON definitions and API documentation';
     }
 
     /**
      * Get Command Help
-     * 
+     *
      * Provides detailed usage instructions:
      * - Shows command syntax
      * - Lists all options
      * - Includes usage examples
      * - Documents parameters
-     * 
+     *
      * @return string Detailed help text
      */
     public function getHelp(): string
@@ -89,7 +94,7 @@ HELP;
 
     /**
      * Execute Generation Command
-     * 
+     *
      * Handles JSON generation process:
      * - Parses command arguments
      * - Validates input options
@@ -98,7 +103,7 @@ HELP;
      * - Generates output files
      * - Reports results
      * - Handles errors
-     * 
+     *
      * @param array $args Command line arguments
      * @throws \RuntimeException If generation fails
      * @return int Exit code (0 for success, non-zero for error)
@@ -113,7 +118,7 @@ HELP;
 
         // Parse arguments
         $options = $this->parseOptions($args);
-        
+
         // Check for type as first argument if not specified with -t or --type
         if (!isset($options['type']) && isset($args[0]) && !str_starts_with($args[0], '-')) {
             $options['type'] = $args[0];
@@ -127,15 +132,15 @@ HELP;
 
         $generator = new ApiDefinitionGenerator(true);
         $forceGenerate = isset($options['force']) && $options['force'];
-        
+
         if ($options['type'] === 'api-definitions') {
             $database = $options['database'] ?? null;
             $table = $options['table'] ?? null;
-            
+
             if ($database && $table) {
                 $generator->generate($database, $table, $forceGenerate);
                 $this->info("Generated JSON for table: $table");
-            } else if ($database) {
+            } elseif ($database) {
                 $generator->generate($database, null, $forceGenerate);
                 $this->info("Generated JSON for database: $database");
             } else {
@@ -143,7 +148,7 @@ HELP;
                 $this->info("Generated JSON for all database(s)");
             }
             return Command::SUCCESS;
-        } else if ($options['type'] === 'doc') {
+        } elseif ($options['type'] === 'doc') {
             if (\config('app.docs_enabled')) {
                 $generator->generateApiDocs($forceGenerate);
                 $this->info("Generated API documentation");
@@ -161,14 +166,14 @@ HELP;
 
     /**
      * Parse Command Options
-     * 
+     *
      * Processes command line input:
      * - Handles short and long options
      * - Validates option values
      * - Maps option aliases
      * - Provides defaults
      * - Maintains option order
-     * 
+     *
      * @param array $args Raw command arguments
      * @return array Processed options
      */
@@ -181,15 +186,15 @@ HELP;
             'T' => 'table',
             'f' => 'force'
         ];
-        
+
         for ($i = 0; $i < count($args); $i++) {
             $arg = $args[$i];
-            
+
             // Skip if it's the first argument and doesn't start with -
             if ($i === 0 && !str_starts_with($arg, '-')) {
                 continue;
             }
-            
+
             // Handle long options (--option=value)
             if (str_starts_with($arg, '--')) {
                 $parts = explode('=', $arg, 2); // Limit to 2 parts
@@ -203,20 +208,18 @@ HELP;
                         $options['force'] = true;
                     }
                 }
-            }
-            // Handle short options (-o value)
-            elseif (str_starts_with($arg, '-') && strlen($arg) === 2) {
+            } elseif (str_starts_with($arg, '-') && strlen($arg) === 2) { // Handle short options (-o value)
                 $key = substr($arg, 1);
                 // Handle flag options like -f
                 if ($key === 'f') {
                     $options['force'] = true;
-                } else if (isset($map[$key]) && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
+                } elseif (isset($map[$key]) && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
                     $options[$map[$key]] = $args[$i + 1];
                     $i++; // Skip next argument as it's the value
                 }
             }
         }
-        
+
         return $options;
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Console\Commands;
@@ -8,13 +9,13 @@ use Glueful\Cache\CacheEngine;
 
 /**
  * Cache Management Command
- * 
+ *
  * Provides CLI interface for managing application cache:
  * - Clear cache
  * - View cache stats
  * - Inspect cached items
  * - Manage TTL
- * 
+ *
  * @package Glueful\Console\Commands
  */
 class CacheCommand extends Command
@@ -23,12 +24,12 @@ class CacheCommand extends Command
      * The name of the command
      */
     protected string $name = 'cache';
-    
+
     /**
      * The description of the command
      */
     protected string $description = 'Manage application cache';
-    
+
     /**
      * The command syntax
      */
@@ -47,7 +48,7 @@ class CacheCommand extends Command
         'ttl'      => 'Get TTL for cached item',
         'expire'   => 'Set new TTL for cached item'
     ];
-    
+
     /**
      * Constructor
      */
@@ -56,30 +57,30 @@ class CacheCommand extends Command
         // Initialize the cache engine
         CacheEngine::initialize();
     }
-    
+
     /**
      * Get the command name
-     * 
+     *
      * @return string
      */
     public function getName(): string
     {
         return $this->name;
     }
-    
+
     /**
      * Get Command Description
-     * 
+     *
      * @return string Brief description
      */
     public function getDescription(): string
     {
         return $this->description;
     }
-    
+
     /**
      * Execute the command
-     * 
+     *
      * @param array $args Command arguments
      * @param array $options Command options
      * @return int Exit code
@@ -90,31 +91,31 @@ class CacheCommand extends Command
             $this->showHelp();
             return Command::SUCCESS;
         }
-        
+
         if (!CacheEngine::isEnabled()) {
             $this->error("Cache system is not enabled");
             return Command::FAILURE;
         }
-        
+
         $action = $args[0];
-        
+
         if (!array_key_exists($action, $this->options)) {
             $this->error("Unknown action: $action");
             $this->showHelp();
             return Command::FAILURE;
         }
-        
+
         try {
             switch ($action) {
                 case 'clear':
                 case 'flush':
                     $this->clearCache();
                     break;
-                
+
                 case 'status':
                     $this->showStatus();
                     break;
-                
+
                 case 'get':
                     if (empty($args[1])) {
                         $this->error('Key is required for get action');
@@ -122,7 +123,7 @@ class CacheCommand extends Command
                     }
                     $this->getItem($args[1]);
                     break;
-                
+
                 case 'set':
                     if (count($args) < 3) {
                         $this->error('Key and value are required for set action');
@@ -131,7 +132,7 @@ class CacheCommand extends Command
                     $ttl = isset($args[3]) ? (int)$args[3] : 3600;
                     $this->setItem($args[1], $args[2], $ttl);
                     break;
-                
+
                 case 'delete':
                     if (empty($args[1])) {
                         $this->error('Key is required for delete action');
@@ -139,7 +140,7 @@ class CacheCommand extends Command
                     }
                     $this->deleteItem($args[1]);
                     break;
-                    
+
                 case 'ttl':
                     if (empty($args[1])) {
                         $this->error('Key is required for ttl action');
@@ -147,7 +148,7 @@ class CacheCommand extends Command
                     }
                     $this->getTtl($args[1]);
                     break;
-                    
+
                 case 'expire':
                     if (count($args) < 3) {
                         $this->error('Key and seconds are required for expire action');
@@ -155,14 +156,13 @@ class CacheCommand extends Command
                     }
                     $this->setExpire($args[1], (int)$args[2]);
                     break;
-                
+
                 default:
                     $this->error("Action not implemented: $action");
                     return Command::FAILURE;
             }
-            
+
             return Command::SUCCESS;
-            
         } catch (\Exception $e) {
             $this->error("Command failed: {$e->getMessage()}");
             return Command::FAILURE;
@@ -175,9 +175,9 @@ class CacheCommand extends Command
     protected function clearCache(): void
     {
         $this->info('Clearing cache...');
-        
+
         $result = CacheEngine::flush();
-        
+
         if ($result) {
             $this->success('Cache cleared successfully');
         } else {
@@ -192,7 +192,7 @@ class CacheCommand extends Command
     {
         $this->info('Cache Status');
         $this->line('============');
-        
+
         if (CacheEngine::isEnabled()) {
             $this->line('Status:  ' . $this->colorText('Enabled', 'green'));
             $this->line('Driver:  ' .  config('cache.default'));
@@ -204,26 +204,26 @@ class CacheCommand extends Command
 
     /**
      * Get cached item
-     * 
+     *
      * @param string $key Cache key
      */
     protected function getItem(string $key): void
     {
         $value = CacheEngine::get($key);
-        
+
         if ($value === null) {
             $this->warning("No cache entry found for key: $key");
             return;
         }
-        
+
         $this->info("Cache value for \"$key\":");
-        
+
         if (is_array($value) || is_object($value)) {
             $this->line(json_encode($value, JSON_PRETTY_PRINT));
         } else {
             $this->line((string)$value);
         }
-        
+
         // Show TTL as well
         $ttl = CacheEngine::ttl($key);
         if ($ttl > 0) {
@@ -233,7 +233,7 @@ class CacheCommand extends Command
 
     /**
      * Set cached item
-     * 
+     *
      * @param string $key Cache key
      * @param string $value Cache value
      * @param int $ttl Time to live in seconds
@@ -244,9 +244,9 @@ class CacheCommand extends Command
         if (in_array($value[0], ['{', '[']) && json_decode($value) !== null) {
             $value = json_decode($value, true);
         }
-        
+
         $result = CacheEngine::set($key, $value, $ttl);
-        
+
         if ($result) {
             $this->success("Cache entry \"$key\" set successfully");
             $this->line("TTL: " . $this->formatTtl($ttl));
@@ -257,13 +257,13 @@ class CacheCommand extends Command
 
     /**
      * Delete cached item
-     * 
+     *
      * @param string $key Cache key
      */
     protected function deleteItem(string $key): void
     {
         $result = CacheEngine::delete($key);
-        
+
         if ($result) {
             $this->success("Cache entry \"$key\" deleted successfully");
         } else {
@@ -273,32 +273,32 @@ class CacheCommand extends Command
 
     /**
      * Get TTL for cached item
-     * 
+     *
      * @param string $key Cache key
      */
     protected function getTtl(string $key): void
     {
         $ttl = CacheEngine::ttl($key);
-        
+
         if ($ttl < 0) {
             $this->warning("Cache entry \"$key\" not found or has no TTL");
             return;
         }
-        
+
         $this->info("TTL for \"$key\":");
         $this->line($this->formatTtl($ttl));
     }
 
     /**
      * Set expiration for cached item
-     * 
+     *
      * @param string $key Cache key
      * @param int $seconds Time until expiration
      */
     protected function setExpire(string $key, int $seconds): void
     {
         $result = CacheEngine::expire($key, $seconds);
-        
+
         if ($result) {
             $this->success("Expiration set for \"$key\"");
             $this->line("TTL: " . $this->formatTtl($seconds));
@@ -309,7 +309,7 @@ class CacheCommand extends Command
 
     /**
      * Format TTL into human-readable format
-     * 
+     *
      * @param int $seconds Seconds
      * @return string Formatted time
      */
@@ -318,23 +318,23 @@ class CacheCommand extends Command
         if ($seconds < 60) {
             return "$seconds seconds";
         }
-        
+
         if ($seconds < 3600) {
             $minutes = floor($seconds / 60);
             $secs = $seconds % 60;
             return "{$minutes}m {$secs}s";
         }
-        
+
         $hours = floor($seconds / 3600);
         $minutes = floor(($seconds % 3600) / 60);
         $secs = $seconds % 60;
-        
+
         return "{$hours}h {$minutes}m {$secs}s";
     }
 
     /**
      * Get Command Help
-     * 
+     *
      * @return string Detailed help text
      */
     public function getHelp(): string
@@ -364,7 +364,7 @@ Examples:
   php glueful cache expire session:token 1800
 HELP;
     }
-    
+
     /**
      * Show command help
      */

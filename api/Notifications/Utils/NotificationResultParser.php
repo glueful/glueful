@@ -6,18 +6,18 @@ namespace Glueful\Notifications\Utils;
 
 /**
  * Notification Result Parser
- * 
+ *
  * Utility class for parsing and standardizing notification service results.
- * Extracts useful information from notification response and converts it to 
+ * Extracts useful information from notification response and converts it to
  * a consistent format that can be used throughout the application.
- * 
+ *
  * @package Glueful\Notifications\Utils
  */
 class NotificationResultParser
 {
     /**
      * Parse notification service result into a standardized format
-     * 
+     *
      * @param array|null $result The result from NotificationService->send()
      * @param array $successData Additional data to include on success
      * @param string $successMessage Custom success message
@@ -26,8 +26,8 @@ class NotificationResultParser
      * @return array Standardized result with success, message, and error_code fields
      */
     public static function parse(
-        $result, 
-        array $successData = [], 
+        $result,
+        array $successData = [],
         string $successMessage = 'Notification sent successfully',
         string $defaultErrorMessage = 'Failed to send notification',
         string $channelName = 'email'
@@ -52,7 +52,7 @@ class NotificationResultParser
         // Error cases
         $errorCode = 'notification_send_failure';
         $errorMessage = $defaultErrorMessage;
-        
+
         // Extract more specific error information if available
         if (isset($result['status'])) {
             switch ($result['status']) {
@@ -70,11 +70,11 @@ class NotificationResultParser
 
                 case 'failed':
                     $errorCode = 'notification_send_failed';
-                    
+
                     // Check if we have channel-specific information
                     if (isset($result['channels']) && isset($result['channels'][$channelName])) {
                         $channel = $result['channels'][$channelName];
-                        
+
                         if (isset($channel['reason'])) {
                             switch ($channel['reason']) {
                                 case 'channel_not_found':
@@ -102,7 +102,8 @@ class NotificationResultParser
                                     if (isset($channel['message'])) {
                                         $errorMessage = 'System error: ' . $channel['message'];
                                     } else {
-                                        $errorMessage = 'An unexpected error occurred while sending the ' . $channelName . '.';
+                                        $errorMessage = 'An unexpected error occurred while sending the ' .
+                                            $channelName . '.';
                                     }
                                     break;
                             }
@@ -116,7 +117,7 @@ class NotificationResultParser
                     break;
             }
         }
-        
+
         return [
             'success' => false,
             'message' => $errorMessage,
@@ -126,21 +127,21 @@ class NotificationResultParser
 
     /**
      * Parse email notification result with email-specific messages
-     * 
+     *
      * @param array|null $result The result from NotificationService->send()
      * @param array $successData Additional data to include on success
      * @param string $successMessage Custom success message
      * @return array Standardized result with success, message, and error_code fields
      */
     public static function parseEmailResult(
-        $result, 
-        array $successData = [], 
+        $result,
+        array $successData = [],
         string $successMessage = 'Email sent successfully'
     ): array {
         return self::parse(
-            $result, 
-            $successData, 
-            $successMessage, 
+            $result,
+            $successData,
+            $successMessage,
             'Failed to send email. Please try again later.',
             'email'
         );
@@ -148,21 +149,21 @@ class NotificationResultParser
 
     /**
      * Parse SMS notification result with SMS-specific messages
-     * 
+     *
      * @param array|null $result The result from NotificationService->send()
      * @param array $successData Additional data to include on success
      * @param string $successMessage Custom success message
      * @return array Standardized result with success, message, and error_code fields
      */
     public static function parseSmsResult(
-        $result, 
-        array $successData = [], 
+        $result,
+        array $successData = [],
         string $successMessage = 'SMS sent successfully'
     ): array {
         return self::parse(
-            $result, 
-            $successData, 
-            $successMessage, 
+            $result,
+            $successData,
+            $successMessage,
             'Failed to send SMS. Please try again later.',
             'sms'
         );
@@ -170,21 +171,21 @@ class NotificationResultParser
 
     /**
      * Parse push notification result with push-specific messages
-     * 
+     *
      * @param array|null $result The result from NotificationService->send()
      * @param array $successData Additional data to include on success
      * @param string $successMessage Custom success message
      * @return array Standardized result with success, message, and error_code fields
      */
     public static function parsePushResult(
-        $result, 
-        array $successData = [], 
+        $result,
+        array $successData = [],
         string $successMessage = 'Push notification sent successfully'
     ): array {
         return self::parse(
-            $result, 
-            $successData, 
-            $successMessage, 
+            $result,
+            $successData,
+            $successMessage,
             'Failed to send push notification. Please try again later.',
             'push'
         );

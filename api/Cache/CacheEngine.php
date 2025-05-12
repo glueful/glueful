@@ -9,7 +9,7 @@ use Glueful\Cache\CacheFactory;
 
 /**
  * Cache Engine
- * 
+ *
  * Provides unified caching interface across the application.
  * Supports multiple cache drivers with prefix management.
  */
@@ -26,14 +26,14 @@ class CacheEngine
 
     /**
      * Initialize cache engine
-     * 
+     *
      * Sets up cache driver and configuration.
-     * 
+     *
      * @param string $prefix Optional key prefix
      * @param string $driver Optional driver type
      * @return bool True if initialization successful
      */
-    public static function initialize(string $prefix = '', string $driver = ''): bool 
+    public static function initialize(string $prefix = '', string $driver = ''): bool
     {
         // Define CACHE_ENGINE constant if not already defined
         if (!defined('CACHE_ENGINE')) {
@@ -41,7 +41,7 @@ class CacheEngine
         }
 
         self::$prefix = $prefix ?: config('cache.prefix');
-        
+
         try {
             self::$driver = CacheFactory::create($driver);
             self::$enabled = true;
@@ -55,7 +55,7 @@ class CacheEngine
 
     /**
      * Check if cache is enabled
-     * 
+     *
      * @return bool True if cache system is ready
      */
     private static function ensureEnabled(): bool
@@ -65,42 +65,42 @@ class CacheEngine
 
     /**
      * Get cached value
-     * 
+     *
      * @param string $key Cache key
      * @return mixed Cached value or null if not found
      */
-    public static function get(string $key): mixed 
+    public static function get(string $key): mixed
     {
         return self::ensureEnabled() ? self::$driver->get(self::$prefix . $key) : null;
     }
 
     /**
      * Store value in cache
-     * 
+     *
      * @param string $key Cache key
      * @param mixed $value Value to cache
      * @param int $ttl Time to live in seconds
      * @return bool True if stored successfully
      */
-    public static function set(string $key, mixed $value, int $ttl = 3600): bool 
+    public static function set(string $key, mixed $value, int $ttl = 3600): bool
     {
         return self::ensureEnabled() ? self::$driver->set(self::$prefix . $key, $value, $ttl) : false;
     }
 
     /**
      * Delete cached value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted successfully
      */
-    public static function delete(string $key): bool 
+    public static function delete(string $key): bool
     {
         return self::ensureEnabled() ? self::$driver->delete(self::$prefix . $key) : false;
     }
 
     /**
      * Increment numeric value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if incremented successfully
      */
@@ -111,7 +111,7 @@ class CacheEngine
 
     /**
      * Get remaining TTL
-     * 
+     *
      * @param string $key Cache key
      * @return int Remaining time in seconds
      */
@@ -122,17 +122,17 @@ class CacheEngine
 
     /**
      * Clear all cached values
-     * 
+     *
      * @return bool True if cache cleared successfully
      */
-    public static function flush(): bool 
+    public static function flush(): bool
     {
         return self::ensureEnabled() ? self::$driver->flush() : false;
     }
 
     /**
      * Remove sorted set members by score
-     * 
+     *
      * @param string $key Set key
      * @param string $min Minimum score
      * @param string $max Maximum score
@@ -145,7 +145,7 @@ class CacheEngine
 
     /**
      * Get sorted set cardinality
-     * 
+     *
      * @param string $key Set key
      * @return int Number of members
      */
@@ -156,7 +156,7 @@ class CacheEngine
 
     /**
      * Add members to sorted set
-     * 
+     *
      * @param string $key Set key
      * @param array $members Members with scores
      * @return bool True if added successfully
@@ -168,7 +168,7 @@ class CacheEngine
 
     /**
      * Set key expiration
-     * 
+     *
      * @param string $key Cache key
      * @param int $seconds Time until expiration
      * @return bool True if expiration set
@@ -180,7 +180,7 @@ class CacheEngine
 
     /**
      * Get sorted set range
-     * 
+     *
      * @param string $key Set key
      * @param int $start Start index
      * @param int $stop End index
@@ -193,17 +193,17 @@ class CacheEngine
 
     /**
      * Check cache availability
-     * 
+     *
      * @return bool True if cache system is enabled
      */
-    public static function isEnabled(): bool 
+    public static function isEnabled(): bool
     {
         return self::ensureEnabled();
     }
 
     /**
      * Check if cache driver is initialized
-     * 
+     *
      * @return bool True if cache driver is initialized
      */
     public static function isInitialized(): bool

@@ -2,7 +2,6 @@
 
 /**
  * PHPUnit Bootstrap file
- * 
  * Sets up the test environment for Glueful tests
  */
 
@@ -22,7 +21,6 @@ if (file_exists(__DIR__ . '/../.env.testing')) {
     if (file_exists(__DIR__ . '/../.env')) {
         $dotenv = \Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
         $dotenv->load();
-        
         // Override the environment to testing
         $_ENV['APP_ENV'] = 'testing';
         $_SERVER['APP_ENV'] = 'testing';
@@ -33,6 +31,9 @@ if (file_exists(__DIR__ . '/../.env.testing')) {
 // Some constants that might be needed by the tests
 define('TEST_ROOT', __DIR__);
 define('APP_ROOT', __DIR__ . '/..');
+
+// Load extensions bootstrap to set up namespaces for extensions
+require_once __DIR__ . '/bootstrap-extensions.php';
 
 // Optionally set up a test database
 // This would typically be done in specific integration tests

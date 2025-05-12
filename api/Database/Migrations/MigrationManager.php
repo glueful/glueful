@@ -12,7 +12,7 @@ use RuntimeException;
 
 /**
  * Database Migration Manager
- * 
+ *
  * Manages database schema migrations including:
  * - Migration tracking using version table
  * - Forward and rollback migrations
@@ -20,21 +20,21 @@ use RuntimeException;
  * - Transaction handling for safe execution
  * - Checksum verification for file integrity
  * - Migration history tracking
- * 
+ *
  * Each migration is executed within a transaction and tracked in the
  * migrations table. Supports rollback operations by batch number
  * and maintains migration order.
- * 
+ *
  * Usage:
  * ```php
  * $manager = new MigrationManager();
- * 
+ *
  * // Run pending migrations
  * $result = $manager->migrate();
- * 
+ *
  * // Run specific migration
  * $result = $manager->migrate('/path/to/migration.php');
- * 
+ *
  * // Rollback last batch
  * $result = $manager->rollback();
  * ```
@@ -55,9 +55,9 @@ class MigrationManager
 
     /**
      * Initialize migration manager
-     * 
+     *
      * Sets up schema manager and ensures version table exists.
-     * 
+     *
      * @param string|null $migrationsPath Custom path to migrations directory
      * @throws RuntimeException If database connection fails
      */
@@ -67,7 +67,7 @@ class MigrationManager
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
 
-        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__,3) . '/database/migrations';
+        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 3) . '/database/migrations';
         // echo $this->migrationsPath;
         // exit;
         $this->ensureVersionTable();
@@ -75,7 +75,7 @@ class MigrationManager
 
     /**
      * Create migrations tracking table
-     * 
+     *
      * Ensures migrations table exists with required structure:
      * - id: Auto-incrementing primary key
      * - migration: Migration filename (unique)
@@ -103,28 +103,28 @@ class MigrationManager
 
     /**
      * Get pending migrations
-     * 
+     *
      * Returns list of migration files that haven't been executed:
      * - Scans migrations directory for .php files
      * - Scans extensions migration directories
      * - Compares against applied migrations
      * - Returns array of pending migration paths
-     * 
+     *
      * @return array<string> List of pending migration file paths
      */
     public function getPendingMigrations(): array
     {
         $applied = $this->getAppliedMigrations();
-        
+
         // Get migrations from main directory
         $files = glob($this->migrationsPath . '/*.php');
-        
+
         // Get migrations from extensions
         $extensionsDir = dirname(__DIR__, 3) . '/extensions';
         if (is_dir($extensionsDir)) {
             // Get all extension directories
             $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
-            
+
             foreach ($extensions as $extension) {
                 $migrationDir = $extension . '/migrations';
                 if (is_dir($migrationDir)) {
@@ -133,13 +133,13 @@ class MigrationManager
                 }
             }
         }
-        
+
         return array_filter($files, fn($file) => !in_array(basename($file), $applied));
     }
 
     /**
      * Get list of applied migrations
-     * 
+     *
      * @return array<string> List of applied migration filenames
      */
     private function getAppliedMigrations(): array
@@ -148,17 +148,17 @@ class MigrationManager
         ->select(self::VERSION_TABLE, ['migration'])
         ->where([])
         ->get();
-        
+
         return array_column($result, 'migration');
     }
 
     /**
      * Run migrations
-     * 
+     *
      * Executes pending migrations in order. Can run either:
      * - All pending migrations
      * - Specific migration file
-     * 
+     *
      * @param string|null $specificFile Optional specific migration to run
      * @return array{
      *     applied: array<string>,
@@ -167,15 +167,20 @@ class MigrationManager
      */
     public function migrate(?string $specificFile = null): array
     {
+        $results = ['applied' => [], 'failed' => []];
         if ($specificFile) {
-            return $this->runMigration($specificFile);
+            $status = $this->runMigration($specificFile);
+            if ($status['success']) {
+                $results['applied'][] = $status['file'];
+            } else {
+                $results['failed'][] = $status['file'];
+            }
+            return $results;
         }
 
-        $results = ['applied' => [], 'failed' => []];
         $batch = $this->getNextBatchNumber();
 
         foreach ($this->getPendingMigrations() as $file) {
-
             $status = $this->runMigration($file, $batch);
             if ($status['success']) {
                 $results['applied'][] = $status['file'];
@@ -189,13 +194,13 @@ class MigrationManager
 
     /**
      * Execute single migration
-     * 
+     *
      * Runs a specific migration file:
      * 1. Loads migration class
      * 2. Verifies interface implementation
      * 3. Executes migration within transaction
      * 4. Records successful execution
-     * 
+     *
      * @param string $file Migration file path
      * @param int|null $batch Optional batch number
      * @return array{
@@ -210,17 +215,17 @@ class MigrationManager
 
         $className = pathinfo($file, PATHINFO_FILENAME);
         $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
-        
+
         // Try to determine if the file contains a namespaced class
         $fileContent = file_get_contents($file);
         $namespace = '';
-        
+
         if (preg_match('/namespace\s+([^;]+);/i', $fileContent, $matches)) {
             $namespace = $matches[1] . '\\';
         }
-        
+
         $fullClassName = $namespace . $className;
-        
+
         if (!class_exists($fullClassName)) {
             // Fall back to non-namespaced class if namespace detection failed
             if (!class_exists($className)) {
@@ -228,7 +233,7 @@ class MigrationManager
             }
             $fullClassName = $className;
         }
-  
+
         $migration = new $fullClassName();
         if (!$migration instanceof MigrationInterface) {
             throw new RuntimeException("Migration $fullClassName must implement MigrationInterface");
@@ -247,7 +252,7 @@ class MigrationManager
             $migration->up($this->schema);
 
             $this->db->insert(
-                self::VERSION_TABLE, 
+                self::VERSION_TABLE,
                 [
                     'migration' => $filename,
                     'batch' => $batch ?? $this->getNextBatchNumber(),
@@ -258,7 +263,6 @@ class MigrationManager
 
             $this->db->commit();
             return ['success' => true, 'file' => $filename];
-
         } catch (\Exception $e) {
             $this->db->rollBack();
             error_log("Migration failed: " . $e->getMessage());
@@ -268,7 +272,7 @@ class MigrationManager
 
     /**
      * Get next batch number
-     * 
+     *
      * @return int Next sequential batch number
      */
     private function getNextBatchNumber(): int
@@ -278,18 +282,18 @@ class MigrationManager
             $this->db->raw("MAX(batch) AS max_batch")
         ])
         ->get();
-        
+
         return (int)($result[0]['max_batch'] ?? 0) + 1;
     }
 
     /**
      * Rollback migrations
-     * 
+     *
      * Reverts most recent migrations:
      * - Rolls back by batch
      * - Maintains order within batch
      * - Removes from version history
-     * 
+     *
      * @param int $steps Number of migrations to roll back
      * @return array{
      *     reverted: array<string>,
@@ -315,11 +319,11 @@ class MigrationManager
 
     /**
      * Get migrations for rollback
-     * 
+     *
      * Returns list of migrations to roll back based on:
      * - Most recent batch first
      * - Specified number of steps
-     * 
+     *
      * @param int $steps Number of migrations to return
      * @return array<string> List of migration filenames
      */
@@ -341,12 +345,12 @@ class MigrationManager
 
     /**
      * Revert single migration
-     * 
+     *
      * Rolls back a specific migration:
      * 1. Loads migration class
      * 2. Executes down() method
      * 3. Removes from version history
-     * 
+     *
      * @param string $filename Migration filename
      * @return array{
      *     success: bool,
@@ -358,19 +362,19 @@ class MigrationManager
     {
         // First check in main migrations directory
         $file = $this->migrationsPath . '/' . $filename;
-        
+
         // If not found in main directory, check in extension directories
         if (!file_exists($file)) {
             $extensionsDir = dirname(__DIR__, 3) . '/extensions';
             $found = false;
-            
+
             if (is_dir($extensionsDir)) {
                 $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
-                
+
                 foreach ($extensions as $extension) {
                     $migrationDir = $extension . '/migrations';
                     $extensionFile = $migrationDir . '/' . $filename;
-                    
+
                     if (is_dir($migrationDir) && file_exists($extensionFile)) {
                         $file = $extensionFile;
                         $found = true;
@@ -378,7 +382,7 @@ class MigrationManager
                     }
                 }
             }
-            
+
             if (!$found) {
                 return ['success' => false, 'file' => $filename, 'error' => 'File not found'];
             }
@@ -387,11 +391,11 @@ class MigrationManager
         require_once $file;
         $className = pathinfo($file, PATHINFO_FILENAME);
         $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
-        
+
         if (!class_exists($className)) {
             throw new RuntimeException("Migration class $className not found in $file");
         }
-        
+
         $migration = new $className();
         if (!$migration instanceof MigrationInterface) {
             throw new RuntimeException("Migration $className must implement MigrationInterface");
@@ -399,13 +403,12 @@ class MigrationManager
 
         try {
             $migration->down($this->schema);
-            
+
             // Delete using schema manager
             $this->db->delete(self::VERSION_TABLE, ['migration' => $filename]);
-            
+
             $this->db->commit();
             return ['success' => true, 'file' => $filename];
-
         } catch (\Exception $e) {
             $this->db->rollBack();
             error_log("Rollback failed: " . $e->getMessage());
@@ -415,7 +418,7 @@ class MigrationManager
 
     /**
      * Execute migration
-     * 
+     *
      * @param MigrationInterface $migration Migration to execute
      */
     public function executeMigration(MigrationInterface $migration): void
@@ -431,7 +434,7 @@ class MigrationManager
 
     /**
      * Execute migration rollback
-     * 
+     *
      * @param MigrationInterface $migration Migration to rollback
      */
     public function executeRollback(MigrationInterface $migration): void

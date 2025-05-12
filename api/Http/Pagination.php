@@ -1,11 +1,12 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Http;
 
 /**
  * Pagination Handler
- * 
+ *
  * Manages pagination calculations and state for API responses.
  * Handles limits, offsets, and page calculations with boundary checking.
  */
@@ -28,7 +29,7 @@ class Pagination
 
     /**
      * Constructor
-     * 
+     *
      * @param int $limit Maximum items per page (1-100)
      * @param int $offset Starting position
      * @param int $total Total number of items
@@ -45,7 +46,7 @@ class Pagination
 
     /**
      * Get maximum items per page
-     * 
+     *
      * @return int Items per page limit
      */
     public function getLimit(): int
@@ -55,7 +56,7 @@ class Pagination
 
     /**
      * Get current offset
-     * 
+     *
      * @return int Current page starting position
      */
     public function getOffset(): int
@@ -65,7 +66,7 @@ class Pagination
 
     /**
      * Get total number of items
-     * 
+     *
      * @return int Total available items
      */
     public function getTotal(): int
@@ -75,7 +76,7 @@ class Pagination
 
     /**
      * Set total number of items
-     * 
+     *
      * @param int $total New total count
      */
     public function setTotal(int $total): void
@@ -85,7 +86,7 @@ class Pagination
 
     /**
      * Calculate total number of pages
-     * 
+     *
      * @return int Total pages based on limit and total items
      */
     public function getTotalPages(): int
@@ -95,7 +96,7 @@ class Pagination
 
     /**
      * Get current page number
-     * 
+     *
      * @return int Current page (1-based)
      */
     public function getCurrentPage(): int
@@ -105,7 +106,7 @@ class Pagination
 
     /**
      * Check if next page exists
-     * 
+     *
      * @return bool True if there are more pages after current
      */
     public function hasNextPage(): bool
@@ -115,7 +116,7 @@ class Pagination
 
     /**
      * Check if previous page exists
-     * 
+     *
      * @return bool True if there are pages before current
      */
     public function hasPreviousPage(): bool

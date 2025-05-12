@@ -8,7 +8,7 @@ use Memcached;
 
 /**
  * Memcached Cache Driver
- * 
+ *
  * Implements cache operations using Memcached backend.
  * Provides sorted set emulation using stored arrays.
  */
@@ -19,7 +19,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Constructor
-     * 
+     *
      * @param Memcached $memcached Configured Memcached connection
      */
     public function __construct(Memcached $memcached)
@@ -29,9 +29,9 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Add to sorted set
-     * 
+     *
      * Emulates Redis ZADD using array storage.
-     * 
+     *
      * @param string $key Set key
      * @param array $scoreValues Score-value pairs
      * @return bool True if added successfully
@@ -47,9 +47,9 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Remove set members by score
-     * 
+     *
      * Emulates Redis ZREMRANGEBYSCORE.
-     * 
+     *
      * @param string $key Set key
      * @param string $min Minimum score
      * @param string $max Maximum score
@@ -65,7 +65,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Get set cardinality
-     * 
+     *
      * @param string $key Set key
      * @return int Number of members
      */
@@ -76,9 +76,9 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Get set range
-     * 
+     *
      * Emulates Redis ZRANGE with sorting.
-     * 
+     *
      * @param string $key Set key
      * @param int $start Start index
      * @param int $stop End index
@@ -93,7 +93,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Set key expiration
-     * 
+     *
      * @param string $key Cache key
      * @param int $seconds Time until expiration
      * @return bool True if expiration set
@@ -105,7 +105,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Delete key
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted
      */
@@ -116,7 +116,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Get cached value
-     * 
+     *
      * @param string $key Cache key
      * @return mixed Value or null if not found
      */
@@ -128,7 +128,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Store value in cache
-     * 
+     *
      * @param string $key Cache key
      * @param mixed $value Value to store
      * @param int $ttl Time to live in seconds
@@ -141,7 +141,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Delete cached value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if deleted
      */
@@ -152,7 +152,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Increment numeric value
-     * 
+     *
      * @param string $key Cache key
      * @return bool True if incremented
      */
@@ -163,9 +163,9 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Get remaining TTL
-     * 
+     *
      * Note: Memcached doesn't support direct TTL lookup
-     * 
+     *
      * @param string $key Cache key
      * @return int Approximate TTL or 0 if expired
      */
@@ -177,7 +177,7 @@ class MemcachedCacheDriver implements CacheDriverInterface
 
     /**
      * Clear all cached values
-     * 
+     *
      * @return bool True if cache cleared
      */
     public function flush(): bool

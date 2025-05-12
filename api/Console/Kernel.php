@@ -4,7 +4,7 @@ namespace Glueful\Console;
 
 /**
  * Console Application Kernel
- * 
+ *
  * Main entry point for command-line operations:
  * - Manages command registration and execution
  * - Handles command-line arguments
@@ -12,7 +12,7 @@ namespace Glueful\Console;
  * - Validates PHP environment
  * - Auto-registers core commands
  * - Supports command help system
- * 
+ *
  * @package Glueful\Console
  */
 class Kernel
@@ -22,13 +22,13 @@ class Kernel
 
     /**
      * Initialize Console Kernel
-     * 
+     *
      * Sets up console environment:
      * - Validates PHP version requirements
      * - Registers core command set
      * - Initializes command registry
      * - Configures help system
-     * 
+     *
      * @throws \RuntimeException If PHP version is below 8.2.0
      */
     public function __construct()
@@ -57,13 +57,13 @@ class Kernel
 
     /**
      * Register Command Classes
-     * 
+     *
      * Adds commands to registry:
      * - Instantiates command objects
      * - Maps command names
      * - Validates command interfaces
      * - Sets up command dependencies
-     * 
+     *
      * @param array $commands List of command class names
      * @return void
      */
@@ -77,21 +77,21 @@ class Kernel
 
     /**
      * Execute Console Command
-     * 
+     *
      * Main execution flow:
      * - Parses command line arguments
      * - Resolves target command
      * - Validates command input
      * - Executes command logic
      * - Falls back to help on error
-     * 
+     *
      * @return void
      */
     public function run(): void
     {
         global $argv;
         $commandName = $argv[1] ?? 'help'; // Default to help
-        
+
         // Get command arguments (everything after the command name)
         $args = array_slice($argv, 2);
 
@@ -105,12 +105,12 @@ class Kernel
 
     /**
      * Get Available Commands
-     * 
+     *
      * Returns registered command set:
      * - Includes core commands
      * - Lists custom commands
      * - Provides command metadata
-     * 
+     *
      * @return array<string, Command> Map of command names to instances
      */
     public function getCommands(): array

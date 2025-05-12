@@ -10,7 +10,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * PSR-7 Server Request Factory
- * 
+ *
  * Creates PSR-7 compliant ServerRequest objects from globals.
  * Uses Nyholm PSR-7 implementation.
  */
@@ -18,14 +18,14 @@ class ServerRequestFactory
 {
     /**
      * Create ServerRequest from globals
-     * 
+     *
      * Creates a PSR-7 ServerRequest object using global variables:
      * - $_SERVER
      * - $_FILES
      * - $_COOKIE
      * - $_GET
      * - $_POST
-     * 
+     *
      * @return ServerRequestInterface
      */
     public static function fromGlobals(): ServerRequestInterface
