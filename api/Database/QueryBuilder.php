@@ -45,7 +45,7 @@ class QueryBuilder
     /** @var bool Whether to use soft deletes */
     protected bool $softDeletes = true;
 
-    /** @var array Group by clauses */
+    /** @var array<int, string|RawExpression> Group by clauses */
     protected array $groupBy = [];
 
     /** @var array Order by clauses */
@@ -57,7 +57,7 @@ class QueryBuilder
     /** @var array Stores query parameter bindings */
     protected array $bindings = [];
 
-    /** @var array Stores having clauses */
+    /** @var array<int, array<string, mixed>|RawExpression> Stores having clauses */
     protected array $having = [];
 
     /** @var array Stores raw where conditions */
@@ -346,7 +346,7 @@ class QueryBuilder
         // Add GROUP BY if specified
         if (!empty($this->groupBy)) {
             $groupByColumns = array_map(function ($column) {
-                if (is_object($column) && $column instanceof RawExpression) {
+                if ($column instanceof RawExpression) {
                     return (string) $column;
                 }
                 if (strpos($column, '.') !== false) {
@@ -363,7 +363,7 @@ class QueryBuilder
         if (!empty($this->having)) {
             $havingClauses = [];
             foreach ($this->having as $item) {
-                if (is_object($item) && $item instanceof RawExpression) {
+                if ($item instanceof RawExpression) {
                     $havingClauses[] = (string) $item;
                 } else {
                     foreach ($item as $col => $value) {
@@ -892,10 +892,8 @@ class QueryBuilder
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
                 $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
             }
-            // Add ORDER BY clause if we have order clauses
-            if (count($orderByClauses) > 0) {
-                $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
-            }
+            // Add ORDER BY clause (no need to check count, we know orderBy is not empty)
+            $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
         }
         return $this;
     }

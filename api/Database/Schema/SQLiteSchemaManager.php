@@ -335,10 +335,11 @@ class SQLiteSchemaManager implements SchemaManager
      * - Temporary tables
      * - Internal tables
      *
+     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws Exception If table list retrieval fails
      */
-    public function getTables(): array
+    public function getTables(?bool $includeSchema = false): array
     {
         try {
             $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';";

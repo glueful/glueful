@@ -262,7 +262,7 @@ class JobScheduler
      * @param bool $success Whether execution succeeded
      * @param mixed $result Result data from execution
      */
-    protected function recordJobExecution(string $jobUud, bool $success, $result = null): void
+    protected function recordJobExecution(string $jobUuid, bool $success, $result = null): void
     {
         try {
             $now = date('Y-m-d H:i:s');
@@ -271,7 +271,7 @@ class JobScheduler
             $executionId = Utils::generateNanoID();
             $this->db->insert('job_executions', [
                 'uuid' => $executionId,
-                'job_uuid' => $jobUud,
+                'job_uuid' => $jobUuid,
                 'status' => $success ? 'success' : 'failure',
                 'started_at' => $now,
                 'completed_at' => $now,
@@ -281,7 +281,7 @@ class JobScheduler
 
             // Update job's last_run and next_run
             $job = $this->db->select('scheduled_jobs', ['schedule'])
-                ->where(['uuid' => $jobUud])
+                ->where(['uuid' => $jobUuid])
                 ->limit(1)
                 ->get();
 
@@ -293,7 +293,7 @@ class JobScheduler
                     'last_run' => $now,
                     'next_run' => $nextRunTime,
                     'updated_at' => $now
-                ], ['uuid' => $jobUud]);
+                ], ['uuid' => $jobUuid]);
             }
         } catch (\Exception $e) {
             error_log("Failed to record job execution: " . $e->getMessage());

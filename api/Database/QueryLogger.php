@@ -277,9 +277,10 @@ class QueryLogger
             // Calculate duration using microtime
             $duration = (microtime(true) - $timerIdOrStart) * 1000;
             return round($duration, 2);
+        } else {
+            // Default fallback for any other type
+            return 0.0;
         }
-        // Default fallback for any other type
-        return 0.0;
     }
 
     /**

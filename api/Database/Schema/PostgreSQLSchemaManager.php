@@ -345,14 +345,15 @@ class PostgreSQLSchemaManager implements SchemaManager
      * - System table exclusion
      * - Proper escaping
      *
+     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws Exception If table list retrieval fails
      */
-    public function getTables(): array
+    public function getTables(?bool $includeSchema = false): array
     {
         try {
             $query = "
-                SELECT table_name 
+                SELECT table_name" . ($includeSchema ? ", table_schema" : "") . "
                 FROM information_schema.tables 
                 WHERE table_schema = 'public'
                 ORDER BY table_name;
