@@ -168,7 +168,6 @@ class MigrationManager
     public function migrate(?string $specificFile = null): array
     {
         $results = ['applied' => [], 'failed' => []];
-        
         if ($specificFile) {
             $status = $this->runMigration($specificFile);
             if ($status['success']) {

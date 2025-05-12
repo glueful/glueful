@@ -189,7 +189,7 @@ class DatabaseController
     public function getTables(?bool $includeSchema = false): mixed
     {
         try {
-            $tables = $this->schemaManager->getTables($includeSchema);
+            $tables = $this->schemaManager->getTables();
             return Response::ok($tables, 'Tables retrieved successfully')->send();
         } catch (\Exception $e) {
             error_log("Get tables error: " . $e->getMessage());
@@ -529,14 +529,10 @@ class DatabaseController
                 $formattedIndexes[] = $formattedIndex;
 
                 try {
-                    // Add the index
-                    $success = $this->schemaManager->addIndex([$formattedIndex]);
-
-                    if ($success) {
-                        $results[] = $formattedIndex['name'];
-                    } else {
-                        $failed[] = $formattedIndex['name'];
-                    }
+                      // Add the index
+                    $this->schemaManager->addIndex([$formattedIndex]);
+                    // If we get here, no exception was thrown, so it succeeded
+                    $results[] = $formattedIndex['name'];
                 } catch (\Exception $e) {
                     error_log("Failed to add index on column '{$index['column']}': " . $e->getMessage());
                     $failed[] = $formattedIndex['name'];
@@ -714,13 +710,9 @@ class DatabaseController
                     }
 
                     // Use the SchemaManager's addForeignKey method
-                    $success = $this->schemaManager->addForeignKey([$formattedFk]);
+                     $this->schemaManager->addForeignKey([$formattedFk]);
 
-                    if ($success) {
-                        $results[] = $formattedFk['name'];
-                    } else {
-                        $failed[] = $formattedFk['name'];
-                    }
+                    $results[] = $formattedFk['name'];
                 } catch (\Exception $e) {
                     error_log("Failed to add foreign key for column '{$fk['column']}': " . $e->getMessage());
                     $failed[] = $fk['column'];
@@ -1056,14 +1048,12 @@ class DatabaseController
                 }, $data['indexes']);
 
                 try {
-                    $success = $this->schemaManager->addIndex($formattedIndexes);
-                    if ($success) {
-                        $results['added_indexes'] = array_map(function ($index) {
-                            return $index['name'];
-                        }, $formattedIndexes);
-                    } else {
-                        $results['failed_operations'][] = "Failed to add indexes";
-                    }
+                    // The method returns the schema manager instance (self), not a boolean
+                    $this->schemaManager->addIndex($formattedIndexes);
+                    // Since no exception was thrown, consider it successful
+                    $results['added_indexes'] = array_map(function ($index) {
+                        return $index['name'];
+                    }, $formattedIndexes);
                 } catch (\Exception $e) {
                     error_log("Failed to add indexes: " . $e->getMessage());
                     $results['failed_operations'][] = "Failed to add indexes: " . $e->getMessage();
@@ -1089,12 +1079,9 @@ class DatabaseController
                             'name' => $fkName
                         ];
 
-                        $success = $this->schemaManager->addForeignKey([$fkDef]);
-                        if ($success) {
-                            $results['added_foreign_keys'][] = $fkName;
-                        } else {
-                            $results['failed_operations'][] = "Failed to add foreign key on column: " . $fk['column'];
-                        }
+                        $this->schemaManager->addForeignKey([$fkDef]);
+                        // If no exception thrown, consider it successful
+                        $results['added_foreign_keys'][] = $fkName;
                     } catch (\Exception $e) {
                         $columnName = $fk['column'];
                         error_log("Failed to add foreign key on column '$columnName': " . $e->getMessage());

@@ -280,11 +280,19 @@ class MySQLSchemaManager implements SchemaManager
      *
      * Retrieves list of tables in current database.
      *
+     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws \PDOException If table list retrieval fails
      */
-    public function getTables(): array
+    public function getTables(?bool $includeSchema = false): array
     {
+        if ($includeSchema) {
+            $stmt = $this->pdo->query(
+                "SELECT TABLE_NAME, TABLE_SCHEMA FROM information_schema.TABLES " .
+                "WHERE TABLE_SCHEMA = DATABASE()"
+            );
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
         $stmt = $this->pdo->query("SHOW TABLES");
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }

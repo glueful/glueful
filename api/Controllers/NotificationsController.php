@@ -163,7 +163,9 @@ class NotificationsController
                     'last_page' => ceil($totalCount / $perPage)
                 ],
                 'filters' => [
-                    'applied' => !empty($filters),
+                    'applied' => !empty($filters['type'])
+                        || !empty($filters['priority'])
+                        || !empty($filters['created_at']),
                     'parameters' => $filters
                 ]
             ], 'Notifications retrieved successfully')->send();
