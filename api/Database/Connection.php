@@ -2,8 +2,6 @@
 
 namespace Glueful\Database;
 
-require_once __DIR__ . '../../bootstrap.php';
-
 use PDO;
 use Glueful\Database\Driver\MySQLDriver;
 use Glueful\Database\Driver\PostgreSQLDriver;

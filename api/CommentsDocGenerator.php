@@ -536,7 +536,8 @@ class CommentsDocGenerator
             $part = trim($part);
 
             // Match field with type and optional description
-            if (preg_match('/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/', $part, $match)) {
+            if (preg_match('/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/',
+                $part, $match)) {
                 $name = $match[1];
                 $propType = $match[2];
                 $description = isset($match[4]) ? $match[4] : (isset($match[3]) ? $match[3] : '');
@@ -553,14 +554,12 @@ class CommentsDocGenerator
                 }
 
                 $properties[$name] = $property;
-            }
-            // Match field with object value
+            } // Match field with object value
             elseif (preg_match('/(\w+):(\{[^}]+\})/', $part, $match)) {
                 $name = $match[1];
                 $nestedSchema = $this->parseSimplifiedSchema($match[2]);
                 $properties[$name] = $nestedSchema;
-            }
-            // Match field with array value
+            } // Match field with array value
             elseif (preg_match('/(\w+):(\[[^\]]+\])/', $part, $match)) {
                 $name = $match[1];
                 $itemsSchema = $this->parseSimplifiedSchema(substr($match[2], 1, -1));
@@ -587,7 +586,8 @@ class CommentsDocGenerator
     private function extractSimplifiedParameters(string $docComment): array
     {
         $params = [];
-        $pattern = '/@param\s+(\w+)\s+(path|query|header|cookie)\s+(string|integer|number|boolean|array|object)\s+(true|false)\s+"([^"]*)"/';
+        $pattern = '/@param\s+(\w+)\s+(path|query|header|cookie)\s+(string|integer|number|boolean|array|object)'
+            . '\s+(true|false)\s+"([^"]*)"/';
 
         preg_match_all($pattern, $docComment, $matches, PREG_SET_ORDER);
 

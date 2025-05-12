@@ -134,7 +134,13 @@ class JobScheduler
                 ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
-                ['type' => 'FOREIGN KEY', 'column' => 'job_uuid', 'table' => 'job_executions', 'references' => 'uuid', 'on' => 'scheduled_jobs', 'onDelete' => 'CASCADE']
+                ['type' => 'FOREIGN KEY', 
+                    'column' => 'job_uuid', 
+                    'table' => 'job_executions', 
+                    'references' => 'uuid', 
+                    'on' => 'scheduled_jobs', 
+                    'onDelete' => 'CASCADE'
+                ]
             ]);
         } catch (\Exception $e) {
             $this->log("Failed to ensure table existence: " . $e->getMessage(), 'error');
@@ -420,7 +426,12 @@ class JobScheduler
                 // Register based on persistence flag
                 $isPersistent = $job['persistence'] ?? false;
                 if ($isPersistent) {
-                    $this->registerInDatabase($job['name'], $job['schedule'], $job['handler_class'], $job['parameters'] ?? []);
+                    $this->registerInDatabase(
+                        $job['name'],
+                        $job['schedule'],
+                        $job['handler_class'],
+                        $job['parameters'] ?? []
+                    );
                     // $this->log("Registered persistent job: {$job['name']}", 'info');
                 } else {
                     // $this->register($job['schedule'], function() use ($job) {

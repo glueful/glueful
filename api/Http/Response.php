@@ -63,8 +63,7 @@ class Response
             $orderedResponse = $response;
             $orderedResponse['data'] = $this->data[$key];
             $response = $orderedResponse;
-        }
-        // Handle pagination results
+        } // Handle pagination results
         elseif (is_array($this->data) && isset($this->data['data'])) {
             // Create a new response array with keys in specific order
             $orderedResponse = $response;

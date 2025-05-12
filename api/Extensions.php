@@ -235,7 +235,9 @@ abstract class Extensions implements IExtensions
             }
 
             $filename = basename($file);
-            $title = ucfirst(str_replace(['-', '_', '.png', '.jpg', '.jpeg', '.gif'], [' ', ' ', '', '', '', ''], $filename));
+            $replacements = ['-', '_', '.png', '.jpg', '.jpeg', '.gif'];
+            $with = [' ', ' ', '', '', '', ''];
+            $title = ucfirst(str_replace($replacements, $with, $filename));
 
             // Check for thumbnail
             $thumbName = str_replace(
@@ -306,8 +308,7 @@ abstract class Extensions implements IExtensions
                 $currentVersion = $matches[1];
                 $currentDate = $matches[2] ?? null;
                 $currentChanges = [];
-            }
-            // Match list items for changes
+            } // Match list items for changes
             elseif ($currentVersion && preg_match('/^\s*[*-]\s+(.+)$/', $line, $matches)) {
                 $currentChanges[] = trim($matches[1]);
             }

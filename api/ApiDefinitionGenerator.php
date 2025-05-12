@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful;
 
-require_once __DIR__ . '/bootstrap.php';
-
 use Glueful\Permissions\Permission;
 use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
@@ -108,7 +106,11 @@ class ApiDefinitionGenerator
      * @param string|null $tableName Generate for specific table only
      * @param bool $forceGenerate Force generation even if manual files exist
      */
-    public function generate(?string $specificDatabase = null, ?string $tableName = null, bool $forceGenerate = false): void
+    public function generate(
+        ?string $specificDatabase = null,
+        ?string $tableName = null,
+        bool $forceGenerate = false
+    ): void
     {
         $this->generateDatabaseDefinitions($specificDatabase);
 

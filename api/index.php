@@ -1,13 +1,12 @@
 <?php
-
-declare(strict_types=1);
-
 /**
  * API Entry Point
  *
  * This is the main entry point for the API. Handles request routing,
  * CORS headers, and JSON processing.
  */
+
+declare(strict_types=1);
 
 require_once __DIR__ . '/../api/bootstrap.php';
 

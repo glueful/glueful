@@ -433,9 +433,10 @@ class LogManager implements LoggerInterface, LogManagerInterface
                 // For weekly rotation, we'll need to recreate the handler with maxFiles=7
                 // since RotatingFileHandler doesn't have a setMaxFiles method
                 if ($strategy === 'weekly') {
-                    $this->warning('Weekly rotation strategy selected. Note: Requires restarting the application to apply maxFiles setting.', [
-                        'strategy' => $strategy
-                    ]);
+                    $this->warning(
+                        'Weekly rotation strategy selected. Note: Requires restarting the application to apply maxFiles setting.',
+                        ['strategy' => $strategy]
+                    );
                     // We can't modify maxFiles after instantiation, but we set the property for future reference
                     $this->maxFiles = 7;
                 }
@@ -443,9 +444,10 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         if ($strategy === 'size' && is_numeric($parameter)) {
-            $this->warning('Size-based log rotation not supported in this version of Monolog. Using daily rotation instead.', [
-                'requested_size' => $parameter . 'MB'
-            ]);
+            $this->warning(
+                'Size-based log rotation not supported in this version of Monolog. Using daily rotation instead.',
+                ['requested_size' => $parameter . 'MB']
+            );
         }
 
         return $this;
@@ -1004,8 +1006,10 @@ class LogManager implements LoggerInterface, LogManagerInterface
         switch ($unit) {
             case 'g':
                 $memoryLimit *= 1024;
+                // Fall through intentionally to multiply by 1024 again
             case 'm':
                 $memoryLimit *= 1024;
+                // Fall through intentionally to multiply by 1024 again
             case 'k':
                 $memoryLimit *= 1024;
         }
@@ -1074,7 +1078,8 @@ class LogManager implements LoggerInterface, LogManagerInterface
     {
         $dateFormat = match ($this->rotationStrategy) {
             'monthly' => RotatingFileHandler::FILE_PER_MONTH,
-            'weekly' => RotatingFileHandler::FILE_PER_DAY, // For weekly, we use daily format but set maxFiles=7
+            // For weekly, we use daily format but set maxFiles=7
+            'weekly' => RotatingFileHandler::FILE_PER_DAY,
             default => RotatingFileHandler::FILE_PER_DAY,
         };
 

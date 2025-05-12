@@ -5,44 +5,32 @@ declare(strict_types=1);
 namespace Glueful\Permissions;
 
 /**
- * Permission Constants
+ * Permission Types Enumeration
  *
- * Defines standard permission types for API resources.
+ * Defines the available permission types for resource access control.
  * Used for role-based access control (RBAC) throughout the application.
  */
-class Permission
+enum Permission: string
 {
-    /**
-     * View/Read permission
-     * Allows reading/viewing resource data
-     */
-    public const VIEW = 'A';
-
-    /**
-     * Save/Create permission
-     * Allows creating new resources
-     */
-    public const SAVE = 'B';
-
-    /**
-     * Delete permission
-     * Allows deleting existing resources
-     */
-    public const DELETE = 'C';
-
-    /**
-     * Edit/Update permission
-     * Allows modifying existing resources
-     */
-    public const EDIT = 'D';
-
+    /** View/Read permission - Allows reading/viewing resource data */
+    case VIEW = 'A';
+    
+    /** Save/Create permission - Allows creating new resources */
+    case SAVE = 'B';
+    
+    /** Delete permission - Allows deleting existing resources */
+    case DELETE = 'C';
+    
+    /** Edit/Update permission - Allows modifying existing resources */
+    case EDIT = 'D';
+    
     /**
      * Get all available permissions
      *
-     * Returns array of all permission constants in defined order.
+     * Returns array of all permission cases in defined order.
      * Used for permission assignment and validation.
      *
-     * @return array<string> Array of permission constants
+     * @return array<Permission> Array of permission cases
      */
     public static function getAll(): array
     {

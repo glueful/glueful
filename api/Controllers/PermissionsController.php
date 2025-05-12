@@ -103,10 +103,14 @@ class PermissionsController
                 return Response::error('Model name and permissions array are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
+            $model = $data['model'];
+            $permissions = $data['permissions'];
+            $description = $data['description'] ?? null;
+            
             $result = $this->permissionRepo->createPermission(
-                $data['model'],
-                $data['permissions'],
-                $data['description'] ?? null
+                $model,
+                $permissions,
+                $description
             );
 
             return Response::ok($result, 'Permission created successfully')->send();
@@ -157,7 +161,10 @@ class PermissionsController
     {
         try {
             $data = Request::getPostData();
-            $result = $this->permissionRepo->assignRolePermission($data['role_uuid'], $data['model'], $data['permissions']);
+            $roleUuid = $data['role_uuid'];
+            $model = $data['model'];
+            $permissions = $data['permissions'];
+            $result = $this->permissionRepo->assignRolePermission($roleUuid, $model, $permissions);
             return Response::ok($result, 'Permissions assigned to role successfully')->send();
         } catch (\Exception $e) {
             error_log("Assign permissions to role error: " . $e->getMessage());
@@ -177,7 +184,10 @@ class PermissionsController
     {
         try {
             $data = Request::getPostData();
-            $result = $this->permissionRepo->updateRolePermission($data['role_uuid'], $data['model'], $data['permissions']);
+            $roleUuid = $data['role_uuid'];
+            $model = $data['model'];
+            $permissions = $data['permissions'];
+            $result = $this->permissionRepo->updateRolePermission($roleUuid, $model, $permissions);
             return Response::ok($result, 'Role permissions updated successfully')->send();
         } catch (\Exception $e) {
             error_log("Update role permissions error: " . $e->getMessage());

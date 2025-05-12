@@ -155,7 +155,8 @@ class PostgreSQLSchemaManager extends SchemaManager
 
             // Generate a consistent index name for checking
             if (is_array($column)) {
-                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                $columnPart = implode("_", $column);
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_{$columnPart}_idx";
             } else {
                 $indexNameToCheck = "{$table}_{$column}_idx";
             }
@@ -744,11 +745,14 @@ class PostgreSQLSchemaManager extends SchemaManager
             $column = $foreignKey['column'];
             $referencesTable = $foreignKey['on'];
             $referencesColumn = $foreignKey['references'];
-            $constraintName = $foreignKey['name'] ?? "fk_{$table}_" . (is_array($column) ? implode("_", $column) : $column);
+            $nameSuffix = is_array($column) ? implode("_", $column) : $column;
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_{$nameSuffix}";
 
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("\",\"", $column) : $column;
-            $referencesColumnStr = is_array($referencesColumn) ? implode("\",\"", $referencesColumn) : $referencesColumn;
+            $referencesColumnStr = is_array($referencesColumn) 
+                ? implode("\",\"", $referencesColumn) 
+                : $referencesColumn;
 
             $sql = "ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$constraintName}\" 
                     FOREIGN KEY (\"{$columnStr}\") REFERENCES \"{$referencesTable}\" (\"{$referencesColumnStr}\")";
@@ -812,7 +816,9 @@ class PostgreSQLSchemaManager extends SchemaManager
             ]);
 
             if ($stmt->fetchColumn() == 0) {
-                throw new \RuntimeException("Foreign key constraint '{$constraintName}' does not exist on table '{$table}'");
+                throw new \RuntimeException(
+                    "Foreign key constraint '{$constraintName}' does not exist on table '{$table}'"
+                );
             }
 
             // Use double quotes for identifiers in PostgreSQL
@@ -822,7 +828,9 @@ class PostgreSQLSchemaManager extends SchemaManager
             if ($e instanceof \RuntimeException) {
                 throw $e; // Re-throw the specific exception about constraint not existing
             }
-            throw new Exception("Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage());
+            throw new Exception(
+                "Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage()
+            );
         }
     }
 }

@@ -345,6 +345,3 @@ class APIEngine
         return $definition;
     }
 }
-
-// Initialize engine automatically when file is included
-APIEngine::initialize();
