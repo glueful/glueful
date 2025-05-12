@@ -195,10 +195,11 @@ class Router
      * Registers a route with the specified HTTP method, path, and handler.
      * Supports both closure and controller method handlers.
      *
-     * @param string $method HTTP method (GET, POST, etc.)
      * @param string $path URL path pattern (e.g., '/users/{id}')
-     * @param callable|array $handler Route handler (closure or [Controller::class, 'method'])
-     * @param array $options Additional route options (middleware, public access, etc.)
+     * @param array $methods HTTP methods (GET, POST, etc.)
+     * @param callable $handler Route handler (closure or [Controller::class, 'method'])
+     * @param bool $requiresAuth Whether this route requires authentication
+     * @param bool $requiresAdminAuth Whether this route requires admin authentication
      */
     private static function addRoute(
         string $path,
@@ -356,7 +357,13 @@ class Router
                 if (
                     !empty($parametersInfo) &&
                     $parametersInfo[0]->getType() &&
-                    $parametersInfo[0]->getType()->getName() === Request::class
+                    (
+                        // Use is_a to safely check the parameter type across PHP versions
+                        (method_exists($parametersInfo[0]->getType(), 'getName') &&
+                         $parametersInfo[0]->getType()->getName() === Request::class) ||
+                        (method_exists($parametersInfo[0]->getType(), '__toString') &&
+                         (string)$parametersInfo[0]->getType() === Request::class)
+                    )
                 ) {
                     $result = call_user_func($controller, $request);
                 } else {
@@ -497,7 +504,6 @@ class Router
      * 3. Executes appropriate handler with parameters
      * 4. Returns formatted response
      *
-     * @param Request|null $request Optional Symfony Request object
      * @return array API response array with success/error information
      */
     public function handleRequest()

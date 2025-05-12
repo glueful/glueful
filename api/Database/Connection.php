@@ -199,9 +199,9 @@ class Connection
     private function resolveDriver(string $engine): DatabaseDriver
     {
         return match ($engine) {
-            'mysql' => new MySQLDriver($this->pdo),
-            'pgsql' => new PostgreSQLDriver($this->pdo),
-            'sqlite' => new SQLiteDriver($this->pdo),
+            'mysql' => new MySQLDriver(),
+            'pgsql' => new PostgreSQLDriver(),
+            'sqlite' => new SQLiteDriver(),
             default => throw new Exception("Unsupported database engine: {$engine}"),
         };
     }

@@ -278,8 +278,8 @@ class QueryLogger
             $duration = (microtime(true) - $timerIdOrStart) * 1000;
             return round($duration, 2);
         }
-
-        return null;
+        // Default fallback for any other type
+        return 0.0;
     }
 
     /**

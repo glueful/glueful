@@ -49,6 +49,16 @@ class NotificationMetricsService
     }
 
     /**
+     * Get the current configuration
+     *
+     * @return array The current configuration options
+     */
+    public function getConfig(): array
+    {
+        return $this->config;
+    }
+
+    /**
      * Store notification creation time for calculating delivery time later
      *
      * @param string $notificationUuid Notification UUID

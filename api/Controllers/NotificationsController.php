@@ -107,7 +107,9 @@ class NotificationsController
             $onlyUnread = isset($queryParams['unread']) && $queryParams['unread'] === 'true';
 
             // Build filters for type, date range and priority
-            $filters = [];
+            $filters = [
+                'created_at' => [] // Initialize created_at filter as an empty array
+            ];
 
             // Filter by type
             if (isset($queryParams['type']) && !empty($queryParams['type'])) {
@@ -126,16 +128,10 @@ class NotificationsController
 
             // Filter by date range for created_at
             if (isset($queryParams['date_from']) && !empty($queryParams['date_from'])) {
-                if (!isset($filters['created_at'])) {
-                    $filters['created_at'] = [];
-                }
                 $filters['created_at']['gte'] = $queryParams['date_from'];
             }
 
             if (isset($queryParams['date_to']) && !empty($queryParams['date_to'])) {
-                if (!isset($filters['created_at'])) {
-                    $filters['created_at'] = [];
-                }
                 $filters['created_at']['lte'] = $queryParams['date_to'];
             }
 

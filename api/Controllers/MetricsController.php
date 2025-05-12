@@ -6,19 +6,17 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\{Request, ExtensionsManager};
-use Glueful\Database\{Connection, QueryBuilder};
+use Glueful\Database\Connection;
 use Glueful\Database\Schema\SchemaManager;
 
 class MetricsController
 {
     private SchemaManager $schemaManager;
-    private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
         $connection = new Connection();
         $this->schemaManager = $connection->getSchemaManager();
-        $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
     }
 
     /**
@@ -372,7 +370,7 @@ class MetricsController
     /**
      * Get health status for a specific extension
      *
-     * @param Request $request HTTP request
+     * @param array|null $extension Extension information array
      * @return mixed HTTP response
      */
     public function getExtensionHealth(?array $extension): mixed

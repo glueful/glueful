@@ -30,7 +30,6 @@ class TokenManager
     private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour
     private static ?int $ttl = null;
-    private static ?CacheEngine $cache = null;
 
     /**
      * Initialize token manager
@@ -357,7 +356,7 @@ class TokenManager
      * Invalidates session tokens.
      *
      * @param string $token Access token to revoke
-     * @return bool Success status
+     * @return int Number of rows affected
      */
     public static function revokeSession(string $token): int
     {
@@ -388,7 +387,7 @@ class TokenManager
             ->where(['access_token' => $token])
             ->get();
 
-        return !empty($result) && (int)$result[0]['status'] === "revoked";
+        return !empty($result) && $result[0]['status'] === "revoked";
     }
 
     /**

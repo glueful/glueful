@@ -26,9 +26,6 @@ class LoggerMiddleware implements MiddlewareInterface
     /** @var LogManager Logger instance */
     private LogManager $logger;
 
-    /** @var string Log channel to use */
-    private string $channel;
-
     /** @var string Log level for normal requests */
     private string $level;
 
@@ -41,7 +38,6 @@ class LoggerMiddleware implements MiddlewareInterface
     public function __construct(string $channel = 'api', string $level = 'info')
     {
         $this->logger = new LogManager($channel);
-        $this->channel = $channel;
         $this->level = $level;
     }
 

@@ -115,7 +115,7 @@ class NotificationService
         }
 
         // Send it immediately unless scheduled for later
-        if (!isset($options['schedule']) || $options['schedule'] === null) {
+        if (!isset($options['schedule']) || $options['schedule'] == null) {
             $result = $this->dispatcher->send(
                 $notification,
                 $notifiable,
@@ -329,7 +329,7 @@ class NotificationService
             : uniqid('preference_');
 
         // Generate a UUID if not provided
-        if ($uuid === null) {
+        if (!$uuid) {
             $uuid = Utils::generateNanoID();
         }
 
@@ -611,7 +611,7 @@ class NotificationService
                 $userRepository = new \Glueful\Repository\UserRepository();
                 $userData = $userRepository->findByUUID($id);
 
-                if (!$userData || empty($userData)) {
+                if (!$userData) {
                     return null;
                 }
 

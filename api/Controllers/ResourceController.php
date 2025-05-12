@@ -10,8 +10,6 @@ use Glueful\Auth\SessionCacheManager;
 use Glueful\Permissions\Permission;
 use Glueful\Permissions\PermissionManager;
 use Glueful\Repository\RoleRepository;
-use Glueful\Validation\Validator;
-use Glueful\DTOs\{UsernameDTO, EmailDTO, PasswordDTO, ListResourceRequestDTO};
 use Symfony\Component\HttpFoundation\Request;
 
 class ResourceController
@@ -330,30 +328,6 @@ class ResourceController
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
-    }
-
-    /**
-     * Validate list request parameters
-     *
-     * @param array $queryParams Query parameters to validate
-     * @return array Validated parameters
-     * @throws \Exception If validation fails
-     */
-    private function validateListRequest(array $queryParams): array
-    {
-        $validator = new Validator();
-        $listRequest = new ListResourceRequestDTO();
-        $listRequest->fields = $queryParams['fields'] ?? null;
-        $listRequest->sort = $queryParams['sort'] ?? null;
-        $listRequest->page = $queryParams['page'] ?? null;
-        $listRequest->per_page = $queryParams['per_page'] ?? null;
-        $listRequest->order = $queryParams['order'] ?? null;
-
-        if (!$validator->validate($listRequest)) {
-            throw new \Exception(json_encode($validator->errors()), 400);
-        }
-
-        return (array)$listRequest;
     }
 
     /**

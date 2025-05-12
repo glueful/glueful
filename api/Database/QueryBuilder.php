@@ -346,7 +346,7 @@ class QueryBuilder
         // Add GROUP BY if specified
         if (!empty($this->groupBy)) {
             $groupByColumns = array_map(function ($column) {
-                if ($column instanceof RawExpression) {
+                if (is_object($column) && $column instanceof RawExpression) {
                     return (string) $column;
                 }
                 if (strpos($column, '.') !== false) {
@@ -363,7 +363,7 @@ class QueryBuilder
         if (!empty($this->having)) {
             $havingClauses = [];
             foreach ($this->having as $item) {
-                if ($item instanceof RawExpression) {
+                if (is_object($item) && $item instanceof RawExpression) {
                     $havingClauses[] = (string) $item;
                 } else {
                     foreach ($item as $col => $value) {
@@ -751,7 +751,7 @@ class QueryBuilder
         $this->logger->logEvent("Executing paginated query", [
             'page' => $page,
             'per_page' => $perPage,
-            'query' => is_string($this->query) ? substr($this->query, 0, 100) . '...' : 'Complex query'
+            'query' => substr($this->query, 0, 100) . '...'
         ], 'debug');
 
         $offset = ($page - 1) * $perPage;
@@ -824,7 +824,7 @@ class QueryBuilder
             $table,
             [$column],
             ['id' => $this->rawQuery('SELECT LAST_INSERT_ID()')[0]['LAST_INSERT_ID()']]
-        );
+        )->get();
 
         if (empty($result) || !isset($result[0][$column])) {
             throw new \RuntimeException("Failed to retrieve $column for new record");
@@ -892,8 +892,8 @@ class QueryBuilder
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
                 $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
             }
-            // Only add ORDER BY if there are valid clauses
-            if (!empty($orderByClauses)) {
+            // Add ORDER BY clause if we have order clauses
+            if (count($orderByClauses) > 0) {
                 $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
             }
         }
@@ -1021,17 +1021,17 @@ class QueryBuilder
      */
     private function prepareAndExecute(string $sql, array $params = []): \PDOStatement
     {
-        // Start timing the query
-        $timerId = $this->logger->startTiming();
+        // Start timing the query with debug context if enabled
+        $timerId = $this->logger->startTiming($this->debugMode ? 'query_with_debug' : 'query');
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-             // Log successful query
-            $this->logger->logQuery($sql, $params, $timerId);
+             // Log successful query with debug info if enabled
+            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode);
             return $stmt;
         } catch (PDOException $e) {
-            // Log failed query
-            $this->logger->logQuery($sql, $params, $timerId, $e);
+            // Log failed query with debug info if enabled
+            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode);
             throw $e;
         }
     }
@@ -1039,6 +1039,10 @@ class QueryBuilder
     // Optimization for count query in pagination
     private function getOptimizedCountQuery(string $query): string
     {
+        // Add debug information if debug mode is enabled
+        if ($this->debugMode) {
+            $this->logger->logEvent('Optimizing count query', ['original_query' => $query], 'debug');
+        }
         // Remove unnecessary parts that don't affect count
         $countQuery = preg_replace('/SELECT\s.*?\sFROM/is', 'SELECT COUNT(*) as total FROM', $query);
         $countQuery = preg_replace('/\sORDER BY\s.*$/is', '', $countQuery);
@@ -1066,6 +1070,16 @@ class QueryBuilder
         $this->logger->configure($debug, $debug);
 
         return $this;
+    }
+
+    /**
+     * Get current debug mode status
+     *
+     * @return bool Current debug mode status
+     */
+    public function getDebugMode(): bool
+    {
+        return $this->debugMode;
     }
 
     /**

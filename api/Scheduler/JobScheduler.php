@@ -258,7 +258,7 @@ class JobScheduler
     /**
      * Update job in database after execution
      *
-     * @param string $jobId Job UUID
+     * @param string $jobUuid Job UUID
      * @param bool $success Whether execution succeeded
      * @param mixed $result Result data from execution
      */

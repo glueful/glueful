@@ -164,13 +164,16 @@ class DatabaseController
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            $result = $this->schemaManager->dropTable($data['table_name']);
+            try {
+                $result = $this->schemaManager->dropTable($data['table_name']);
+                if (!$result) {
+                    return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
+                }
 
-            if (!$result['success']) {
-                return Response::error($result['message'], Response::HTTP_BAD_REQUEST)->send();
+                return Response::ok(null, 'Table dropped successfully')->send();
+            } catch (\Exception $e) {
+                return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
             }
-
-            return Response::ok(null, 'Table dropped successfully')->send();
         } catch (\Exception $e) {
             error_log("Drop table error: " . $e->getMessage());
             return Response::error(
@@ -183,10 +186,10 @@ class DatabaseController
     /**
      * Get list of all tables
      */
-    public function getTables(): mixed
+    public function getTables(?bool $includeSchema = false): mixed
     {
         try {
-            $tables = $this->schemaManager->getTables();
+            $tables = $this->schemaManager->getTables($includeSchema);
             return Response::ok($tables, 'Tables retrieved successfully')->send();
         } catch (\Exception $e) {
             error_log("Get tables error: " . $e->getMessage());
@@ -234,9 +237,11 @@ class DatabaseController
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
+            // Get request data
+            $requestData = Request::getPostData();
             // Set default values for pagination and filtering
-            $page = (int)($data['page'] ?? 1);
-            $perPage = (int)($data['per_page'] ?? 25);
+            $page = (int)($requestData['page'] ?? 1);
+            $perPage = (int)($requestData['per_page'] ?? 25);
 
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
@@ -333,11 +338,16 @@ class DatabaseController
                 }
 
                 try {
+                    // Create column definition array with merged options
+                    $columnDef = ['type' => $column['type']];
+                    if (isset($column['options']) && is_array($column['options'])) {
+                        $columnDef = array_merge($columnDef, $column['options']);
+                    }
+
                     $result = $this->schemaManager->addColumn(
                         $tableName,
                         $column['name'],
-                        $column['type'],
-                        $column['options'] ?? []
+                        $columnDef
                     );
 
                     if ($result['success'] ?? false) {
@@ -510,7 +520,7 @@ class DatabaseController
                 // Generate an index name if not provided
                 if (!isset($index['name'])) {
                     $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
-                    $indexType = strtolower($index['type']) == 'unique' ? 'unq' : 'idx';
+                    $indexType = strtolower($index['type']) === 'unique' ? 'unq' : 'idx';
                     $formattedIndex['name'] = "{$tableName}_{$columnStr}_{$indexType}";
                 } else {
                     $formattedIndex['name'] = $index['name'];
@@ -1069,16 +1079,19 @@ class DatabaseController
                     }
 
                     try {
+                        // Generate a constraint name if not provided
+                        $fkName = isset($fk['name']) ? $fk['name'] : "fk_{$tableName}_{$fk['column']}";
                         $fkDef = [
                             'table' => $tableName,
                             'column' => $fk['column'],
                             'references' => $fk['references'],
                             'on' => $fk['on'],
+                            'name' => $fkName
                         ];
 
                         $success = $this->schemaManager->addForeignKey([$fkDef]);
                         if ($success) {
-                            $results['added_foreign_keys'][] = $fkDef['name'] ?? "fk_{$tableName}_{$fk['column']}";
+                            $results['added_foreign_keys'][] = $fkName;
                         } else {
                             $results['failed_operations'][] = "Failed to add foreign key on column: " . $fk['column'];
                         }
@@ -1122,7 +1135,7 @@ class DatabaseController
     {
         try {
             // Get list of all tables with schema information
-            $tables = $this->schemaManager->getTables(true); // Pass true to include schema info
+            $tables = $this->schemaManager->getTables(); // No parameters needed
 
             if (empty($tables)) {
                 return Response::ok(['tables' => []], 'No tables found in database')->send();
@@ -1187,23 +1200,5 @@ class DatabaseController
         }
     }
 
-    /**
-     * Format bytes to human-readable format
-     *
-     * @param int|float $bytes Number of bytes
-     * @param int $precision Precision of rounding
-     * @return string Formatted size with unit
-     */
-    private function formatBytes($bytes, int $precision = 2): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-
-        $bytes = max((float)$bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-
-        $bytes /= (1 << (10 * $pow));
-
-        return round($bytes, $precision) . ' ' . $units[$pow];
-    }
+    // Method formatBytes has been removed as it was unused
 }

@@ -30,20 +30,14 @@ final class FileUploader
         private readonly string $cdnBaseUrl = '',
         private readonly ?string $storageDriver = null
     ) {
-        $this->storage = match ($storageDriver ?: config('storage.driver')) {
+        $driver = $this->storageDriver ?: config('storage.driver');
+        $this->storage = match ($driver) {
             's3' => new S3Storage(),
             default => new LocalStorage(
                 $this->uploadsDirectory ?: config('paths.uploads'),
                 $this->cdnBaseUrl ?: config('paths.cdn')
             )
         };
-    }
-
-    private function validateDirectory(): void
-    {
-        if (!is_dir($this->uploadsDirectory) || !is_writable($this->uploadsDirectory)) {
-            throw new UploadException("Upload directory is not writable");
-        }
     }
 
     public function handleUpload(string $token, array $getParams, array $fileParams): array
@@ -133,9 +127,7 @@ final class FileUploader
     private function saveFileRecord(string $token, array $getParams, array $file, string $filename): array
     {
         $user = Utils::getUser();
-        if ($user) {
-            $uuid = $user['uuid'];
-        }
+        $uuid = $user['uuid'] ?? null;
 
         $params = [
             'name' => $file['name'],

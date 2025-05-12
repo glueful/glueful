@@ -548,12 +548,12 @@ class DocGenerator
         $required = [];
 
         $fields = $this->processFields($definition['table'] ?? []);
-        if ($fields === null) {
-            // Handle missing fields gracefully
+        if (empty($fields)) {
+            // Handle missing or empty fields gracefully
             return;
         }
 
-        foreach ($definition['table']['fields'] as $field) {
+        foreach ($fields as $field) {
             $fieldName = $field['name'];
             $apiField = $field['api_field'] ?? $fieldName;
 

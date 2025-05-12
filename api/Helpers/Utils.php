@@ -120,7 +120,7 @@ class Utils
      *
      * Creates unique identifier using NanoID algorithm.
      *
-     * @param int $size Length of ID to generate
+     * @param int $length Length of ID to generate
      * @return string Generated NanoID
      */
     public static function generateNanoID(?int $length = null): string
