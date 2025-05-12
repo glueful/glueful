@@ -6,16 +6,9 @@ namespace Glueful\Uploader;
 
 use Glueful\APIEngine;
 use Glueful\Helpers\Utils;
-use RuntimeException;
-use InvalidArgumentException;
 use Glueful\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
-
-class UploadException extends RuntimeException
-{
-}
-class ValidationException extends InvalidArgumentException
-{
-}
+use Glueful\Uploader\UploadException;
+use Glueful\Uploader\ValidationException;
 
 final class FileUploader
 {

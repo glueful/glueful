@@ -214,7 +214,9 @@ class Validator
         $displayValue = is_array($value) ? 'array' : (is_object($value) ? get_class($value) : (string)$value);
 
         if (!is_string($value)) {
-            $this->errors[$property->getName()][] = "{$property->getName()} must be a string, got: " . gettype($value) . " ($displayValue)";
+            $propName = $property->getName();
+            $type = gettype($value);
+            $this->errors[$propName][] = "{$propName} must be a string, got: {$type} ({$displayValue})";
         }
     }
 

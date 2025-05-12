@@ -74,7 +74,10 @@ class TemplateResolver
 
             // Check if this pattern resolves to a template
             foreach ($templates as $template) {
-                $templateId = $this->generateTemplateId($template->getNotificationType(), $template->getName(), $template->getChannel());
+                $type = $template->getNotificationType();
+                $name = $template->getName();
+                $channel = $template->getChannel();
+                $templateId = $this->generateTemplateId($type, $name, $channel);
 
                 if ($templateId === $templateKey) {
                     // Cache the result
@@ -134,7 +137,9 @@ class TemplateResolver
         $parts = explode('.', $templateId);
 
         if (count($parts) !== 3) {
-            throw new InvalidArgumentException("Invalid template ID format: {$templateId}. Expected format: type.name.channel");
+            throw new InvalidArgumentException(
+                "Invalid template ID format: {$templateId}. Expected format: type.name.channel"
+            );
         }
 
         return [

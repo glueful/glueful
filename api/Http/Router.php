@@ -82,23 +82,39 @@ class Router
     }
 
 
-    public static function get(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
-    {
+    public static function get(
+        string $path, 
+        callable $handler, 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ) {
         self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function post(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
-    {
+    public static function post(
+        string $path, 
+        callable $handler, 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ) {
         self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function put(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
-    {
+    public static function put(
+        string $path, 
+        callable $handler, 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ) {
         self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function delete(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
-    {
+    public static function delete(
+        string $path, 
+        callable $handler, 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ) {
         self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
@@ -126,8 +142,13 @@ class Router
      * @param bool $requiresAuth Apply authentication to all routes in this group
      * @param bool $requiresAdminAuth Apply admin authentication to all routes in this group
      */
-    public static function group(string $prefix, callable $callback, array $middleware = [], bool $requiresAuth = false, bool $requiresAdminAuth = false): void
-    {
+    public static function group(
+        string $prefix, 
+        callable $callback, 
+        array $middleware = [], 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ): void {
         // Normalize prefix
         $prefix = '/' . trim($prefix, '/');
 
@@ -179,8 +200,13 @@ class Router
      * @param callable|array $handler Route handler (closure or [Controller::class, 'method'])
      * @param array $options Additional route options (middleware, public access, etc.)
      */
-    private static function addRoute(string $path, array $methods, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
-    {
+    private static function addRoute(
+        string $path, 
+        array $methods, 
+        callable $handler, 
+        bool $requiresAuth = false, 
+        bool $requiresAdminAuth = false
+    ) {
         // Get the current group context
         $groupContext = self::getCurrentGroupContext();
         $fullPath = $groupContext['prefix'] . '/' . trim($path, '/');
@@ -327,7 +353,10 @@ class Router
                 $parametersInfo = $reflection->getParameters();
 
                 // Check if there are parameters before trying to access them
-                if (!empty($parametersInfo) && $parametersInfo[0]->getType() && $parametersInfo[0]->getType()->getName() === Request::class) {
+                if (!empty($parametersInfo) && 
+                    $parametersInfo[0]->getType() && 
+                    $parametersInfo[0]->getType()->getName() === Request::class
+                ) {
                     $result = call_user_func($controller, $request);
                 } else {
                     $result = call_user_func($controller, $parameters);

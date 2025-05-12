@@ -308,14 +308,16 @@ class AuthController
 
             // Check if user exists before attempting password reset
             if (!$this->authService->userExists($postData['email'], 'email')) {
-                return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND)->send();
+                $errorMsg = 'User not found with the provided email address';
+                return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
             }
 
             // Send verification email
             $result = $this->verifier->sendPasswordResetEmail($postData['email']);
 
             if (!$result['success']) {
-                return Response::error($result['message'] ?? 'Failed to send reset email', Response::HTTP_BAD_REQUEST)->send();
+                $errorMsg = $result['message'] ?? 'Failed to send reset email';
+                return Response::error($errorMsg, Response::HTTP_BAD_REQUEST)->send();
             }
 
             return Response::ok([
@@ -350,7 +352,8 @@ class AuthController
 
             // Check if user exists before attempting password reset
             if (!$this->authService->userExists($postData['email'], 'email')) {
-                return Response::error('User not found with the provided email address', Response::HTTP_NOT_FOUND)->send();
+                $errorMsg = 'User not found with the provided email address';
+                return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
             }
 
             // Hash the new password

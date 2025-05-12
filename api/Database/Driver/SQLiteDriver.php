@@ -74,6 +74,7 @@ class SQLiteDriver implements DatabaseDriver
         $placeholders = implode(", ", array_fill(0, count($columns), "?"));
         $updates = implode(", ", array_map(fn($col) => "\"$col\" = EXCLUDED.\"$col\"", $updateColumns));
 
-        return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders) ON CONFLICT(id) DO UPDATE SET $updates";
+        return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
+               " ON CONFLICT(id) DO UPDATE SET $updates";
     }
 }

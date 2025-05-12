@@ -482,7 +482,10 @@ class ExtensionsCommand extends Command
         $isCoreExtension = in_array($shortName, $config['core'] ?? []);
 
         if ($isCoreExtension) {
-            $this->warning($this->colorText("⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!", 'red'));
+            $this->warning($this->colorText(
+                "⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!",
+                'red'
+            ));
             $this->warning("Disabling this extension may break essential system features.");
 
             // List components that depend on this extension
@@ -541,7 +544,10 @@ class ExtensionsCommand extends Command
 
         if ($isCoreExtension) {
             $this->success("Core extension '$shortName' has been disabled");
-            $this->warning($this->colorText("⚠️ Caution: You have disabled a core extension. Some system functionality may not work properly.", 'red'));
+            $this->warning($this->colorText(
+                "⚠️ Caution: You have disabled a core extension. Some system functionality may not work properly.",
+                'red'
+            ));
         } else {
             $this->success("Extension '$shortName' has been disabled");
         }
@@ -1325,7 +1331,9 @@ HELP;
                     $this->success("\nAll dependencies are met");
                 } else {
                     $this->warning("\nSome dependencies are not met");
-                    $this->line("You should enable or install the missing dependencies before enabling this extension.");
+                    $this->line(
+                        "You should enable or install the missing dependencies before enabling this extension."
+                    );
                     $this->tip("Run 'php glueful extensions enable <dependency>' for each missing dependency.");
                 }
             }
@@ -1494,7 +1502,10 @@ HELP;
         }
 
         if ($isCoreExtension) {
-            $this->warning($this->colorText("⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!", 'red'));
+            $this->warning($this->colorText(
+                "⚠️ WARNING: '$shortName' is a core extension and is required for core functionality!",
+                'red'
+            ));
             $this->warning("Deleting this extension will break essential system features.");
             $this->warning("Only proceed if you're absolutely sure what you're doing.");
 

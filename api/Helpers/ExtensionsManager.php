@@ -261,7 +261,10 @@ class ExtensionsManager
                 // Register a fallback namespace to catch misreferenced classes
                 // For example: Glueful\Extensions\GithubAuthProvider -> extensions/SocialLogin/Providers/GithubAuthProvider
                 $aliasNamespace = "Glueful\\Extensions\\";
-                $classLoader->addPsr4($aliasNamespace, $extensionPath . '/' . $dir . '/');
+                $classLoader->addPsr4(
+                    $aliasNamespace,
+                    $extensionPath . '/' . $dir . '/'
+                );
             }
         }
     }
@@ -459,7 +462,9 @@ class ExtensionsManager
                     $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
 
                     // If the type isn't explicitly specified, check if other core APIs depend on it
-                    if (!isset($metadata['type']) && isset($metadata['requiredBy']) && !empty($metadata['requiredBy'])) {
+                    if (!isset($metadata['type']) 
+                        && isset($metadata['requiredBy']) 
+                        && !empty($metadata['requiredBy'])) {
                         $isCore = true;
                     }
                 }
@@ -538,7 +543,8 @@ class ExtensionsManager
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
-                    'warning' => "Disabling this extension may break core system functionality. Use force=true parameter to override."
+                    'warning' => "Disabling this extension may break core system functionality. " .
+                        "Use force=true parameter to override."
                 ]
             ];
         }
@@ -905,7 +911,10 @@ class ExtensionsManager
      * @param bool $includeForcedCoreExtensions Whether to include all core extensions in production
      * @return array List of extensions enabled for the environment
      */
-    public static function getEnabledExtensionsForEnvironment(?string $environment = null, bool $includeForcedCoreExtensions = true): array
+    public static function getEnabledExtensionsForEnvironment(
+        ?string $environment = null,
+        bool $includeForcedCoreExtensions = true
+    ): array
     {
         // If no environment specified, detect from app config
         if ($environment === null) {
@@ -1667,7 +1676,9 @@ class ExtensionsManager
                     }
 
                     // URL validation
-                    if (isset($rules['validate']) && $rules['validate'] === 'url' && !filter_var($metadata[$field], FILTER_VALIDATE_URL)) {
+                    if (isset($rules['validate']) 
+                        && $rules['validate'] === 'url' 
+                        && !filter_var($metadata[$field], FILTER_VALIDATE_URL)) {
                         $warnings[] = "Field '$field' must be a valid URL";
                     }
                 }
@@ -1693,7 +1704,8 @@ class ExtensionsManager
                     $screenshotsCount = count(glob($screenshotsDir . '/*.{png,jpg,jpeg,gif}', GLOB_BRACE));
 
                     if ($screenshotsCount > 0 && (!isset($metadata['screenshots']) || empty($metadata['screenshots']))) {
-                        $warnings[] = "Extension has $screenshotsCount screenshots in directory but none defined in metadata";
+                        $warnings[] = "Extension has $screenshotsCount screenshots in directory " .
+                            "but none defined in metadata";
                     }
                 }
             }
@@ -2390,7 +2402,8 @@ return [
         if ($isEnabled && !$force) {
             return [
                 'success' => false,
-                'message' => "Cannot delete extension '$extensionName': Extension is currently enabled. Disable it first or use force=true parameter.",
+                'message' => "Cannot delete extension '$extensionName': Extension is currently enabled. " .
+                    "Disable it first or use force=true parameter.",
                 'details' => [
                     'is_enabled' => true,
                     'can_force' => true
@@ -2408,7 +2421,8 @@ return [
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
-                    'warning' => "Deleting this extension may break core system functionality. Use force=true parameter to override."
+                    'warning' => "Deleting this extension may break core system functionality. " .
+                        "Use force=true parameter to override."
                 ]
             ];
         }
@@ -2683,7 +2697,8 @@ return [
             $updateResult['enabled'] = $enableResult['success'];
 
             if (!$enableResult['success']) {
-                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " . $enableResult['message'];
+                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " . 
+                $enableResult['message'];
             }
         }
 

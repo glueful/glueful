@@ -2,6 +2,9 @@
 
 namespace Glueful\Console\Commands;
 
+// Load the API Definition Generator via the loader
+require_once __DIR__ . '/../../apiDefinitionLoader.php';
+
 use Glueful\Console\Command;
 use Glueful\ApiDefinitionGenerator;
 
@@ -203,9 +206,7 @@ HELP;
                         $options['force'] = true;
                     }
                 }
-            }
-            // Handle short options (-o value)
-            elseif (str_starts_with($arg, '-') && strlen($arg) === 2) {
+            } elseif (str_starts_with($arg, '-') && strlen($arg) === 2) { // Handle short options (-o value)
                 $key = substr($arg, 1);
                 // Handle flag options like -f
                 if ($key === 'f') {

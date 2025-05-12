@@ -150,7 +150,8 @@ class SQLiteSchemaManager implements SchemaManager
 
             // Generate appropriate index name for checking
             if (is_array($column)) {
-                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
+                $columnPart = implode("_", $column);
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_{$columnPart}_idx";
             } else {
                 $indexNameToCheck = "{$table}_{$column}_idx";
             }
@@ -168,7 +169,9 @@ class SQLiteSchemaManager implements SchemaManager
 
             if ($type === 'PRIMARY KEY') {
                 // SQLite doesn't support adding PRIMARY KEY after table creation
-                throw new \RuntimeException("SQLite does not support adding PRIMARY KEY with ALTER TABLE. Define it in CREATE TABLE.");
+                throw new \RuntimeException(
+                    "SQLite does not support adding PRIMARY KEY with ALTER TABLE. Define it in CREATE TABLE."
+                );
             } elseif ($type === 'UNIQUE') {
                 // Handle multi-column unique indexes
                 if (is_array($column)) {
@@ -338,7 +341,8 @@ class SQLiteSchemaManager implements SchemaManager
     public function getTables(): array
     {
         try {
-            $stmt = $this->pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+            $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';";
+            $stmt = $this->pdo->query($sql);
             return $stmt ? $stmt->fetchAll(PDO::FETCH_COLUMN) : [];
         } catch (Exception $e) {
             throw new Exception("Error fetching tables: " . $e->getMessage());
@@ -440,8 +444,10 @@ class SQLiteSchemaManager implements SchemaManager
                 foreach ($foreignKeys as $fk) {
                     $columnName = $fk['from'];
                     if (isset($formattedColumns[$columnName])) {
+                        // SQLite doesn't name constraints, create synthetic name
+                        $constraintName = "fk_{$table}_{$columnName}_{$fk['id']}";
                         $formattedColumns[$columnName]['relationships'][] = [
-                            'constraint' => "fk_{$table}_{$columnName}_{$fk['id']}", // SQLite doesn't name constraints, create synthetic name
+                            'constraint' => $constraintName,
                             'column' => $columnName,
                             'references_table' => $fk['table'],
                             'references_column' => $fk['to'],
@@ -665,8 +671,11 @@ class SQLiteSchemaManager implements SchemaManager
             }
 
             // Format the foreign key constraint
-            $foreignKeyConstraint = "FOREIGN KEY (\"" . (is_array($column) ? implode("\", \"", $column) : $column) . "\") " .
-                                   "REFERENCES \"$referencesTable\" (\"" . (is_array($referencesColumn) ? implode("\", \"", $referencesColumn) : $referencesColumn) . "\")";
+            $columnStr = is_array($column) ? implode("\", \"", $column) : $column;
+            $referencesColumnStr = is_array($referencesColumn) 
+                ? implode("\", \"", $referencesColumn) 
+                : $referencesColumn;
+            $foreignKeyConstraint = "FOREIGN KEY (\"$columnStr\") REFERENCES \"$referencesTable\" (\"$referencesColumnStr\")";
 
             // Add ON DELETE/UPDATE clauses if specified
             if (isset($foreignKey['onDelete'])) {
@@ -709,14 +718,16 @@ class SQLiteSchemaManager implements SchemaManager
                         continue;
                     }
 
-                    $indexInfo = $this->pdo->query("PRAGMA index_info(\"{$index['name']}\")")->fetchAll(PDO::FETCH_ASSOC);
+                    $pragmaSql = "PRAGMA index_info(\"{$index['name']}\")";
+                    $indexInfo = $this->pdo->query($pragmaSql)->fetchAll(PDO::FETCH_ASSOC);
                     $indexColumns = [];
                     foreach ($indexInfo as $indexColumn) {
                         $indexColumns[] = "\"{$indexColumn['name']}\"";
                     }
 
                     $unique = $index['unique'] ? 'UNIQUE' : '';
-                    $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" (" . implode(", ", $indexColumns) . ")");
+                    $columnsStr = implode(", ", $indexColumns);
+                    $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" ($columnsStr)");
                 }
 
                 $this->pdo->commit();
@@ -811,7 +822,8 @@ class SQLiteSchemaManager implements SchemaManager
             }
 
             // Get CREATE TABLE SQL to preserve all other constraints
-            $createTableSql = $this->pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='$table'")->fetchColumn();
+            $query = "SELECT sql FROM sqlite_master WHERE type='table' AND name='$table'";
+            $createTableSql = $this->pdo->query($query)->fetchColumn();
 
             // Create a temporary table without the foreign key to be removed
             $tempTable = $table . "_temp_" . uniqid();
@@ -869,7 +881,8 @@ class SQLiteSchemaManager implements SchemaManager
                 }
 
                 $unique = $index['unique'] ? 'UNIQUE' : '';
-                $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" (" . implode(", ", $indexColumns) . ")");
+                $columnsStr = implode(", ", $indexColumns);
+                $this->pdo->exec("CREATE $unique INDEX \"{$index['name']}\" ON \"$table\" ($columnsStr)");
             }
 
             $this->pdo->commit();

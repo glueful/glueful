@@ -208,11 +208,15 @@ class EventDispatcher
                         try {
                             $results[] = $this->callListener($listener, $eventObject, $payload);
                         } catch (\Throwable $e) {
-                            $this->log('error', "Error in wildcard listener ({$wildcard}) for {$eventName}: " . $e->getMessage(), [
-                                'event' => $eventName,
-                                'wildcard' => $wildcard,
-                                'exception' => $e
-                            ]);
+                            $this->log(
+                                'error',
+                                "Error in wildcard listener ({$wildcard}) for {$eventName}: " . $e->getMessage(),
+                                [
+                                    'event' => $eventName,
+                                    'wildcard' => $wildcard,
+                                    'exception' => $e
+                                ]
+                            );
                         }
                     }
                 }

@@ -36,7 +36,10 @@ class RedisCacheDriver implements CacheDriverInterface
      */
     public function zadd(string $key, array $scoreValues): bool
     {
-        return $this->redis->zAdd($key, ...array_merge(...array_map(null, array_values($scoreValues), array_keys($scoreValues))));
+        $mergedArray = array_merge(
+            ...array_map(null, array_values($scoreValues), array_keys($scoreValues))
+        );
+        return $this->redis->zAdd($key, ...$mergedArray);
     }
 
     /**

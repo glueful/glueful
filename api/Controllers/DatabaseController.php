@@ -76,7 +76,10 @@ class DatabaseController
 
                 // Add AUTO_INCREMENT if specified
                 if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
-                    $columnDef .= " " . (is_string($options['autoIncrement']) ? $options['autoIncrement'] : "AUTO_INCREMENT");
+                    $autoIncValue = is_string($options['autoIncrement']) 
+                        ? $options['autoIncrement'] 
+                        : "AUTO_INCREMENT";
+                    $columnDef .= " " . $autoIncValue;
                 }
 
                 // Handle nullable property - now accepting direct SQL constraints
@@ -95,7 +98,10 @@ class DatabaseController
                     if ($options['default'] === 'CURRENT_TIMESTAMP') {
                         $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
                     } else {
-                        $columnDef .= " DEFAULT " . (is_numeric($options['default']) ? $options['default'] : "'{$options['default']}'");
+                        $defaultValue = is_numeric($options['default']) 
+                            ? $options['default'] 
+                            : "'{$options['default']}'";
+                        $columnDef .= " DEFAULT " . $defaultValue;
                     }
                 }
 
@@ -270,7 +276,8 @@ class DatabaseController
             $columns = $this->schemaManager->getTableColumns($tableName);
 
             if (empty($columns)) {
-                return Response::error("No columns found or table '$tableName' does not exist", Response::HTTP_NOT_FOUND)->send();
+                $errorMsg = "No columns found or table '$tableName' does not exist";
+                return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
             }
 
             return Response::ok([
@@ -716,7 +723,11 @@ class DatabaseController
                 return Response::ok([
                     'table' => $tableName,
                     'constraints_added' => $results
-                ], count($results) > 1 ? 'Foreign key constraints added successfully' : 'Foreign key constraint added successfully')->send();
+                ], 
+                    count($results) > 1 
+                        ? 'Foreign key constraints added successfully' 
+                        : 'Foreign key constraint added successfully'
+                )->send();
             } elseif (empty($results)) {
                 // All foreign keys failed to add
                 return Response::error(
@@ -765,7 +776,10 @@ class DatabaseController
             $failed = [];
 
             // Handle both single constraint and array of constraints
-            $constraintNames = isset($data['constraint_names']) ? $data['constraint_names'] : [$data['constraint_name']];
+            $hasMultipleConstraints = isset($data['constraint_names']);
+            $constraintNames = $hasMultipleConstraints 
+                ? $data['constraint_names'] 
+                : [$data['constraint_name']];
 
             // Ensure we have an array
             if (!is_array($constraintNames)) {
@@ -795,7 +809,11 @@ class DatabaseController
                 return Response::ok([
                     'table' => $tableName,
                     'constraints_dropped' => $results
-                ], count($results) > 1 ? 'Foreign key constraints dropped successfully' : 'Foreign key constraint dropped successfully')->send();
+                ], 
+                    count($results) > 1 
+                        ? 'Foreign key constraints dropped successfully' 
+                        : 'Foreign key constraint dropped successfully'
+                )->send();
             } elseif (empty($results)) {
                 // All constraints failed to drop
                 return Response::error(
@@ -964,7 +982,8 @@ class DatabaseController
                             $results['failed_operations'][] = "Failed to delete foreign key: $constraintName";
                         }
                     } catch (\Exception $e) {
-                        error_log("Failed to delete foreign key '$constraintName': " . $e->getMessage());
+                        $errorMsg = "Failed to delete foreign key '$constraintName': " . $e->getMessage();
+                        error_log($errorMsg);
                         $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " . $e->getMessage();
                     }
                 }
@@ -999,8 +1018,9 @@ class DatabaseController
                             $results['failed_operations'][] = "Failed to add column: " . $column['name'];
                         }
                     } catch (\Exception $e) {
-                        error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to add column: {$column['name']} - " . $e->getMessage();
+                        $columnName = $column['name'];
+                        error_log("Failed to add column '$columnName': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add column: $columnName - " . $e->getMessage();
                     }
                 }
             }
@@ -1060,8 +1080,9 @@ class DatabaseController
                             $results['failed_operations'][] = "Failed to add foreign key on column: " . $fk['column'];
                         }
                     } catch (\Exception $e) {
-                        error_log("Failed to add foreign key on column '{$fk['column']}': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to add foreign key: {$fk['column']} - " . $e->getMessage();
+                        $columnName = $fk['column'];
+                        error_log("Failed to add foreign key on column '$columnName': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add foreign key: $columnName - " . $e->getMessage();
                     }
                 }
             }
@@ -1109,7 +1130,8 @@ class DatabaseController
             foreach ($tables as $table) {
                 // Check if the result includes schema information already
                 $tableName = is_array($table) ? $table['name'] : $table;
-                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public'; // Default to 'public' if not specified
+                // Default to 'public' schema if not specified
+                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
 
                 try {
                     $size = $this->schemaManager->getTableSize($tableName);

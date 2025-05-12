@@ -104,10 +104,8 @@ class FilesController
 
                 $result = $this->fileHandler->handleFileUpload($request->getQueryParams(), $request->getFiles());
                 return Response::ok($result, 'File uploaded successfully')->send();
-            }
-
-            // Handle JSON/base64 upload
-            else {
+            } else {
+                // Handle JSON/base64 upload
                 $postData = Request::getPostData() ?? [];
                 if (!isset($postData['base64'])) {
                     return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();

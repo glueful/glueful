@@ -104,7 +104,8 @@ class EmailVerification
                 error_log("EmailNotification extension is not enabled");
                 return [
                     'success' => false,
-                    'message' => 'Email notifications are not configured in the system. Please contact the administrator.',
+                    'message' => 'Email notifications are not configured in the system. ' .
+                        'Please contact the administrator.',
                     'error_code' => 'email_extension_disabled'
                 ];
             }

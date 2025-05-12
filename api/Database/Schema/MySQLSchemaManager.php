@@ -251,7 +251,11 @@ class MySQLSchemaManager implements SchemaManager
     public function createIndex(string $table, string $indexName, array $columns, bool $unique = false): bool
     {
         $indexType = $unique ? 'UNIQUE' : 'INDEX';
-        $sql = "CREATE $indexType `$indexName` ON `$table` (" . implode(", ", array_map(fn($col) => "`$col`", $columns)) . ")";
+        $columnList = implode(", ", array_map(
+            fn($col) => "`$col`", 
+            $columns
+        ));
+        $sql = "CREATE $indexType `$indexName` ON `$table` ($columnList)";
         return (bool) $this->pdo->exec($sql);
     }
 
@@ -542,7 +546,9 @@ class MySQLSchemaManager implements SchemaManager
             $column = $foreignKey['column'];
             $referencesTable = $foreignKey['on'];
             $referencesColumn = $foreignKey['references'];
-            $constraintName = $foreignKey['name'] ?? "fk_{$table}_" . (is_array($column) ? implode("_", $column) : $column);
+            $namePrefix = "fk_{$table}_";
+            $nameSuffix = is_array($column) ? implode("_", $column) : $column;
+            $constraintName = $foreignKey['name'] ?? $namePrefix . $nameSuffix;
 
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("`,`", $column) : $column;

@@ -350,7 +350,8 @@ class NotificationsController
             // Get preferences using the proper service method
             $preferences = $this->notificationService->getPreferences($userNotifiable);
 
-            return Response::ok(['preferences' => $preferences], 'Notification preferences retrieved successfully')->send();
+            $message = 'Notification preferences retrieved successfully';
+            return Response::ok(['preferences' => $preferences], $message)->send();
         } catch (\Exception $e) {
             return Response::error(
                 'Failed to retrieve notification preferences: ' . $e->getMessage(),
@@ -377,7 +378,8 @@ class NotificationsController
             $data = Request::getPostData();
 
             if (!isset($data['notification_type']) || !isset($data['channels'])) {
-                return Response::error('Notification type and channels are required', Response::HTTP_BAD_REQUEST)->send();
+                $errorMsg = 'Notification type and channels are required';
+                return Response::error($errorMsg, Response::HTTP_BAD_REQUEST)->send();
             }
 
             // Create notifiable from user
@@ -517,8 +519,9 @@ class NotificationsController
             // Check if the channel exists
             $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
+                $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
-                    "Channel '{$channelName}' not found or not available",
+                    $errorMsg,
                     Response::HTTP_NOT_FOUND
                 )->send();
             }
@@ -571,8 +574,9 @@ class NotificationsController
             // Check if the channel exists
             $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
+                $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
-                    "Channel '{$channelName}' not found or not available",
+                    $errorMsg,
                     Response::HTTP_NOT_FOUND
                 )->send();
             }

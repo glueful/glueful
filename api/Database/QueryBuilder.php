@@ -305,9 +305,14 @@ class QueryBuilder
                 [$columnName, $alias] = explode(' AS ', $column, 2);
                 if (strpos($columnName, '.') !== false) {
                     [$table, $col] = explode('.', $columnName, 2);
-                    return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col) . " AS " . $this->driver->wrapIdentifier($alias);
+                    $wrappedTable = $this->driver->wrapIdentifier($table);
+                    $wrappedCol = $this->driver->wrapIdentifier($col);
+                    $wrappedAlias = $this->driver->wrapIdentifier($alias);
+                    return "$wrappedTable.$wrappedCol AS $wrappedAlias";
                 }
-                return $this->driver->wrapIdentifier($columnName) . " AS " . $this->driver->wrapIdentifier($alias);
+                $wrappedColumn = $this->driver->wrapIdentifier($columnName);
+                $wrappedAlias = $this->driver->wrapIdentifier($alias);
+                return "$wrappedColumn AS $wrappedAlias";
             }
             if (strpos($column, '.') !== false) {
                 [$table, $col] = explode('.', $column, 2);
@@ -378,7 +383,9 @@ class QueryBuilder
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
                 if (strpos($key, '.') !== false) {
                     [$table, $column] = explode('.', $key, 2);
-                    $orderByClauses[] = "{$this->driver->wrapIdentifier($table)}.{$this->driver->wrapIdentifier($column)} $direction";
+                    $wrappedTable = $this->driver->wrapIdentifier($table);
+                    $wrappedColumn = $this->driver->wrapIdentifier($column);
+                    $orderByClauses[] = "$wrappedTable.$wrappedColumn $direction";
                 } else {
                     $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
                 }
@@ -645,7 +652,11 @@ class QueryBuilder
             "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = CURRENT_TIMESTAMP WHERE " :
             "DELETE FROM " . $this->driver->wrapIdentifier($table) . " WHERE ";
 
-        $sql .= implode(" AND ", array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions)));
+        $whereConditions = array_map(
+            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", 
+            array_keys($conditions)
+        );
+        $sql .= implode(" AND ", $whereConditions);
 
         $stmt = $this->executeQuery($sql, array_values($conditions));
 
@@ -661,8 +672,12 @@ class QueryBuilder
      */
     public function restore(string $table, array $conditions): bool
     {
-        $sql = "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = NULL WHERE " .
-               implode(" AND ", array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions)));
+        $tableName = $this->driver->wrapIdentifier($table);
+        $whereConditions = array_map(
+            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", 
+            array_keys($conditions)
+        );
+        $sql = "UPDATE $tableName SET deleted_at = NULL WHERE " . implode(" AND ", $whereConditions);
         return $this->executeQuery($sql, array_values($conditions))->rowCount() > 0;
     }
 

@@ -65,7 +65,7 @@ class ExtensionsController
                     'author' => $metadata['author'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'author'),
                     'enabled' => $isEnabled,
                     'tier' => $tierType,  // Added tier type information
-                    'isCoreExtension' => in_array($shortName, $coreExtensions),  // Explicit flag for core extensions
+                    'isCoreExtension' => in_array($shortName, $coreExtensions),  // Explicit flag
                     'extensionId' => $shortName, // Include the extension ID for actions
                 ];
             }
@@ -437,13 +437,17 @@ class ExtensionsController
 
             // Add percentage distributions
             if ($metrics['total_memory_usage'] > 0) {
-                $tieredMetrics['by_tier']['core']['memory_percentage'] = round(($totalCoreMemory / $metrics['total_memory_usage']) * 100, 2);
-                $tieredMetrics['by_tier']['optional']['memory_percentage'] = round(($totalOptionalMemory / $metrics['total_memory_usage']) * 100, 2);
+                $coreMemPct = ($totalCoreMemory / $metrics['total_memory_usage']) * 100;
+                $optMemPct = ($totalOptionalMemory / $metrics['total_memory_usage']) * 100;
+                $tieredMetrics['by_tier']['core']['memory_percentage'] = round($coreMemPct, 2);
+                $tieredMetrics['by_tier']['optional']['memory_percentage'] = round($optMemPct, 2);
             }
 
             if ($metrics['total_execution_time'] > 0) {
-                $tieredMetrics['by_tier']['core']['execution_time_percentage'] = round(($totalCoreExecutionTime / $metrics['total_execution_time']) * 100, 2);
-                $tieredMetrics['by_tier']['optional']['execution_time_percentage'] = round(($totalOptionalExecutionTime / $metrics['total_execution_time']) * 100, 2);
+                $coreTimePct = ($totalCoreExecutionTime / $metrics['total_execution_time']) * 100;
+                $optTimePct = ($totalOptionalExecutionTime / $metrics['total_execution_time']) * 100;
+                $tieredMetrics['by_tier']['core']['execution_time_percentage'] = round($coreTimePct, 2);
+                $tieredMetrics['by_tier']['optional']['execution_time_percentage'] = round($optTimePct, 2);
             }
 
             return Response::ok(

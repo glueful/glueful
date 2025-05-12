@@ -7,23 +7,6 @@ namespace Glueful\Permissions;
 use Glueful\APIEngine;
 
 /**
- * Permission Types Enumeration
- *
- * Defines the available permission types for resource access control.
- */
-enum Permission: string
-{
-    /** View/Read permission */
-    case VIEW = 'A';
-/** Create/Save permission */
-    case SAVE = 'B';
-/** Delete permission */
-    case DELETE = 'C';
-/** Edit/Update permission */
-    case EDIT = 'D';
-}
-
-/**
  * Permissions Manager
  *
  * Handles permission checking and validation for both API and UI resources.

@@ -82,7 +82,8 @@ class CorsMiddleware implements MiddlewareInterface
 
             // Add optional CORS headers
             if (!empty($this->config['exposedHeaders'])) {
-                $response->headers->set('Access-Control-Expose-Headers', implode(', ', $this->config['exposedHeaders']));
+                $exposedHeadersValue = implode(', ', $this->config['exposedHeaders']);
+                $response->headers->set('Access-Control-Expose-Headers', $exposedHeadersValue);
             }
 
             if ($this->config['maxAge']) {

@@ -75,7 +75,12 @@ class OTP
      * @param int $expiry Expiration period in seconds
      * @return bool True if OTP is valid
      */
-    public static function verifyOTP(string $storedOTP, string $providedOTP, int $timestamp, int $expiry = self::DEFAULT_EXPIRY): bool
+    public static function verifyOTP(
+        string $storedOTP,
+        string $providedOTP,
+        int $timestamp,
+        int $expiry = self::DEFAULT_EXPIRY
+    ): bool
     {
         if (empty($storedOTP) || empty($providedOTP)) {
             return false;
