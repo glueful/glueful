@@ -1,5 +1,6 @@
 {
     "name": "glueful/glueful",
+    "description": "A flexible PHP framework for building modern APIs with authentication, database abstraction, caching, and more",
     "type": "library",
     "keywords": [
         "api",
