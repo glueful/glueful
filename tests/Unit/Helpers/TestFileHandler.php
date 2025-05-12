@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Helpers;
 
 use Glueful\Helpers\FileHandler as OriginalFileHandler;
@@ -16,47 +17,49 @@ class TestFileHandler extends OriginalFileHandler
      * Can be either a real FileUploader or our TestFileUploaderWrapper
      */
     public $testUploader;
-    
+
     /**
      * Mock auth service for testing
      * This property is needed for tests but doesn't exist in the original FileHandler class
      * We explicitly define it here to make the tests work without modifying the original class
      */
     public $auth;
-    
+
     /**
      * Constructor that initializes our own uploader instance
      * We're not calling parent::__construct() to avoid database connections
-     * 
+     *
      * @param object $fileUploader Either a real FileUploader or a TestFileUploaderWrapper
      */
     public function __construct($fileUploader = null)
     {
         // Don't call parent::__construct() to avoid database connections
         $this->testUploader = $fileUploader ?? new FileUploader();
-        
+
         // Set up auth directly instead of using the parent constructor
-        $this->auth = new class() {
-            public function getUser() {
+        $this->auth = new class () {
+            public function getUser()
+            {
                 return null; // Mock user implementation for testing
             }
-            
-            public function validateToken() {
+
+            public function validateToken()
+            {
                 return true; // Always valid for testing
             }
         };
     }
-    
+
     /**
      * Override the original method to use our test helper instead
      * This test-only version will be used for the tests
      */
-    public function handleFileUpload(array $getParams, array $fileParams): array 
+    public function handleFileUpload(array $getParams, array $fileParams): array
     {
         try {
             // Use our test helper instead of the original static method
             $token = AuthTestHelper::extractTokenFromRequest();
-        
+
             if (!$token) {
                 return [
                     'success' => false,
@@ -66,7 +69,6 @@ class TestFileHandler extends OriginalFileHandler
             }
 
             return $this->testUploader->handleUpload($token, $getParams, $fileParams);
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -79,7 +81,7 @@ class TestFileHandler extends OriginalFileHandler
     /**
      * Override base64 upload method to use our test helper
      */
-    public function handleBase64Upload(array $getParams, array $postParams): array 
+    public function handleBase64Upload(array $getParams, array $postParams): array
     {
         try {
             // Use our test helper instead of the original static method
@@ -91,15 +93,15 @@ class TestFileHandler extends OriginalFileHandler
                     'code' => 401
                 ];
             }
-            
+
             $_GET['token'] = $token;
-            
+
             // Convert base64 to temp file
             $tmpFile = $this->testUploader->handleBase64Upload($postParams['base64']);
-            
+
             // In tests, the tmpFile might not actually exist
             $fileSize = file_exists($tmpFile) ? filesize($tmpFile) : 1024; // Use a default size if file doesn't exist
-            
+
             $fileParams = [
                 'name' => $getParams['name'] ?? 'upload.jpg',
                 'type' => $getParams['mime_type'] ?? 'image/jpeg',
@@ -107,13 +109,12 @@ class TestFileHandler extends OriginalFileHandler
                 'error' => 0,
                 'size' => $fileSize
             ];
-            
+
             return $this->testUploader->handleUpload(
                 $getParams['token'] ?? $token,
                 $getParams,
                 ['file' => $fileParams]
             );
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -122,13 +123,13 @@ class TestFileHandler extends OriginalFileHandler
             ];
         }
     }
-    
+
     /**
      * Real implementation of getBlob method for testing
-     * 
+     *
      * This handles the basic getBlob functionality in a way that can be tested
      * Specific parts will be overridden in the tests as needed
-     * 
+     *
      * @param string $uuid File UUID
      * @param string $type Response type (info|download|inline|image)
      * @param array $params Additional parameters for image processing
@@ -144,10 +145,10 @@ class TestFileHandler extends OriginalFileHandler
                 'code' => 400
             ];
         }
-        
+
         // Get file info from the database or storage
         $fileInfo = $this->getBlobInfo($uuid);
-        
+
         // File not found
         if (!$fileInfo) {
             return [
@@ -156,10 +157,10 @@ class TestFileHandler extends OriginalFileHandler
                 'code' => 404
             ];
         }
-        
+
         // Get the appropriate storage driver based on the file's storage type
         $storage = $this->getStorageDriver($fileInfo['storage_type'] ?? 'local');
-        
+
         // Process the request based on the requested response type
         if ($type === 'info') {
             $result = $this->getBlobAsFile($storage, $fileInfo);
@@ -191,10 +192,10 @@ class TestFileHandler extends OriginalFileHandler
                     'code' => 500
                 ];
             }
-            
+
             // Get image URL from storage for processing
             $imageUrl = $storage->getUrl($fileInfo['filepath']);
-            
+
             // Process the image with the requested parameters
             $result = $this->processImageBlob($imageUrl, $params);
             return [
@@ -203,7 +204,7 @@ class TestFileHandler extends OriginalFileHandler
                 'data' => $result
             ];
         }
-        
+
         // Invalid response type or unable to process
         return [
             'success' => false,
@@ -211,42 +212,42 @@ class TestFileHandler extends OriginalFileHandler
             'code' => 400
         ];
     }
-    
+
     /**
      * The following are placeholder methods that will be mocked in tests
      * We're adding these so the mock builder can override them
      * Note: These methods need to be PUBLIC for mocking in PHPUnit
      */
-    public function getBlobInfo(string $uuid): ?array 
+    public function getBlobInfo(string $uuid): ?array
     {
         // This is a placeholder that will always be mocked
         return null;
     }
-    
+
     public function getStorageDriver(string $storageType = 'local')
     {
         // This is a placeholder that will always be mocked
         return null;
     }
-    
+
     public function getBlobAsFile($storage, array $fileInfo): array
     {
         // This is a placeholder that will always be mocked
         return [];
     }
-    
+
     public function downloadBlob($storage, array $fileInfo): array
     {
         // This is a placeholder that will always be mocked
         return [];
     }
-    
+
     public function serveFileInline(array $fileInfo, $storage): array
     {
         // This is a placeholder that will always be mocked
         return [];
     }
-    
+
     public function processImageBlob(string $src, array $params): array
     {
         // This is a placeholder that will always be mocked
