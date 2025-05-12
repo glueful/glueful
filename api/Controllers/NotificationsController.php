@@ -107,9 +107,7 @@ class NotificationsController
             $onlyUnread = isset($queryParams['unread']) && $queryParams['unread'] === 'true';
 
             // Build filters for type, date range and priority
-            $filters = [
-                'created_at' => [] // Initialize created_at filter as an empty array
-            ];
+            $filters = [];
 
             // Filter by type
             if (isset($queryParams['type']) && !empty($queryParams['type'])) {
@@ -128,10 +126,16 @@ class NotificationsController
 
             // Filter by date range for created_at
             if (isset($queryParams['date_from']) && !empty($queryParams['date_from'])) {
+                if (!isset($filters['created_at'])) {
+                    $filters['created_at'] = [];
+                }
                 $filters['created_at']['gte'] = $queryParams['date_from'];
             }
 
             if (isset($queryParams['date_to']) && !empty($queryParams['date_to'])) {
+                if (!isset($filters['created_at'])) {
+                    $filters['created_at'] = [];
+                }
                 $filters['created_at']['lte'] = $queryParams['date_to'];
             }
 
@@ -163,9 +167,7 @@ class NotificationsController
                     'last_page' => ceil($totalCount / $perPage)
                 ],
                 'filters' => [
-                    'applied' => !empty($filters['type'])
-                        || !empty($filters['priority'])
-                        || !empty($filters['created_at']),
+                    'applied' => !empty($filters),
                     'parameters' => $filters
                 ]
             ], 'Notifications retrieved successfully')->send();
@@ -348,8 +350,7 @@ class NotificationsController
             // Get preferences using the proper service method
             $preferences = $this->notificationService->getPreferences($userNotifiable);
 
-            $message = 'Notification preferences retrieved successfully';
-            return Response::ok(['preferences' => $preferences], $message)->send();
+            return Response::ok(['preferences' => $preferences], 'Notification preferences retrieved successfully')->send();
         } catch (\Exception $e) {
             return Response::error(
                 'Failed to retrieve notification preferences: ' . $e->getMessage(),
@@ -376,8 +377,7 @@ class NotificationsController
             $data = Request::getPostData();
 
             if (!isset($data['notification_type']) || !isset($data['channels'])) {
-                $errorMsg = 'Notification type and channels are required';
-                return Response::error($errorMsg, Response::HTTP_BAD_REQUEST)->send();
+                return Response::error('Notification type and channels are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
             // Create notifiable from user
@@ -515,13 +515,10 @@ class NotificationsController
             $channelName = $params['channel'];
 
             // Check if the channel exists
-            $availableChannels = $this->notificationService->getDispatcher()
-                ->getChannelManager()
-                ->getAvailableChannels();
+            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
-                $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
-                    $errorMsg,
+                    "Channel '{$channelName}' not found or not available",
                     Response::HTTP_NOT_FOUND
                 )->send();
             }
@@ -572,13 +569,10 @@ class NotificationsController
             $channelName = $params['channel'];
 
             // Check if the channel exists
-            $availableChannels = $this->notificationService->getDispatcher()
-                ->getChannelManager()
-                ->getAvailableChannels();
+            $availableChannels = $this->notificationService->getDispatcher()->getChannelManager()->getAvailableChannels();
             if (!in_array($channelName, $availableChannels)) {
-                $errorMsg = "Channel '{$channelName}' not found or not available";
                 return Response::error(
-                    $errorMsg,
+                    "Channel '{$channelName}' not found or not available",
                     Response::HTTP_NOT_FOUND
                 )->send();
             }

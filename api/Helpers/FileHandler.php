@@ -11,11 +11,13 @@ use Glueful\Uploader\Storage\StorageInterface;
 
 class FileHandler
 {
+    private AuthenticationService $auth;
     private FileUploader $uploader;
 
     public function __construct()
     {
         $this->uploader = new FileUploader();
+        $this->auth = new AuthenticationService();
     }
 
     public function handleFileUpload(array $getParams, array $fileParams): array
@@ -513,7 +515,13 @@ class FileHandler
         $storageType = $storageType ?? config('storage.driver', 'local');
 
         return match ($storageType) {
-            's3' => new \Glueful\Uploader\Storage\S3Storage(),
+            's3' => new \Glueful\Uploader\Storage\S3Storage(
+                config('storage.s3.key'),
+                config('storage.s3.secret'),
+                config('storage.s3.region'),
+                config('storage.s3.bucket'),
+                config('storage.s3.endpoint')
+            ),
             default => new \Glueful\Uploader\Storage\LocalStorage(
                 config('paths.uploads'),
                 config('paths.cdn')

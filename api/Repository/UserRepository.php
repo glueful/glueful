@@ -92,7 +92,7 @@ class UserRepository
     public function findByEmail(string $email): ?array
     {
         // Validate email format
-        $emailDTO = new EmailDTO();
+        $emailDTO = new EmailDTO($email);
         $emailDTO->email = $email;
         if (!$this->validator->validate($emailDTO)) {
             return $this->validator->errors();
@@ -217,7 +217,7 @@ class UserRepository
             $user = $this->findByUUID($identifier);
         }
 
-        if (!$user) {
+        if (!$user || empty($user)) {
             return false; // User not found
         }
 

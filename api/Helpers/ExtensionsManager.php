@@ -259,13 +259,9 @@ class ExtensionsManager
             $subdirPath = $extensionPath . '/' . $dir;
             if (is_dir($subdirPath)) {
                 // Register a fallback namespace to catch misreferenced classes
-                // For example: Glueful\Extensions\GithubAuthProvider ->
-                // extensions/SocialLogin/Providers/GithubAuthProvider
+                // For example: Glueful\Extensions\GithubAuthProvider -> extensions/SocialLogin/Providers/GithubAuthProvider
                 $aliasNamespace = "Glueful\\Extensions\\";
-                $classLoader->addPsr4(
-                    $aliasNamespace,
-                    $extensionPath . '/' . $dir . '/'
-                );
+                $classLoader->addPsr4($aliasNamespace, $extensionPath . '/' . $dir . '/');
             }
         }
     }
@@ -463,11 +459,7 @@ class ExtensionsManager
                     $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
 
                     // If the type isn't explicitly specified, check if other core APIs depend on it
-                    if (
-                        !isset($metadata['type'])
-                        && isset($metadata['requiredBy'])
-                        && !empty($metadata['requiredBy'])
-                    ) {
+                    if (!isset($metadata['type']) && isset($metadata['requiredBy']) && !empty($metadata['requiredBy'])) {
                         $isCore = true;
                     }
                 }
@@ -542,13 +534,11 @@ class ExtensionsManager
             // This is a core extension and we're not forcing disable
             return [
                 'success' => false,
-                'message' => "Cannot disable core extension '$extensionName'. "
-                    . "This extension is required for core functionality.",
+                'message' => "Cannot disable core extension '$extensionName'. This extension is required for core functionality.",
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
-                    'warning' => "Disabling this extension may break core system functionality. " .
-                        "Use force=true parameter to override."
+                    'warning' => "Disabling this extension may break core system functionality. Use force=true parameter to override."
                 ]
             ];
         }
@@ -915,10 +905,8 @@ class ExtensionsManager
      * @param bool $includeForcedCoreExtensions Whether to include all core extensions in production
      * @return array List of extensions enabled for the environment
      */
-    public static function getEnabledExtensionsForEnvironment(
-        ?string $environment = null,
-        bool $includeForcedCoreExtensions = true
-    ): array {
+    public static function getEnabledExtensionsForEnvironment(?string $environment = null, bool $includeForcedCoreExtensions = true): array
+    {
         // If no environment specified, detect from app config
         if ($environment === null) {
             $environment = config('app.environment', 'production');
@@ -1504,13 +1492,13 @@ class ExtensionsManager
 
         try {
             // Get dependencies from the extension
-            if ($reflection->hasMethod('getDependencies') && class_exists($extensionClass)) {
-                $dependencies = call_user_func([$extensionClass, 'getDependencies']);
+            if ($reflection->hasMethod('getDependencies')) {
+                $dependencies = $extensionClass::getDependencies();
             }
 
             // Check if the extension implements getMetadata() method
-            if ($reflection->hasMethod('getMetadata') && class_exists($extensionClass)) {
-                $metadata = call_user_func([$extensionClass, 'getMetadata']);
+            if ($reflection->hasMethod('getMetadata')) {
+                $metadata = $extensionClass::getMetadata();
                 if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
                     $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
                 }
@@ -1679,11 +1667,7 @@ class ExtensionsManager
                     }
 
                     // URL validation
-                    if (
-                        isset($rules['validate'])
-                        && $rules['validate'] === 'url'
-                        && !filter_var($metadata[$field], FILTER_VALIDATE_URL)
-                    ) {
+                    if (isset($rules['validate']) && $rules['validate'] === 'url' && !filter_var($metadata[$field], FILTER_VALIDATE_URL)) {
                         $warnings[] = "Field '$field' must be a valid URL";
                     }
                 }
@@ -1708,12 +1692,8 @@ class ExtensionsManager
                 if (is_dir($screenshotsDir)) {
                     $screenshotsCount = count(glob($screenshotsDir . '/*.{png,jpg,jpeg,gif}', GLOB_BRACE));
 
-                    if (
-                        $screenshotsCount > 0 &&
-                        (!isset($metadata['screenshots']) || empty($metadata['screenshots']))
-                    ) {
-                        $warnings[] = "Extension has $screenshotsCount screenshots in directory " .
-                            "but none defined in metadata";
+                    if ($screenshotsCount > 0 && (!isset($metadata['screenshots']) || empty($metadata['screenshots']))) {
+                        $warnings[] = "Extension has $screenshotsCount screenshots in directory but none defined in metadata";
                     }
                 }
             }
@@ -1806,26 +1786,22 @@ class ExtensionsManager
                 'installed_date' => filemtime($reflection->getFileName()),
                 'last_updated' => filemtime($reflection->getFileName())
             ];
+
             // Ensure the type is consistently available in both the main metadata and _system
-            // Initialize metadata as an array if it's not already
-            if (!is_array($metadata)) {
-                $metadata = [];
-            }
-            // Use array_key_exists to check if the key exists before accessing it
-            if (is_array($metadata) && !array_key_exists('type', $metadata)) {
+            if (!isset($metadata['type'])) {
                 $metadata['type'] = $extensionType;
             }
+
             // Create placeholder for marketplace data (to be populated by external system)
-            // Check if rating key exists and set default if it doesn't
-            if (!array_key_exists('rating', $metadata)) {
+            if (!isset($metadata['rating'])) {
                 $metadata['rating'] = [
                     'average' => 0,
                     'count' => 0,
                     'distribution' => []
                 ];
             }
-            // Check if stats key exists and set default if it doesn't
-            if (!array_key_exists('stats', $metadata)) {
+
+            if (!isset($metadata['stats'])) {
                 $metadata['stats'] = [
                     'downloads' => 0,
                     'active_installations' => 0,
@@ -2414,8 +2390,7 @@ return [
         if ($isEnabled && !$force) {
             return [
                 'success' => false,
-                'message' => "Cannot delete extension '$extensionName': Extension is currently enabled. " .
-                    "Disable it first or use force=true parameter.",
+                'message' => "Cannot delete extension '$extensionName': Extension is currently enabled. Disable it first or use force=true parameter.",
                 'details' => [
                     'is_enabled' => true,
                     'can_force' => true
@@ -2429,13 +2404,11 @@ return [
         if ($isCoreExtension && !$force) {
             return [
                 'success' => false,
-                'message' => "Cannot delete core extension '$extensionName'. "
-                    . "This extension is required for core functionality.",
+                'message' => "Cannot delete core extension '$extensionName'. This extension is required for core functionality.",
                 'details' => [
                     'is_core' => true,
                     'can_force' => true,
-                    'warning' => "Deleting this extension may break core system functionality. " .
-                        "Use force=true parameter to override."
+                    'warning' => "Deleting this extension may break core system functionality. Use force=true parameter to override."
                 ]
             ];
         }
@@ -2697,12 +2670,9 @@ return [
 
         // Validate the updated extension
         $validationResult = self::validateExtension($extensionName);
-        $updateSuccess = $validationResult['success'] ?? true;
         $updateResult = [
-            'success' => $updateSuccess,
-            'message' => $updateSuccess
-                ? "Extension '$extensionName' has been updated successfully"
-                : "Extension '$extensionName' was updated but has validation issues",
+            'success' => true,
+            'message' => "Extension '$extensionName' has been updated successfully",
             'was_enabled' => $wasEnabled,
             'validation' => $validationResult
         ];
@@ -2713,14 +2683,12 @@ return [
             $updateResult['enabled'] = $enableResult['success'];
 
             if (!$enableResult['success']) {
-                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " .
-                $enableResult['message'];
-                $updateSuccess = false;
+                $updateResult['warning'] = "Extension was updated but could not be re-enabled: " . $enableResult['message'];
             }
         }
 
         // Clean up the backup directory if everything went well
-        if ($updateSuccess) {
+        if ($updateResult['success']) {
             self::rrmdir($backupDir);
         } else {
             $updateResult['backup'] = "The previous version was backed up to: $backupDir";
@@ -3001,18 +2969,19 @@ return [
         }
 
         // Parse response
-        $data = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            self::debug("Failed to parse update API response: " . json_last_error_msg());
+        try {
+            $data = json_decode($response, true);
+
+            // Validate response format
+            if (!isset($data['version'])) {
+                return null;
+            }
+
+            return $data;
+        } catch (\Throwable $e) {
+            self::debug("Failed to parse update API response: " . $e->getMessage());
             return null;
         }
-
-        // Validate response format
-        if (!isset($data['version'])) {
-            return null;
-        }
-
-        return $data;
     }
 
     /**

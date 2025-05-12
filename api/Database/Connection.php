@@ -2,6 +2,8 @@
 
 namespace Glueful\Database;
 
+require_once __DIR__ . '../../bootstrap.php';
+
 use PDO;
 use Glueful\Database\Driver\MySQLDriver;
 use Glueful\Database\Driver\PostgreSQLDriver;
@@ -199,9 +201,9 @@ class Connection
     private function resolveDriver(string $engine): DatabaseDriver
     {
         return match ($engine) {
-            'mysql' => new MySQLDriver(),
-            'pgsql' => new PostgreSQLDriver(),
-            'sqlite' => new SQLiteDriver(),
+            'mysql' => new MySQLDriver($this->pdo),
+            'pgsql' => new PostgreSQLDriver($this->pdo),
+            'sqlite' => new SQLiteDriver($this->pdo),
             default => throw new Exception("Unsupported database engine: {$engine}"),
         };
     }

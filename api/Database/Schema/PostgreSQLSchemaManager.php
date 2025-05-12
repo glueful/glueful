@@ -46,7 +46,7 @@ use Exception;
  *     ]);
  * ```
  */
-class PostgreSQLSchemaManager implements SchemaManager
+class PostgreSQLSchemaManager extends SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
@@ -155,8 +155,7 @@ class PostgreSQLSchemaManager implements SchemaManager
 
             // Generate a consistent index name for checking
             if (is_array($column)) {
-                $columnPart = implode("_", $column);
-                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_{$columnPart}_idx";
+                $indexNameToCheck = isset($index['name']) ? $index['name'] : "{$table}_" . implode("_", $column) . "_idx";
             } else {
                 $indexNameToCheck = "{$table}_{$column}_idx";
             }
@@ -345,15 +344,14 @@ class PostgreSQLSchemaManager implements SchemaManager
      * - System table exclusion
      * - Proper escaping
      *
-     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws Exception If table list retrieval fails
      */
-    public function getTables(?bool $includeSchema = false): array
+    public function getTables(): array
     {
         try {
             $query = "
-                SELECT table_name" . ($includeSchema ? ", table_schema" : "") . "
+                SELECT table_name 
                 FROM information_schema.tables 
                 WHERE table_schema = 'public'
                 ORDER BY table_name;
@@ -746,14 +744,11 @@ class PostgreSQLSchemaManager implements SchemaManager
             $column = $foreignKey['column'];
             $referencesTable = $foreignKey['on'];
             $referencesColumn = $foreignKey['references'];
-            $nameSuffix = is_array($column) ? implode("_", $column) : $column;
-            $constraintName = $foreignKey['name'] ?? "fk_{$table}_{$nameSuffix}";
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_" . (is_array($column) ? implode("_", $column) : $column);
 
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("\",\"", $column) : $column;
-            $referencesColumnStr = is_array($referencesColumn)
-                ? implode("\",\"", $referencesColumn)
-                : $referencesColumn;
+            $referencesColumnStr = is_array($referencesColumn) ? implode("\",\"", $referencesColumn) : $referencesColumn;
 
             $sql = "ALTER TABLE \"{$table}\" ADD CONSTRAINT \"{$constraintName}\" 
                     FOREIGN KEY (\"{$columnStr}\") REFERENCES \"{$referencesTable}\" (\"{$referencesColumnStr}\")";
@@ -817,9 +812,7 @@ class PostgreSQLSchemaManager implements SchemaManager
             ]);
 
             if ($stmt->fetchColumn() == 0) {
-                throw new \RuntimeException(
-                    "Foreign key constraint '{$constraintName}' does not exist on table '{$table}'"
-                );
+                throw new \RuntimeException("Foreign key constraint '{$constraintName}' does not exist on table '{$table}'");
             }
 
             // Use double quotes for identifiers in PostgreSQL
@@ -829,9 +822,7 @@ class PostgreSQLSchemaManager implements SchemaManager
             if ($e instanceof \RuntimeException) {
                 throw $e; // Re-throw the specific exception about constraint not existing
             }
-            throw new Exception(
-                "Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage()
-            );
+            throw new Exception("Error dropping foreign key '{$constraintName}' from table '{$table}': " . $e->getMessage());
         }
     }
 }

@@ -251,11 +251,7 @@ class MySQLSchemaManager implements SchemaManager
     public function createIndex(string $table, string $indexName, array $columns, bool $unique = false): bool
     {
         $indexType = $unique ? 'UNIQUE' : 'INDEX';
-        $columnList = implode(", ", array_map(
-            fn($col) => "`$col`",
-            $columns
-        ));
-        $sql = "CREATE $indexType `$indexName` ON `$table` ($columnList)";
+        $sql = "CREATE $indexType `$indexName` ON `$table` (" . implode(", ", array_map(fn($col) => "`$col`", $columns)) . ")";
         return (bool) $this->pdo->exec($sql);
     }
 
@@ -280,19 +276,11 @@ class MySQLSchemaManager implements SchemaManager
      *
      * Retrieves list of tables in current database.
      *
-     * @param bool $includeSchema Whether to include schema information
      * @return array List of table names
      * @throws \PDOException If table list retrieval fails
      */
-    public function getTables(?bool $includeSchema = false): array
+    public function getTables(): array
     {
-        if ($includeSchema) {
-            $stmt = $this->pdo->query(
-                "SELECT TABLE_NAME, TABLE_SCHEMA FROM information_schema.TABLES " .
-                "WHERE TABLE_SCHEMA = DATABASE()"
-            );
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
         $stmt = $this->pdo->query("SHOW TABLES");
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
@@ -554,9 +542,7 @@ class MySQLSchemaManager implements SchemaManager
             $column = $foreignKey['column'];
             $referencesTable = $foreignKey['on'];
             $referencesColumn = $foreignKey['references'];
-            $namePrefix = "fk_{$table}_";
-            $nameSuffix = is_array($column) ? implode("_", $column) : $column;
-            $constraintName = $foreignKey['name'] ?? $namePrefix . $nameSuffix;
+            $constraintName = $foreignKey['name'] ?? "fk_{$table}_" . (is_array($column) ? implode("_", $column) : $column);
 
             // Handle single-column and multi-column foreign keys
             $columnStr = is_array($column) ? implode("`,`", $column) : $column;

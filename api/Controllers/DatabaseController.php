@@ -76,10 +76,7 @@ class DatabaseController
 
                 // Add AUTO_INCREMENT if specified
                 if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
-                    $autoIncValue = is_string($options['autoIncrement'])
-                        ? $options['autoIncrement']
-                        : "AUTO_INCREMENT";
-                    $columnDef .= " " . $autoIncValue;
+                    $columnDef .= " " . (is_string($options['autoIncrement']) ? $options['autoIncrement'] : "AUTO_INCREMENT");
                 }
 
                 // Handle nullable property - now accepting direct SQL constraints
@@ -98,10 +95,7 @@ class DatabaseController
                     if ($options['default'] === 'CURRENT_TIMESTAMP') {
                         $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
                     } else {
-                        $defaultValue = is_numeric($options['default'])
-                            ? $options['default']
-                            : "'{$options['default']}'";
-                        $columnDef .= " DEFAULT " . $defaultValue;
+                        $columnDef .= " DEFAULT " . (is_numeric($options['default']) ? $options['default'] : "'{$options['default']}'");
                     }
                 }
 
@@ -164,16 +158,13 @@ class DatabaseController
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            try {
-                $result = $this->schemaManager->dropTable($data['table_name']);
-                if (!$result) {
-                    return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
-                }
+            $result = $this->schemaManager->dropTable($data['table_name']);
 
-                return Response::ok(null, 'Table dropped successfully')->send();
-            } catch (\Exception $e) {
-                return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            if (!$result['success']) {
+                return Response::error($result['message'], Response::HTTP_BAD_REQUEST)->send();
             }
+
+            return Response::ok(null, 'Table dropped successfully')->send();
         } catch (\Exception $e) {
             error_log("Drop table error: " . $e->getMessage());
             return Response::error(
@@ -186,7 +177,7 @@ class DatabaseController
     /**
      * Get list of all tables
      */
-    public function getTables(?bool $includeSchema = false): mixed
+    public function getTables(): mixed
     {
         try {
             $tables = $this->schemaManager->getTables();
@@ -237,11 +228,9 @@ class DatabaseController
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            // Get request data
-            $requestData = Request::getPostData();
             // Set default values for pagination and filtering
-            $page = (int)($requestData['page'] ?? 1);
-            $perPage = (int)($requestData['per_page'] ?? 25);
+            $page = (int)($data['page'] ?? 1);
+            $perPage = (int)($data['per_page'] ?? 25);
 
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
@@ -281,8 +270,7 @@ class DatabaseController
             $columns = $this->schemaManager->getTableColumns($tableName);
 
             if (empty($columns)) {
-                $errorMsg = "No columns found or table '$tableName' does not exist";
-                return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
+                return Response::error("No columns found or table '$tableName' does not exist", Response::HTTP_NOT_FOUND)->send();
             }
 
             return Response::ok([
@@ -338,16 +326,11 @@ class DatabaseController
                 }
 
                 try {
-                    // Create column definition array with merged options
-                    $columnDef = ['type' => $column['type']];
-                    if (isset($column['options']) && is_array($column['options'])) {
-                        $columnDef = array_merge($columnDef, $column['options']);
-                    }
-
                     $result = $this->schemaManager->addColumn(
                         $tableName,
                         $column['name'],
-                        $columnDef
+                        $column['type'],
+                        $column['options'] ?? []
                     );
 
                     if ($result['success'] ?? false) {
@@ -520,7 +503,7 @@ class DatabaseController
                 // Generate an index name if not provided
                 if (!isset($index['name'])) {
                     $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
-                    $indexType = strtolower($index['type']) === 'unique' ? 'unq' : 'idx';
+                    $indexType = strtolower($index['type']) == 'unique' ? 'unq' : 'idx';
                     $formattedIndex['name'] = "{$tableName}_{$columnStr}_{$indexType}";
                 } else {
                     $formattedIndex['name'] = $index['name'];
@@ -529,10 +512,14 @@ class DatabaseController
                 $formattedIndexes[] = $formattedIndex;
 
                 try {
-                      // Add the index
-                    $this->schemaManager->addIndex([$formattedIndex]);
-                    // If we get here, no exception was thrown, so it succeeded
-                    $results[] = $formattedIndex['name'];
+                    // Add the index
+                    $success = $this->schemaManager->addIndex([$formattedIndex]);
+
+                    if ($success) {
+                        $results[] = $formattedIndex['name'];
+                    } else {
+                        $failed[] = $formattedIndex['name'];
+                    }
                 } catch (\Exception $e) {
                     error_log("Failed to add index on column '{$index['column']}': " . $e->getMessage());
                     $failed[] = $formattedIndex['name'];
@@ -710,9 +697,13 @@ class DatabaseController
                     }
 
                     // Use the SchemaManager's addForeignKey method
-                     $this->schemaManager->addForeignKey([$formattedFk]);
+                    $success = $this->schemaManager->addForeignKey([$formattedFk]);
 
-                    $results[] = $formattedFk['name'];
+                    if ($success) {
+                        $results[] = $formattedFk['name'];
+                    } else {
+                        $failed[] = $formattedFk['name'];
+                    }
                 } catch (\Exception $e) {
                     error_log("Failed to add foreign key for column '{$fk['column']}': " . $e->getMessage());
                     $failed[] = $fk['column'];
@@ -722,15 +713,10 @@ class DatabaseController
             // Check if all foreign keys were added successfully
             if (empty($failed)) {
                 // All foreign keys were added successfully
-                return Response::ok(
-                    [
+                return Response::ok([
                     'table' => $tableName,
                     'constraints_added' => $results
-                    ],
-                    count($results) > 1
-                        ? 'Foreign key constraints added successfully'
-                        : 'Foreign key constraint added successfully'
-                )->send();
+                ], count($results) > 1 ? 'Foreign key constraints added successfully' : 'Foreign key constraint added successfully')->send();
             } elseif (empty($results)) {
                 // All foreign keys failed to add
                 return Response::error(
@@ -779,10 +765,7 @@ class DatabaseController
             $failed = [];
 
             // Handle both single constraint and array of constraints
-            $hasMultipleConstraints = isset($data['constraint_names']);
-            $constraintNames = $hasMultipleConstraints
-                ? $data['constraint_names']
-                : [$data['constraint_name']];
+            $constraintNames = isset($data['constraint_names']) ? $data['constraint_names'] : [$data['constraint_name']];
 
             // Ensure we have an array
             if (!is_array($constraintNames)) {
@@ -809,15 +792,10 @@ class DatabaseController
             // Check if all constraints were dropped successfully
             if (empty($failed)) {
                 // All constraints were dropped successfully
-                return Response::ok(
-                    [
+                return Response::ok([
                     'table' => $tableName,
                     'constraints_dropped' => $results
-                    ],
-                    count($results) > 1
-                        ? 'Foreign key constraints dropped successfully'
-                        : 'Foreign key constraint dropped successfully'
-                )->send();
+                ], count($results) > 1 ? 'Foreign key constraints dropped successfully' : 'Foreign key constraint dropped successfully')->send();
             } elseif (empty($results)) {
                 // All constraints failed to drop
                 return Response::error(
@@ -986,10 +964,8 @@ class DatabaseController
                             $results['failed_operations'][] = "Failed to delete foreign key: $constraintName";
                         }
                     } catch (\Exception $e) {
-                        $errorMsg = "Failed to delete foreign key '$constraintName': " . $e->getMessage();
-                        error_log($errorMsg);
-                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " .
-                            $e->getMessage();
+                        error_log("Failed to delete foreign key '$constraintName': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " . $e->getMessage();
                     }
                 }
             }
@@ -1023,9 +999,8 @@ class DatabaseController
                             $results['failed_operations'][] = "Failed to add column: " . $column['name'];
                         }
                     } catch (\Exception $e) {
-                        $columnName = $column['name'];
-                        error_log("Failed to add column '$columnName': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to add column: $columnName - " . $e->getMessage();
+                        error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add column: {$column['name']} - " . $e->getMessage();
                     }
                 }
             }
@@ -1048,12 +1023,14 @@ class DatabaseController
                 }, $data['indexes']);
 
                 try {
-                    // The method returns the schema manager instance (self), not a boolean
-                    $this->schemaManager->addIndex($formattedIndexes);
-                    // Since no exception was thrown, consider it successful
-                    $results['added_indexes'] = array_map(function ($index) {
-                        return $index['name'];
-                    }, $formattedIndexes);
+                    $success = $this->schemaManager->addIndex($formattedIndexes);
+                    if ($success) {
+                        $results['added_indexes'] = array_map(function ($index) {
+                            return $index['name'];
+                        }, $formattedIndexes);
+                    } else {
+                        $results['failed_operations'][] = "Failed to add indexes";
+                    }
                 } catch (\Exception $e) {
                     error_log("Failed to add indexes: " . $e->getMessage());
                     $results['failed_operations'][] = "Failed to add indexes: " . $e->getMessage();
@@ -1069,24 +1046,22 @@ class DatabaseController
                     }
 
                     try {
-                        // Generate a constraint name if not provided
-                        $fkName = isset($fk['name']) ? $fk['name'] : "fk_{$tableName}_{$fk['column']}";
                         $fkDef = [
                             'table' => $tableName,
                             'column' => $fk['column'],
                             'references' => $fk['references'],
                             'on' => $fk['on'],
-                            'name' => $fkName
                         ];
 
-                        $this->schemaManager->addForeignKey([$fkDef]);
-                        // If no exception thrown, consider it successful
-                        $results['added_foreign_keys'][] = $fkName;
+                        $success = $this->schemaManager->addForeignKey([$fkDef]);
+                        if ($success) {
+                            $results['added_foreign_keys'][] = $fkDef['name'] ?? "fk_{$tableName}_{$fk['column']}";
+                        } else {
+                            $results['failed_operations'][] = "Failed to add foreign key on column: " . $fk['column'];
+                        }
                     } catch (\Exception $e) {
-                        $columnName = $fk['column'];
-                        error_log("Failed to add foreign key on column '$columnName': " . $e->getMessage());
-                        $errorMsg = "Failed to add foreign key: $columnName - " . $e->getMessage();
-                        $results['failed_operations'][] = $errorMsg;
+                        error_log("Failed to add foreign key on column '{$fk['column']}': " . $e->getMessage());
+                        $results['failed_operations'][] = "Failed to add foreign key: {$fk['column']} - " . $e->getMessage();
                     }
                 }
             }
@@ -1122,7 +1097,7 @@ class DatabaseController
     {
         try {
             // Get list of all tables with schema information
-            $tables = $this->schemaManager->getTables(); // No parameters needed
+            $tables = $this->schemaManager->getTables(true); // Pass true to include schema info
 
             if (empty($tables)) {
                 return Response::ok(['tables' => []], 'No tables found in database')->send();
@@ -1134,8 +1109,7 @@ class DatabaseController
             foreach ($tables as $table) {
                 // Check if the result includes schema information already
                 $tableName = is_array($table) ? $table['name'] : $table;
-                // Default to 'public' schema if not specified
-                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
+                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public'; // Default to 'public' if not specified
 
                 try {
                     $size = $this->schemaManager->getTableSize($tableName);
@@ -1187,5 +1161,23 @@ class DatabaseController
         }
     }
 
-    // Method formatBytes has been removed as it was unused
+    /**
+     * Format bytes to human-readable format
+     *
+     * @param int|float $bytes Number of bytes
+     * @param int $precision Precision of rounding
+     * @return string Formatted size with unit
+     */
+    private function formatBytes($bytes, int $precision = 2): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+        $bytes = max((float)$bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+
+        $bytes /= (1 << (10 * $pow));
+
+        return round($bytes, $precision) . ' ' . $units[$pow];
+    }
 }

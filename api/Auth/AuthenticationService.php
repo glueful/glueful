@@ -370,13 +370,8 @@ class AuthenticationService
             $identifierType = filter_var($identifier, FILTER_VALIDATE_EMAIL) ? 'email' : 'uuid';
         }
 
-        // Attempt to find the user based on identifier type
-        $user = $identifierType === 'email'
-            ? $this->userRepository->findByEmail($identifier)
-            : $this->userRepository->findByUUID($identifier);
-
         // Return true if user was found and is properly formatted
-        return !empty($user) && is_array($user);
+        return !empty($user) && is_array($user) && !isset($user['username']);
     }
 
     /**
@@ -519,7 +514,17 @@ class AuthenticationService
         return $authManager->isAdmin($userData);
     }
 
-
+    /**
+     * Validate a token
+     *
+     * @param string $token The token to validate
+     * @return bool True if token is valid
+     */
+    private static function validateToken(string $token): bool
+    {
+        $result = self::validateAccessToken($token);
+        return $result !== null;
+    }
 
     /**
      * Authenticate with multiple providers

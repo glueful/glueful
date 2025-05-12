@@ -134,13 +134,7 @@ class JobScheduler
                 ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
                 ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
-                ['type' => 'FOREIGN KEY',
-                    'column' => 'job_uuid',
-                    'table' => 'job_executions',
-                    'references' => 'uuid',
-                    'on' => 'scheduled_jobs',
-                    'onDelete' => 'CASCADE'
-                ]
+                ['type' => 'FOREIGN KEY', 'column' => 'job_uuid', 'table' => 'job_executions', 'references' => 'uuid', 'on' => 'scheduled_jobs', 'onDelete' => 'CASCADE']
             ]);
         } catch (\Exception $e) {
             $this->log("Failed to ensure table existence: " . $e->getMessage(), 'error');
@@ -258,11 +252,11 @@ class JobScheduler
     /**
      * Update job in database after execution
      *
-     * @param string $jobUuid Job UUID
+     * @param string $jobId Job UUID
      * @param bool $success Whether execution succeeded
      * @param mixed $result Result data from execution
      */
-    protected function recordJobExecution(string $jobUuid, bool $success, $result = null): void
+    protected function recordJobExecution(string $jobUud, bool $success, $result = null): void
     {
         try {
             $now = date('Y-m-d H:i:s');
@@ -271,7 +265,7 @@ class JobScheduler
             $executionId = Utils::generateNanoID();
             $this->db->insert('job_executions', [
                 'uuid' => $executionId,
-                'job_uuid' => $jobUuid,
+                'job_uuid' => $jobUud,
                 'status' => $success ? 'success' : 'failure',
                 'started_at' => $now,
                 'completed_at' => $now,
@@ -281,7 +275,7 @@ class JobScheduler
 
             // Update job's last_run and next_run
             $job = $this->db->select('scheduled_jobs', ['schedule'])
-                ->where(['uuid' => $jobUuid])
+                ->where(['uuid' => $jobUud])
                 ->limit(1)
                 ->get();
 
@@ -293,7 +287,7 @@ class JobScheduler
                     'last_run' => $now,
                     'next_run' => $nextRunTime,
                     'updated_at' => $now
-                ], ['uuid' => $jobUuid]);
+                ], ['uuid' => $jobUud]);
             }
         } catch (\Exception $e) {
             error_log("Failed to record job execution: " . $e->getMessage());
@@ -426,12 +420,7 @@ class JobScheduler
                 // Register based on persistence flag
                 $isPersistent = $job['persistence'] ?? false;
                 if ($isPersistent) {
-                    $this->registerInDatabase(
-                        $job['name'],
-                        $job['schedule'],
-                        $job['handler_class'],
-                        $job['parameters'] ?? []
-                    );
+                    $this->registerInDatabase($job['name'], $job['schedule'], $job['handler_class'], $job['parameters'] ?? []);
                     // $this->log("Registered persistent job: {$job['name']}", 'info');
                 } else {
                     // $this->register($job['schedule'], function() use ($job) {

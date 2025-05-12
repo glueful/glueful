@@ -30,6 +30,9 @@ class RandomStringGenerator
     /** @var string Uppercase alphabetic characters */
     public const CHARSET_ALPHA_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
+    /** @var int Binary mask for 64-character alphabet */
+    private const MASK = 63; // 0b00111111
+
     /**
      * Generate random string with improved efficiency
      *

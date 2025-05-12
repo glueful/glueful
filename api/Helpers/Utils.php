@@ -120,7 +120,7 @@ class Utils
      *
      * Creates unique identifier using NanoID algorithm.
      *
-     * @param int $length Length of ID to generate
+     * @param int $size Length of ID to generate
      * @return string Generated NanoID
      */
     public static function generateNanoID(?int $length = null): string
@@ -253,15 +253,7 @@ class Utils
     {
         return str_pad($text, $length);
     }
-
-    /**
-     * Initialize the cache engine
-     *
-     * @param string $prefix Prefix for cache keys
-     * @return void
-     */
-    public static function initializeCacheEngine(string $prefix = 'glueful:'): void
-    {
-        CacheEngine::initialize($prefix);
-    }
 }
+
+// Initialize cache engine with optional prefix
+CacheEngine::initialize('glueful:');

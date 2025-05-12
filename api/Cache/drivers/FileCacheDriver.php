@@ -397,11 +397,11 @@ class FileCacheDriver implements CacheDriverInterface
         $success = true;
 
         if (file_exists($filePath)) {
-            $success = unlink($filePath);
+            $success = $success && unlink($filePath);
         }
 
-        if (file_exists($metaPath) && $success) {
-            $success = unlink($metaPath);
+        if (file_exists($metaPath)) {
+            $success = $success && unlink($metaPath);
         }
 
         if (file_exists($zsetPath)) {

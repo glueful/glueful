@@ -115,7 +115,7 @@ class NotificationService
         }
 
         // Send it immediately unless scheduled for later
-        if (!isset($options['schedule']) || $options['schedule'] == null) {
+        if (!isset($options['schedule']) || $options['schedule'] === null) {
             $result = $this->dispatcher->send(
                 $notification,
                 $notifiable,
@@ -132,17 +132,10 @@ class NotificationService
                     foreach ($result['channels'] as $channel => $channelResult) {
                         if ($channelResult['status'] === 'success') {
                             // Calculate delivery time if applicable
-                            $creationTime = $this->metricsService->getNotificationCreationTime(
-                                $notification->getUuid(),
-                                $channel
-                            );
+                            $creationTime = $this->metricsService->getNotificationCreationTime($notification->getUuid(), $channel);
                             if ($creationTime) {
                                 $deliveryTime = time() - $creationTime;
-                                $this->metricsService->trackDeliveryTime(
-                                    $notification->getUuid(),
-                                    $channel,
-                                    $deliveryTime
-                                );
+                                $this->metricsService->trackDeliveryTime($notification->getUuid(), $channel, $deliveryTime);
                             }
 
                             // Update success metrics
@@ -329,7 +322,7 @@ class NotificationService
             : uniqid('preference_');
 
         // Generate a UUID if not provided
-        if (!$uuid) {
+        if ($uuid === null) {
             $uuid = Utils::generateNanoID();
         }
 
@@ -611,7 +604,7 @@ class NotificationService
                 $userRepository = new \Glueful\Repository\UserRepository();
                 $userData = $userRepository->findByUUID($id);
 
-                if (!$userData) {
+                if (!$userData || empty($userData)) {
                     return null;
                 }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Repository\{PermissionRepository, RoleRepository};
+use Glueful\Repository\{PermissionRepository, RoleRepository, UserRepository};
 use Glueful\Helpers\Request;
 use Glueful\Database\{Connection, QueryBuilder};
 
@@ -23,10 +23,12 @@ class PermissionsController
 {
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
+    private UserRepository $userRepository;
     private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
+        $this->userRepository = new UserRepository();
         $this->roleRepo = new RoleRepository();
         $this->permissionRepo = new PermissionRepository();
 
@@ -98,18 +100,13 @@ class PermissionsController
             $data = Request::getPostData();
 
             if (!isset($data['model']) || !isset($data['permissions']) || !is_array($data['permissions'])) {
-                $msg = 'Model name and permissions array are required';
-                return Response::error($msg, Response::HTTP_BAD_REQUEST)->send();
+                return Response::error('Model name and permissions array are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
-            $model = $data['model'];
-            $permissions = $data['permissions'];
-            $description = $data['description'] ?? null;
-
             $result = $this->permissionRepo->createPermission(
-                $model,
-                $permissions,
-                $description
+                $data['model'],
+                $data['permissions'],
+                $data['description'] ?? null
             );
 
             return Response::ok($result, 'Permission created successfully')->send();
@@ -160,10 +157,7 @@ class PermissionsController
     {
         try {
             $data = Request::getPostData();
-            $roleUuid = $data['role_uuid'];
-            $model = $data['model'];
-            $permissions = $data['permissions'];
-            $result = $this->permissionRepo->assignRolePermission($roleUuid, $model, $permissions);
+            $result = $this->permissionRepo->assignRolePermission($data['role_uuid'], $data['model'], $data['permissions']);
             return Response::ok($result, 'Permissions assigned to role successfully')->send();
         } catch (\Exception $e) {
             error_log("Assign permissions to role error: " . $e->getMessage());
@@ -183,10 +177,7 @@ class PermissionsController
     {
         try {
             $data = Request::getPostData();
-            $roleUuid = $data['role_uuid'];
-            $model = $data['model'];
-            $permissions = $data['permissions'];
-            $result = $this->permissionRepo->updateRolePermission($roleUuid, $model, $permissions);
+            $result = $this->permissionRepo->updateRolePermission($data['role_uuid'], $data['model'], $data['permissions']);
             return Response::ok($result, 'Role permissions updated successfully')->send();
         } catch (\Exception $e) {
             error_log("Update role permissions error: " . $e->getMessage());

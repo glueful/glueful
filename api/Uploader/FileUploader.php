@@ -6,9 +6,16 @@ namespace Glueful\Uploader;
 
 use Glueful\APIEngine;
 use Glueful\Helpers\Utils;
+use RuntimeException;
+use InvalidArgumentException;
 use Glueful\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
-use Glueful\Uploader\UploadException;
-use Glueful\Uploader\ValidationException;
+
+class UploadException extends RuntimeException
+{
+}
+class ValidationException extends InvalidArgumentException
+{
+}
 
 final class FileUploader
 {
@@ -30,14 +37,20 @@ final class FileUploader
         private readonly string $cdnBaseUrl = '',
         private readonly ?string $storageDriver = null
     ) {
-        $driver = $this->storageDriver ?: config('storage.driver');
-        $this->storage = match ($driver) {
+        $this->storage = match ($storageDriver ?: config('storage.driver')) {
             's3' => new S3Storage(),
             default => new LocalStorage(
                 $this->uploadsDirectory ?: config('paths.uploads'),
                 $this->cdnBaseUrl ?: config('paths.cdn')
             )
         };
+    }
+
+    private function validateDirectory(): void
+    {
+        if (!is_dir($this->uploadsDirectory) || !is_writable($this->uploadsDirectory)) {
+            throw new UploadException("Upload directory is not writable");
+        }
     }
 
     public function handleUpload(string $token, array $getParams, array $fileParams): array
@@ -127,7 +140,9 @@ final class FileUploader
     private function saveFileRecord(string $token, array $getParams, array $file, string $filename): array
     {
         $user = Utils::getUser();
-        $uuid = $user['uuid'] ?? null;
+        if ($user) {
+            $uuid = $user['uuid'];
+        }
 
         $params = [
             'name' => $file['name'],

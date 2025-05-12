@@ -6,7 +6,6 @@ use PDO;
 use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
-use Glueful\Database\RawExpression;
 
 /**
  * Database Query Builder
@@ -46,7 +45,7 @@ class QueryBuilder
     /** @var bool Whether to use soft deletes */
     protected bool $softDeletes = true;
 
-    /** @var array<int, string|\Glueful\Database\RawExpression> Group by clauses */
+    /** @var array Group by clauses */
     protected array $groupBy = [];
 
     /** @var array Order by clauses */
@@ -58,7 +57,7 @@ class QueryBuilder
     /** @var array Stores query parameter bindings */
     protected array $bindings = [];
 
-    /** @var array<int, array<string, mixed>|\Glueful\Database\RawExpression> Stores having clauses */
+    /** @var array Stores having clauses */
     protected array $having = [];
 
     /** @var array Stores raw where conditions */
@@ -306,14 +305,9 @@ class QueryBuilder
                 [$columnName, $alias] = explode(' AS ', $column, 2);
                 if (strpos($columnName, '.') !== false) {
                     [$table, $col] = explode('.', $columnName, 2);
-                    $wrappedTable = $this->driver->wrapIdentifier($table);
-                    $wrappedCol = $this->driver->wrapIdentifier($col);
-                    $wrappedAlias = $this->driver->wrapIdentifier($alias);
-                    return "$wrappedTable.$wrappedCol AS $wrappedAlias";
+                    return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col) . " AS " . $this->driver->wrapIdentifier($alias);
                 }
-                $wrappedColumn = $this->driver->wrapIdentifier($columnName);
-                $wrappedAlias = $this->driver->wrapIdentifier($alias);
-                return "$wrappedColumn AS $wrappedAlias";
+                return $this->driver->wrapIdentifier($columnName) . " AS " . $this->driver->wrapIdentifier($alias);
             }
             if (strpos($column, '.') !== false) {
                 [$table, $col] = explode('.', $column, 2);
@@ -384,9 +378,7 @@ class QueryBuilder
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
                 if (strpos($key, '.') !== false) {
                     [$table, $column] = explode('.', $key, 2);
-                    $wrappedTable = $this->driver->wrapIdentifier($table);
-                    $wrappedColumn = $this->driver->wrapIdentifier($column);
-                    $orderByClauses[] = "$wrappedTable.$wrappedColumn $direction";
+                    $orderByClauses[] = "{$this->driver->wrapIdentifier($table)}.{$this->driver->wrapIdentifier($column)} $direction";
                 } else {
                     $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
                 }
@@ -653,11 +645,7 @@ class QueryBuilder
             "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = CURRENT_TIMESTAMP WHERE " :
             "DELETE FROM " . $this->driver->wrapIdentifier($table) . " WHERE ";
 
-        $whereConditions = array_map(
-            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?",
-            array_keys($conditions)
-        );
-        $sql .= implode(" AND ", $whereConditions);
+        $sql .= implode(" AND ", array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions)));
 
         $stmt = $this->executeQuery($sql, array_values($conditions));
 
@@ -673,12 +661,8 @@ class QueryBuilder
      */
     public function restore(string $table, array $conditions): bool
     {
-        $tableName = $this->driver->wrapIdentifier($table);
-        $whereConditions = array_map(
-            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?",
-            array_keys($conditions)
-        );
-        $sql = "UPDATE $tableName SET deleted_at = NULL WHERE " . implode(" AND ", $whereConditions);
+        $sql = "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = NULL WHERE " .
+               implode(" AND ", array_map(fn($col) => "{$this->driver->wrapIdentifier($col)} = ?", array_keys($conditions)));
         return $this->executeQuery($sql, array_values($conditions))->rowCount() > 0;
     }
 
@@ -752,7 +736,7 @@ class QueryBuilder
         $this->logger->logEvent("Executing paginated query", [
             'page' => $page,
             'per_page' => $perPage,
-            'query' => substr($this->query, 0, 100) . '...'
+            'query' => is_string($this->query) ? substr($this->query, 0, 100) . '...' : 'Complex query'
         ], 'debug');
 
         $offset = ($page - 1) * $perPage;
@@ -825,7 +809,7 @@ class QueryBuilder
             $table,
             [$column],
             ['id' => $this->rawQuery('SELECT LAST_INSERT_ID()')[0]['LAST_INSERT_ID()']]
-        )->get();
+        );
 
         if (empty($result) || !isset($result[0][$column])) {
             throw new \RuntimeException("Failed to retrieve $column for new record");
@@ -893,8 +877,10 @@ class QueryBuilder
                 $direction = strtoupper($value) === 'DESC' ? 'DESC' : 'ASC';
                 $orderByClauses[] = "{$this->driver->wrapIdentifier($key)} $direction";
             }
-            // Add ORDER BY clause (no need to check count, we know orderBy is not empty)
-            $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
+            // Only add ORDER BY if there are valid clauses
+            if (!empty($orderByClauses)) {
+                $this->query .= " ORDER BY " . implode(", ", $orderByClauses);
+            }
         }
         return $this;
     }
@@ -1020,13 +1006,13 @@ class QueryBuilder
      */
     private function prepareAndExecute(string $sql, array $params = []): \PDOStatement
     {
-        // Start timing the query with debug context if enabled
-        $timerId = $this->logger->startTiming($this->debugMode ? 'query_with_debug' : 'query');
+        // Start timing the query
+        $timerId = $this->logger->startTiming();
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
              // Log successful query
-            $this->logger->logQuery($sql, $params, $timerId, null);
+            $this->logger->logQuery($sql, $params, $timerId);
             return $stmt;
         } catch (PDOException $e) {
             // Log failed query
@@ -1038,10 +1024,6 @@ class QueryBuilder
     // Optimization for count query in pagination
     private function getOptimizedCountQuery(string $query): string
     {
-        // Add debug information if debug mode is enabled
-        if ($this->debugMode) {
-            $this->logger->logEvent('Optimizing count query', ['original_query' => $query], 'debug');
-        }
         // Remove unnecessary parts that don't affect count
         $countQuery = preg_replace('/SELECT\s.*?\sFROM/is', 'SELECT COUNT(*) as total FROM', $query);
         $countQuery = preg_replace('/\sORDER BY\s.*$/is', '', $countQuery);
@@ -1069,16 +1051,6 @@ class QueryBuilder
         $this->logger->configure($debug, $debug);
 
         return $this;
-    }
-
-    /**
-     * Get current debug mode status
-     *
-     * @return bool Current debug mode status
-     */
-    public function getDebugMode(): bool
-    {
-        return $this->debugMode;
     }
 
     /**

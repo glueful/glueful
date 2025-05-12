@@ -128,6 +128,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
      *
      * Sets up Monolog with multiple rotating file handlers for different log levels.
      *
+     * @param string $logFile Base path for log files (default: uses config)
      * @param int $maxFiles Maximum number of daily log files to keep (default: 30)
      * @param string $defaultChannel Default logging channel name (default: 'app')
      * @throws \RuntimeException If log directory creation fails
@@ -432,11 +433,9 @@ class LogManager implements LoggerInterface, LogManagerInterface
                 // For weekly rotation, we'll need to recreate the handler with maxFiles=7
                 // since RotatingFileHandler doesn't have a setMaxFiles method
                 if ($strategy === 'weekly') {
-                    $this->warning(
-                        'Weekly rotation strategy selected. ' .
-                        'Note: Requires restarting the application to apply maxFiles setting.',
-                        ['strategy' => $strategy]
-                    );
+                    $this->warning('Weekly rotation strategy selected. Note: Requires restarting the application to apply maxFiles setting.', [
+                        'strategy' => $strategy
+                    ]);
                     // We can't modify maxFiles after instantiation, but we set the property for future reference
                     $this->maxFiles = 7;
                 }
@@ -444,10 +443,9 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         if ($strategy === 'size' && is_numeric($parameter)) {
-            $this->warning(
-                'Size-based log rotation not supported in this version of Monolog. Using daily rotation instead.',
-                ['requested_size' => $parameter . 'MB']
-            );
+            $this->warning('Size-based log rotation not supported in this version of Monolog. Using daily rotation instead.', [
+                'requested_size' => $parameter . 'MB'
+            ]);
         }
 
         return $this;
@@ -796,16 +794,6 @@ class LogManager implements LoggerInterface, LogManagerInterface
 
 
     /**
-     * Get debug mode state
-     *
-     * @return bool Current debug mode state
-     */
-    public function isDebugMode(): bool
-    {
-        return $this->debugMode;
-    }
-
-    /**
      * Check memory usage and log warnings if approaching limit
      *
      * @return void
@@ -1016,10 +1004,8 @@ class LogManager implements LoggerInterface, LogManagerInterface
         switch ($unit) {
             case 'g':
                 $memoryLimit *= 1024;
-                // Fall through intentionally to multiply by 1024 again
             case 'm':
                 $memoryLimit *= 1024;
-                // Fall through intentionally to multiply by 1024 again
             case 'k':
                 $memoryLimit *= 1024;
         }
@@ -1084,23 +1070,11 @@ class LogManager implements LoggerInterface, LogManagerInterface
      * @param bool $bubble Whether to bubble logs up to higher handlers
      * @return RotatingFileHandler The configured handler
      */
-    /**
-     * Create a RotatingFileHandler with the current rotation settings
-     *
-     * @param string $filename Log file path
-     * @param Level|int $level Minimum log level for this handler
-     * @param bool $bubble Whether to bubble logs up to higher handlers
-     * @return RotatingFileHandler The configured handler
-     */
-    private function createRotatingHandler(
-        string $filename,
-        $level = Level::Debug,
-        bool $bubble = true
-    ): RotatingFileHandler {
+    private function createRotatingHandler(string $filename, $level = Level::Debug, bool $bubble = true): RotatingFileHandler
+    {
         $dateFormat = match ($this->rotationStrategy) {
             'monthly' => RotatingFileHandler::FILE_PER_MONTH,
-            // For weekly, we use daily format but set maxFiles=7
-            'weekly' => RotatingFileHandler::FILE_PER_DAY,
+            'weekly' => RotatingFileHandler::FILE_PER_DAY, // For weekly, we use daily format but set maxFiles=7
             default => RotatingFileHandler::FILE_PER_DAY,
         };
 
@@ -1499,25 +1473,5 @@ class LogManager implements LoggerInterface, LogManagerInterface
     public function debug($message, array $context = []): void
     {
         $this->log(Level::Debug, $message, $context);
-    }
-
-    /**
-     * Get current log format
-     *
-     * @return string Current log format ('text' or 'json')
-     */
-    public function getLogFormat(): string
-    {
-        return $this->logFormat;
-    }
-
-    /**
-     * Get rotation parameter
-     *
-     * @return mixed Current rotation parameter value
-     */
-    public function getRotationParameter(): mixed
-    {
-        return $this->rotationParameter;
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful;
 
+require_once __DIR__ . '/bootstrap.php';
+
 use Glueful\Permissions\Permission;
 use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
@@ -106,11 +108,8 @@ class ApiDefinitionGenerator
      * @param string|null $tableName Generate for specific table only
      * @param bool $forceGenerate Force generation even if manual files exist
      */
-    public function generate(
-        ?string $specificDatabase = null,
-        ?string $tableName = null,
-        bool $forceGenerate = false
-    ): void {
+    public function generate(?string $specificDatabase = null, ?string $tableName = null, bool $forceGenerate = false): void
+    {
         $this->generateDatabaseDefinitions($specificDatabase);
 
         if ($tableName) {
@@ -460,7 +459,7 @@ class ApiDefinitionGenerator
     /**
      * Get or create administrator role
      *
-     * @return string Role ID as a string
+     * @return string|int Role ID
      * @throws \Exception On database errors
      */
     private function getOrCreateAdminRole(): string
@@ -576,7 +575,7 @@ class ApiDefinitionGenerator
     /**
      * Update administrator permissions
      *
-     * @param string $roleUuid Administrator role UUID
+     * @param string|int $roleId Administrator role ID
      */
     private function updateAdminPermissions(string $roleUuid): void
     {
@@ -650,7 +649,7 @@ class ApiDefinitionGenerator
                     'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
+                    'permissions' => implode('', Permission::getAll())
                 ];
             }
         }
@@ -685,7 +684,7 @@ class ApiDefinitionGenerator
                     'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
+                    'permissions' => implode('', Permission::getAll())
                 ];
             }
         }
@@ -708,7 +707,7 @@ class ApiDefinitionGenerator
                         'uuid' => Utils::generateNanoID(),
                         'role_uuid' => $roleUuid,
                         'model' => $model,
-                        'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
+                        'permissions' => implode('', Permission::getAll())
                     ];
                 }
             }
@@ -719,7 +718,7 @@ class ApiDefinitionGenerator
     /**
      * Check if permission exists
      *
-     * @param string $roleUuid Role UUID
+     * @param string|int $roleId Role ID
      * @param string $model Model to check
      * @return bool True if permission exists
      * @throws \Exception On database errors

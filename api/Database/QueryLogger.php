@@ -147,16 +147,10 @@ class QueryLogger
      * @param array $params Query parameters
      * @param float|string|null $startTime Query start time or timer ID
      * @param \Throwable|null $error Error if one occurred
-     * @param bool $debug Whether to include debug information
      * @return float|null Execution time in milliseconds if timing was enabled
      */
-    public function logQuery(
-        string $sql,
-        array $params = [],
-        $startTime = null,
-        ?\Throwable $error = null,
-        bool $debug = false
-    ): ?float {
+    public function logQuery(string $sql, array $params = [], $startTime = null, ?\Throwable $error = null): ?float
+    {
         if (!$this->debugMode) {
             return null;
         }
@@ -283,10 +277,9 @@ class QueryLogger
             // Calculate duration using microtime
             $duration = (microtime(true) - $timerIdOrStart) * 1000;
             return round($duration, 2);
-        } else {
-            // Default fallback for any other type
-            return 0.0;
         }
+
+        return null;
     }
 
     /**

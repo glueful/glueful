@@ -82,39 +82,23 @@ class Router
     }
 
 
-    public static function get(
-        string $path,
-        callable $handler,
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ) {
+    public static function get(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
+    {
         self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function post(
-        string $path,
-        callable $handler,
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ) {
+    public static function post(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
+    {
         self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function put(
-        string $path,
-        callable $handler,
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ) {
+    public static function put(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
+    {
         self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
-    public static function delete(
-        string $path,
-        callable $handler,
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ) {
+    public static function delete(string $path, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
+    {
         self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth);
     }
 
@@ -142,13 +126,8 @@ class Router
      * @param bool $requiresAuth Apply authentication to all routes in this group
      * @param bool $requiresAdminAuth Apply admin authentication to all routes in this group
      */
-    public static function group(
-        string $prefix,
-        callable $callback,
-        array $middleware = [],
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ): void {
+    public static function group(string $prefix, callable $callback, array $middleware = [], bool $requiresAuth = false, bool $requiresAdminAuth = false): void
+    {
         // Normalize prefix
         $prefix = '/' . trim($prefix, '/');
 
@@ -195,19 +174,13 @@ class Router
      * Registers a route with the specified HTTP method, path, and handler.
      * Supports both closure and controller method handlers.
      *
+     * @param string $method HTTP method (GET, POST, etc.)
      * @param string $path URL path pattern (e.g., '/users/{id}')
-     * @param array $methods HTTP methods (GET, POST, etc.)
-     * @param callable $handler Route handler (closure or [Controller::class, 'method'])
-     * @param bool $requiresAuth Whether this route requires authentication
-     * @param bool $requiresAdminAuth Whether this route requires admin authentication
+     * @param callable|array $handler Route handler (closure or [Controller::class, 'method'])
+     * @param array $options Additional route options (middleware, public access, etc.)
      */
-    private static function addRoute(
-        string $path,
-        array $methods,
-        callable $handler,
-        bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
-    ) {
+    private static function addRoute(string $path, array $methods, callable $handler, bool $requiresAuth = false, bool $requiresAdminAuth = false)
+    {
         // Get the current group context
         $groupContext = self::getCurrentGroupContext();
         $fullPath = $groupContext['prefix'] . '/' . trim($path, '/');
@@ -354,17 +327,7 @@ class Router
                 $parametersInfo = $reflection->getParameters();
 
                 // Check if there are parameters before trying to access them
-                if (
-                    !empty($parametersInfo) &&
-                    $parametersInfo[0]->getType() &&
-                    (
-                        // Use is_a to safely check the parameter type across PHP versions
-                        (method_exists($parametersInfo[0]->getType(), 'getName') &&
-                         $parametersInfo[0]->getType()->getName() === Request::class) ||
-                        (method_exists($parametersInfo[0]->getType(), '__toString') &&
-                         (string)$parametersInfo[0]->getType() === Request::class)
-                    )
-                ) {
+                if (!empty($parametersInfo) && $parametersInfo[0]->getType() && $parametersInfo[0]->getType()->getName() === Request::class) {
                     $result = call_user_func($controller, $request);
                 } else {
                     $result = call_user_func($controller, $parameters);
@@ -504,6 +467,7 @@ class Router
      * 3. Executes appropriate handler with parameters
      * 4. Returns formatted response
      *
+     * @param Request|null $request Optional Symfony Request object
      * @return array API response array with success/error information
      */
     public function handleRequest()

@@ -4,10 +4,6 @@ namespace Glueful\Exceptions;
 
 use Glueful\Logging\LogManagerInterface;
 use Glueful\Logging\LogManager;
-use Glueful\Exceptions\ValidationException;
-use Glueful\Exceptions\AuthenticationException;
-use Glueful\Exceptions\NotFoundException;
-use Glueful\Exceptions\ApiException;
 
 class ExceptionHandler
 {
@@ -100,7 +96,6 @@ class ExceptionHandler
         $message = 'Server Error';
         $data = null;
 
-        // Handle exception by exact class type - use instanceof only for class hierarchies
         if ($exception instanceof ApiException) {
             $statusCode = $exception->getStatusCode();
             $message = $exception->getMessage();

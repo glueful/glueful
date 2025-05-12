@@ -6,17 +6,19 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\{Request, ExtensionsManager};
-use Glueful\Database\Connection;
+use Glueful\Database\{Connection, QueryBuilder};
 use Glueful\Database\Schema\SchemaManager;
 
 class MetricsController
 {
     private SchemaManager $schemaManager;
+    private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
         $connection = new Connection();
         $this->schemaManager = $connection->getSchemaManager();
+        $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
     }
 
     /**
@@ -142,7 +144,7 @@ class MetricsController
                 'storage_path' => $storagePath,
                 'storage_free_space' => $this->formatBytes(disk_free_space($storagePath)),
                 'storage_total_space' => $this->formatBytes(disk_total_space($storagePath)),
-                'storage_usage_percent' => $this->calculateStoragePercentage($storagePath)
+                'storage_usage_percent' => round((1 - disk_free_space($storagePath) / disk_total_space($storagePath)) * 100, 2) . '%'
             ];
 
             // Check for log files
@@ -183,10 +185,8 @@ class MetricsController
                         'type' => 'APCu',
                         'status' => 'enabled',
                         'memory_usage' => $this->formatBytes($cacheInfo['mem_size']),
-                        'hit_rate' => $this->calculateHitRate(
-                            $cacheInfo['num_hits'],
-                            $cacheInfo['num_misses']
-                        ),
+                        'hit_rate' => $cacheInfo['num_hits'] > 0 ?
+                            round($cacheInfo['num_hits'] / ($cacheInfo['num_hits'] + $cacheInfo['num_misses']) * 100, 2) . '%' : '0%',
                     ];
                 } catch (\Exception $e) {
                     $metrics['cache'] = [
@@ -206,7 +206,7 @@ class MetricsController
                             'type' => 'Redis',
                             'status' => 'enabled',
                             'version' => $info['redis_version'] ?? 'unknown',
-                            'memory_usage' => $this->getRedisMemoryUsage($info),
+                            'memory_usage' => isset($info['used_memory']) ? $this->formatBytes((int)$info['used_memory']) : 'unknown',
                             'connected_clients' => $info['connected_clients'] ?? 0,
                         ];
                         $redis->close();
@@ -327,50 +327,9 @@ class MetricsController
     }
 
     /**
-     * Calculate storage usage percentage
-     *
-     * @param string $path Storage path
-     * @return string Formatted percentage
-     */
-    private function calculateStoragePercentage(string $path): string
-    {
-        $freeSpace = disk_free_space($path);
-        $totalSpace = disk_total_space($path);
-        return round((1 - $freeSpace / $totalSpace) * 100, 2) . '%';
-    }
-
-    /**
-     * Calculate cache hit rate
-     *
-     * @param int $hits Number of cache hits
-     * @param int $misses Number of cache misses
-     * @return string Formatted hit rate percentage
-     */
-    private function calculateHitRate(int $hits, int $misses): string
-    {
-        if ($hits > 0) {
-            return round($hits / ($hits + $misses) * 100, 2) . '%';
-        }
-        return '0%';
-    }
-
-    /**
-     * Get Redis memory usage
-     *
-     * @param array $info Redis info array
-     * @return string Formatted memory usage
-     */
-    private function getRedisMemoryUsage(array $info): string
-    {
-        return isset($info['used_memory'])
-            ? $this->formatBytes((int)$info['used_memory'])
-            : 'unknown';
-    }
-
-    /**
      * Get health status for a specific extension
      *
-     * @param array|null $extension Extension information array
+     * @param Request $request HTTP request
      * @return mixed HTTP response
      */
     public function getExtensionHealth(?array $extension): mixed

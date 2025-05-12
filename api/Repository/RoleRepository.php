@@ -168,7 +168,7 @@ class RoleRepository
      *
      * @param string $userUuid User UUID to assign role to
      * @param string $roleUuid Role UUID to assign
-     * @return bool True if successful, false if already assigned
+     * @return bool|string True if successful, error message if already assigned
      */
     public function assignRole(string $userUuid, string $roleUuid): bool
     {
@@ -299,7 +299,7 @@ class RoleRepository
     /**
      * Check if user has specific role
      *
-     * @param string $userId User ID to check
+     * @param int $userId User ID to check
      * @param string $roleName Role name to verify
      * @return bool True if user has role
      */

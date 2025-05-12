@@ -1,13 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * Global Helper Functions
  *
  * This file contains globally accessible helper functions for environment
  * variables and configuration management.
  */
-
-declare(strict_types=1);
 
 if (!function_exists('env')) {
     /**

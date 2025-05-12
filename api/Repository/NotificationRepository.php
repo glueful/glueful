@@ -80,7 +80,7 @@ class NotificationRepository
             ) > 0;
         } else {
             // Remove the ID field if it's NULL to let the database auto-increment
-            if (isset($data['id']) && $data['id'] == null) {
+            if (isset($data['id']) && $data['id'] === null) {
                 unset($data['id']);
             }
 
@@ -105,7 +105,7 @@ class NotificationRepository
             ->limit(1)
             ->get();
 
-        if (!$result) {
+        if (!$result || empty($result)) {
             return null;
         }
 
@@ -287,7 +287,7 @@ class NotificationRepository
             ->limit(1)
             ->get();
 
-        if (!$result) {
+        if (!$result || empty($result)) {
             return null;
         }
 
@@ -398,7 +398,7 @@ class NotificationRepository
             ->limit(1)
             ->get();
 
-        if (!$result) {
+        if (!$result || empty($result)) {
             return null;
         }
 
