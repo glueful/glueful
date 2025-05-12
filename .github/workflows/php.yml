@@ -5,6 +5,12 @@ on:
     branches: [ main, development ]
   pull_request:
     branches: [ main, development ]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual test run'
 
 jobs:
   validate:
