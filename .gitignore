@@ -5,3 +5,4 @@ vendor
 docs/swagger.json
 ui/env.json
 .phpunit.cache/
+UNIT_TESTING_PLAN.md
