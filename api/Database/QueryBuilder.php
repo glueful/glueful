@@ -6,6 +6,7 @@ use PDO;
 use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
+use Glueful\Database\RawExpression;
 
 /**
  * Database Query Builder
@@ -45,7 +46,7 @@ class QueryBuilder
     /** @var bool Whether to use soft deletes */
     protected bool $softDeletes = true;
 
-    /** @var array<int, string|RawExpression> Group by clauses */
+    /** @var array<int, string|\Glueful\Database\RawExpression> Group by clauses */
     protected array $groupBy = [];
 
     /** @var array Order by clauses */
@@ -57,7 +58,7 @@ class QueryBuilder
     /** @var array Stores query parameter bindings */
     protected array $bindings = [];
 
-    /** @var array<int, array<string, mixed>|RawExpression> Stores having clauses */
+    /** @var array<int, array<string, mixed>|\Glueful\Database\RawExpression> Stores having clauses */
     protected array $having = [];
 
     /** @var array Stores raw where conditions */
@@ -1024,12 +1025,12 @@ class QueryBuilder
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-             // Log successful query with debug info if enabled
-            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode);
+             // Log successful query
+            $this->logger->logQuery($sql, $params, $timerId, null);
             return $stmt;
         } catch (PDOException $e) {
-            // Log failed query with debug info if enabled
-            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode);
+            // Log failed query
+            $this->logger->logQuery($sql, $params, $timerId, $e);
             throw $e;
         }
     }

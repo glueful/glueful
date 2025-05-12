@@ -1505,12 +1505,12 @@ class ExtensionsManager
         try {
             // Get dependencies from the extension
             if ($reflection->hasMethod('getDependencies') && class_exists($extensionClass)) {
-                $dependencies = $extensionClass::getDependencies();
+                $dependencies = call_user_func([$extensionClass, 'getDependencies']);
             }
 
             // Check if the extension implements getMetadata() method
             if ($reflection->hasMethod('getMetadata') && class_exists($extensionClass)) {
-                $metadata = $extensionClass::getMetadata();
+                $metadata = call_user_func([$extensionClass, 'getMetadata']);
                 if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
                     $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
                 }
@@ -1812,10 +1812,15 @@ class ExtensionsManager
             if (!is_array($metadata)) {
                 $metadata = [];
             }
-            $metadata['type'] = $metadata['type'] ?? $extensionType;
+            
+            // Use array_key_exists to check if the key exists before accessing it
+            if (is_array($metadata) && !array_key_exists('type', $metadata)) {
+                $metadata['type'] = $extensionType;
+            }
 
             // Create placeholder for marketplace data (to be populated by external system)
-            if (!isset($metadata['rating'])) {
+            // Check if rating key exists and set default if it doesn't
+            if (!array_key_exists('rating', $metadata)) {
                 $metadata['rating'] = [
                     'average' => 0,
                     'count' => 0,
@@ -1823,7 +1828,8 @@ class ExtensionsManager
                 ];
             }
 
-            if (!isset($metadata['stats'])) {
+            // Check if stats key exists and set default if it doesn't
+            if (!array_key_exists('stats', $metadata)) {
                 $metadata['stats'] = [
                     'downloads' => 0,
                     'active_installations' => 0,
