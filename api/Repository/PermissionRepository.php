@@ -391,7 +391,7 @@ class PermissionRepository
      *
      * @param string $model The model/resource name (e.g., 'users', 'posts')
      * @param array $permissions Array of permission actions (e.g., ['read', 'write', 'delete'])
-     * @return array The created permission record
+     * @return mixed The created permission record
      * @throws \Exception If permission creation fails
      */
     public function createPermission(string $model, array $permissions, $roleUuid): mixed

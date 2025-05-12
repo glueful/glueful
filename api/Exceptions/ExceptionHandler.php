@@ -100,6 +100,7 @@ class ExceptionHandler
         $message = 'Server Error';
         $data = null;
 
+        // Handle exception by exact class type - use instanceof only for class hierarchies
         if ($exception instanceof ApiException) {
             $statusCode = $exception->getStatusCode();
             $message = $exception->getMessage();

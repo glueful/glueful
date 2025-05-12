@@ -147,10 +147,16 @@ class QueryLogger
      * @param array $params Query parameters
      * @param float|string|null $startTime Query start time or timer ID
      * @param \Throwable|null $error Error if one occurred
+     * @param bool $debug Whether to include debug information
      * @return float|null Execution time in milliseconds if timing was enabled
      */
-    public function logQuery(string $sql, array $params = [], $startTime = null, ?\Throwable $error = null): ?float
-    {
+    public function logQuery(
+        string $sql,
+        array $params = [],
+        $startTime = null,
+        ?\Throwable $error = null,
+        bool $debug = false
+    ): ?float {
         if (!$this->debugMode) {
             return null;
         }
