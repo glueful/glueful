@@ -1,0 +1,99 @@
+name: PHP CI
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+
+jobs:
+  validate:
+    name: PHP Validation
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: glueful_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
+    strategy:
+      matrix:
+        php-versions: ['8.2']
+        
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-versions }}
+        extensions: mbstring, intl, zip, pdo_mysql
+        coverage: xdebug
+        tools: composer:v2
+    
+    - name: Setup test environment
+      run: |
+        mkdir -p build/logs
+        if [ -f .env.example ]; then
+          cp .env.example .env.testing
+          echo "DB_CONNECTION=mysql" >> .env.testing
+          echo "DB_HOST=127.0.0.1" >> .env.testing
+          echo "DB_PORT=3306" >> .env.testing
+          echo "DB_DATABASE=glueful_test" >> .env.testing
+          echo "DB_USERNAME=root" >> .env.testing
+          echo "DB_PASSWORD=password" >> .env.testing
+        fi
+    
+    - name: Validate composer.json
+      run: composer validate --strict
+      
+    - name: Cache Composer packages
+      id: composer-cache
+      uses: actions/cache@v3
+      with:
+        path: vendor
+        key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php-
+    
+    - name: Install dependencies
+      run: composer install --prefer-dist --no-progress
+    
+    - name: Check PHP syntax
+      run: find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n1 php -l
+      
+    - name: Check coding standards
+      run: |
+        if [ -f vendor/bin/phpcs ]; then
+          vendor/bin/phpcs --standard=PSR12 api
+        else
+          echo "PHP_CodeSniffer not installed - skipping coding standards check"
+        fi
+      
+    - name: Run test suite
+      run: |
+        if [ -f vendor/bin/phpunit ]; then
+          vendor/bin/phpunit --coverage-text --coverage-clover build/logs/clover.xml --log-junit build/logs/junit.xml
+        else
+          echo "PHPUnit not installed - skipping tests"
+        fi
+        
+    - name: Static analysis
+      run: |
+        if [ -f vendor/bin/phpstan ]; then
+          vendor/bin/phpstan analyse api --level=5
+        else
+          echo "PHPStan not installed - skipping static analysis"
+        fi
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: build/logs/

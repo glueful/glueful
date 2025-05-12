@@ -418,6 +418,26 @@ class PermissionRepository {
     }
 
     /**
+     * Get all permissions in the system
+     * 
+     * Retrieves all permissions across all roles.
+     * 
+     * @return array All permissions in the system
+     */
+    public function getAllPermissions(): array
+    {
+        return $this->db->select('role_permissions', [
+                'uuid', 
+                'role_uuid', 
+                'model', 
+                'permissions',
+                'created_at',
+                'updated_at'
+            ])
+            ->get();
+    }
+
+    /**
      * Check if user has permission with detailed debug information
      * 
      * Enhanced version of hasPermission that returns detailed information about

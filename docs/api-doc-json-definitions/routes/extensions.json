@@ -249,6 +249,60 @@
                     }
                 ]
             }
+        },
+        "/extensions/delete": {
+            "post": {
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Delete extension",
+                "description": "Completely removes an extension from the filesystem",
+                "responses": {
+                    "200": {
+                        "description": "Extension deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid request format or cannot delete extension"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Extension not found"
+                    },
+                    "500": {
+                        "description": "Failed to delete extension"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "extension": {
+                                        "type": "string",
+                                        "description": "Extension name"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "description": "Force deletion even if enabled or core (optional)"
+                                    }
+                                },
+                                "required": [
+                                    "extension"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
         }
     },
     "components": {

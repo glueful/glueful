@@ -30,8 +30,8 @@ use Throwable;
  */
 class API 
 {    
-    /** @var LogManager Central logger instance */
-    private static LogManager $logger;
+    /** @var LogManager|null Central logger instance - making it nullable for testing */
+    private static ?LogManager $logger = null;
 
     /**
      * Initialize the API Framework
