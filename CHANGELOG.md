@@ -2,6 +2,29 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.24.0] - 2025-05-12
+
+### Added
+- Comprehensive testing for FileHandler operations, including upload and validation
+- Complete test suites for CORS and Rate Limiter middleware components
+- Extensive Router tests for route registration, grouping, and middleware execution
+- Enhanced extension system testing with improved fixtures and configuration
+- Complete LogManager test coverage including sanitization and enrichment
+- Repository classes tests for data integrity validation
+- Comprehensive exception handling tests and response formatting
+- Custom validation rules implementation and testing
+- Improved CI workflow with MySQL service integration
+
+### Improved
+- Refactored database tests to use MockSQLiteConnection for better isolation
+- Enhanced LogSanitizationTest with real instances of MockLogManager and MockLogSanitizer
+- Enhanced unit testing documentation and coverage reporting
+- Improved code structure for better readability and maintainability
+
+### Fixed
+- Fixed ApiDefinitionGenerator to prevent multiple instantiations causing it to run twice
+- Resolved various test failures in authentication modules
+
 ## [0.23.0] - 2025-05-09
 
 ### Added
