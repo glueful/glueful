@@ -13,6 +13,7 @@
     <!-- Exclude vendor directories -->
     <exclude-pattern>*/vendor/*</exclude-pattern>
     <exclude-pattern>*/node_modules/*</exclude-pattern>
+    <exclude-pattern>*/tests/*</exclude-pattern>
 
     <!-- Use PSR-12 as the base -->
     <rule ref="PSR12"/>
