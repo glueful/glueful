@@ -122,7 +122,7 @@ class ConfigController
         }
     }
 
-    private function findEnvKeyForConfigValue(string $key): ?string
+    private function findEnvKeyForConfigValue(string $key): string
     {
         // Map config keys to potential ENV keys
         // You might want to customize this mapping based on your needs

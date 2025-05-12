@@ -234,7 +234,7 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     {
         try {
             // Attempt to decode token without verification
-            $payload = JWTService::decode($token, false);
+            $payload = JWTService::decode($token);
 
             // Check if it has admin claim
             return !empty($payload) && !empty($payload['is_admin']);

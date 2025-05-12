@@ -46,7 +46,7 @@ use Exception;
  *     ]);
  * ```
  */
-class PostgreSQLSchemaManager extends SchemaManager
+class PostgreSQLSchemaManager implements SchemaManager
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;

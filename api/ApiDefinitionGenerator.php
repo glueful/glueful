@@ -460,7 +460,7 @@ class ApiDefinitionGenerator
     /**
      * Get or create administrator role
      *
-     * @return string|int Role ID
+     * @return string Role ID as a string
      * @throws \Exception On database errors
      */
     private function getOrCreateAdminRole(): string
@@ -576,7 +576,7 @@ class ApiDefinitionGenerator
     /**
      * Update administrator permissions
      *
-     * @param string|int $roleId Administrator role ID
+     * @param string $roleUuid Administrator role UUID
      */
     private function updateAdminPermissions(string $roleUuid): void
     {
@@ -650,7 +650,7 @@ class ApiDefinitionGenerator
                     'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
-                    'permissions' => implode('', Permission::getAll())
+                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
                 ];
             }
         }
@@ -685,7 +685,7 @@ class ApiDefinitionGenerator
                     'uuid' => Utils::generateNanoID(),
                     'role_uuid' => $roleUuid,
                     'model' => $model,
-                    'permissions' => implode('', Permission::getAll())
+                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
                 ];
             }
         }
@@ -708,7 +708,7 @@ class ApiDefinitionGenerator
                         'uuid' => Utils::generateNanoID(),
                         'role_uuid' => $roleUuid,
                         'model' => $model,
-                        'permissions' => implode('', Permission::getAll())
+                        'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
                     ];
                 }
             }
@@ -719,7 +719,7 @@ class ApiDefinitionGenerator
     /**
      * Check if permission exists
      *
-     * @param string|int $roleId Role ID
+     * @param string $roleUuid Role UUID
      * @param string $model Model to check
      * @return bool True if permission exists
      * @throws \Exception On database errors

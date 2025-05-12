@@ -161,7 +161,7 @@ class API
      * Error handling is delegated to controllers and the router,
      * ensuring consistent error responses across the API.
      *
-     * @return array API response with status and data
+     * @return void No direct return, outputs API response with status and data
      * @throws \RuntimeException If request processing fails catastrophically
      */
     public static function processRequest(): void

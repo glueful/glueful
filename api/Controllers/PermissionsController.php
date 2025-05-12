@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Repository\{PermissionRepository, RoleRepository, UserRepository};
+use Glueful\Repository\{PermissionRepository, RoleRepository};
 use Glueful\Helpers\Request;
 use Glueful\Database\{Connection, QueryBuilder};
 
@@ -23,12 +23,10 @@ class PermissionsController
 {
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
-    private UserRepository $userRepository;
     private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
-        $this->userRepository = new UserRepository();
         $this->roleRepo = new RoleRepository();
         $this->permissionRepo = new PermissionRepository();
 

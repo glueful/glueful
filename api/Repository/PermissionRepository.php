@@ -391,7 +391,6 @@ class PermissionRepository
      *
      * @param string $model The model/resource name (e.g., 'users', 'posts')
      * @param array $permissions Array of permission actions (e.g., ['read', 'write', 'delete'])
-     * @param string|null $description Optional description of the permission set
      * @return array The created permission record
      * @throws \Exception If permission creation fails
      */

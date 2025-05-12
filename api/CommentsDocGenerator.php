@@ -440,7 +440,7 @@ class CommentsDocGenerator
 
         foreach ($matches as $match) {
             $statusCode = $match[1];
-            $contentType = $match[2] ?? 'application/json';
+            $contentType = !empty($match[2]) ? $match[2] : 'application/json';
             $description = $match[3];
             $schemaStr = isset($match[4]) ? $match[4] : null;
 

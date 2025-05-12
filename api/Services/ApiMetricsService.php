@@ -134,6 +134,8 @@ class ApiMetricsService
      */
     public function flushMetrics(): void
     {
+        // Initialize the variable before the try block to avoid undefined variable in catch
+        $pendingMetrics = [];
         try {
             $cacheKey = $this->cacheKeyPrefix . 'pending';
             $pendingMetrics = CacheEngine::get($cacheKey) ?? [];

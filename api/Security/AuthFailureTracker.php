@@ -40,7 +40,7 @@ class AuthFailureTracker
     public function recordFailure(): void
     {
         $key = $this->getCacheKey();
-        $attempts = (int)CacheEngine::get($key) ?? 0;
+        $attempts = (int)(CacheEngine::get($key) ?? 0);
 
         if ($attempts === 0) {
             CacheEngine::set($key, 1, $this->decaySeconds);
@@ -56,7 +56,7 @@ class AuthFailureTracker
      */
     public function getFailures(): int
     {
-        return (int)CacheEngine::get($this->getCacheKey()) ?? 0;
+        return (int)(CacheEngine::get($this->getCacheKey()) ?? 0);
     }
 
     /**

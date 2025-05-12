@@ -1285,12 +1285,12 @@ HELP;
             $dependencies = [];
 
             // Check if the extension implements getDependencies() method
-            if ($reflection->hasMethod('getDependencies')) {
+            if ($reflection->hasMethod('getDependencies') && method_exists($extensionClass, 'getDependencies')) {
                 $dependencies = $extensionClass::getDependencies();
             }
 
             // Check if the extension implements getMetadata() method
-            if ($reflection->hasMethod('getMetadata')) {
+            if ($reflection->hasMethod('getMetadata') && method_exists($extensionClass, 'getMetadata')) {
                 $metadata = $extensionClass::getMetadata();
                 if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
                     $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);

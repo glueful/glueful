@@ -1504,12 +1504,12 @@ class ExtensionsManager
 
         try {
             // Get dependencies from the extension
-            if ($reflection->hasMethod('getDependencies')) {
+            if ($reflection->hasMethod('getDependencies') && class_exists($extensionClass)) {
                 $dependencies = $extensionClass::getDependencies();
             }
 
             // Check if the extension implements getMetadata() method
-            if ($reflection->hasMethod('getMetadata')) {
+            if ($reflection->hasMethod('getMetadata') && class_exists($extensionClass)) {
                 $metadata = $extensionClass::getMetadata();
                 if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
                     $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
@@ -1808,9 +1808,11 @@ class ExtensionsManager
             ];
 
             // Ensure the type is consistently available in both the main metadata and _system
-            if (!isset($metadata['type'])) {
-                $metadata['type'] = $extensionType;
+            // Initialize metadata as an array if it's not already
+            if (!is_array($metadata)) {
+                $metadata = [];
             }
+            $metadata['type'] = $metadata['type'] ?? $extensionType;
 
             // Create placeholder for marketplace data (to be populated by external system)
             if (!isset($metadata['rating'])) {
@@ -2693,9 +2695,12 @@ return [
 
         // Validate the updated extension
         $validationResult = self::validateExtension($extensionName);
+        $updateSuccess = $validationResult['success'] ?? true;
         $updateResult = [
-            'success' => true,
-            'message' => "Extension '$extensionName' has been updated successfully",
+            'success' => $updateSuccess,
+            'message' => $updateSuccess
+                ? "Extension '$extensionName' has been updated successfully"
+                : "Extension '$extensionName' was updated but has validation issues",
             'was_enabled' => $wasEnabled,
             'validation' => $validationResult
         ];
@@ -2708,11 +2713,12 @@ return [
             if (!$enableResult['success']) {
                 $updateResult['warning'] = "Extension was updated but could not be re-enabled: " .
                 $enableResult['message'];
+                $updateSuccess = false;
             }
         }
 
         // Clean up the backup directory if everything went well
-        if ($updateResult['success']) {
+        if ($updateSuccess) {
             self::rrmdir($backupDir);
         } else {
             $updateResult['backup'] = "The previous version was backed up to: $backupDir";
@@ -2993,19 +2999,18 @@ return [
         }
 
         // Parse response
-        try {
-            $data = json_decode($response, true);
-
-            // Validate response format
-            if (!isset($data['version'])) {
-                return null;
-            }
-
-            return $data;
-        } catch (\Throwable $e) {
-            self::debug("Failed to parse update API response: " . $e->getMessage());
+        $data = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            self::debug("Failed to parse update API response: " . json_last_error_msg());
             return null;
         }
+
+        // Validate response format
+        if (!isset($data['version'])) {
+            return null;
+        }
+
+        return $data;
     }
 
     /**

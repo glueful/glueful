@@ -167,11 +167,18 @@ class MigrationManager
      */
     public function migrate(?string $specificFile = null): array
     {
+        $results = ['applied' => [], 'failed' => []];
+        
         if ($specificFile) {
-            return $this->runMigration($specificFile);
+            $status = $this->runMigration($specificFile);
+            if ($status['success']) {
+                $results['applied'][] = $status['file'];
+            } else {
+                $results['failed'][] = $status['file'];
+            }
+            return $results;
         }
 
-        $results = ['applied' => [], 'failed' => []];
         $batch = $this->getNextBatchNumber();
 
         foreach ($this->getPendingMigrations() as $file) {

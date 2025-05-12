@@ -4,6 +4,10 @@ namespace Glueful\Exceptions;
 
 use Glueful\Logging\LogManagerInterface;
 use Glueful\Logging\LogManager;
+use Glueful\Exceptions\ValidationException;
+use Glueful\Exceptions\AuthenticationException;
+use Glueful\Exceptions\NotFoundException;
+use Glueful\Exceptions\ApiException;
 
 class ExceptionHandler
 {

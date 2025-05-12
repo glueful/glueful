@@ -62,8 +62,7 @@ final class Hash
             'sha1' => sha1($input),
             'sha256' => hash('sha256', $input),
             'sha512' => hash('sha512', $input),
-            'bcrypt' => password_hash($input, PASSWORD_BCRYPT),
-            default => throw new \InvalidArgumentException("Invalid hash algorithm")
+            'bcrypt' => password_hash($input, PASSWORD_BCRYPT)
         };
 
         if (!self::validateHash($hash, $algorithm)) {

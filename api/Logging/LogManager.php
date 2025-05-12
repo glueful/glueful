@@ -128,7 +128,6 @@ class LogManager implements LoggerInterface, LogManagerInterface
      *
      * Sets up Monolog with multiple rotating file handlers for different log levels.
      *
-     * @param string $logFile Base path for log files (default: uses config)
      * @param int $maxFiles Maximum number of daily log files to keep (default: 30)
      * @param string $defaultChannel Default logging channel name (default: 'app')
      * @throws \RuntimeException If log directory creation fails
@@ -795,6 +794,16 @@ class LogManager implements LoggerInterface, LogManagerInterface
     }
 
 
+
+    /**
+     * Get debug mode state
+     *
+     * @return bool Current debug mode state
+     */
+    public function isDebugMode(): bool
+    {
+        return $this->debugMode;
+    }
 
     /**
      * Check memory usage and log warnings if approaching limit
@@ -1490,5 +1499,25 @@ class LogManager implements LoggerInterface, LogManagerInterface
     public function debug($message, array $context = []): void
     {
         $this->log(Level::Debug, $message, $context);
+    }
+
+    /**
+     * Get current log format
+     *
+     * @return string Current log format ('text' or 'json')
+     */
+    public function getLogFormat(): string
+    {
+        return $this->logFormat;
+    }
+
+    /**
+     * Get rotation parameter
+     *
+     * @return mixed Current rotation parameter value
+     */
+    public function getRotationParameter(): mixed
+    {
+        return $this->rotationParameter;
     }
 }

@@ -22,8 +22,6 @@ use Glueful\Database\Connection;
  */
 class DatabaseResetCommand extends Command
 {
-    private SchemaManager $schema;
-
     /**
      * Get Command Name
      *

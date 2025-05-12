@@ -99,7 +99,8 @@ class RedisCacheDriver implements CacheDriverInterface
      */
     public function del(string $key): bool
     {
-        return $this->redis->del($key) > 0;
+        $result = $this->redis->del($key);
+        return is_numeric($result) && (int)$result > 0;
     }
 
     /**

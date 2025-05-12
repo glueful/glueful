@@ -44,7 +44,7 @@ class SchedulerCommand extends Command
     ];
 
     /**
-     * @var Schedule The scheduler instance
+     * @var JobScheduler The scheduler instance
      */
     private JobScheduler $scheduler;
 
