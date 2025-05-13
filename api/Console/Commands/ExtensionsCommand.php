@@ -71,6 +71,7 @@ class ExtensionsCommand extends Command
         'enable'        => 'Enable an extension',
         'disable'       => 'Disable an extension',
         'create'        => 'Create a new extension scaffold',
+        'template'      => 'Create an extension from a specific template type',
         'install'       => 'Install extension from URL or archive file',
         'validate'      => 'Validate an extension structure and dependencies',
         'namespaces'    => 'Show all registered extension namespaces',
@@ -152,6 +153,12 @@ class ExtensionsCommand extends Command
                         return Command::INVALID;
                     }
                     $this->validateExtension($extensionName);
+                    break;
+
+                case 'template':
+                    $templateType = $extensionName;
+                    $extensionName = $args[2] ?? '';
+                    $this->generateTemplate($templateType, $extensionName);
                     break;
 
                 case 'namespaces':
@@ -561,10 +568,63 @@ class ExtensionsCommand extends Command
      */
     protected function createExtension(string $extensionName): void
     {
-        $this->info("Creating extension: $extensionName");
+        // Use provided name or prompt user
+        $name = $extensionName;
+        if (!$name) {
+            $name = $this->promptInput('Enter extension name (PascalCase):');
+        }
+
+        $this->info("Creating extension: $name");
+
+        // Interactive prompts for additional settings
+        $description = $this->promptInput('Enter extension description:');
+        $author = $this->promptInput('Enter author name:');
+        $email = $this->promptInput('Enter author email (optional):', false);
+
+        $extensionType = $this->choicePrompt(
+            'Select extension type:',
+            [
+                'optional' => 'Optional Extension (can be enabled/disabled)',
+                'core' => 'Core Extension (always enabled)'
+            ],
+            'optional'
+        );
+
+        $templateType = $this->choicePrompt(
+            'Select template type:',
+            [
+                'Basic' => 'Basic Extension (minimal structure)',
+                'Auth' => 'Authentication Provider',
+                'Payment' => 'Payment Gateway'
+            ],
+            'Basic'
+        );
+
+        $features = $this->multiChoice(
+            'Select features to include:',
+            [
+                'routes' => 'API Routes',
+                'config' => 'Configuration File',
+                'migrations' => 'Database Migrations',
+                'admin_ui' => 'Admin UI Components'
+            ]
+        );
+
+        // Additional template data for customization
+        $templateData = [
+            'description' => $description,
+            'author' => $author,
+            'email' => $email,
+            'features' => $features
+        ];
 
         // Use ExtensionsManager to create the extension
-        $result = ExtensionsManager::createExtension($extensionName);
+        $result = ExtensionsManager::createExtension(
+            $name,
+            $extensionType,
+            $templateType,
+            $templateData
+        );
 
         if (!$result['success']) {
             $this->error($result['message']);
@@ -574,12 +634,19 @@ class ExtensionsCommand extends Command
         $this->success($result['message']);
 
         // Display created files
-        $this->info("Files created:");
-        foreach ($result['files'] as $file) {
-            $this->line("- $file");
+        if (isset($result['data']['files']) && !empty($result['data']['files'])) {
+            $this->info("Files created:");
+            foreach ($result['data']['files'] as $file) {
+                $this->line("- $file");
+            }
         }
 
-        $this->tip("To enable your extension, run: php glueful extensions enable $extensionName");
+        // Offer to enable the extension
+        if ($this->confirm("Would you like to enable this extension now?")) {
+            $this->enableExtension($name);
+        } else {
+            $this->tip("To enable your extension later, run: php glueful extensions enable $name");
+        }
     }
 
     /**
@@ -1556,5 +1623,173 @@ HELP;
         if (!empty($dependentExtensions)) {
             $this->tip("You may need to update or remove the dependent extensions that relied on this extension.");
         }
+    }
+
+    /**
+     * Generate an extension from a specific template type
+     *
+     * @param string|null $templateType Template type to use
+     * @param string|null $extensionName Extension name
+     * @return void
+     */
+    protected function generateTemplate(?string $templateType = null, ?string $extensionName = null): void
+    {
+        if (!$templateType || !$extensionName) {
+            $templateType = $this->choicePrompt(
+                'Select template type:',
+                [
+                    'auth' => 'Authentication Provider',
+                    'payment' => 'Payment Gateway',
+                    'admin' => 'Admin Dashboard Widget',
+                    'data' => 'Data Import/Export Tool'
+                ]
+            );
+
+            $extensionName = $this->promptInput('Enter extension name (PascalCase):');
+        }
+
+        // Sanitize and validate extension name
+        $extensionName = $this->sanitizeExtensionName($extensionName);
+
+        if (!$this->isValidExtensionName($extensionName)) {
+            $this->error("Invalid extension name: $extensionName");
+            $this->line("Extension names must be in PascalCase format (e.g. MyExtension).");
+            return;
+        }
+
+        $this->info("Generating $templateType extension: $extensionName");
+
+        // Additional data for template generation
+        $templateData = [
+            'description' => $this->promptInput('Enter extension description:'),
+            'author' => $this->promptInput('Enter author name:'),
+            'email' => $this->promptInput('Enter author email (optional):', false)
+        ];
+
+        // Use ExtensionsManager to create an extension from the template
+        $result = ExtensionsManager::createExtension(
+            $extensionName,
+            'optional',
+            $templateType,
+            $templateData
+        );
+
+        if (!$result['success']) {
+            $this->error($result['message']);
+            return;
+        }
+
+        $this->success($result['message']);
+
+        // Display created files if available
+        if (isset($result['data']['files']) && !empty($result['data']['files'])) {
+            $this->info("Files created:");
+            foreach ($result['data']['files'] as $file) {
+                $this->line("- $file");
+            }
+        }
+
+        // Offer to enable the extension
+        if ($this->confirm("Would you like to enable this extension now?")) {
+            $this->enableExtension($extensionName);
+        } else {
+            $this->tip("To enable your extension later, run: php glueful extensions enable $extensionName");
+        }
+    }
+
+    /**
+     * Display a choice prompt to the user
+     *
+     * @param string $message The prompt message
+     * @param array $choices An array of choices (key => description)
+     * @param string|null $default Default choice key
+     * @return string The selected choice key
+     */
+    protected function choicePrompt(string $message, array $choices, ?string $default = null): string
+    {
+        $this->line($message);
+        $i = 1;
+        $options = [];
+
+        foreach ($choices as $key => $description) {
+            $this->line("  [$i] $description" . ($key === $default ? ' (default)' : ''));
+            $options[$i] = $key;
+            $i++;
+        }
+
+        $this->line('');
+        $selection = trim($this->promptInput("Enter your choice (1-" . ($i - 1) . "):", false));
+
+        if (empty($selection) && $default !== null) {
+            return $default;
+        }
+
+        if (!is_numeric($selection) || !isset($options[(int)$selection])) {
+            $this->error("Invalid selection.");
+            return $this->choicePrompt($message, $choices, $default);
+        }
+
+        return $options[(int)$selection];
+    }
+
+    /**
+     * Display a prompt to the user
+     *
+     * @param string $message The prompt message
+     * @param bool $required Whether the input is required
+     * @return string The user input
+     */
+    protected function promptInput(string $message, bool $required = true): string
+    {
+        echo "$message ";
+        $input = trim(fgets(STDIN));
+
+        if ($required && empty($input)) {
+            $this->error("Input is required.");
+            return $this->promptInput($message, $required);
+        }
+
+        return $input;
+    }
+
+    /**
+     * Display a multi-choice selection prompt to the user
+     *
+     * @param string $message The prompt message
+     * @param array $choices An array of choices (key => description)
+     * @return array The selected choice keys
+     */
+    protected function multiChoice(string $message, array $choices): array
+    {
+        $this->line($message);
+        $this->line("(Select multiple by entering numbers separated by commas, e.g. 1,3,4)");
+
+        $i = 1;
+        $options = [];
+
+        foreach ($choices as $key => $description) {
+            $this->line("  [$i] $description");
+            $options[$i] = $key;
+            $i++;
+        }
+
+        $this->line("");
+        $selection = trim($this->promptInput("Enter your choices (1-" . ($i - 1) . "):", false));
+
+        if (empty($selection)) {
+            return [];
+        }
+
+        $selected = [];
+        $parts = explode(',', $selection);
+
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if (is_numeric($part) && isset($options[(int)$part])) {
+                $selected[] = $options[(int)$part];
+            }
+        }
+
+        return $selected;
     }
 }

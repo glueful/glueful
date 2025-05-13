@@ -62,14 +62,14 @@ Next planned release: v0.25.0 (July 2025)
 #### v0.25.0 - Extension Ecosystem (July 2025)
 
 ##### Extension Management
-- [ ] Complete extension dependency resolution with conflict detection
-  - [ ] Implement dependency graph visualization
-  - [ ] Add version constraint resolution
-  - [ ] Create conflict resolution suggestions
-- [ ] Create scaffolding CLI tool for new extensions
-  - [ ] Interactive extension creation wizard
-  - [ ] Templates for different extension types
-  - [ ] Automated extension validation
+- [x] Complete extension dependency resolution with conflict detection
+  - [x] Implement dependency graph visualization
+  - [x] Add version constraint resolution
+  - [x] Create conflict resolution suggestions
+- [x] Create scaffolding CLI tool for new extensions
+  - [x] Interactive extension creation wizard
+  - [x] Templates for different extension types
+  - [x] Automated extension validation
 
 ##### Extension Marketplace
 - [ ] Implement extension marketplace in admin panel
@@ -83,15 +83,15 @@ Next planned release: v0.25.0 (July 2025)
   - [ ] Configuration validation rules
 
 ##### Extension Development
-- [ ] Add automated extension validation tools
-  - [ ] Code quality checks
-  - [ ] Security scanning
-  - [ ] Performance impact assessment
-- [ ] Provide official extension templates for common use cases
-  - [ ] Authentication provider extension
-  - [ ] Payment gateway integration
-  - [ ] Admin dashboard widgets
-  - [ ] Data import/export tools
+- [x] Add automated extension validation tools
+  - [x] Code quality checks
+  - [x] Security scanning
+  - [x] Performance impact assessment
+- [x] Provide official extension templates for common use cases
+  - [x] Authentication provider extension
+  - [x] Payment gateway integration
+  - [x] Admin dashboard widgets
+  - [x] Data import/export tools
 
 ### Mid-term Goals (3-6 Months)
 
@@ -354,4 +354,4 @@ The core team reviews roadmap suggestions monthly and updates this document to r
 
 ---
 
-*Last updated: May 12, 2025* (v0.24.0 release)
+*Last updated: May 13, 2025* (v0.24.0 release)
