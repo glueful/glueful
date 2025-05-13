@@ -15,40 +15,12 @@ This roadmap outlines Glueful's strategic path from its current state to enterpr
 
 The roadmap represents our commitment to creating an enterprise-grade framework while maintaining an innovation path for emerging technologies.
 
-## Current Version: v0.25.0
-Next planned release: v0.26.0 (September 2025)
+## Current Version: v0.24.0
+Next planned release: v0.25.0 (July 2025)
 
 ## Path to v1.0.0
 
 ### Completed Goals (May 2025)
-
-#### v0.25.0 - Extension Ecosystem (Released May 14, 2025)
-- [x] Complete extension dependency resolution with conflict detection
-  - [x] Implement dependency graph visualization
-  - [x] Add version constraint resolution
-  - [x] Create conflict resolution suggestions
-- [x] Create scaffolding CLI tool for new extensions
-  - [x] Interactive extension creation wizard
-  - [x] Templates for different extension types
-  - [x] Automated extension validation
-- [x] Implement extension marketplace in admin panel
-  - [x] Extension search and filtering
-  - [x] Installation and update UI
-  - [x] Extension ratings and reviews (using GitHub stars)
-  - [x] Author and publisher profiles (using GitHub and social media links)
-- [x] Standardize extension configuration UI components
-  - [x] Common UI component library 
-  - [x] Schema-based configuration forms
-  - [x] Configuration validation rules
-- [x] Add automated extension validation tools
-  - [x] Code quality checks
-  - [x] Security scanning
-  - [x] Performance impact assessment
-- [x] Provide official extension templates for common use cases
-  - [x] Authentication provider extension
-  - [x] Payment gateway integration
-  - [x] Admin dashboard widgets
-  - [x] Data import/export tools
 
 #### v0.21.0 - Extension System Enhancements (Released May 9, 2025)
 - [x] Implement tiered extension architecture (core vs. optional)
@@ -85,6 +57,41 @@ Next planned release: v0.26.0 (September 2025)
 - [x] Custom validation rules implementation and testing
 - [x] Improved CI workflow with MySQL service integration
 
+### Short-term Goals (1-3 Months)
+
+#### v0.25.0 - Extension Ecosystem (July 2025)
+
+##### Extension Management
+- [x] Complete extension dependency resolution with conflict detection
+  - [x] Implement dependency graph visualization
+  - [x] Add version constraint resolution
+  - [x] Create conflict resolution suggestions
+- [x] Create scaffolding CLI tool for new extensions
+  - [x] Interactive extension creation wizard
+  - [x] Templates for different extension types
+  - [x] Automated extension validation
+
+##### Extension Marketplace
+- [ ] Implement extension marketplace in admin panel
+  - [ ] Extension search and filtering
+  - [ ] Installation and update UI
+  - [ ] Extension ratings and reviews
+  - [ ] Author and publisher profiles
+- [ ] Standardize extension configuration UI components
+  - [ ] Common UI component library 
+  - [ ] Schema-based configuration forms
+  - [ ] Configuration validation rules
+
+##### Extension Development
+- [x] Add automated extension validation tools
+  - [x] Code quality checks
+  - [x] Security scanning
+  - [x] Performance impact assessment
+- [x] Provide official extension templates for common use cases
+  - [x] Authentication provider extension
+  - [x] Payment gateway integration
+  - [x] Admin dashboard widgets
+  - [x] Data import/export tools
 
 ### Mid-term Goals (3-6 Months)
 
@@ -347,4 +354,4 @@ The core team reviews roadmap suggestions monthly and updates this document to r
 
 ---
 
-*Last updated: May 14, 2025* (v0.25.0 release)
+*Last updated: May 13, 2025* (v0.24.0 release)
