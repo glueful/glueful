@@ -1,16 +1,14 @@
 <?php
+
     declare(strict_types=1);
 
     namespace Glueful\Extensions;
 
-    use Glueful\Http\Response;
-    use Glueful\Http\Router;
-    use Glueful\Helpers\Request;
-
 /**
  * Admin Extension
- * 
- * @description Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface
+ *
+ * @description Provides a comprehensive admin dashboard UI to visualize and manage the API Framework,
+ *              monitor system health, and perform administrative actions through a user-friendly interface
  * @version 1.0.0
  * @author Glueful Extensions Team
  */
@@ -20,12 +18,12 @@ class Admin extends \Glueful\Extensions
      * Extension configuration
      */
     private static array $config = [];
-    
+
     /**
      * Initialize extension
-     * 
+     *
      * Called when the extension is loaded
-     * 
+     *
      * @return void
      */
     public static function initialize(): void
@@ -34,35 +32,35 @@ class Admin extends \Glueful\Extensions
         if (file_exists(__DIR__ . '/config.php')) {
             self::$config = require __DIR__ . '/config.php';
         }
-        
+
         // Additional initialization code here
     }
-    
+
     /**
      * Register extension-provided services
-     * 
+     *
      * @return void
      */
     public static function registerServices(): void
     {
         // Register services here
     }
-    
+
     /**
      * Register extension-provided middleware
-     * 
+     *
      * @return void
      */
     public static function registerMiddleware(): void
     {
         // Register middleware here
     }
-    
+
     /**
      * Process extension request
-     * 
+     *
      * Main request handler for extension endpoints.
-     * 
+     *
      * @param array $getParams Query parameters
      * @param array $postParams Post data
      * @return array Extension response
@@ -71,8 +69,8 @@ class Admin extends \Glueful\Extensions
     {
         // Example implementation of the process method
         $action = $getParams['action'] ?? 'default';
-        
-        return match($action) {
+
+        return match ($action) {
             'greet' => [
                 'success' => true,
                 'code' => 200,
@@ -95,12 +93,12 @@ class Admin extends \Glueful\Extensions
             ]
         };
     }
-    
+
     /**
      * Get extension metadata
-     * 
+     *
      * This method follows the Glueful Extension Metadata Standard.
-     * 
+     *
      * @return array Extension metadata for admin interface and marketplace
      */
     public static function getMetadata(): array
@@ -108,7 +106,9 @@ class Admin extends \Glueful\Extensions
         return [
             // Required fields
             'name' => 'Admin',
-            'description' => 'Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface',
+            'description' => 'Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, ' .
+                             'monitor system health, and perform administrative actions through a ' .
+                             'user-friendly interface',
             'version' => '1.0.0',
             'author' => 'Glueful Extensions Team',
             'requires' => [
@@ -117,14 +117,14 @@ class Admin extends \Glueful\Extensions
                 'extensions' => [],
                 'dependencies' => []
             ],
-            
+
             // Optional fields - uncomment and customize as needed
             // 'homepage' => 'https://example.com/Admin',
             // 'documentation' => 'https://docs.example.com/extensions/Admin',
             // 'license' => 'MIT',
             // 'keywords' => ['keyword1', 'keyword2', 'keyword3'],
             // 'category' => 'utilities',
-            
+
             'features' => [
                 'Interactive API visualization dashboard with metrics and analytics',
                 'System health monitoring and performance tracking',
@@ -133,13 +133,13 @@ class Admin extends \Glueful\Extensions
                 'User and permission management interface',
                 'API testing and endpoint exploration tools'
             ],
-            
+
             'compatibility' => [
                 'browsers' => ['Chrome', 'Firefox', 'Safari', 'Edge'],
                 'environments' => ['production', 'development'],
                 'conflicts' => []
             ],
-            
+
             'settings' => [
                 'configurable' => true,
                 'has_admin_ui' => false,
@@ -150,19 +150,19 @@ class Admin extends \Glueful\Extensions
                     'setting2' => true
                 ]
             ],
-            
+
             'support' => [
                 'email' => 'your.email@example.com',
                 'issues' => 'https://github.com/yourusername/Admin/issues'
             ]
         ];
     }
-    
+
     /**
      * Get extension dependencies
-     * 
+     *
      * Returns a list of other extensions this extension depends on.
-     * 
+     *
      * @return array List of extension dependencies
      */
     public static function getDependencies(): array
@@ -171,12 +171,12 @@ class Admin extends \Glueful\Extensions
         $metadata = self::getMetadata();
         return $metadata['requires']['extensions'] ?? [];
     }
-    
+
     /**
      * Check environment-specific configuration
-     * 
+     *
      * Determines if the extension should be enabled in the current environment.
-     * 
+     *
      * @param string $environment Current environment (dev, staging, production)
      * @return bool Whether the extension should be enabled in this environment
      */
@@ -186,27 +186,27 @@ class Admin extends \Glueful\Extensions
         // Override this method to enable only in specific environments
         return true;
     }
-    
+
     /**
      * Validate extension health
-     * 
+     *
      * Checks if the extension is functioning correctly.
-     * 
+     *
      * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
      */
     public static function checkHealth(): array
     {
         $healthy = true;
         $issues = [];
-        
+
         // Example health check - verify config is loaded correctly
         if (empty(self::$config) && file_exists(__DIR__ . '/config.php')) {
             $healthy = false;
             $issues[] = 'Configuration could not be loaded properly';
         }
-        
+
         // Add your own health checks here
-        
+
         return [
             'healthy' => $healthy,
             'issues' => $issues,
@@ -218,12 +218,12 @@ class Admin extends \Glueful\Extensions
             ]
         ];
     }
-    
+
     /**
      * Get extension resource usage
-     * 
+     *
      * Returns information about resources used by this extension.
-     * 
+     *
      * @return array Resource usage metrics
      */
     public static function getResourceUsage(): array
@@ -236,20 +236,20 @@ class Admin extends \Glueful\Extensions
             'cache_usage' => 0
         ];
     }
-    
+
     /**
      * Get extension configuration
-     * 
+     *
      * @return array Current configuration
      */
     public static function getConfig(): array
     {
         return self::$config;
     }
-    
+
     /**
      * Set extension configuration
-     * 
+     *
      * @param array $config New configuration
      * @return void
      */
@@ -257,10 +257,10 @@ class Admin extends \Glueful\Extensions
     {
         self::$config = $config;
     }
-    
+
     /**
      * Example extension method
-     * 
+     *
      * @param string $name Name parameter
      * @return string Greeting message
      */

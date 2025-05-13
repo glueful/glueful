@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Glueful\Extensions;
@@ -16,13 +17,13 @@ use Glueful\Helpers\ExtensionsManager;
  * @license MIT
  * @version 1.0.0
  * @author Glueful <your.email@example.com>
- * 
+ *
  * Provides social authentication capabilities for Glueful:
  * - Google OAuth authentication
  * - Facebook OAuth authentication
  * - GitHub OAuth authentication
  * - Linkage between social and local accounts
- * 
+ *
  * Features:
  * - Multiple provider support
  * - User profile synchronization
@@ -36,50 +37,50 @@ class SocialLogin extends \Glueful\Extensions
 {
     /** @var array Configuration for the extension */
     private static array $config = [];
-    
+
     /** @var array Supported social providers */
     private static array $supportedProviders = ['google', 'facebook', 'github'];
-    
+
     /**
      * Initialize extension
-     * 
+     *
      * Sets up social authentication providers and registers them with
      * the authentication system.
-     * 
+     *
      * @return void
      */
     public static function initialize(): void
     {
         // Load configuration
         self::loadConfig();
-        
+
         // Register providers with the authentication system
         self::registerAuthProviders();
     }
-    
+
     /**
      * Register extension-provided services
-     * 
+     *
      * @return void
      */
     public static function registerServices(): void
     {
         // Could integrate with a service container if needed
     }
-    
+
     /**
      * Register extension-specific routes
-     * 
+     *
      * @return void
      */
     public static function registerRoutes(): void
     {
         // Routes are defined in separate file, will be auto-loaded
     }
-    
+
     /**
      * Load configuration for the extension
-     * 
+     *
      * @return void
      */
     private static function loadConfig(): void
@@ -91,7 +92,7 @@ class SocialLogin extends \Glueful\Extensions
             'link_accounts' => true,
             'sync_profile' => true,
         ];
-        
+
         // Try to load config from file or database
         $configPath = ExtensionsManager::getConfigPath() . '/extensions/social_login.php';
         if (file_exists($configPath)) {
@@ -101,23 +102,23 @@ class SocialLogin extends \Glueful\Extensions
             self::$config = $defaultConfig;
         }
     }
-    
+
     /**
      * Register social authentication providers
-     * 
+     *
      * Initializes and registers authentication providers with the
      * authentication system.
-     * 
+     *
      * @return void
      */
     private static function registerAuthProviders(): void
     {
         // Initialize the authentication system
         $authManager = AuthBootstrap::getManager();
-        
+
         // Register providers based on configuration
         $enabledProviders = self::$config['enabled_providers'] ?? [];
-        
+
         // Google provider
         if (in_array('google', $enabledProviders)) {
             try {
@@ -127,7 +128,7 @@ class SocialLogin extends \Glueful\Extensions
                 error_log("Failed to register Google auth provider: " . $e->getMessage());
             }
         }
-        
+
         // Facebook provider
         if (in_array('facebook', $enabledProviders)) {
             try {
@@ -137,7 +138,7 @@ class SocialLogin extends \Glueful\Extensions
                 error_log("Failed to register Facebook auth provider: " . $e->getMessage());
             }
         }
-        
+
         // GitHub provider
         if (in_array('github', $enabledProviders)) {
             try {
@@ -148,20 +149,20 @@ class SocialLogin extends \Glueful\Extensions
             }
         }
     }
-    
+
     /**
      * Get extension configuration
-     * 
+     *
      * @return array Current configuration
      */
     public static function getConfig(): array
     {
         return self::$config;
     }
-    
+
     /**
      * Get extension metadata
-     * 
+     *
      * @return array Extension metadata for admin interface
      */
     public static function getMetadata(): array
@@ -178,12 +179,12 @@ class SocialLogin extends \Glueful\Extensions
             ]
         ];
     }
-    
+
     /**
      * Get extension dependencies
-     * 
+     *
      * Returns a list of other extensions this extension depends on.
-     * 
+     *
      * @return array List of extension dependencies
      */
     public static function getDependencies(): array
@@ -191,12 +192,12 @@ class SocialLogin extends \Glueful\Extensions
         // Currently no dependencies on other extensions
         return [];
     }
-    
+
     /**
      * Check environment-specific configuration
-     * 
+     *
      * Determines if the extension should be enabled in the current environment.
-     * 
+     *
      * @param string $environment Current environment (dev, staging, production)
      * @return bool Whether the extension should be enabled in this environment
      */
@@ -206,15 +207,15 @@ class SocialLogin extends \Glueful\Extensions
         // Could be customized based on environment-specific requirements
         return true;
     }
-    
+
     /**
      * Validate extension health
-     * 
+     *
      * Checks if the extension is functioning correctly by verifying:
      * - Required configuration values are present
      * - OAuth providers can be initialized
      * - Necessary dependencies are available
-     * 
+     *
      * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
      */
     public static function checkHealth(): array
@@ -227,10 +228,10 @@ class SocialLogin extends \Glueful\Extensions
             'database_queries' => 0,
             'cache_usage' => 0
         ];
-        
+
         // Start execution time tracking
         $startTime = microtime(true);
-        
+
         // Check configuration
         if (empty(self::$config)) {
             self::loadConfig();
@@ -239,7 +240,7 @@ class SocialLogin extends \Glueful\Extensions
                 $issues[] = 'Failed to load extension configuration';
             }
         }
-        
+
         // Check provider dependencies
         $enabledProviders = self::$config['enabled_providers'] ?? [];
         foreach ($enabledProviders as $provider) {
@@ -250,14 +251,14 @@ class SocialLogin extends \Glueful\Extensions
                         $issues[] = 'Google Auth Provider class not found';
                     }
                     break;
-                    
+
                 case 'facebook':
                     if (!class_exists('Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider')) {
                         $healthy = false;
                         $issues[] = 'Facebook Auth Provider class not found';
                     }
                     break;
-                    
+
                 case 'github':
                     if (!class_exists('Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider')) {
                         $healthy = false;
@@ -266,7 +267,7 @@ class SocialLogin extends \Glueful\Extensions
                     break;
             }
         }
-        
+
         // Check if authentication system is available
         try {
             $authManager = AuthBootstrap::getManager();
@@ -278,22 +279,22 @@ class SocialLogin extends \Glueful\Extensions
             $healthy = false;
             $issues[] = 'Error accessing authentication system: ' . $e->getMessage();
         }
-        
+
         // Calculate execution time
         $metrics['execution_time'] = microtime(true) - $startTime;
-        
+
         return [
             'healthy' => $healthy,
             'issues' => $issues,
             'metrics' => $metrics
         ];
     }
-    
+
     /**
      * Get extension resource usage
-     * 
+     *
      * Returns information about resources used by this extension.
-     * 
+     *
      * @return array Resource usage metrics
      */
     public static function getResourceUsage(): array
@@ -304,7 +305,7 @@ class SocialLogin extends \Glueful\Extensions
             'peak_memory_usage' => memory_get_peak_usage(true),
             'provider_count' => count(self::$config['enabled_providers'] ?? [])
         ];
-        
+
         return $metrics;
     }
 }
