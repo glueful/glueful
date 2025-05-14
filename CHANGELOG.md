@@ -2,6 +2,37 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.25.0] - 2025-05-14
+
+### Added
+- Complete extension dependency resolution with conflict detection
+  - Dependency graph visualization for clearer relationship mapping
+  - Version constraint resolution for compatibility checks
+  - Conflict resolution suggestions with actionable recommendations
+- Extension marketplace in admin panel
+  - Extension search and filtering functionality
+  - Installation and update UI with progress tracking
+  - Extension ratings and reviews integration with GitHub stars
+  - Author and publisher profiles via GitHub and social media links
+- Standardized extension configuration UI components
+  - Common UI component library for consistent interface
+  - Schema-based configuration forms generation
+  - Configuration validation rules enforcement
+- Scaffolding CLI tool for new extensions
+  - Interactive extension creation wizard
+  - Templates for different extension types (authentication, payment, admin widgets)
+  - Automated extension validation
+- Automated extension validation tools
+  - Code quality checks for extensions
+  - Security scanning for potential vulnerabilities
+  - Performance impact assessment for extensions
+
+### Improved
+- Enhanced extension management capabilities
+- Streamlined extension development workflow
+- Better error handling and user feedback in extension installation process
+- Improved extensibility of the framework core
+
 ## [0.24.0] - 2025-05-12
 
 ### Added
