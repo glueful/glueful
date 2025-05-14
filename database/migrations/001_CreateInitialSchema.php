@@ -1,44 +1,46 @@
 <?php
 
+namespace Glueful\Database\Migrations;
+
 use Glueful\Database\Migrations\MigrationInterface;
 use Glueful\Database\Schema\SchemaManager;
 
 /**
  * Initial Database Schema Migration
- * 
+ *
  * Creates core system tables and relationships:
  * - Users and authentication
  * - Roles and permissions
  * - File storage and blobs
  * - User profiles
  * - Audit logging
- * 
+ *
  * Database Design:
  * - Follows ACID principles
  * - Implements proper indexing
  * - Uses foreign key constraints
  * - Supports soft deletes
  * - Handles timestamps
- * 
+ *
  * Security Features:
  * - Password hashing
  * - Token management
  * - Permission tracking
  * - Activity logging
- * 
+ *
  * @package Glueful\Database\Migrations
  */
 class CreateInitialSchema implements MigrationInterface
 {
     /**
      * Execute the migration
-     * 
+     *
      * Creates all required database tables with:
      * - Primary and foreign keys
      * - Indexes for optimization
      * - Data integrity constraints
      * - Timestamp tracking
-     * 
+     *
      * Tables created:
      * - users: User accounts and authentication
      * - roles: Role definitions and hierarchy
@@ -47,7 +49,7 @@ class CreateInitialSchema implements MigrationInterface
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
      * - logs: System activity tracking
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function up(SchemaManager $schema): void
@@ -253,18 +255,18 @@ class CreateInitialSchema implements MigrationInterface
 
     /**
      * Reverse the migration
-     * 
+     *
      * Removes all created tables in correct order:
      * - Respects foreign key constraints
      * - Handles dependent tables
      * - Cleans up completely
-     * 
+     *
      * Drop order:
      * 1. Dependent tables first (logs, sessions)
      * 2. Junction tables (role assignments)
      * 3. Feature tables (blobs, profiles)
      * 4. Core tables (roles, users)
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function down(SchemaManager $schema): void
@@ -282,12 +284,12 @@ class CreateInitialSchema implements MigrationInterface
 
     /**
      * Get migration description
-     * 
+     *
      * Provides human-readable description of:
      * - Migration purpose
      * - Major changes
      * - System impacts
-     * 
+     *
      * @return string Migration description
      */
     public function getDescription(): string

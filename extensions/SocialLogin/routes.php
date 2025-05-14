@@ -6,7 +6,7 @@ use Glueful\Http\Router;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Http\Response;
 
-/**
+/*
  * Social Login Routes
  *
  * This file defines routes for social authentication:
@@ -47,7 +47,14 @@ Router::group('/auth/social', function () {
      * @description Authenticates a user with a Google ID token from a native mobile app
      * @tag Social Authentication
      * @requestBody id_token:string="ID token obtained from Google Sign-In SDK" {required=id_token}
-     * @response 200 application/json "Successfully authenticated with Google" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 200 application/json "Successfully authenticated with Google" {
+     *   user:object="User profile information",
+     *   tokens:{
+     *     access_token:string="JWT access token",
+     *     refresh_token:string="JWT refresh token",
+     *     expires_in:integer="Token expiration time in seconds"
+     *   }
+     * }
      * @response 400 "Missing ID token"
      * @response 401 "Failed to verify Google ID token"
      * @response 500 "Server error during authentication"
@@ -94,7 +101,11 @@ Router::group('/auth/social', function () {
      * @tag Social Authentication
      * @param code query string true "Authorization code from Google"
      * @param state query string true "State token for CSRF protection"
-     * @response 200 application/json "Successfully authenticated with Google" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 200 application/json "Successfully authenticated with Google" {
+     *   access_token:string="JWT access token",
+     *   refresh_token:string="JWT refresh token",
+     * expires_in:integer="Token expiration time in seconds",
+     * user:object="User profile information"}
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
@@ -155,7 +166,14 @@ Router::group('/auth/social', function () {
      * @description Authenticates a user with a Facebook access token from a native mobile app
      * @tag Social Authentication
      * @requestBody access_token:string="Access token obtained from Facebook Login SDK" {required=access_token}
-     * @response 200 application/json "Successfully authenticated with Facebook" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 200 application/json "Successfully authenticated with Facebook" {
+     *   user:object="User profile information",
+     *   tokens:{
+     *     access_token:string="JWT access token",
+     *     refresh_token:string="JWT refresh token",
+     *     expires_in:integer="Token expiration time in seconds"
+     *   }
+     * }
      * @response 400 "Missing access token"
      * @response 401 "Failed to verify Facebook access token"
      * @response 500 "Server error during authentication"
@@ -202,7 +220,11 @@ Router::group('/auth/social', function () {
      * @tag Social Authentication
      * @param code query string true "Authorization code from Facebook"
      * @param state query string true "State token for CSRF protection"
-     * @response 200 application/json "Successfully authenticated with Facebook" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 200 application/json "Successfully authenticated with Facebook" {
+     *   access_token:string="JWT access token",
+     *   refresh_token:string="JWT refresh token",
+     *   expires_in:integer="Token expiration time in seconds",
+     * user:object="User profile information"}
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
@@ -263,7 +285,14 @@ Router::group('/auth/social', function () {
      * @description Authenticates a user with a GitHub access token from a native mobile app
      * @tag Social Authentication
      * @requestBody access_token:string="Access token obtained from GitHub OAuth" {required=access_token}
-     * @response 200 application/json "Successfully authenticated with GitHub" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 200 application/json "Successfully authenticated with GitHub" {
+     *   user:object="User profile information",
+     *   tokens:{
+     *     access_token:string="JWT access token",
+     *     refresh_token:string="JWT refresh token",
+     *     expires_in:integer="Token expiration time in seconds"
+     *   }
+     * }
      * @response 400 "Missing access token"
      * @response 401 "Failed to verify GitHub access token"
      * @response 500 "Server error during authentication"
@@ -310,7 +339,11 @@ Router::group('/auth/social', function () {
      * @tag Social Authentication
      * @param code query string true "Authorization code from GitHub"
      * @param state query string true "State token for CSRF protection"
-     * @response 200 application/json "Successfully authenticated with GitHub" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @response 200 application/json "Successfully authenticated with GitHub" {
+     *   access_token:string="JWT access token",
+     *   refresh_token:string="JWT refresh token",
+     *   expires_in:integer="Token expiration time in seconds",
+     *  user:object="User profile information"}
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
@@ -371,7 +404,14 @@ Router::group('/auth/social', function () {
      * @description Authenticates a user with an Apple ID token from a native mobile app
      * @tag Social Authentication
      * @requestBody id_token:string="ID token obtained from Sign in with Apple SDK" {required=id_token}
-     * @response 200 application/json "Successfully authenticated with Apple" {user:object="User profile information", tokens:{access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds"}}
+     * @response 200 application/json "Successfully authenticated with Apple" {
+     *   user:object="User profile information",
+     *   tokens:{
+     *     access_token:string="JWT access token",
+     *     refresh_token:string="JWT refresh token",
+     *     expires_in:integer="Token expiration time in seconds"
+     *   }
+     * }
      * @response 400 "Missing ID token"
      * @response 401 "Failed to verify Apple ID token"
      * @response 500 "Server error during authentication"
@@ -416,8 +456,15 @@ Router::group('/auth/social', function () {
      * @summary Apple OAuth Callback
      * @description Callback endpoint that processes the OAuth response from Apple
      * @tag Social Authentication
-     * @requestBody code:string="Authorization code from Apple" state:string="State token for CSRF protection" user:string="JSON string containing user information (only provided on first login)" {required=code,state}
-     * @response 200 application/json "Successfully authenticated with Apple" {access_token:string="JWT access token", refresh_token:string="JWT refresh token", expires_in:integer="Token expiration time in seconds", user:object="User profile information"}
+     * @requestBody code:string="Authorization code from Apple"
+     * @requestBody state:string="State token for CSRF protection"
+     * @requestBody user:string="JSON string containing user information (only provided on first login)"
+     * {required=code,state}
+     * @response 200 application/json "Successfully authenticated with Apple" {
+     *   access_token:string="JWT access token",
+     *   refresh_token:string="JWT refresh token",
+     *   expires_in:integer="Token expiration time in seconds",
+     * user:object="User profile information"}
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
@@ -459,7 +506,14 @@ Router::group('/user/social-accounts', function () {
      * @description Retrieve all social accounts connected to the authenticated user
      * @tag Social Account Management
      * @requiresAuth true
-     * @response 200 application/json "Successfully retrieved social accounts" {status:string="success", message:string="Social accounts retrieved successfully", data:[{uuid:string="Unique identifier for the social account", provider:string="Social provider name (google, facebook, github, etc.)", created_at:string="When the account was connected", updated_at:string="When the account was last updated"}]}
+     * @response 200 application/json "Successfully retrieved social accounts" {
+     *   status:string="success",
+     *   message:string="Social accounts retrieved successfully",
+     *   data:[{
+     *     uuid:string="Unique identifier for the social account",
+     *     provider:string="Social provider name (google, facebook, github, etc.)",
+     *     created_at:string="When the account was connected",
+     * updated_at:string="When the account was last updated"}]}
      * @response 401 "Unauthorized - User is not authenticated"
      * @response 500 "Server error retrieving social accounts"
      */
@@ -503,7 +557,8 @@ Router::group('/user/social-accounts', function () {
      * @tag Social Account Management
      * @requiresAuth true
      * @param uuid path string true "UUID of the social account to unlink"
-     * @response 200 application/json "Successfully unlinked social account" {status:string="success", message:string="Social account unlinked successfully"}
+     * @response 200 application/json "Successfully unlinked social account" {status:string="success",
+     * message:string="Social account unlinked successfully"}
      * @response 401 "Unauthorized - User is not authenticated"
      * @response 404 "Social account not found or not owned by user"
      * @response 500 "Server error unlinking social account"

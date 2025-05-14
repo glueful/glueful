@@ -28,6 +28,9 @@ class UserRepository
     /** @var QueryBuilder Database query builder instance */
     private QueryBuilder $queryBuilder;
 
+    /** @var RoleRepository Role repository instance */
+    private RoleRepository $roleRepository;
+
     /** @var Validator Data validator instance */
     private Validator $validator;
 
@@ -47,6 +50,8 @@ class UserRepository
         $connection = new Connection();
         $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->validator = new Validator();
+
+        $this->roleRepository = new RoleRepository();
     }
 
     /**
@@ -374,5 +379,251 @@ class UserRepository
         }
 
         return null;
+    }
+
+    /**
+     * Find or create a user from SAML authentication data
+     *
+     * @param array $userData User data extracted from SAML attributes
+     * @return array|null User data array or null on failure
+     */
+    public function findOrCreateFromSaml(array $userData): ?array
+    {
+        try {
+            // Email is required to identify the user
+            if (empty($userData['email'])) {
+                return null;
+            }
+
+            // Try to find the user by email
+            $user = $this->findByEmail($userData['email']);
+
+            // If user exists, update SAML-related fields
+            if ($user) {
+                // Update user with SAML information if needed
+                $updates = [
+                    'last_login_at' => date('Y-m-d H:i:s'),
+                    'provider' => 'saml',
+                    'provider_id' => $userData['saml_idp'] ?? null
+                ];
+
+                // Optionally update name if provided
+                if (!empty($userData['name'])) {
+                    $updates['name'] = $userData['name'];
+                }
+
+                // Optionally update first/last name if provided
+                if (!empty($userData['first_name'])) {
+                    $updates['first_name'] = $userData['first_name'];
+                }
+
+                if (!empty($userData['last_name'])) {
+                    $updates['last_name'] = $userData['last_name'];
+                }
+
+                $this->update($user['uuid'], $updates);
+
+                // Reload the user to get updated data
+                $user = $this->findByUUId($user['uuid']);
+
+                // Sync roles if available
+                if (!empty($userData['roles'])) {
+                    $this->syncUserRoles($user['uuid'], $userData['roles']);
+                }
+                return $user;
+            }
+            // User doesn't exist, create a new one
+            $newUser = [
+                'uuid' => \Glueful\Helpers\Utils::generateNanoID(),
+                'email' => $userData['email'],
+                'name' => $userData['name'] ?? explode('@', $userData['email'])[0],
+                'first_name' => $userData['first_name'] ?? null,
+                'last_name' => $userData['last_name'] ?? null,
+                'password' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), // Random password
+                'provider' => 'saml',
+                'provider_id' => $userData['saml_idp'] ?? null,
+                'email_verified_at' => date('Y-m-d H:i:s'), // SAML users are pre-verified
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+                'last_login_at' => date('Y-m-d H:i:s')
+            ];
+
+            // Create the new user
+            $userId = $this->create($newUser);
+            if (!$userId) {
+                return null;
+            }
+
+            // Assign default roles for new SAML users
+            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
+            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+
+            // Return the newly created user
+            return $this->findByUUId($newUser['uuid']);
+        } catch (\Throwable $e) {
+            // Log the error
+            error_log('Error in findOrCreateFromSaml: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Sync user roles with the provided role array
+     *
+     * @param string $userUuid User UUID
+     * @param array $roles Array of role data
+     * @return bool Success
+     */
+    private function syncUserRoles(string $userUuid, array $roles): bool
+    {
+        try {
+            // Delete existing roles for this user
+            $this->queryBuilder->delete('user_roles_lookup', ['user_uuid' => $userUuid]);
+
+            // No roles to add
+            if (empty($roles)) {
+                return true;
+            }
+
+            // Prepare role data for insertion
+            $rolesToInsert = [];
+
+            foreach ($roles as $role) {
+                if (!isset($role['name'])) {
+                    continue;
+                }
+
+                // Get role UUID from role name
+                $roleUuid = $this->roleRepository->getRoleUuidByName($role['name']);
+                if (!$roleUuid) {
+                    continue;
+                }
+
+                // Create a record for insertion
+                $rolesToInsert[] = [
+                    'user_uuid' => $userUuid,
+                    'role_uuid' => $roleUuid,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+            }
+
+            if (empty($rolesToInsert)) {
+                return true;
+            }
+
+            // Use batch insert for better performance
+            $result = $this->queryBuilder->insert('user_roles_lookup', $rolesToInsert);
+
+            return $result > 0;
+        } catch (\Throwable $e) {
+            error_log('Error in syncUserRoles: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Find or create a user from LDAP authentication data
+     *
+     * @param array $userData User data extracted from LDAP attributes
+     * @return array|null User data array or null on failure
+     */
+    public function findOrCreateFromLdap(array $userData): ?array
+    {
+        try {
+            // Email is required to identify the user
+            if (empty($userData['email'])) {
+                return null;
+            }
+
+            // Try to find the user by email
+            $user = $this->findByEmail($userData['email']);
+
+            // If user exists, update LDAP-related fields
+            if ($user) {
+                // Update user with LDAP information
+                $updates = [
+                    'last_login_at' => date('Y-m-d H:i:s'),
+                    'provider' => 'ldap',
+                    'provider_id' => $userData['ldap_server'] ?? null
+                ];
+
+                // Update name if provided
+                if (!empty($userData['name'])) {
+                    $updates['name'] = $userData['name'];
+                }
+
+                // Update first/last name if provided
+                if (!empty($userData['first_name'])) {
+                    $updates['first_name'] = $userData['first_name'];
+                }
+
+                if (!empty($userData['last_name'])) {
+                    $updates['last_name'] = $userData['last_name'];
+                }
+
+                // Update additional fields if they exist
+                foreach (['phone', 'title', 'department', 'company', 'employee_id'] as $field) {
+                    if (!empty($userData[$field])) {
+                        $updates[$field] = $userData[$field];
+                    }
+                }
+
+                $this->update($user['uuid'], $updates);
+
+                // Reload the user to get updated data
+                $user = $this->findByUUID($user['uuid']);
+
+                // Sync roles if available
+                if (!empty($userData['roles'])) {
+                    $this->syncUserRoles($user['uuid'], $userData['roles']);
+
+                    // Reload roles for the user
+                    $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+                }
+
+                return $user;
+            }
+
+            // User doesn't exist, create a new one
+            $newUser = [
+                'uuid' => \Glueful\Helpers\Utils::generateNanoID(),
+                'email' => $userData['email'],
+                'name' => $userData['name'] ?? explode('@', $userData['email'])[0],
+                'first_name' => $userData['first_name'] ?? null,
+                'last_name' => $userData['last_name'] ?? null,
+                'phone' => $userData['phone'] ?? null,
+                'title' => $userData['title'] ?? null,
+                'department' => $userData['department'] ?? null,
+                'company' => $userData['company'] ?? null,
+                'employee_id' => $userData['employee_id'] ?? null,
+                'password' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), // Random password
+                'provider' => 'ldap',
+                'provider_id' => $userData['ldap_server'] ?? null,
+                'status' => 'active',
+                'email_verified_at' => date('Y-m-d H:i:s'), // LDAP users are pre-verified
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+                'last_login_at' => date('Y-m-d H:i:s')
+            ];
+
+            // Create the new user
+            $this->queryBuilder->insert('users', array_filter($newUser, function ($value) {
+                return $value !== null;
+            }));
+
+            // Assign default roles for new LDAP users
+            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
+            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+
+            // Return the newly created user with roles
+            $user = $this->findByUUID($newUser['uuid']);
+            $user['roles'] = $this->roleRepository->getUserRoles($newUser['uuid']);
+
+            return $user;
+        } catch (\Throwable $e) {
+            // Log the error
+            error_log('Error in findOrCreateFromLdap: ' . $e->getMessage());
+            return null;
+        }
     }
 }
