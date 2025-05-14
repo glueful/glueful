@@ -72,15 +72,15 @@ Next planned release: v0.25.0 (July 2025)
   - [x] Automated extension validation
 
 ##### Extension Marketplace
-- [ ] Implement extension marketplace in admin panel
-  - [ ] Extension search and filtering
-  - [ ] Installation and update UI
-  - [ ] Extension ratings and reviews
-  - [ ] Author and publisher profiles
-- [ ] Standardize extension configuration UI components
-  - [ ] Common UI component library 
-  - [ ] Schema-based configuration forms
-  - [ ] Configuration validation rules
+- [x] Implement extension marketplace in admin panel
+  - [x] Extension search and filtering
+  - [x] Installation and update UI
+  - [x] Extension ratings and reviews (using GitHub stars)
+  - [x] Author and publisher profiles (using GitHub and social media links)
+- [x] Standardize extension configuration UI components
+  - [x] Common UI component library 
+  - [x] Schema-based configuration forms
+  - [x] Configuration validation rules
 
 ##### Extension Development
 - [x] Add automated extension validation tools
