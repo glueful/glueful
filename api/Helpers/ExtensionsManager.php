@@ -802,15 +802,26 @@ class ExtensionsManager
      * Build a dependency graph for all extensions
      *
      * Creates a directed graph showing the dependency relationships
-     * between all installed extensions.
+     * between all installed extensions. Includes visual attributes
+     * for frontend rendering, conflict detection, and metadata.
      *
-     * @return array The dependency graph
+     * @return array The dependency graph with visual attributes
      */
     public static function buildDependencyGraph(): array
     {
         $graph = [
             'nodes' => [],
-            'edges' => []
+            'edges' => [],
+            'metadata' => [
+                'conflicts' => [],
+                'unresolved' => [],
+                'stats' => [
+                    'total' => 0,
+                    'enabled' => 0,
+                    'core' => 0,
+                    'optional' => 0
+                ]
+            ]
         ];
 
         $extensions = self::getLoadedExtensions();
@@ -818,33 +829,103 @@ class ExtensionsManager
         $coreExtensions = self::getCoreExtensions();
         $optionalExtensions = self::getOptionalExtensions();
 
-        // Create nodes for all extensions
+        // Track all dependencies for conflict detection
+        $allDependencies = [];
+        $existingExtensions = [];
+
+        // Create nodes for all extensions with visual attributes
         foreach ($extensions as $extensionClass) {
             $reflection = new \ReflectionClass($extensionClass);
             $shortName = $reflection->getShortName();
+            $existingExtensions[] = $shortName;
 
             try {
                 $metadata = $extensionClass::getMetadata();
 
                 // Determine if core or optional
                 $extensionType = in_array($shortName, $coreExtensions) ? 'core' : 'optional';
+                $enabled = in_array($shortName, $enabledExtensions);
+
+                // Update stats
+                $graph['metadata']['stats']['total']++;
+                if ($enabled) {
+                    $graph['metadata']['stats']['enabled']++;
+                }
+
+                if ($extensionType === 'core') {
+                    $graph['metadata']['stats']['core']++;
+                } else {
+                    $graph['metadata']['stats']['optional']++;
+                }
+
+                // Set visual attributes based on type and status
+                $nodeSize = $extensionType === 'core' ? 16 : 12;
+                $nodeColor = $extensionType === 'core' ? '#ff6b6b' : '#48dbfb';
+                if (!$enabled) {
+                    $nodeColor = '#d2dae2'; // Muted color for disabled extensions
+                    $nodeSize -= 2; // Slightly smaller
+                }
 
                 $graph['nodes'][] = [
                     'id' => $shortName,
                     'name' => $metadata['name'] ?? $shortName,
-                    'enabled' => in_array($shortName, $enabledExtensions),
+                    'enabled' => $enabled,
                     'type' => $extensionType,
                     'version' => $metadata['version'] ?? '1.0.0',
-                    'description' => $metadata['description'] ?? ''
+                    'description' => $metadata['description'] ?? '',
+                    // Visual attributes for UI rendering
+                    'size' => $nodeSize,
+                    'color' => $nodeColor,
+                    'shape' => $extensionType === 'core' ? 'diamond' : 'circle',
+                    'borderWidth' => $enabled ? 2 : 1,
+                    'borderColor' => $enabled ? '#1e272e' : '#d2dae2',
+                    'font' => [
+                        'color' => $enabled ? '#000000' : '#808e9b'
+                    ]
                 ];
 
                 // Get dependencies and create edges
                 $dependencies = $extensionClass::getDependencies();
+                $allDependencies[$shortName] = $dependencies;
+
                 foreach ($dependencies as $dependency) {
+                    // Edge visual attributes
+                    $edgeWidth = 1;
+                    $edgeColor = '#a5b1c2';
+                    $edgeDashed = false;
+
+                    // Check if dependency exists and is enabled
+                    if (!self::findExtension($dependency)) {
+                        // Dependency doesn't exist in system
+                        $graph['metadata']['unresolved'][] = [
+                            'extension' => $shortName,
+                            'missing' => $dependency
+                        ];
+                        $edgeColor = '#ff4757'; // Red for missing dependencies
+                        $edgeDashed = true;
+                    } elseif (!in_array($dependency, $enabledExtensions) && in_array($shortName, $enabledExtensions)) {
+                        // Extension is enabled but its dependency is disabled
+                        $graph['metadata']['conflicts'][] = [
+                            'extension' => $shortName,
+                            'disabled_dependency' => $dependency
+                        ];
+                        $edgeColor = '#ffa502'; // Orange for disabled dependencies
+                    }
+
+                    // If both extensions are core, make the connection stronger
+                    if (in_array($shortName, $coreExtensions) && in_array($dependency, $coreExtensions)) {
+                        $edgeWidth = 2;
+                    }
+
                     $graph['edges'][] = [
                         'from' => $shortName,
                         'to' => $dependency,
-                        'type' => 'depends_on'
+                        'type' => 'depends_on',
+                        // Visual attributes
+                        'width' => $edgeWidth,
+                        'color' => $edgeColor,
+                        'dashed' => $edgeDashed,
+                        'arrows' => 'to'
                     ];
                 }
             } catch (\Throwable $e) {
@@ -1377,6 +1458,20 @@ class ExtensionsManager
      * @param string $extensionName Extension name
      * @return array Result with success status and messages
      */
+    /**
+     * Validate an extension structure and dependencies
+     *
+     * Comprehensive validation includes:
+     * - Structure validation (required files and methods)
+     * - Dependency validation (extension dependencies)
+     * - Metadata validation (completeness and correctness)
+     * - Coding standards validation (PSR-12 compliance)
+     * - Security validation (potential vulnerabilities)
+     * - Performance assessment (impact on system resources)
+     *
+     * @param string $extensionName Extension name
+     * @return array Result with success status and validation results
+     */
     public static function validateExtension(string $extensionName): array
     {
         $extensionClass = self::findExtension($extensionName);
@@ -1396,12 +1491,32 @@ class ExtensionsManager
         // Validate dependencies
         $dependencyValidation = self::validateExtensionDependencies($reflection);
 
+        // Validate metadata
+        $metadataValidation = self::validateExtensionMetadata($extensionName);
+
+        // Validate coding standards
+        $codingStandardsValidation = self::validateCodingStandards($extensionName);
+
+        // Validate security
+        $securityValidation = self::validateExtensionSecurity($extensionName);
+
+        // Assess performance impact
+        $performanceAssessment = self::assessPerformanceImpact($extensionName);
+
         // Combine results
         $result = [
-            'success' => $structureValidation['success'] && $dependencyValidation['success'],
+            'success' => $structureValidation['success'] &&
+                        $dependencyValidation['success'] &&
+                        $metadataValidation['success'] &&
+                        $codingStandardsValidation['success'] &&
+                        $securityValidation['success'],
             'name' => $extensionName,
             'structureValidation' => $structureValidation,
-            'dependencyValidation' => $dependencyValidation
+            'dependencyValidation' => $dependencyValidation,
+            'metadataValidation' => $metadataValidation,
+            'codingStandardsValidation' => $codingStandardsValidation,
+            'securityValidation' => $securityValidation,
+            'performanceAssessment' => $performanceAssessment
         ];
 
         if (!$result['success']) {
@@ -1841,368 +1956,37 @@ class ExtensionsManager
         }
     }
 
+
+
     /**
-     * Generate extension class content
+     * Get the path to the extension configuration file
      *
-     * Creates a new extension class with all required methods
-     * and metadata following the Glueful Extension Metadata Standard.
-     *
-     * @param string $extensionName Extension name
-     * @param string $extensionType Type of extension (core or optional)
-     * @return string Generated class content
+     * @return string Path to the configuration file
      */
-    public static function generateExtensionClass(string $extensionName, string $extensionType = 'optional'): string
+
+
+    private static function getTemplatesPath(): string
     {
-        // Validate extension type
-        if (!in_array($extensionType, ['core', 'optional'])) {
-            $extensionType = 'optional'; // Default to optional if invalid type provided
-        }
-
-        return "<?php
-    declare(strict_types=1);
-
-    namespace Glueful\\Extensions;
-
-    use Glueful\\Http\\Response;
-    use Glueful\\Http\\Router;
-    use Glueful\\Helpers\\Request;
-
-/**
- * $extensionName Extension
- * 
- * @description Add your extension description here
- * @version 1.0.0
- * @author Your Name <your.email@example.com>
- */
-class $extensionName extends \\Glueful\\Extensions
-{
-    /**
-     * Extension configuration
-     */
-    private static array \$config = [];
-    
-    /**
-     * Initialize extension
-     * 
-     * Called when the extension is loaded
-     * 
-     * @return void
-     */
-    public static function initialize(): void
-    {
-        // Load configuration if available
-        if (file_exists(__DIR__ . '/config.php')) {
-            self::\$config = require __DIR__ . '/config.php';
-        }
-        
-        // Additional initialization code here
-    }
-    
-    /**
-     * Register extension-provided services
-     * 
-     * @return void
-     */
-    public static function registerServices(): void
-    {
-        // Register services here
-    }
-    
-    /**
-     * Register extension-provided middleware
-     * 
-     * @return void
-     */
-    public static function registerMiddleware(): void
-    {
-        // Register middleware here
-    }
-    
-    /**
-     * Process extension request
-     * 
-     * Main request handler for extension endpoints.
-     * 
-     * @param array \$getParams Query parameters
-     * @param array \$postParams Post data
-     * @return array Extension response
-     */
-    public static function process(array \$getParams, array \$postParams): array
-    {
-        // Example implementation of the process method
-        \$action = \$getParams['action'] ?? 'default';
-        
-        return match(\$action) {
-            'greet' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'message' => self::greet(\$getParams['name'] ?? 'World')
-                ]
-            ],
-            'default' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'extension' => '$extensionName',
-                    'message' => 'Extension is working properly'
-                ]
-            ],
-            default => [
-                'success' => false,
-                'code' => 400,
-                'error' => 'Unknown action: ' . \$action
-            ]
-        };
-    }
-    
-    /**
-     * Get extension metadata
-     * 
-     * This method follows the Glueful Extension Metadata Standard.
-     * 
-     * @return array Extension metadata for admin interface and marketplace
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            // Required fields
-            'name' => '$extensionName',
-            'description' => 'Add your extension description here',
-            'version' => '1.0.0',
-            'author' => 'Your Name',
-            'type' => '$extensionType', // Indicates whether this is a core or optional extension
-            'requires' => [
-                'glueful' => '>=1.0.0',
-                'php' => '>=8.1.0',
-                'extensions' => [],
-                'dependencies' => []
-            ],
-            
-            // Optional fields - uncomment and customize as needed
-            // 'homepage' => 'https://example.com/$extensionName',
-            // 'documentation' => 'https://docs.example.com/extensions/$extensionName',
-            // 'license' => 'MIT',
-            // 'keywords' => ['keyword1', 'keyword2', 'keyword3'],
-            // 'category' => 'utilities',
-            
-            'features' => [
-                'Feature 1 description',
-                'Feature 2 description',
-                'Feature 3 description'
-            ],
-            
-            'compatibility' => [
-                'browsers' => ['Chrome', 'Firefox', 'Safari', 'Edge'],
-                'environments' => ['production', 'development'],
-                'conflicts' => []
-            ],
-            
-            'settings' => [
-                'configurable' => true,
-                'has_admin_ui' => false,
-                'setup_required' => false,
-                'default_config' => [
-                    // Default configuration values
-                    'setting1' => 'default_value',
-                    'setting2' => true
-                ]
-            ],
-            
-            'support' => [
-                'email' => 'your.email@example.com',
-                'issues' => 'https://github.com/yourusername/$extensionName/issues'
-            ]
-        ];
-    }
-    
-    /**
-     * Get extension dependencies
-     * 
-     * Returns a list of other extensions this extension depends on.
-     * 
-     * @return array List of extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        // By default, get dependencies from metadata
-        \$metadata = self::getMetadata();
-        return \$metadata['requires']['extensions'] ?? [];
-    }
-    
-    /**
-     * Check environment-specific configuration
-     * 
-     * Determines if the extension should be enabled in the current environment.
-     * 
-     * @param string \$environment Current environment (dev, staging, production)
-     * @return bool Whether the extension should be enabled in this environment
-     */
-    public static function isEnabledForEnvironment(string \$environment): bool
-    {
-        // By default, enable in all environments
-        // Override this method to enable only in specific environments
-        return true;
-    }
-    
-    /**
-     * Validate extension health
-     * 
-     * Checks if the extension is functioning correctly.
-     * 
-     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
-     */
-    public static function checkHealth(): array
-    {
-        \$healthy = true;
-        \$issues = [];
-        
-        // Example health check - verify config is loaded correctly
-        if (empty(self::\$config) && file_exists(__DIR__ . '/config.php')) {
-            \$healthy = false;
-            \$issues[] = 'Configuration could not be loaded properly';
-        }
-        
-        // Add your own health checks here
-        
-        return [
-            'healthy' => \$healthy,
-            'issues' => \$issues,
-            'metrics' => [
-                'memory_usage' => memory_get_usage(true),
-                'execution_time' => 0, // You could track this with microtime()
-                'database_queries' => 0, // Track queries if your extension uses the database
-                'cache_usage' => 0 // Track cache usage if applicable
-            ]
-        ];
-    }
-    
-    /**
-     * Get extension resource usage
-     * 
-     * Returns information about resources used by this extension.
-     * 
-     * @return array Resource usage metrics
-     */
-    public static function getResourceUsage(): array
-    {
-        // Customize with your own resource metrics
-        return [
-            'memory_usage' => memory_get_usage(true),
-            'execution_time' => 0,
-            'database_queries' => 0,
-            'cache_usage' => 0
-        ];
-    }
-    
-    /**
-     * Get extension configuration
-     * 
-     * @return array Current configuration
-     */
-    public static function getConfig(): array
-    {
-        return self::\$config;
-    }
-    
-    /**
-     * Set extension configuration
-     * 
-     * @param array \$config New configuration
-     * @return void
-     */
-    public static function setConfig(array \$config): void
-    {
-        self::\$config = \$config;
-    }
-    
-    /**
-     * Example extension method
-     * 
-     * @param string \$name Name parameter
-     * @return string Greeting message
-     */
-    public static function greet(string \$name): string
-    {
-        return \"Hello, {\$name}! Welcome to the $extensionName extension.\";
-    }
-}
-";
-    }
-
-    /**
-     * Generate README.md content for an extension
-     *
-     * @param string $extensionName Extension name
-     * @return string Generated README.md content
-     */
-    public static function generateReadme(string $extensionName): string
-    {
-        return "# $extensionName Extension
-
-This is a Glueful API extension.
-
-## Features
-
-- Add your features here
-
-## Installation
-
-1. Copy this directory to your `extensions/` folder
-2. Enable the extension using:
-   ```
-   php glueful extensions enable $extensionName
-   ```
-
-## Usage
-
-Add usage instructions here.
-
-## Configuration
-
-Add configuration instructions if needed.
-
-## License
-
-Add license information here.
-";
-    }
-
-    /**
-     * Generate config.php content for an extension
-     *
-     * @return string Generated config.php content
-     */
-    public static function generateConfig(): string
-    {
-        return "<?php
-/**
- * Extension Configuration
- * 
- * Edit this file to customize your extension's behavior.
- */
-return [
-    // Add your configuration settings here
-    'enabled' => true,
-    'debug' => false,
-    
-    // Example settings
-    'setting1' => 'default_value',
-    'setting2' => true,
-];
-";
+        return dirname(__DIR__) . '/Console/Templates/Extensions';
     }
 
     /**
      * Create a new extension
      *
-     * Creates a new extension directory and scaffolds all necessary files.
+     * Creates a new extension directory and scaffolds all necessary files using templates.
      *
      * @param string $extensionName Extension name
+     * @param string $extensionType Extension type (optional by default)
+     * @param string $templateType Template type to use (Basic by default)
+     * @param array $templateData Additional template data for substitutions
      * @return array Result with success status and messages
      */
-    public static function createExtension(string $extensionName): array
-    {
+    public static function createExtension(
+        string $extensionName,
+        string $extensionType = 'optional',
+        string $templateType = 'Basic',
+        array $templateData = []
+    ): array {
         // Check if extension name is valid
         if (!self::isValidExtensionName($extensionName)) {
             return [
@@ -2229,6 +2013,26 @@ return [
             ];
         }
 
+        // Get template path
+        $templatePath = self::getTemplatesPath();
+        $templateSourceDir = "$templatePath/$templateType";
+
+        // If the specified template doesn't exist, fall back to Basic
+        if (!is_dir($templateSourceDir)) {
+            $templateType = 'Basic';
+            $templateSourceDir = "$templatePath/$templateType";
+            // If even the Basic template doesn't exist, return an error
+            if (!is_dir($templateSourceDir)) {
+                // Clean up the created directory
+                self::rrmdir($extensionDir);
+                return [
+                    'success' => false,
+                    'message' => "Extension templates not found. " .
+                        "Please ensure template directories exist at: $templatePath"
+                ];
+            }
+        }
+
         // Create directories for extension assets
         $directories = [
             "$extensionDir/screenshots",
@@ -2240,60 +2044,38 @@ return [
             }
         }
 
-        // Create the main extension class file
-        $mainClassFile = "$extensionDir/$extensionName.php";
-        $mainClassContent = self::generateExtensionClass($extensionName);
+        $filesCreated = [];
 
-        if (!file_put_contents($mainClassFile, $mainClassContent)) {
-            // Clean up if failed
-            self::rrmdir($extensionDir);
-            return [
-                'success' => false,
-                'message' => "Failed to create extension class file"
-            ];
+        // Prepare template substitution values
+        $substitutions = array_merge([
+            'EXTENSION_NAME' => $extensionName,
+            'EXTENSION_TYPE' => $extensionType,
+            'EXTENSION_DESCRIPTION' => $templateData['description'] ?? "A Glueful API extension",
+            'AUTHOR_NAME' => $templateData['author'] ?? "Glueful User",
+            'AUTHOR_EMAIL' => $templateData['email'] ?? "",
+            'CURRENT_DATE' => date('Y-m-d')
+        ], $templateData);
+
+        // Copy template files with proper substitutions
+        self::copyTemplateFiles($templateSourceDir, $extensionDir, $substitutions);
+        // Get list of created files
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($extensionDir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        foreach ($iterator as $file) {
+            $filesCreated[] = substr($file->getPathname(), strlen($extensionDir) + 1);
         }
-
-        // Create README.md
-        $readmeFile = "$extensionDir/README.md";
-        if (!file_put_contents($readmeFile, self::generateReadme($extensionName))) {
-            return [
-                'success' => false,
-                'message' => "Failed to create README.md file"
-            ];
-        }
-
-        // Create config.php
-        $configFile = "$extensionDir/config.php";
-        if (!file_put_contents($configFile, self::generateConfig())) {
-            return [
-                'success' => false,
-                'message' => "Failed to create config.php file"
-            ];
-        }
-
-        // Create CHANGELOG.md
-        $changelogFile = "$extensionDir/CHANGELOG.md";
-        $changelogContent = "# Changelog\n\n## 1.0.0 - " . date('Y-m-d') . "\n\n- Initial release\n";
-        if (!file_put_contents($changelogFile, $changelogContent)) {
-            return [
-                'success' => false,
-                'message' => "Failed to create CHANGELOG.md file"
-            ];
-        }
-
-        // Force reload the extensions to include the new one
-        self::$loadedExtensions = [];
-        self::loadExtensions();
 
         return [
             'success' => true,
-            'message' => "Extension scaffold created at: $extensionDir",
-            'files' => [
-                "$extensionName.php",
-                "README.md",
-                "config.php",
-                "CHANGELOG.md",
-                "screenshots/"
+            'message' => "Extension '{$extensionName}' created successfully using '{$templateType}' template",
+            'data' => [
+                'name' => $extensionName,
+                'path' => $extensionDir,
+                'template' => $templateType,
+                'files' => $filesCreated,
             ]
         ];
     }
@@ -3175,5 +2957,756 @@ return [
         }
 
         return null;
+    }
+
+    /**
+     * Resolve version constraints for an extension
+     *
+     * Checks if the extension's version constraints are compatible with
+     * the current framework version and its dependencies.
+     *
+     * @param string $extensionName Extension name to check
+     * @return array Results showing compatibility status and conflicts
+     */
+    public static function resolveVersionConstraints(string $extensionName): array
+    {
+        $extensionClass = self::findExtension($extensionName);
+        if (!$extensionClass) {
+            return ['compatible' => false, 'conflicts' => [
+                'type' => 'extension',
+                'name' => $extensionName,
+                'error' => 'Extension not found'
+            ]];
+        }
+
+        try {
+            $metadata = $extensionClass::getMetadata();
+        } catch (\Throwable $e) {
+            return ['compatible' => false, 'conflicts' => [
+                'type' => 'metadata',
+                'name' => $extensionName,
+                'error' => 'Failed to get metadata: ' . $e->getMessage()
+            ]];
+        }
+
+        $requires = $metadata['requires'] ?? [];
+
+        $results = ['compatible' => true, 'conflicts' => []];
+
+        // Check Glueful version compatibility
+        if (isset($requires['glueful'])) {
+            $gluefulVersion = config('app.version', '1.0.0');
+            $compatible = self::checkVersionConstraint($gluefulVersion, $requires['glueful']);
+            if (!$compatible) {
+                $results['compatible'] = false;
+                $results['conflicts'][] = [
+                    'type' => 'framework',
+                    'name' => 'glueful',
+                    'constraint' => $requires['glueful'],
+                    'actual' => $gluefulVersion
+                ];
+            }
+        }
+
+        // Check PHP version compatibility
+        if (isset($requires['php'])) {
+            $compatible = self::checkVersionConstraint(PHP_VERSION, $requires['php']);
+            if (!$compatible) {
+                $results['compatible'] = false;
+                $results['conflicts'][] = [
+                    'type' => 'language',
+                    'name' => 'php',
+                    'constraint' => $requires['php'],
+                    'actual' => PHP_VERSION
+                ];
+            }
+        }
+        // Check extension dependencies versions
+        if (isset($requires['extensions']) && is_array($requires['extensions'])) {
+            foreach ($requires['extensions'] as $dependency) {
+                // If dependency is specified as an array with version constraint
+                if (is_array($dependency) && isset($dependency['name']) && isset($dependency['version'])) {
+                    $depName = $dependency['name'];
+                    $depConstraint = $dependency['version'];
+                    $depClass = self::findExtension($depName);
+                    if (!$depClass) {
+                        $results['compatible'] = false;
+                        $results['conflicts'][] = [
+                            'type' => 'dependency',
+                            'name' => $depName,
+                            'constraint' => $depConstraint,
+                            'error' => 'Dependency not installed'
+                        ];
+                        continue;
+                    }
+
+                    try {
+                        $depMetadata = $depClass::getMetadata();
+                        $depVersion = $depMetadata['version'] ?? '0.0.0';
+
+                        $compatible = self::checkVersionConstraint($depVersion, $depConstraint);
+                        if (!$compatible) {
+                            $results['compatible'] = false;
+                            $results['conflicts'][] = [
+                                'type' => 'dependency',
+                                'name' => $depName,
+                                'constraint' => $depConstraint,
+                                'actual' => $depVersion
+                            ];
+                        }
+                    } catch (\Throwable $e) {
+                        $results['compatible'] = false;
+                        $results['conflicts'][] = [
+                            'type' => 'dependency',
+                            'name' => $depName,
+                            'error' => 'Failed to check version: ' . $e->getMessage()
+                        ];
+                    }
+                } elseif (is_string($dependency)) {
+                    if (!self::findExtension($dependency)) {
+                        $results['compatible'] = false;
+                        $results['conflicts'][] = [
+                            'type' => 'dependency',
+                            'name' => $dependency,
+                            'error' => 'Dependency not installed'
+                        ];
+                    }
+                }
+            }
+        }
+        return $results;
+    }
+
+    /**
+     * Check if a version satisfies a constraint
+     *
+     * Supports semantic versioning constraints:
+     * - Exact: 1.0.0
+     * - Greater than: >1.0.0
+     * - Greater than or equal: >=1.0.0
+     * - Less than: <1.0.0
+     * - Less than or equal: <=1.0.0
+     * - Range: >=1.0.0 <2.0.0
+     *
+     * @param string $version Version to check
+     * @param string $constraint Version constraint to check against
+     * @return bool Whether the version satisfies the constraint
+     */
+    private static function checkVersionConstraint(string $version, string $constraint): bool
+    {
+        // Exact version match
+        if (preg_match('/^[0-9.]+$/', $constraint)) {
+            return version_compare($version, $constraint, '==');
+        }
+
+        // Handle multiple constraints (space-separated)
+        if (strpos($constraint, ' ') !== false) {
+            $constraints = explode(' ', $constraint);
+            foreach ($constraints as $singleConstraint) {
+                if (!self::checkVersionConstraint($version, $singleConstraint)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Simple comparison operators
+        if (preg_match('/^([<>=]+)([0-9.]+)$/', $constraint, $matches)) {
+            $operator = $matches[1];
+            $constraintVersion = $matches[2];
+
+            switch ($operator) {
+                case '>':
+                    return version_compare($version, $constraintVersion, '>');
+                case '>=':
+                    return version_compare($version, $constraintVersion, '>=');
+                case '<':
+                    return version_compare($version, $constraintVersion, '<');
+                case '<=':
+                    return version_compare($version, $constraintVersion, '<=');
+                case '==':
+                    return version_compare($version, $constraintVersion, '==');
+                case '!=':
+                    return version_compare($version, $constraintVersion, '!=');
+                default:
+                    return false;
+            }
+        }
+
+        // Caret range (^1.2.3 = >=1.2.3 <2.0.0)
+        if (preg_match('/^\^([0-9.]+)$/', $constraint, $matches)) {
+            $minVersion = $matches[1];
+            $parts = explode('.', $minVersion);
+            $parts[0]++;
+            $maxVersion = implode('.', $parts) . '.0';
+
+            return version_compare($version, $minVersion, '>=') &&
+                   version_compare($version, $maxVersion, '<');
+        }
+
+        // Tilde range (~1.2.3 = >=1.2.3 <1.3.0)
+        if (preg_match('/^~([0-9.]+)$/', $constraint, $matches)) {
+            $minVersion = $matches[1];
+            $parts = explode('.', $minVersion);
+            if (count($parts) >= 2) {
+                $parts[1]++;
+                $parts[2] = '0';
+                $maxVersion = $parts[0] . '.' . $parts[1] . '.0';
+
+                return version_compare($version, $minVersion, '>=') &&
+                       version_compare($version, $maxVersion, '<');
+            }
+        }
+        // Default to exact match if we can't parse the constraint
+        return version_compare($version, $constraint, '==');
+    }
+
+    /**
+     * Get suggested resolutions for extension conflicts
+     *
+     * Analyzes conflict data from resolveVersionConstraints() and provides
+     * actionable recommendations to resolve each conflict type.
+     *
+     * @param array $conflicts Array of conflicts from resolveVersionConstraints()
+     * @return array List of suggested resolution actions for each conflict
+     */
+    public static function getSuggestedResolutions(array $conflicts): array
+    {
+        $suggestions = [];
+        foreach ($conflicts as $conflict) {
+            $type = $conflict['type'] ?? 'unknown';
+            switch ($type) {
+                case 'framework':
+                    // Framework version conflicts (Glueful version)
+                    $constraint = $conflict['constraint'] ?? 'unknown';
+                    $actual = $conflict['actual'] ?? 'unknown';
+                    $name = $conflict['name'] ?? 'glueful';
+                    // Parse constraint to provide appropriate upgrade/downgrade suggestion
+                    if (preg_match('/^([<>=^~]+)([0-9.]+)$/', $constraint, $matches)) {
+                        $operator = $matches[1];
+                        $version = $matches[2];
+                        if (in_array($operator, ['>', '>=', '^', '~'])) {
+                            $suggestions[] = [
+                                'action' => 'upgrade',
+                                'message' => "Upgrade {$name} to version {$version} or later (current: {$actual})",
+                                'target' => $name,
+                                'type' => 'framework',
+                                'current_version' => $actual,
+                                'required_version' => $version
+                            ];
+                        } elseif (in_array($operator, ['<', '<='])) {
+                            $suggestions[] = [
+                                'action' => 'downgrade',
+                                'message' => "Downgrade {$name} to version below {$version} (current: {$actual})",
+                                'target' => $name,
+                                'type' => 'framework',
+                                'current_version' => $actual,
+                                'required_version' => "< {$version}"
+                            ];
+                        } else {
+                            $suggestions[] = [
+                                'action' => 'change_version',
+                                'message' => "Change {$name} to version {$constraint} (current: {$actual})",
+                                'target' => $name,
+                                'type' => 'framework',
+                                'current_version' => $actual,
+                                'required_version' => $constraint
+                            ];
+                        }
+                    } else {
+                        $suggestions[] = [
+                            'action' => 'change_version',
+                            'message' => "Change {$name} to version that satisfies: {$constraint} (current: {$actual})",
+                            'target' => $name,
+                            'type' => 'framework',
+                            'current_version' => $actual,
+                            'required_version' => $constraint
+                        ];
+                    }
+                    break;
+                case 'language':
+                    // Language version conflicts (PHP version)
+                    $constraint = $conflict['constraint'] ?? 'unknown';
+                    $actual = $conflict['actual'] ?? 'unknown';
+                    $name = $conflict['name'] ?? 'php';
+                    $suggestions[] = [
+                        'action' => 'change_environment',
+                        'message' => "Update PHP to version that satisfies: {$constraint} (current: {$actual})",
+                        'target' => $name,
+                        'type' => 'language',
+                        'current_version' => $actual,
+                        'required_version' => $constraint
+                    ];
+                    break;
+                case 'dependency':
+                    // Extension dependency conflicts
+                    $name = $conflict['name'] ?? 'unknown extension';
+                    if (isset($conflict['error']) && $conflict['error'] === 'Dependency not installed') {
+                        $suggestions[] = [
+                            'action' => 'install',
+                            'message' => "Install missing extension: {$name}",
+                            'target' => $name,
+                            'type' => 'extension'
+                        ];
+                    } elseif (isset($conflict['constraint']) && isset($conflict['actual'])) {
+                        $constraint = $conflict['constraint'];
+                        $actual = $conflict['actual'];
+                        // Check if we need to upgrade or downgrade
+                        if (preg_match('/^([<>=^~]+)([0-9.]+)$/', $constraint, $matches)) {
+                            $operator = $matches[1];
+                            $version = $matches[2];
+                            if (in_array($operator, ['>', '>=', '^', '~'])) {
+                                $suggestions[] = [
+                                    'action' => 'upgrade_extension',
+                                    'message' => "Upgrade {$name} to version {$version} or later (current: {$actual})",
+                                    'target' => $name,
+                                    'type' => 'extension',
+                                    'current_version' => $actual,
+                                    'required_version' => $version
+                                ];
+                            } elseif (in_array($operator, ['<', '<='])) {
+                                $suggestions[] = [
+                                    'action' => 'downgrade_extension',
+                                    'message' => "Downgrade {$name} to version below {$version} (current: {$actual})",
+                                    'target' => $name,
+                                    'type' => 'extension',
+                                    'current_version' => $actual,
+                                    'required_version' => "< {$version}"
+                                ];
+                            } else {
+                                $suggestions[] = [
+                                    'action' => 'change_extension_version',
+                                    'message' => "Change {$name} to version {$constraint} (current: {$actual})",
+                                    'target' => $name,
+                                    'type' => 'extension',
+                                    'current_version' => $actual,
+                                    'required_version' => $constraint
+                                ];
+                            }
+                        } else {
+                            $suggestions[] = [
+                                'action' => 'change_extension_version',
+                                'message' => "Update {$name} to version that satisfies: {$constraint} " .
+                                             "(current: {$actual})",
+                                'target' => $name,
+                                'type' => 'extension',
+                                'current_version' => $actual,
+                                'required_version' => $constraint
+                            ];
+                        }
+                    } else {
+                        $suggestions[] = [
+                            'action' => 'fix_extension',
+                            'message' => "Fix issues with extension dependency: {$name}",
+                            'target' => $name,
+                            'type' => 'extension',
+                            'error' => $conflict['error'] ?? 'Unknown error'
+                        ];
+                    }
+                    break;
+                case 'extension':
+                    // Extension not found conflicts
+                    $name = $conflict['name'] ?? 'unknown';
+                    $error = $conflict['error'] ?? 'Unknown error';
+                    $suggestions[] = [
+                        'action' => 'fix_extension',
+                        'message' => "Extension issue: {$name} - {$error}",
+                        'target' => $name,
+                        'type' => 'extension',
+                        'error' => $error
+                    ];
+                    break;
+                case 'metadata':
+                    // Metadata extraction conflicts
+                    $name = $conflict['name'] ?? 'unknown';
+                    $error = $conflict['error'] ?? 'Unknown error';
+                    $suggestions[] = [
+                        'action' => 'fix_metadata',
+                        'message' => "Fix metadata in extension: {$name} - {$error}",
+                        'target' => $name,
+                        'type' => 'metadata',
+                        'error' => $error
+                    ];
+                    break;
+                default:
+                    // Unknown conflict type
+                    $suggestions[] = [
+                        'action' => 'investigate',
+                        'message' => "Investigate unknown conflict type: {$type}",
+                        'type' => 'unknown',
+                        'details' => $conflict
+                    ];
+                    break;
+            }
+        }
+        return $suggestions;
+    }
+    /**
+     * Copy template files from source to target directory
+     *
+     * @param string $sourceDir Source directory containing template files
+     * @param string $targetDir Target directory to copy files to
+     * @param array $replacements Array of replacements for template placeholders
+     */
+    private static function copyTemplateFiles(string $sourceDir, string $targetDir, array $replacements): void
+    {
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($sourceDir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $sourcePath = $item->getPathname();
+            $relativePath = substr($sourcePath, strlen($sourceDir) + 1);
+
+            // Handle special file renaming cases first
+            $targetRelativePath = $relativePath;
+
+            // Special case: Extension.php.tpl should become {EXTENSION_NAME}.php
+            if (basename($relativePath) === 'Extension.php.tpl') {
+                $extensionName = $replacements['EXTENSION_NAME'] ?? '';
+                if (!empty($extensionName)) {
+                    $targetRelativePath = dirname($relativePath) . '/' . $extensionName . '.php';
+                } else {
+                    $targetRelativePath = dirname($relativePath) . '/Extension.php';
+                }
+            } elseif (str_ends_with($relativePath, '.tpl')) {
+                $targetRelativePath = substr($relativePath, 0, -4); // Remove .tpl extension
+            }
+
+            // Replace template placeholders in path
+            $targetRelativePath =
+            preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
+                // Get the placeholder name (either from first or second capturing group)
+                $key = !empty($matches[1]) ? $matches[1] : $matches[2];
+
+                // Look up replacement value (case-insensitive)
+                foreach ($replacements as $placeholder => $value) {
+                    if (strtolower($placeholder) === strtolower($key)) {
+                        return is_array($value) ? json_encode($value) : (string)$value;
+                    }
+                }
+
+                return $matches[0];
+            }, $targetRelativePath);
+
+            $targetPath = $targetDir . '/' . $targetRelativePath;
+
+            if ($item->isDir()) {
+                if (!is_dir($targetPath)) {
+                    mkdir($targetPath, 0755, true);
+                }
+            } else {
+                // Read file contents using a specific encoding to avoid issues
+                $content = @file_get_contents($sourcePath);
+
+                if ($content === false) {
+                    self::debug("Failed to read template file: $sourcePath");
+                    continue;
+                }
+
+                // Detect BOM and remove if present
+                if (substr($content, 0, 3) === "\xEF\xBB\xBF") {
+                    $content = substr($content, 3);
+                }
+
+                // Process content with regex pattern replacement
+                $content = preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
+                    // Get the placeholder name (either from first or second capturing group)
+                    $key = !empty($matches[1]) ? $matches[1] : $matches[2];
+
+                    // Look up replacement value (case-insensitive)
+                    foreach ($replacements as $placeholder => $value) {
+                        if (strtolower($placeholder) === strtolower($key)) {
+                            return is_array($value) ? json_encode($value) : (string)$value;
+                        }
+                    }
+
+                    // Return original if no replacement found
+                    return $matches[0];
+                }, $content);
+
+                // Ensure proper line endings (LF)
+                $content = str_replace("\r\n", "\n", $content);
+
+                // Write content to file
+                if (file_put_contents($targetPath, $content) === false) {
+                    self::debug("Failed to write file: $targetPath");
+                }
+            }
+        }
+    }
+
+    /**
+     * Get the file system path for an extension
+     *
+     * @param string $extensionName Extension name
+     * @return string|null Path to extension directory or null if not found
+    */
+    public static function getExtensionPath(string $extensionName): ?string
+    {
+        $extensionClass = self::findExtension($extensionName);
+        if (!$extensionClass) {
+            return null;
+        }
+
+        $reflection = new \ReflectionClass($extensionClass);
+        return dirname($reflection->getFileName());
+    }
+
+    /**
+     * Validate coding standards for an extension
+     *
+     * Checks extension code for adherence to coding standards:
+     * - PHP syntax validation
+     * - PSR-12 compliance checks (if PHP_CodeSniffer is available)
+     * - Common coding style issues
+     * - Naming conventions
+     *
+     * @param string $extensionName Name of the extension to validate
+     * @return array Result with success status and detected issues
+     */
+    public static function validateCodingStandards(string $extensionName): array
+    {
+        $extensionDir = self::getExtensionPath($extensionName);
+        $issues = [];
+
+        if (!$extensionDir || !is_dir($extensionDir)) {
+            $issues[] = [
+                'type' => 'error',
+                'message' => "Extension directory not found: $extensionDir"
+            ];
+            return [
+                'success' => false,
+                'issues' => $issues
+            ];
+        }
+
+        // Check for PHP syntax errors
+        exec("find $extensionDir -name '*.php' -exec php -l {} \\; 2>&1", $syntaxOutput, $returnCode);
+
+        if ($returnCode !== 0) {
+            foreach ($syntaxOutput as $line) {
+                if (strpos($line, 'Parse error') !== false || strpos($line, 'Fatal error') !== false) {
+                    $issues[] = [
+                        'type' => 'syntax',
+                        'message' => $line
+                    ];
+                }
+            }
+        }
+
+        // Check for files with mixed PHP and HTML without proper separation
+        exec("grep -l '<?php.*?>' --include='*.php' -r $extensionDir", $mixedOutput);
+        if (!empty($mixedOutput)) {
+            $issues[] = [
+                'type' => 'style',
+                'message' => 'Files with mixed PHP and HTML should separate logic from presentation',
+                'files' => $mixedOutput
+            ];
+        }
+
+        // Check for inconsistent indentation
+        exec("grep -l -E '^\t* {1,3}[^ ]' --include='*.php' -r $extensionDir", $indentOutput);
+        if (!empty($indentOutput)) {
+            $issues[] = [
+                'type' => 'style',
+                'message' => 'Inconsistent indentation detected (mixing spaces and tabs)',
+                'files' => $indentOutput
+            ];
+        }
+
+        // Check for too long lines (PSR-12 recommends 120 chars)
+        exec("grep -l -E '^.{121,}$' --include='*.php' -r $extensionDir", $longLines);
+        if (!empty($longLines)) {
+            $issues[] = [
+                'type' => 'style',
+                'message' => 'Lines exceeding recommended length of 120 characters',
+                'files' => $longLines
+            ];
+        }
+
+        // Check for camelCase method names (PSR-12)
+        exec("grep -l -E 'function [A-Z]|function [a-z]+_[a-z]' --include='*.php' -r $extensionDir", $methodNameOutput);
+        if (!empty($methodNameOutput)) {
+            $issues[] = [
+                'type' => 'style',
+                'message' => 'Method names should use camelCase as per PSR-12',
+                'files' => $methodNameOutput
+            ];
+        }
+
+        // Check against PSR-12 standards using PHP_CodeSniffer (if available)
+        if (class_exists('\PHP_CodeSniffer\Runner')) {
+            self::debug("PHP_CodeSniffer detected, running PSR-12 checks");
+
+            // Create temporary file for output
+            $tempFile = tempnam(sys_get_temp_dir(), 'phpcs_');
+
+            // Run PHPCS with PSR-12 standard
+            exec("phpcs --standard=PSR12 --report=json $extensionDir > $tempFile 2>/dev/null", $output, $returnCode);
+
+            if ($returnCode !== 0 && file_exists($tempFile)) {
+                $phpcsOutput = file_get_contents($tempFile);
+                $phpcsResults = json_decode($phpcsOutput, true);
+
+                if ($phpcsResults && isset($phpcsResults['files'])) {
+                    foreach ($phpcsResults['files'] as $file => $data) {
+                        foreach ($data['messages'] as $msg) {
+                            $issues[] = [
+                                'type' => 'phpcs',
+                                'file' => $file,
+                                'line' => $msg['line'],
+                                'message' => $msg['message']
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // Clean up
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        } else {
+            self::debug("PHP_CodeSniffer not available, skipping detailed PSR-12 checks");
+        }
+
+        return [
+            'success' => empty($issues),
+            'issues' => $issues
+        ];
+    }
+
+    /**
+     * Assess the performance impact of an extension
+     *
+     * Measures the initialization time and memory usage of the extension.
+     *
+     * @param string $extensionName Extension name to check
+     * @return array Performance metrics and rating
+     */
+
+    public static function assessPerformanceImpact(string $extensionName): array
+    {
+        $extensionClass = self::findExtension($extensionName);
+        $metrics = [];
+
+        // Measure initialization time
+        $startTime = microtime(true);
+        $extensionClass::initialize();
+        $initTime = microtime(true) - $startTime;
+        $metrics['initialization_time'] = $initTime * 1000; // ms
+
+        // Measure memory usage
+        $memoryBefore = memory_get_usage();
+        $extensionClass::initialize();
+        $memoryAfter = memory_get_usage();
+        $metrics['memory_impact'] = $memoryAfter - $memoryBefore;
+
+        // Additional impact assessments
+
+        return [
+            'metrics' => $metrics,
+            'rating' => self::calculatePerformanceRating($metrics)
+        ];
+    }
+
+    /**
+     * Calculate performance rating based on extension metrics
+     *
+     * @param array $metrics Performance metrics
+     * @return string Performance rating (Excellent, Good, Average, Poor)
+     */
+    private static function calculatePerformanceRating(array $metrics): string
+    {
+        $initTime = $metrics['initialization_time'] ?? 0;
+        $memoryImpact = $metrics['memory_impact'] ?? 0;
+        // Calculate rating based on initialization time and memory impact
+        if ($initTime < 5 && $memoryImpact < 10240) { // Less than 5ms and 10KB
+            return 'Excellent';
+        } elseif ($initTime < 20 && $memoryImpact < 102400) { // Less than 20ms and 100KB
+            return 'Good';
+        } elseif ($initTime < 100 && $memoryImpact < 1048576) { // Less than 100ms and 1MB
+            return 'Average';
+        } else {
+            return 'Poor';
+        }
+    }
+
+    /**
+     * Validate extension security
+     *
+     * Scans extension code for potential security issues:
+     * - Dangerous functions like eval()
+     * - Untrusted inputs in critical operations
+     * - Insecure file operations
+     * - SQL injection vulnerabilities
+     *
+     * @param string $extensionName Name of the extension to validate
+     * @return array Result with success status and detected issues
+     */
+    public static function validateExtensionSecurity(string $extensionName): array
+    {
+        $extensionDir = self::getExtensionPath($extensionName);
+        $issues = [];
+
+        // Skip if extension directory doesn't exist
+        if (!is_dir($extensionDir)) {
+            return [
+                'success' => false,
+                'issues' => [['type' => 'error', 'message' => "Extension directory not found: $extensionDir"]]
+            ];
+        }
+
+        // Check for obvious security issues
+        $patterns = [
+            'eval\s*\(' => 'Avoid using eval() as it can lead to code injection',
+            'file_get_contents\s*\(\s*\$_' => 'Untrusted user input used in file operations',
+            'include\s*\(\s*\$_' => 'Dynamic includes with user input are vulnerable to inclusion attacks',
+            'exec\s*\(\s*\$_' => 'Command injection vulnerability with unfiltered user input',
+            'system\s*\(\s*\$_' => 'Command injection vulnerability with unfiltered user input',
+            'shell_exec\s*\(\s*\$_' => 'Command injection vulnerability with unfiltered user input',
+            'unserialize\s*\(\s*\$_' => 'Unserializing user input can lead to code execution',
+            'mysql_query\s*\(\s*["\']\s*SELECT.+\$_' => 'Possible SQL injection with unfiltered user input',
+            'mysqli.*->query\s*\(\s*["\']\s*SELECT.+\$_' => 'Possible SQL injection with unfiltered user input',
+        ];
+
+        foreach ($patterns as $pattern => $message) {
+            exec("grep -r '$pattern' $extensionDir --include='*.php'", $matches);
+            if (!empty($matches)) {
+                $issues[] = [
+                    'type' => 'security',
+                    'message' => $message,
+                    'matches' => $matches
+                ];
+            }
+        }
+
+        // Check for user input directly reflected in HTML/JS context
+        exec("grep -r 'echo\s*\$_' $extensionDir --include='*.php'", $reflectionMatches);
+        if (!empty($reflectionMatches)) {
+            $issues[] = [
+                'type' => 'security',
+                'message' => 'Possible XSS vulnerability with direct output of user input',
+                'matches' => $reflectionMatches
+            ];
+        }
+
+        // Check for hardcoded credentials
+        exec("grep -r '(password|secret|key|token)\\s*=\\s*[\"\\'\"][^\"\\'\\\$]+[\"\\'\"]' " .
+             "$extensionDir --include='*.php'", $credentialMatches);
+        if (!empty($credentialMatches)) {
+            $issues[] = [
+                'type' => 'security',
+                'message' => 'Potential hardcoded credentials found',
+                'matches' => $credentialMatches
+            ];
+        }
+
+        return [
+            'success' => empty($issues),
+            'issues' => $issues
+        ];
     }
 }
