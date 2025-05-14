@@ -334,4 +334,25 @@ class RoleRepository
 
         return $role ? $role[0]['name'] : null;
     }
+
+    /**
+     * Get role UUID by name (static method for cross-repository use)
+     *
+     * @param string $name Role name
+     * @return string|null Role UUID or null if not found
+     */
+    public function getRoleUuidByName(string $name): ?string
+    {
+
+        $query = $this->db->select('roles', ['uuid'])
+            ->where(['name' => $name])
+            ->limit(1)
+            ->get();
+
+        if ($query && !empty($query[0])) {
+            return $query[0]['uuid'];
+        }
+
+        return null;
+    }
 }

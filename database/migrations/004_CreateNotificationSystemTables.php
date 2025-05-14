@@ -6,44 +6,44 @@ use Glueful\Database\Schema\SchemaManager;
 
 /**
  * Notification System Tables Migration
- * 
+ *
  * Creates tables required for the hybrid notification system:
  * - Core notification storage and tracking
  * - User notification preferences
  * - Notification templates for different channels
- * 
+ *
  * Database Design:
  * - Follows extension-based architecture
  * - Implements proper indexing for performance
  * - Uses unique constraints where appropriate
  * - Supports read/unread status tracking
  * - Handles scheduled notifications
- * 
+ *
  * Features:
  * - Channel-agnostic core system
  * - Flexible preferences per user and notification type
  * - Template-based notification formatting
  * - Support for multiple notification channels
- * 
+ *
  * @package Glueful\Database\Migrations
  */
 class CreateNotificationSystemTables implements MigrationInterface
 {
     /**
      * Execute the migration
-     * 
+     *
      * Creates all required notification system tables with:
      * - Primary keys and indexes
      * - Notification type tracking
      * - User preference storage
      * - Template management
      * - Notification status tracking
-     * 
+     *
      * Tables created:
      * - notifications: Core notification storage
      * - notification_preferences: User channel preferences
      * - notification_templates: Templates for different channels
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function up(SchemaManager $schema): void
@@ -89,10 +89,10 @@ class CreateNotificationSystemTables implements MigrationInterface
             ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notification_preferences'],
             ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_preferences'],
-            ['type' => 'UNIQUE', 'column' => ['notifiable_type', 'notifiable_id', 'notification_type'], 
+            ['type' => 'UNIQUE', 'column' => ['notifiable_type', 'notifiable_id', 'notification_type'],
              'name' => 'unique_notification_pref', 'table' => 'notification_preferences']
         ]);
-        
+
         // Create Notification Templates Table
         $schema->createTable('notification_templates', [
             'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
@@ -108,19 +108,19 @@ class CreateNotificationSystemTables implements MigrationInterface
             ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notification_templates'],
             ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_templates'],
             ['type' => 'INDEX', 'column' => 'channel', 'table' => 'notification_templates'],
-            ['type' => 'UNIQUE', 'column' => ['notification_type', 'channel', 'name'], 
+            ['type' => 'UNIQUE', 'column' => ['notification_type', 'channel', 'name'],
              'name' => 'unique_notification_template', 'table' => 'notification_templates']
         ]);
     }
 
     /**
      * Reverse the migration
-     * 
+     *
      * Removes all created notification system tables in correct order:
      * - Templates first
      * - Preferences next
      * - Notifications last
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function down(SchemaManager $schema): void
@@ -132,9 +132,9 @@ class CreateNotificationSystemTables implements MigrationInterface
 
     /**
      * Get migration description
-     * 
+     *
      * Provides human-readable description of the migration
-     * 
+     *
      * @return string Migration description
      */
     public function getDescription(): string
