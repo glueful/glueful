@@ -22,7 +22,7 @@ class OAuthController
      * @var OAuthServer OAuth server instance
      */
     private OAuthServer $oauthServer;
-    
+
     /**
      * @var QueryBuilder Database query builder
      */
@@ -34,11 +34,11 @@ class OAuthController
     public function __construct()
     {
         $this->oauthServer = new OAuthServer();
-        
+
         // Initialize query builder
         $connection = new Connection();
         $this->queryBuilder = new QueryBuilder(
-            $connection->getPDO(), 
+            $connection->getPDO(),
             $connection->getDriver()
         );
     }
@@ -251,7 +251,7 @@ class OAuthController
             $redirectUri = $params['redirect_uri'] ?? '/';
             $redirectUri .= strpos($redirectUri, '?') === false ? '?' : '&';
             $redirectUri .= 'error=server_error&error_description=' . urlencode('Failed to create authorization code');
-            
+
             // Set up a redirect response manually
             return Response::ok([
                 'redirect' => $redirectUri
@@ -410,7 +410,7 @@ class OAuthController
             // Using QueryBuilder instead of direct PDO
             $clients = $this->queryBuilder
                 ->select('oauth_clients', [
-                    'id', 'name', 'description', 'redirect_uris', 
+                    'id', 'name', 'description', 'redirect_uris',
                     'allowed_grant_types', 'created_at', 'updated_at'
                 ])
                 ->orderBy(['name' => 'ASC'])
@@ -446,7 +446,7 @@ class OAuthController
             // Validate required parameters
             if (empty($params['name'])) {
                 return Response::error(
-                    'Client name is required', 
+                    'Client name is required',
                     Response::HTTP_BAD_REQUEST,
                     ['error' => 'invalid_request', 'error_description' => 'Client name is required']
                 )->send();
@@ -469,7 +469,7 @@ class OAuthController
             }
 
             $now = time();
-            
+
             // Using QueryBuilder's insert method
             $this->queryBuilder->insert('oauth_clients', [
                 'id' => $clientId,
@@ -526,7 +526,7 @@ class OAuthController
             // Using QueryBuilder to select client
             $client = $this->queryBuilder
                 ->select('oauth_clients', [
-                    'id', 'name', 'description', 'redirect_uris', 
+                    'id', 'name', 'description', 'redirect_uris',
                     'allowed_grant_types', 'created_at', 'updated_at'
                 ])
                 ->where(['id' => $clientId])
@@ -632,7 +632,7 @@ class OAuthController
             // Get updated client
             $client = $this->queryBuilder
                 ->select('oauth_clients', [
-                    'id', 'name', 'description', 'redirect_uris', 
+                    'id', 'name', 'description', 'redirect_uris',
                     'allowed_grant_types', 'created_at', 'updated_at'
                 ])
                 ->where(['id' => $clientId])
@@ -693,7 +693,7 @@ class OAuthController
                 $queryBuilder->delete('oauth_access_tokens', ['client_id' => $clientId], false);
                 $queryBuilder->delete('oauth_refresh_tokens', ['client_id' => $clientId], false);
                 $queryBuilder->delete('oauth_authorization_codes', ['client_id' => $clientId], false);
-                
+
                 // Delete client
                 $queryBuilder->delete('oauth_clients', ['id' => $clientId], false);
             });
