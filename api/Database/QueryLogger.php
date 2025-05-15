@@ -4,8 +4,6 @@ namespace Glueful\Database;
 
 use Glueful\Logging\LogManager;
 use Monolog\Level;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Database Query Logger
@@ -16,7 +14,6 @@ use Glueful\Logging\AuditEvent;
  * - Error reporting
  * - Query statistics
  * - Integration with LogManager for centralized logging
- * - Integration with AuditLogger for security event tracking
  */
 class QueryLogger
 {
@@ -47,32 +44,7 @@ class QueryLogger
         'total_time' => 0
     ];
 
-    /** @var AuditLogger|null Audit logger instance */
-    protected ?AuditLogger $auditLogger = null;
 
-    /** @var array Sensitive table operations that should be audited */
-    protected array $sensitiveTablePatterns = [
-        'users',
-        'permissions',
-        'roles',
-        'sessions',
-        'accounts',
-        'api_keys',
-        'tokens',
-        'audit',
-        'personal',
-        'config',
-        'settings'
-    ];
-
-    /** @var array Query operation types that should always be audited */
-    protected array $auditedOperations = [
-        'delete',
-        'truncate',
-        'drop',
-        'alter',
-        'update'
-    ];
 
     /** @var bool Enable audit logging for sensitive operations */
     protected bool $enableAuditLogging = true;
@@ -95,12 +67,6 @@ class QueryLogger
         // Default configuration based on application settings
         $this->debugMode = config('app.debug');
         $this->enableTiming = $this->debugMode;
-
-        // Initialize audit logger with the singleton instance
-        $this->auditLogger = AuditLogger::getInstance();
-
-        // Enable audit logging based on configuration
-        $this->enableAuditLogging = config('app.audit.enable_database_logging', true);
     }
 
     /**
@@ -276,11 +242,6 @@ class QueryLogger
             } else {
                 $this->logger->debug("Query executed: $sql", $context);
             }
-        }
-
-        // Audit logging for sensitive operations
-        if ($this->enableAuditLogging && $this->shouldAuditQuery($sql, $queryType)) {
-            $this->logAuditEvent($sql, $params, $queryType, $executionTime, $error);
         }
 
         return $executionTime;
@@ -467,105 +428,5 @@ class QueryLogger
         }
 
         return $this->stats[$type] ?? 0;
-    }
-
-    /**
-     * Set the audit logger instance
-     *
-     * @param AuditLogger $auditLogger
-     * @return self
-     */
-    public function setAuditLogger(AuditLogger $auditLogger): self
-    {
-        $this->auditLogger = $auditLogger;
-        return $this;
-    }
-
-    /**
-     * Enable or disable audit logging
-     *
-     * @param bool $enable
-     * @return self
-     */
-    public function enableAuditLogging(bool $enable): self
-    {
-        $this->enableAuditLogging = $enable;
-        return $this;
-    }
-
-    /**
-     * Check if a query should be audited
-     *
-     * @param string $sql
-     * @param string $queryType
-     * @return bool
-     */
-    protected function shouldAuditQuery(string $sql, string $queryType): bool
-    {
-        // Check if the query type is in the audited operations list
-        if (in_array($queryType, $this->auditedOperations, true)) {
-            return true;
-        }
-
-        // Check if the query affects a sensitive table
-        foreach ($this->sensitiveTablePatterns as $pattern) {
-            if (stripos($sql, $pattern) !== false) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Log an audit event for a query
-     *
-     * @param string $sql
-     * @param array $params
-     * @param string $queryType
-     * @param float|null $executionTime
-     * @param \Throwable|null $error
-     * @return void
-     */
-    protected function logAuditEvent(
-        string $sql,
-        array $params,
-        string $queryType,
-        ?float $executionTime,
-        ?\Throwable $error
-    ): void {
-        if ($this->auditLogger === null) {
-            // Try to get AuditLogger instance if not already set
-            $this->auditLogger = AuditLogger::getInstance();
-
-            // If still null, we can't log
-            if ($this->auditLogger == null) {
-                return;
-            }
-        }
-
-        // Create context for the audit event
-        $details = [
-            'sql' => $sql,
-            'params' => $this->sanitizeQueryParams($params),
-            'query_type' => $queryType,
-            'execution_time' => $executionTime
-        ];
-
-        if ($error) {
-            $details['error'] = $error->getMessage();
-            $details['error_code'] = $error->getCode();
-        }
-
-        // Use the dataEvent method which is designed for data access operations
-        $actionType = $error ? $queryType . '_error' : $queryType;
-        $this->auditLogger->dataEvent(
-            $actionType, // action name (e.g. 'update', 'delete_error')
-            null,        // userId (null will use current user if available)
-            null,        // dataId (not available in this context)
-            'database',  // dataType
-            $details,    // additional details
-            $error ? AuditEvent::SEVERITY_WARNING : AuditEvent::SEVERITY_INFO
-        );
     }
 }

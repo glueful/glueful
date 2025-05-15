@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Glueful\Cache\CacheEngine;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Session Cache Management System
@@ -94,23 +92,6 @@ class SessionCacheManager
 
             // Have TokenManager map the token to this session
             $mapped = TokenManager::mapTokenToSession($token, $sessionId);
-
-            // Audit log the session creation
-            try {
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->authEvent(
-                    'session_created',
-                    $userData['uuid'] ?? null,
-                    [
-                        'session_id' => $sessionId,
-                        'provider' => $provider ?? 'jwt',
-                        'ttl' => $sessionTtl,
-                        'token_fragment' => substr($token, 0, 8) . '...' // Only log a fragment for security
-                    ]
-                );
-            } catch (\Exception $e) {
-                // Silently continue if audit logging fails - don't disrupt the main flow
-            }
 
             return $mapped;
         }
@@ -207,32 +188,6 @@ class SessionCacheManager
             $session,
             $ttl
         );
-
-        // Audit log the session access (only once per minute to avoid excessive logging)
-        try {
-            if (($session['last_audit_log'] ?? 0) < (time() - 60)) {  // Only log once per minute per session
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->authEvent(
-                    'session_accessed',
-                    $session['user']['uuid'] ?? null,
-                    [
-                        'session_id' => $sessionId,
-                        'provider' => $session['provider'] ?? 'jwt',
-                        'token_fragment' => substr($token, 0, 8) . '...'
-                    ]
-                );
-
-                // Update the last audit log timestamp
-                $session['last_audit_log'] = time();
-                CacheEngine::set(
-                    self::SESSION_PREFIX . $sessionId,
-                    $session,
-                    $ttl
-                );
-            }
-        } catch (\Exception $e) {
-            // Silently continue if audit logging fails
-        }
 
         return $session;
     }
@@ -341,22 +296,6 @@ class SessionCacheManager
         // Have TokenManager revoke the token
         TokenManager::revokeSession($token);
 
-        // Audit log the session destruction
-        try {
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->authEvent(
-                'session_destroyed',
-                $userId,
-                [
-                    'session_id' => $sessionId,
-                    'provider' => $session['provider'] ?? 'jwt',
-                    'token_fragment' => substr($token, 0, 8) . '...'
-                ]
-            );
-        } catch (\Exception $e) {
-            // Silently continue if audit logging fails
-        }
-
         return $sessionRemoved && $mappingRemoved;
     }
 
@@ -408,23 +347,6 @@ class SessionCacheManager
         if ($success) {
             // Map new token to existing session
             $mapped = TokenManager::mapTokenToSession($newToken, $sessionId);
-
-            // Audit log the session update
-            try {
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->authEvent(
-                    'session_updated',
-                    $newData['user']['uuid'] ?? null,
-                    [
-                        'session_id' => $sessionId,
-                        'provider' => $sessionProvider,
-                        'old_token_fragment' => substr($oldToken, 0, 8) . '...',
-                        'new_token_fragment' => substr($newToken, 0, 8) . '...'
-                    ]
-                );
-            } catch (\Exception $e) {
-                // Silently continue if audit logging fails
-            }
 
             return $mapped;
         }
@@ -488,22 +410,6 @@ class SessionCacheManager
 
         // Clear the provider index
         CacheEngine::delete($indexKey);
-
-        // Audit log the bulk session invalidation
-        try {
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->authEvent(
-                'provider_sessions_invalidated',
-                null, // No specific user ID as this is a provider-wide operation
-                [
-                    'provider' => $provider,
-                    'session_count' => count($sessionIds)
-                ],
-                AuditEvent::SEVERITY_WARNING // Higher severity as this is a bulk operation
-            );
-        } catch (\Exception $e) {
-            // Silently continue if audit logging fails
-        }
 
         return $success;
     }
