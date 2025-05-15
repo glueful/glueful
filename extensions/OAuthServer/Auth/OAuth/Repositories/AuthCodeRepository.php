@@ -37,7 +37,7 @@ class AuthCodeRepository implements AuthCodeRepositoryInterface
      *
      * @return AuthCodeEntityInterface
      */
-    public function getNewAuthCode()
+    public function getNewAuthCode(): AuthCodeEntityInterface
     {
         return new AuthCodeEntity();
     }
@@ -47,7 +47,7 @@ class AuthCodeRepository implements AuthCodeRepositoryInterface
      *
      * @param AuthCodeEntityInterface $authCodeEntity
      */
-    public function persistNewAuthCode(AuthCodeEntityInterface $authCodeEntity)
+    public function persistNewAuthCode(AuthCodeEntityInterface $authCodeEntity): void
     {
         // Extract scope strings from scope entities
         $scopes = [];
@@ -70,7 +70,7 @@ class AuthCodeRepository implements AuthCodeRepositoryInterface
      *
      * @param string $codeId
      */
-    public function revokeAuthCode($codeId)
+    public function revokeAuthCode($codeId): void
     {
         $this->queryBuilder->update(
             'oauth_auth_codes',
@@ -85,7 +85,7 @@ class AuthCodeRepository implements AuthCodeRepositoryInterface
      * @param string $codeId
      * @return bool
      */
-    public function isAuthCodeRevoked($codeId)
+    public function isAuthCodeRevoked($codeId): bool
     {
         $code = $this->queryBuilder->select('oauth_auth_codes', ['revoked'])
             ->where(['id' => $codeId])
@@ -97,5 +97,44 @@ class AuthCodeRepository implements AuthCodeRepositoryInterface
         }
 
         return (bool) $code[0]['revoked'];
+    }
+     /**
+     * Create a new authorization code
+     *
+     * @param string $code The authorization code
+     * @param string $clientId The client ID
+     * @param string $userId The user ID
+     * @param string $redirectUri The redirect URI
+     * @param array $scopes The requested scopes
+     * @param int $expiresAt Expiration timestamp
+     * @param string|null $codeChallenge PKCE code challenge
+     * @param string $codeChallengeMethod PKCE code challenge method
+     * @return bool Success status
+     */
+    public function createAuthorizationCode(
+        string $code,
+        string $clientId,
+        string $userId,
+        string $redirectUri,
+        array $scopes = [],
+        int $expiresAt = 0,
+        ?string $codeChallenge = null,
+        string $codeChallengeMethod = 'plain'
+    ): bool {
+        // Implementation to store the auth code in the database
+        $connection = new \Glueful\Database\Connection();
+        $queryBuilder = new \Glueful\Database\QueryBuilder($connection->getPDO(), $connection->getDriver());
+
+        return $queryBuilder->insert('oauth_auth_codes', [
+            'id' => $code,
+            'user_id' => $userId,
+            'client_id' => $clientId,
+            'scopes' => json_encode($scopes),
+            'revoked' => false,
+            'expires_at' => date('Y-m-d H:i:s', $expiresAt),
+            'redirect_uri' => $redirectUri,
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => $codeChallengeMethod
+        ]) > 0;
     }
 }

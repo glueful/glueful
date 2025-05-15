@@ -528,4 +528,95 @@ class OAuthServer
 
         return $response;
     }
+    /**
+     * Get the client repository instance
+     *
+     * @return ClientRepository The client repository instance
+     */
+    public function getClientRepository(): Repositories\ClientRepository
+    {
+        return $this->repositories['client'];
+    }
+    /**
+     * Get the access token repository instance
+     *
+     * @return AccessTokenRepository The access token repository instance
+     */
+    public function getAccessTokenRepository(): Repositories\AccessTokenRepository
+    {
+        return $this->repositories['accessToken'];
+    }
+    /**
+     * Get the refresh token repository instance
+     *
+     * @return RefreshTokenRepository The refresh token repository instance
+     */
+    public function getRefreshTokenRepository(): Repositories\RefreshTokenRepository
+    {
+        return $this->repositories['refreshToken'];
+    }
+
+    /**
+     * Get the authorization code repository instance
+     *
+     * @return AuthCodeRepository The authorization code repository instance
+     */
+    public function getAuthCodeRepository(): Repositories\AuthCodeRepository
+    {
+        return $this->repositories['authCode'];
+    }
+    /**
+     * Get the user repository instance
+     *
+     * @return UserRepository The user repository instance
+     */
+    public function getUserRepository(): Repositories\UserRepository
+    {
+        return $this->repositories['user'];
+    }
+    /**
+     * Get the scope repository instance
+     *
+     * @return ScopeRepository The scope repository instance
+     */
+    public function getScopeRepository(): Repositories\ScopeRepository
+    {
+        return $this->repositories['scope'];
+    }
+    /**
+     * Creates an authorization code for the OAuth flow
+     *
+     * @param string $clientId The client ID
+     * @param string $userId The user ID
+     * @param string $redirectUri The redirect URI
+     * @param array $scopes The requested scopes
+     * @param string|null $codeChallenge PKCE code challenge
+     * @param string $codeChallengeMethod PKCE code challenge method
+     * @return string The generated authorization code
+     */
+    public function createAuthorizationCode(
+        string $clientId,
+        string $userId,
+        string $redirectUri,
+        array $scopes = [],
+        ?string $codeChallenge = null,
+        string $codeChallengeMethod = 'plain'
+    ): string {
+        // Generate a random code
+        $code = bin2hex(random_bytes(32));
+
+        // Store the authorization code
+        $this->getAuthCodeRepository()->createAuthorizationCode(
+            $code,
+            $clientId,
+            $userId,
+            $redirectUri,
+            $scopes,
+            time() + 600, // 10 minute expiration
+            $codeChallenge,
+            $codeChallengeMethod
+        );
+
+        return $code;
+    }
 }

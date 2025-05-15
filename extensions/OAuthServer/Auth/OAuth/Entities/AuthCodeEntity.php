@@ -41,6 +41,11 @@ class AuthCodeEntity implements AuthCodeEntityInterface
     private array $scopes = [];
 
     /**
+     * @var string|null Redirect URI
+     */
+    private ?string $redirectUri = null;
+
+    /**
      * {@inheritdoc}
      */
     public function getIdentifier(): string
@@ -83,7 +88,7 @@ class AuthCodeEntity implements AuthCodeEntityInterface
     /**
      * {@inheritdoc}
      */
-    public function getUserIdentifier()
+    public function getUserIdentifier(): string
     {
         return $this->userIdentifier;
     }
@@ -118,5 +123,21 @@ class AuthCodeEntity implements AuthCodeEntityInterface
     public function getScopes(): array
     {
         return $this->scopes;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getRedirectUri(): ?string
+    {
+        return $this->redirectUri;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function setRedirectUri(string $uri): void
+    {
+        $this->redirectUri = $uri;
     }
 }

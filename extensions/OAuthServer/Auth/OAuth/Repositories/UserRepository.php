@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\OAuthServer\Auth\OAuth\Repositories;
 
 use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Entities\UserEntityInterface;
 use League\OAuth2\Server\Repositories\UserRepositoryInterface;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
@@ -43,69 +44,46 @@ class UserRepository implements UserRepositoryInterface
     }
 
     /**
-     * Get a user entity for the given credentials
+     * Get a user entity by user credentials.
      *
-     * This method is used during the OAuth password grant flow.
+     * @param string                $username
+     * @param string                $password
+     * @param string                $grantType    The grant type used
+     * @param ClientEntityInterface $clientEntity
      *
-     * @param string $username Username or email
-     * @param string $password Password
-     * @param string $grantType The grant type used
-     * @param ClientEntityInterface $clientEntity The client entity
-     * @return UserEntity|null
+     * @return UserEntityInterface|null
      */
     public function getUserEntityByUserCredentials(
         $username,
         $password,
         $grantType,
         ClientEntityInterface $clientEntity
-    ) {
-        // First check if this is an email or username
-        $isEmail = filter_var($username, FILTER_VALIDATE_EMAIL);
+    ): ?UserEntityInterface {
+        // Find user by username or email
+        $user = $this->queryBuilder->select('users', ['id', 'email', 'password', 'name'])
+            ->where([
+                'OR' => [
+                    'username' => $username,
+                    'email' => $username
+                ],
+                'active' => true
+            ])
+            ->first();
 
-        // Use the appropriate method from the main user repository
-        $user = null;
-
-        try {
-            if ($isEmail) {
-                // Try to find user by email
-                $user = $this->appUserRepository->findByEmail($username);
-            } else {
-                // Try to find user by username
-                $user = $this->appUserRepository->findByUsername($username);
-            }
-        } catch (\Exception $e) {
-            return null; // User not found or other error
+        if ($user === null) {
+            return null; // User not found
         }
 
-        if (!$user) {
-            return null;
-        }
-
-        // Check if user is active
-        if (isset($user['status']) && $user['status'] !== 'active') {
-            return null;
-        }
-
-        // Verify the password directly since we don't have a verifyPassword method
-        if (!isset($user['password'])) {
-            return null;
-        }
-
-        // Use password_verify for hashed passwords
+        // Verify password
         if (!password_verify($password, $user['password'])) {
-            return null; // Password doesn't match
+            return null; // Invalid password
         }
 
-        // Create OAuth user entity
+        // Create and return user entity
         $userEntity = new UserEntity();
-        $userEntity->setIdentifier($user['id'] ?? $user['uuid'] ?? null);
-        $userEntity->setUsername($user['username'] ?? '');
-        $userEntity->setEmail($user['email'] ?? '');
-
-        // Add additional properties that might be useful
-        if (isset($user['role'])) {
-            $userEntity->setRole($user['role']);
-        }
+        $userEntity->setIdentifier($user['id']);
+        $userEntity->setEmail($user['email']);
+        $userEntity->setUsername($user['name']);
 
         return $userEntity;
     }
@@ -114,9 +92,9 @@ class UserRepository implements UserRepositoryInterface
      * Find a user by their identifier
      *
      * @param string|int $identifier User ID
-     * @return UserEntity|null
+     * @return UserEntityInterface|null
      */
-    public function getUserEntityByIdentifier($identifier)
+    public function getUserEntityByIdentifier($identifier): ?UserEntityInterface
     {
         // Try to find user by ID - leveraging the main UserRepository
         try {

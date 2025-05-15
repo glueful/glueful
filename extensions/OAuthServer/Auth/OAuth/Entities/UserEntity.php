@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\OAuthServer\Auth\OAuth\Entities;
 
+use League\OAuth2\Server\Entities\UserEntityInterface;
+
 /**
  * User Entity
  *
  * Represents a user for OAuth purposes
  */
-class UserEntity
+class UserEntity implements UserEntityInterface
 {
     /**
      * @var string|int User identifier
@@ -31,15 +33,6 @@ class UserEntity
      */
     private string $role = '';
 
-    /**
-     * Get the user identifier
-     *
-     * @return string|int
-     */
-    public function getIdentifier()
-    {
-        return $this->identifier;
-    }
 
     /**
      * Set the user identifier
@@ -50,6 +43,16 @@ class UserEntity
     public function setIdentifier($identifier): void
     {
         $this->identifier = $identifier;
+    }
+
+   /**
+     * Get the user identifier
+     *
+     * @return string User identifier
+     */
+    public function getIdentifier(): string
+    {
+        return (string) $this->identifier;
     }
 
     /**

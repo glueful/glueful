@@ -37,23 +37,24 @@ class RefreshTokenRepository implements RefreshTokenRepositoryInterface
      *
      * @return RefreshTokenEntityInterface
      */
-    public function getNewRefreshToken()
+    public function getNewRefreshToken(): ?RefreshTokenEntityInterface
     {
         return new RefreshTokenEntity();
     }
+
 
     /**
      * Persist a new refresh token to storage
      *
      * @param RefreshTokenEntityInterface $refreshTokenEntity
      */
-    public function persistNewRefreshToken(RefreshTokenEntityInterface $refreshTokenEntity)
+    public function persistNewRefreshToken(RefreshTokenEntityInterface $refreshTokenEntity): void
     {
         $this->queryBuilder->insert('oauth_refresh_tokens', [
             'id' => $refreshTokenEntity->getIdentifier(),
             'access_token_id' => $refreshTokenEntity->getAccessToken()->getIdentifier(),
             'revoked' => false,
-            'expires_at' => $refreshTokenEntity->getExpiryDateTime()->format('Y-m-d H:i:s')
+            'expires_at' => date('Y-m-d H:i:s', $refreshTokenEntity->getExpiryDateTime()->getTimestamp()),
         ]);
     }
 
@@ -62,7 +63,7 @@ class RefreshTokenRepository implements RefreshTokenRepositoryInterface
      *
      * @param string $tokenId
      */
-    public function revokeRefreshToken($tokenId)
+    public function revokeRefreshToken($tokenId): void
     {
         $this->queryBuilder->update(
             'oauth_refresh_tokens',
@@ -77,17 +78,16 @@ class RefreshTokenRepository implements RefreshTokenRepositoryInterface
      * @param string $tokenId
      * @return bool
      */
-    public function isRefreshTokenRevoked($tokenId)
+    public function isRefreshTokenRevoked($tokenId): bool
     {
         $token = $this->queryBuilder->select('oauth_refresh_tokens', ['revoked'])
             ->where(['id' => $tokenId])
-            ->limit(1)
-            ->get();
+            ->first();
 
-        if (empty($token)) {
-            return true; // Token not found, consider it revoked
+        if ($token === null) {
+            return true; // Token doesn't exist, so consider it revoked
         }
 
-        return (bool) $token[0]['revoked'];
+        return (bool) $token['revoked'];
     }
 }
