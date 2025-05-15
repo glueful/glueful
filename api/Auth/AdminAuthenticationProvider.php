@@ -7,6 +7,8 @@ namespace Glueful\Auth;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Repository\UserRepository;
 use Glueful\Repository\RoleRepository;
+use Glueful\Logging\AuditLogger;
+use Glueful\Logging\AuditEvent;
 
 /**
  * Admin Authentication Provider
@@ -40,8 +42,19 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     public function authenticate(Request $request): ?array
     {
         $credentials = $this->extractCredentials($request);
+        $auditLogger = AuditLogger::getInstance();
 
         if (!$credentials) {
+            // Log failed authentication due to invalid request format
+            $auditLogger->authEvent(
+                'admin_auth_failed',
+                null,
+                [
+                    'reason' => $this->error ?? 'Invalid credentials format',
+                    'ip_address' => $request->getClientIp()
+                ],
+                AuditEvent::SEVERITY_WARNING
+            );
             return null;
         }
 
@@ -53,6 +66,17 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
             );
 
             if (!$user) {
+                // Log failed authentication with invalid credentials
+                $auditLogger->authEvent(
+                    'admin_auth_failed',
+                    null,
+                    [
+                        'username' => $credentials['username'],
+                        'reason' => $this->error ?? 'Invalid credentials',
+                        'ip_address' => $request->getClientIp()
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
                 error_log("Admin auth failed: Invalid credentials for user {$credentials['username']}");
                 return null;
             }
@@ -60,6 +84,17 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
             // Verify user has superuser role
             if (!$this->roleRepository->userHasRole($user['uuid'], 'superuser')) {
                 $this->error = "Insufficient privileges";
+                // Log failed authentication due to insufficient privileges
+                $auditLogger->authEvent(
+                    'admin_auth_failed',
+                    $user['uuid'],
+                    [
+                        'username' => $credentials['username'],
+                        'reason' => 'Insufficient privileges - missing superuser role',
+                        'ip_address' => $request->getClientIp()
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
                 error_log("Admin auth failed: User {$credentials['username']} lacks superuser role");
                 return null;
             }
@@ -70,6 +105,17 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
 
             if (empty($sessionData)) {
                 $this->error = "Failed to create admin session";
+                // Log failed authentication due to session creation issue
+                $auditLogger->authEvent(
+                    'admin_auth_failed',
+                    $user['uuid'],
+                    [
+                        'username' => $credentials['username'],
+                        'reason' => 'Failed to create admin session',
+                        'ip_address' => $request->getClientIp()
+                    ],
+                    AuditEvent::SEVERITY_ERROR
+                );
                 error_log("Admin auth failed: Could not create session for user {$credentials['username']}");
                 return null;
             }
@@ -77,10 +123,31 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
             // Add admin flag to user data
             $sessionData['user']['is_admin'] = true;
 
+            // Log successful admin authentication
+            $auditLogger->authEvent(
+                'admin_auth_success',
+                $user['uuid'],
+                [
+                    'username' => $credentials['username'],
+                    'ip_address' => $request->getClientIp(),
+                    'session_id' => $sessionData['session_id'] ?? null
+                ]
+            );
+
             // Return user data in the same format as regular login
             return $sessionData;
         } catch (\Exception $e) {
             $this->error = "Admin authentication error: " . $e->getMessage();
+            // Log admin authentication exception
+            $auditLogger->authEvent(
+                'admin_auth_error',
+                $credentials['username'] ?? null,
+                [
+                    'error' => $e->getMessage(),
+                    'ip_address' => $request->getClientIp()
+                ],
+                AuditEvent::SEVERITY_ERROR
+            );
             error_log($this->error);
             return null;
         }
@@ -204,22 +271,67 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function validateToken(string $token): bool
     {
+        $auditLogger = AuditLogger::getInstance();
+        $userId = null;
+
         try {
             // For admin tokens, we use the TokenManager validateAccessToken method
             $isValid = TokenManager::validateAccessToken($token, 'admin');
 
             if (!$isValid) {
                 $this->error = "Invalid admin token";
+
+                // Log invalid admin token validation
+                $auditLogger->authEvent(
+                    'admin_token_invalid',
+                    null,
+                    [
+                        'reason' => 'Token validation failed'
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
+
                 return false;
             }
 
             // Verify this is an admin token by checking the payload
             $payload = JWTService::decode($token);
+            $userId = $payload['uuid'] ?? null;
 
-            // Ensure it's an admin session
-            return !empty($payload) && !empty($payload['is_admin']);
+            // Log the token validation result
+            if (!empty($payload) && !empty($payload['is_admin'])) {
+                $auditLogger->authEvent(
+                    'admin_token_valid',
+                    $userId,
+                    [
+                        'session_id' => $payload['session_id'] ?? null
+                    ]
+                );
+                return true;
+            } else {
+                $auditLogger->authEvent(
+                    'admin_token_invalid',
+                    $userId,
+                    [
+                        'reason' => 'Token missing admin flag'
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
+                return false;
+            }
         } catch (\Exception $e) {
             $this->error = "Token validation error: " . $e->getMessage();
+
+            // Log token validation error
+            $auditLogger->authEvent(
+                'admin_token_error',
+                $userId,
+                [
+                    'error' => $e->getMessage()
+                ],
+                AuditEvent::SEVERITY_ERROR
+            );
+
             return false;
         }
     }
@@ -236,8 +348,24 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
             // Attempt to decode token without verification
             $payload = JWTService::decode($token);
 
+            $canHandle = !empty($payload) && !empty($payload['is_admin']);
+
+            // Only log this if debugging is required - too noisy for regular operation
+            if (defined('AUDIT_LOG_TOKEN_CHECKS') && constant('AUDIT_LOG_TOKEN_CHECKS')) {
+                $auditLogger = AuditLogger::getInstance();
+                $auditLogger->authEvent(
+                    'admin_token_check',
+                    $payload['uuid'] ?? null,
+                    [
+                        'can_handle' => $canHandle ? 'yes' : 'no',
+                        'session_id' => $payload['session_id'] ?? null
+                    ],
+                    AuditEvent::SEVERITY_INFO
+                );
+            }
+
             // Check if it has admin claim
-            return !empty($payload) && !empty($payload['is_admin']);
+            return $canHandle;
         } catch (\Exception $e) {
             return false;
         }
@@ -262,11 +390,24 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
         $userData['is_admin'] = true;
 
         // Use TokenManager's generateTokenPair method instead
-        return TokenManager::generateTokenPair(
+        $tokenPair = TokenManager::generateTokenPair(
             $userData,
             $accessTokenLifetime,
             $refreshTokenLifetime
         );
+
+        // Log token generation
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->authEvent(
+            'admin_tokens_generated',
+            $userData['uuid'] ?? null,
+            [
+                'username' => $userData['username'] ?? null,
+                'session_id' => $tokenPair['session_id'] ?? null
+            ]
+        );
+
+        return $tokenPair;
     }
 
     /**
@@ -280,10 +421,24 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function refreshTokens(string $refreshToken, array $sessionData): ?array
     {
+        $auditLogger = AuditLogger::getInstance();
+        $userId = $sessionData['uuid'] ?? null;
+
         try {
             // We need to validate that this is an admin refresh token
             if (empty($sessionData) || empty($sessionData['uuid'])) {
                 $this->error = "Invalid refresh token data";
+
+                // Log invalid refresh token data
+                $auditLogger->authEvent(
+                    'admin_token_refresh_failed',
+                    null,
+                    [
+                        'reason' => 'Invalid refresh token data'
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
+
                 return null;
             }
 
@@ -292,20 +447,68 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
 
             if (!$user) {
                 $this->error = "User not found";
+
+                // Log user not found during token refresh
+                $auditLogger->authEvent(
+                    'admin_token_refresh_failed',
+                    $userId,
+                    [
+                        'reason' => 'User not found'
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
+
                 return null;
             }
 
             // Verify user still has superuser role
             if (!$this->roleRepository->userHasRole($user['uuid'], 'superuser')) {
                 $this->error = "Insufficient privileges";
+
+                // Log insufficient privileges for token refresh
+                $auditLogger->authEvent(
+                    'admin_token_refresh_failed',
+                    $userId,
+                    [
+                        'username' => $user['username'] ?? null,
+                        'reason' => 'Insufficient privileges - missing superuser role'
+                    ],
+                    AuditEvent::SEVERITY_WARNING
+                );
+
                 return null;
             }
 
             // Use TokenManager to refresh the tokens
             $user['is_admin'] = true;
-            return TokenManager::refreshTokens($refreshToken, 'admin');
+            $newTokens = TokenManager::refreshTokens($refreshToken, 'admin');
+
+            if ($newTokens) {
+                // Log successful token refresh
+                $auditLogger->authEvent(
+                    'admin_token_refreshed',
+                    $userId,
+                    [
+                        'username' => $user['username'] ?? null,
+                        'session_id' => $newTokens['session_id'] ?? null
+                    ]
+                );
+            }
+
+            return $newTokens;
         } catch (\Exception $e) {
             $this->error = "Token refresh error: " . $e->getMessage();
+
+            // Log token refresh error
+            $auditLogger->authEvent(
+                'admin_token_refresh_error',
+                $userId,
+                [
+                    'error' => $e->getMessage()
+                ],
+                AuditEvent::SEVERITY_ERROR
+            );
+
             return null;
         }
     }
