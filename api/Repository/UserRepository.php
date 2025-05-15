@@ -8,6 +8,8 @@ use Glueful\Database\Connection;
 use Glueful\DTOs\{UsernameDTO, EmailDTO};
 use Glueful\Validation\Validator;
 use Glueful\Database\QueryBuilder;
+use Glueful\Logging\AuditLogger;
+use Glueful\Logging\AuditEvent;
 
 /**
  * User Repository
@@ -236,7 +238,22 @@ class UserRepository
             ['uuid' => $user[0]['uuid']]
         );
 
-        return $affected > 0;
+        $success = $affected > 0;
+
+        // Audit log the password change
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_DATA,
+            'user_password_change',
+            $success ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_ERROR,
+            [
+                'user_uuid' => $user[0]['uuid'],
+                'identifier_type' => $identifierType,
+                'success' => $success
+            ]
+        );
+
+        return $success;
     }
 
     /**
@@ -278,6 +295,27 @@ class UserRepository
         // Insert user record
         $success = $this->queryBuilder->insert('users', $userData);
 
+        // Audit log the user creation
+        $auditLogger = AuditLogger::getInstance();
+
+        // Create a safe copy of user data without sensitive information
+        $safeUserData = $userData;
+        unset($safeUserData['password']); // Remove password from audit log
+
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_DATA,
+            'user_create',
+            $success ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_ERROR,
+            [
+                'user_uuid' => $userData['uuid'] ?? null,
+                'username' => $userData['username'] ?? null,
+                'email' => $userData['email'] ?? null,
+                'status' => $userData['status'],
+                'provider' => $userData['provider'] ?? null,
+                'success' => $success
+            ]
+        );
+
         return $success ? $userData['uuid'] : null;
     }
 
@@ -316,7 +354,22 @@ class UserRepository
             ['uuid' => $uuid]
         );
 
-        return $affected > 0;
+        $success = $affected > 0;
+
+        // Audit log the user update
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_DATA,
+            'user_update',
+            $success ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_ERROR,
+            [
+                'user_uuid' => $uuid,
+                'updated_fields' => array_keys($userData),
+                'success' => $success
+            ]
+        );
+
+        return $success;
     }
 
     /**
@@ -343,18 +396,37 @@ class UserRepository
         // Check if profile exists
         $existingProfile = $this->getProfile($uuid);
 
+        $success = false;
+
         if ($existingProfile) {
             // Update existing profile
-            return $this->queryBuilder->upsert(
+            $success = $this->queryBuilder->upsert(
                 'profiles',
                 [$profileData],
                 array_keys($profileData)
             ) > 0;
+            $action = 'profile_update';
         } else {
             // Create new profile
             $profileData['created_at'] = date('Y-m-d H:i:s');
-            return $this->queryBuilder->insert('profiles', $profileData) > 0;
+            $success = $this->queryBuilder->insert('profiles', $profileData) > 0;
+            $action = 'profile_create';
         }
+
+        // Audit log the profile update/creation
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_DATA,
+            $action,
+            $success ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_ERROR,
+            [
+                'user_uuid' => $uuid,
+                'updated_fields' => array_keys($profileData),
+                'success' => $success
+            ]
+        );
+
+        return $success;
     }
 
     /**
@@ -458,11 +530,55 @@ class UserRepository
             $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
             $this->syncUserRoles($newUser['uuid'], $defaultRoles);
 
+            // Audit log the SAML user creation
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_create_saml',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'user_uuid' => $newUser['uuid'],
+                    'email' => $userData['email'],
+                    'provider' => 'saml',
+                    'provider_id' => $userData['saml_idp'] ?? null,
+                    'success' => true
+                ]
+            );
+
+            // Audit log the SAML user creation
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_create_saml',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'user_uuid' => $newUser['uuid'],
+                    'email' => $userData['email'],
+                    'provider' => 'saml',
+                    'provider_id' => $userData['saml_idp'] ?? null,
+                    'success' => true
+                ]
+            );
+
             // Return the newly created user
             return $this->findByUUId($newUser['uuid']);
         } catch (\Throwable $e) {
             // Log the error
             error_log('Error in findOrCreateFromSaml: ' . $e->getMessage());
+
+            // Audit log the failure
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_create_saml',
+                AuditEvent::SEVERITY_ERROR,
+                [
+                    'email' => $userData['email'] ?? 'unknown',
+                    'error' => $e->getMessage(),
+                    'success' => false
+                ]
+            );
+
             return null;
         }
     }
@@ -482,11 +598,23 @@ class UserRepository
 
             // No roles to add
             if (empty($roles)) {
+                // Log role removal
+                $auditLogger = AuditLogger::getInstance();
+                $auditLogger->audit(
+                    AuditEvent::CATEGORY_DATA,
+                    'user_roles_clear',
+                    AuditEvent::SEVERITY_INFO,
+                    [
+                        'user_uuid' => $userUuid,
+                        'success' => true
+                    ]
+                );
                 return true;
             }
 
             // Prepare role data for insertion
             $rolesToInsert = [];
+            $roleNames = [];
 
             foreach ($roles as $role) {
                 if (!isset($role['name'])) {
@@ -498,6 +626,8 @@ class UserRepository
                 if (!$roleUuid) {
                     continue;
                 }
+
+                $roleNames[] = $role['name'];
 
                 // Create a record for insertion
                 $rolesToInsert[] = [
@@ -513,10 +643,39 @@ class UserRepository
 
             // Use batch insert for better performance
             $result = $this->queryBuilder->insert('user_roles_lookup', $rolesToInsert);
+            $success = $result > 0;
 
-            return $result > 0;
+            // Log role assignment
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_roles_sync',
+                $success ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_ERROR,
+                [
+                    'user_uuid' => $userUuid,
+                    'role_count' => count($rolesToInsert),
+                    'roles' => $roleNames,
+                    'success' => $success
+                ]
+            );
+
+            return $success;
         } catch (\Throwable $e) {
             error_log('Error in syncUserRoles: ' . $e->getMessage());
+
+            // Log error in audit log
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_roles_sync',
+                AuditEvent::SEVERITY_ERROR,
+                [
+                    'user_uuid' => $userUuid,
+                    'error_message' => $e->getMessage(),
+                    'success' => false
+                ]
+            );
+
             return false;
         }
     }
@@ -614,6 +773,21 @@ class UserRepository
             // Assign default roles for new LDAP users
             $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
             $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+
+            // Audit log the LDAP user creation
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'user_create_ldap',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'user_uuid' => $newUser['uuid'],
+                    'email' => $userData['email'],
+                    'provider' => 'ldap',
+                    'provider_id' => $userData['ldap_server'] ?? null,
+                    'success' => true
+                ]
+            );
 
             // Return the newly created user with roles
             $user = $this->findByUUID($newUser['uuid']);

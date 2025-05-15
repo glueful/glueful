@@ -7,6 +7,8 @@ use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
 use Glueful\Database\RawExpression;
+use Glueful\Logging\AuditLogger;
+use Glueful\Logging\AuditEvent;
 
 /**
  * Database Query Builder
@@ -224,8 +226,132 @@ class QueryBuilder
         // This line already prepares AND executes the statement
         $stmt = $this->prepareAndExecute($sql, array_values($data));
 
-        // We just need to return the row count, without executing again
-        return $stmt->rowCount();
+        // Get affected rows
+        $rowCount = $stmt->rowCount();
+
+        // Audit log for sensitive tables
+        $this->auditSensitiveOperation($table, 'insert', $data, $rowCount);
+
+        return $rowCount;
+    }
+
+    /**
+     * Determine if a table is considered sensitive for audit logging
+     *
+     * Sensitive tables contain data that should be audited for security,
+     * compliance, or privacy reasons. Operations on these tables are
+     * logged to the audit system.
+     *
+     * @param string $table Table name
+     * @return bool True if table is sensitive
+     */
+    protected function isSensitiveTable(string $table): bool
+    {
+        // Strip table prefix if any
+        $prefix = config('database.connections.mysql.prefix', '');
+        if (!empty($prefix) && strpos($table, $prefix) === 0) {
+            $table = substr($table, strlen($prefix));
+        }
+
+        // List of sensitive tables that require audit logging
+        $sensitiveTables = [
+            'users',
+            'permissions',
+            'roles',
+            'user_roles_lookup',
+            'profiles',
+            'api_keys',
+            'tokens',
+            'auth_sessions',
+            'audit_logs',
+            'oauth_access_tokens',
+            'oauth_auth_codes',
+            'oauth_clients',
+            'oauth_personal_access_clients',
+            'oauth_refresh_tokens',
+            'password_resets',
+        ];
+
+        return in_array($table, $sensitiveTables);
+    }
+
+    /**
+     * Log sensitive table operations to audit system
+     *
+     * @param string $table Table name
+     * @param string $action Operation performed (insert, update, delete)
+     * @param array $data Data involved in the operation
+     * @param int|bool $result Result of the operation
+     * @return void
+     */
+    protected function auditSensitiveOperation(string $table, string $action, array $data, $result = null): void
+    {
+        try {
+            // Only log operations on sensitive tables
+            if (!$this->isSensitiveTable($table)) {
+                return;
+            }
+
+            // Create audit logger instance
+            $auditLogger = AuditLogger::getInstance();
+
+            // Prepare context data
+            $contextData = [
+                'table' => $table,
+                'success' => ($result !== false && $result !== 0),
+            ];
+
+            // Add action-specific context
+            switch ($action) {
+                case 'insert':
+                    // For inserts, include the field names but not values
+                    $contextData['fields'] = array_keys($data);
+                    if (isset($data['uuid'])) {
+                        $contextData['record_id'] = $data['uuid'];
+                    } elseif (isset($data['id'])) {
+                        $contextData['record_id'] = $data['id'];
+                    }
+                    $contextData['record_count'] = is_array(reset($data)) ? count($data) : 1;
+                    break;
+
+                case 'update':
+                    // For updates, log which fields were updated
+                    $contextData['fields'] = array_keys($data);
+                    $contextData['affected_rows'] = $result;
+                    break;
+
+                case 'delete':
+                    // For deletes, log which records were affected
+                    $contextData['affected_rows'] = $result;
+                    // Try to identify the record by common identifiers
+                    if (isset($data['uuid'])) {
+                        $contextData['record_id'] = $data['uuid'];
+                    } elseif (isset($data['id'])) {
+                        $contextData['record_id'] = $data['id'];
+                    }
+                    break;
+
+                case 'upsert':
+                    // For upserts, log the operation details
+                    $contextData['fields'] = array_keys(is_array(reset($data)) ? reset($data) : $data);
+                    $contextData['record_count'] = is_array(reset($data)) ? count($data) : 1;
+                    break;
+            }
+
+            // Log the event
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                "{$table}_{$action}",
+                ($contextData['success'] ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING),
+                $contextData
+            );
+        } catch (\Throwable $e) {
+            // Never let audit logging break normal operation
+            // Just log internally that audit logging failed
+            if (function_exists('error_log')) {
+                error_log("Audit logging failed for {$table}_{$action}: " . $e->getMessage());
+            }
+        }
     }
 
     /**
@@ -257,6 +383,8 @@ class QueryBuilder
                 throw $e;
             }
         }
+        // Audit log for sensitive tables
+        $this->auditSensitiveOperation($table, 'upsert', $data, $insertCount);
 
         return $insertCount;
     }
@@ -661,7 +789,12 @@ class QueryBuilder
 
         $stmt = $this->executeQuery($sql, array_values($conditions));
 
-        return $stmt->rowCount() > 0;
+        $result = $stmt->rowCount() > 0;
+
+        // Audit log for sensitive tables
+        $this->auditSensitiveOperation($table, 'delete', $conditions, $result);
+
+        return $result;
     }
 
     /**
@@ -1162,7 +1295,13 @@ class QueryBuilder
         // Execute the update query using the centralized method
         $stmt = $this->prepareAndExecute($sql, $values);
 
-        return $stmt->rowCount();
+        // Get affected rows
+        $rowCount = $stmt->rowCount();
+
+        // Audit log for sensitive tables
+        $this->auditSensitiveOperation($table, 'update', $data, $rowCount);
+
+        return $rowCount;
     }
 
     /**
@@ -1209,4 +1348,6 @@ class QueryBuilder
             throw $e;
         }
     }
+
+    // The isSensitiveTable method is already defined earlier in this class
 }
