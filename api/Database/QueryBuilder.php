@@ -7,8 +7,6 @@ use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
 use Glueful\Database\RawExpression;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Database Query Builder
@@ -229,9 +227,6 @@ class QueryBuilder
         // Get affected rows
         $rowCount = $stmt->rowCount();
 
-        // Audit log for sensitive tables
-        $this->auditSensitiveOperation($table, 'insert', $data, $rowCount);
-
         return $rowCount;
     }
 
@@ -274,86 +269,6 @@ class QueryBuilder
 
         return in_array($table, $sensitiveTables);
     }
-
-    /**
-     * Log sensitive table operations to audit system
-     *
-     * @param string $table Table name
-     * @param string $action Operation performed (insert, update, delete)
-     * @param array $data Data involved in the operation
-     * @param int|bool $result Result of the operation
-     * @return void
-     */
-    protected function auditSensitiveOperation(string $table, string $action, array $data, $result = null): void
-    {
-        try {
-            // Only log operations on sensitive tables
-            if (!$this->isSensitiveTable($table)) {
-                return;
-            }
-
-            // Create audit logger instance
-            $auditLogger = AuditLogger::getInstance();
-
-            // Prepare context data
-            $contextData = [
-                'table' => $table,
-                'success' => ($result !== false && $result !== 0),
-            ];
-
-            // Add action-specific context
-            switch ($action) {
-                case 'insert':
-                    // For inserts, include the field names but not values
-                    $contextData['fields'] = array_keys($data);
-                    if (isset($data['uuid'])) {
-                        $contextData['record_id'] = $data['uuid'];
-                    } elseif (isset($data['id'])) {
-                        $contextData['record_id'] = $data['id'];
-                    }
-                    $contextData['record_count'] = is_array(reset($data)) ? count($data) : 1;
-                    break;
-
-                case 'update':
-                    // For updates, log which fields were updated
-                    $contextData['fields'] = array_keys($data);
-                    $contextData['affected_rows'] = $result;
-                    break;
-
-                case 'delete':
-                    // For deletes, log which records were affected
-                    $contextData['affected_rows'] = $result;
-                    // Try to identify the record by common identifiers
-                    if (isset($data['uuid'])) {
-                        $contextData['record_id'] = $data['uuid'];
-                    } elseif (isset($data['id'])) {
-                        $contextData['record_id'] = $data['id'];
-                    }
-                    break;
-
-                case 'upsert':
-                    // For upserts, log the operation details
-                    $contextData['fields'] = array_keys(is_array(reset($data)) ? reset($data) : $data);
-                    $contextData['record_count'] = is_array(reset($data)) ? count($data) : 1;
-                    break;
-            }
-
-            // Log the event
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_DATA,
-                "{$table}_{$action}",
-                ($contextData['success'] ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING),
-                $contextData
-            );
-        } catch (\Throwable $e) {
-            // Never let audit logging break normal operation
-            // Just log internally that audit logging failed
-            if (function_exists('error_log')) {
-                error_log("Audit logging failed for {$table}_{$action}: " . $e->getMessage());
-            }
-        }
-    }
-
     /**
      * Insert or update record
      *
@@ -383,8 +298,6 @@ class QueryBuilder
                 throw $e;
             }
         }
-        // Audit log for sensitive tables
-        $this->auditSensitiveOperation($table, 'upsert', $data, $insertCount);
 
         return $insertCount;
     }
@@ -790,9 +703,6 @@ class QueryBuilder
         $stmt = $this->executeQuery($sql, array_values($conditions));
 
         $result = $stmt->rowCount() > 0;
-
-        // Audit log for sensitive tables
-        $this->auditSensitiveOperation($table, 'delete', $conditions, $result);
 
         return $result;
     }
@@ -1297,9 +1207,6 @@ class QueryBuilder
 
         // Get affected rows
         $rowCount = $stmt->rowCount();
-
-        // Audit log for sensitive tables
-        $this->auditSensitiveOperation($table, 'update', $data, $rowCount);
 
         return $rowCount;
     }

@@ -7,7 +7,7 @@ use Symfony\Component\HttpFoundation\Request;
 $authController = new AuthController();
 
 // Auth routes
-Router::group('/auth',function() use ($authController) {
+Router::group('/auth', function () use ($authController) {
     /**
      * @route POST /auth/login
      * @summary User Login

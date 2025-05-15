@@ -10,8 +10,6 @@ use Glueful\Helpers\Utils;
 use Glueful\Security\EmailVerification;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\AuthBootstrap;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 class AuthController
@@ -39,24 +37,10 @@ class AuthController
     public function login()
     {
         try {
-            // Get the audit logger
-            $auditLogger = AuditLogger::getInstance();
-
             // Get credentials using the getPostData method from our Helper Request class
             $credentials = Request::getPostData();
 
-            // Get IP address and user agent for audit log
             $request = SymfonyRequest::createFromGlobals();
-            $ipAddress = $request->getClientIp();
-            $userAgent = $request->headers->get('User-Agent');
-
-            // Prepare audit context (without password)
-            $auditContext = [
-                'username' => $credentials['username'] ?? $credentials['email'] ?? 'unknown',
-                'provider' => $credentials['provider'] ?? 'default',
-                'ip_address' => $ipAddress,
-                'user_agent' => $userAgent
-            ];
 
             // Check if a specific provider was requested
             $providerName = null;
@@ -68,43 +52,11 @@ class AuthController
             $result = $this->authService->authenticate($credentials, $providerName);
 
             if (!$result) {
-                // Log failed login attempt
-                $auditLogger->authEvent(
-                    'login_failed',
-                    null, // No user ID since login failed
-                    $auditContext,
-                    AuditEvent::SEVERITY_WARNING
-                );
-
                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Log successful login
-            $userId = $result['user']['uuid'] ?? null;
-            $auditLogger->authEvent(
-                'login_success',
-                $userId,
-                $auditContext,
-                AuditEvent::SEVERITY_INFO
-            );
-
             return Response::ok($result, 'Login successful')->send();
         } catch (\Exception $e) {
-            // Log login error
-            $auditLogger = AuditLogger::getInstance();
-            $request = SymfonyRequest::createFromGlobals();
-
-            $auditLogger->authEvent(
-                'login_error',
-                null,
-                [
-                    'error' => $e->getMessage(),
-                    'ip_address' => $request->getClientIp(),
-                    'user_agent' => $request->headers->get('User-Agent')
-                ],
-                AuditEvent::SEVERITY_ERROR
-            );
-
             return Response::error(
                 'Login failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
@@ -122,25 +74,11 @@ class AuthController
     public function logout()
     {
         try {
-            // Get the audit logger
-            $auditLogger = AuditLogger::getInstance();
-
             // Convert globals to Symfony Request for compatibility with our new system
             $request = SymfonyRequest::createFromGlobals();
             $token = AuthenticationService::extractTokenFromRequest($request);
 
             if (!$token) {
-                // Log logout attempt with no token
-                $auditLogger->authEvent(
-                    'logout_failed_no_token',
-                    null,
-                    [
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent')
-                    ],
-                    AuditEvent::SEVERITY_WARNING
-                );
-
                 return Response::error('No token provided', Response::HTTP_BAD_REQUEST)->send();
             }
 
@@ -151,50 +89,11 @@ class AuthController
             $success = $this->authService->terminateSession($token);
 
             if ($success) {
-                // Log successful logout
-                $auditLogger->authEvent(
-                    'logout_success',
-                    $userId,
-                    [
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent'),
-                        'token_fragment' => substr($token, 0, 8) . '...' // Log only a fragment for identification
-                    ],
-                    AuditEvent::SEVERITY_INFO
-                );
-
                 return Response::ok(null, 'Logged out successfully')->send();
             }
 
-            // Log failed logout
-            $auditLogger->authEvent(
-                'logout_failed',
-                $userId,
-                [
-                    'ip_address' => $request->getClientIp(),
-                    'user_agent' => $request->headers->get('User-Agent'),
-                    'token_fragment' => substr($token, 0, 8) . '...' // Log only a fragment for identification
-                ],
-                AuditEvent::SEVERITY_WARNING
-            );
-
             return Response::error('Logout failed', Response::HTTP_BAD_REQUEST)->send();
         } catch (\Exception $e) {
-            // Log logout error
-            $auditLogger = AuditLogger::getInstance();
-            $request = SymfonyRequest::createFromGlobals();
-
-            $auditLogger->authEvent(
-                'logout_error',
-                null,
-                [
-                    'error' => $e->getMessage(),
-                    'ip_address' => $request->getClientIp(),
-                    'user_agent' => $request->headers->get('User-Agent')
-                ],
-                AuditEvent::SEVERITY_ERROR
-            );
-
             return Response::error(
                 'Logout failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR

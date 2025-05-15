@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 
 /**
  * JWT Authentication Provider
@@ -122,52 +120,12 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function validateToken(string $token): bool
     {
-        // Get the audit logger
-        $auditLogger = AuditLogger::getInstance();
-
-        // Extract user ID from token if possible for audit context
-        $userId = null;
-        try {
-            // Get payload without full validation to extract user ID
-            $payload = JWTService::getPayloadWithoutValidation($token);
-            $userId = $payload['sub'] ?? null;
-        } catch (\Throwable $e) {
-            // Ignore errors here - we'll do full validation below
-        }
-
         try {
             // Use JWTService to verify the token
             $isValid = JWTService::verify($token);
-
-            // Log the validation result with appropriate details
-            $auditLogger->authEvent(
-                $isValid ? 'token_validation_success' : 'token_validation_failure',
-                $userId,
-                [
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'token_fragment' => substr($token, 0, 8) . '...' // Log only a small fragment for identification
-                ],
-                $isValid ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING
-            );
-
             return $isValid;
         } catch (\Throwable $e) {
             $this->lastError = 'Token validation error: ' . $e->getMessage();
-
-            // Log the validation error
-            $auditLogger->authEvent(
-                'token_validation_error',
-                $userId,
-                [
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'error' => $e->getMessage(),
-                    'token_fragment' => substr($token, 0, 8) . '...' // Log only a small fragment for identification
-                ],
-                AuditEvent::SEVERITY_WARNING
-            );
-
             return false;
         }
     }
