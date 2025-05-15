@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Extensions\SecurityScanner\Dashboard;
+namespace Glueful\Extensions\SecurityScanner;
 
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
@@ -12,7 +12,7 @@ use Glueful\Database\QueryBuilder;
  *
  * Provides centralized reporting for security scan results
  */
-class SecurityDashboard
+class SecurityReportManager
 {
     /** @var array Dashboard configuration */
     private array $config;

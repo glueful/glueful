@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Glueful\Http\Router;
 use Symfony\Component\Routing\Annotation\Route;
 
+$controller = new \Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController();
+
 /*
  * OAuth Server Routes
  *
@@ -16,7 +18,7 @@ use Symfony\Component\Routing\Annotation\Route;
  */
 
 // OAuth server endpoints
-Router::group('/oauth', function () {
+Router::group('/oauth', function () use ($controller) {
     /**
      * @route POST /oauth/token
      * @summary Token Issuance
@@ -43,7 +45,7 @@ Router::group('/oauth', function () {
      * @response 400 application/json "Bad request" { error:string, error_description:string }
      * @response 401 application/json "Unauthorized" { error:string, error_description:string }
      */
-    Router::post('/token', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@token');
+    Router::post('/token', [$controller, 'token']);
 
     /**
      * @route GET /oauth/authorize
@@ -60,7 +62,7 @@ Router::group('/oauth', function () {
      * @response 302 "Redirects to login page or authorization consent page"
      * @response 400 application/json "Bad request" { error:string, error_description:string }
      */
-    Router::get('/authorize', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@authorize');
+    Router::get('/authorize', [$controller, 'authorize']);
 
     /**
      * @route POST /oauth/authorize
@@ -73,7 +75,7 @@ Router::group('/oauth', function () {
      * @response 302 "Redirects to the client redirect_uri with authorization code or error"
      * @response 400 application/json "Bad request" { error:string, error_description:string }
      */
-    Router::post('/authorize', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@approveAuthorization');
+    Router::post('/authorize', [$controller, 'approveAuthorization']);
 
     /**
      * @route POST /oauth/revoke
@@ -85,7 +87,7 @@ Router::group('/oauth', function () {
      * @response 200 application/json "Successfully revoked token" {}
      * @response 400 application/json "Bad request" { error:string, error_description:string }
      */
-    Router::post('/revoke', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@revoke');
+    Router::post('/revoke', [$controller, 'revoke']);
 
     /**
      * @route POST /oauth/introspect
@@ -103,10 +105,10 @@ Router::group('/oauth', function () {
      *   iat:number="Issued at timestamp"
      * }
      */
-    Router::post('/introspect', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@introspect');
+    Router::post('/introspect', [$controller, 'introspect']);
 });
 
-Router::group('/oauth', function () {
+Router::group('/oauth', function () use ($controller) {
     /**
      * @route GET /oauth/clients
      * @summary List OAuth Clients
@@ -117,11 +119,11 @@ Router::group('/oauth', function () {
      *   clients:array="List of client objects"
      * }
      */
-    Router::get('/clients', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@listClients');
+    Router::get('/clients', [$controller, 'listClients']);
 });
 
 // Admin routes for managing OAuth clients
-Router::group('/admin/oauth', function () {
+Router::group('/admin/oauth', function () use ($controller) {
     /**
      * @route GET /admin/oauth/clients
      * @summary List OAuth Clients
@@ -132,7 +134,7 @@ Router::group('/admin/oauth', function () {
      *   clients:array="List of client objects"
      * }
      */
-    Router::get('/clients', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@listClients');
+    Router::get('/clients', [$controller, 'listClients']);
 
     /**
      * @route POST /admin/oauth/clients
@@ -150,7 +152,7 @@ Router::group('/admin/oauth', function () {
      *   client_secret:string="Client secret (shown only once)"
      * }
      */
-    Router::post('/clients', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@createClient');
+    Router::post('/clients', [$controller, 'createClient']);
 
     /**
      * @route GET /admin/oauth/clients/{id}
@@ -164,7 +166,7 @@ Router::group('/admin/oauth', function () {
      * }
      * @response 404 application/json "Client not found" { error:string }
      */
-    Router::get('/clients/{id}', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@getClient');
+    Router::get('/clients/{id}', [$controller, 'getClient']);
 
     /**
      * @route PUT /admin/oauth/clients/{id}
@@ -183,7 +185,7 @@ Router::group('/admin/oauth', function () {
      * }
      * @response 404 application/json "Client not found" { error:string }
      */
-    Router::put('/clients/{id}', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@updateClient');
+    Router::put('/clients/{id}', [$controller, 'updateClient']);
 
     /**
      * @route DELETE /admin/oauth/clients/{id}
@@ -195,5 +197,5 @@ Router::group('/admin/oauth', function () {
      * @response 200 application/json "Deleted successfully" { success:boolean }
      * @response 404 application/json "Client not found" { error:string }
      */
-    Router::delete('/clients/{id}', '\Glueful\Extensions\OAuthServer\Auth\OAuth\OAuthController@deleteClient');
+    Router::delete('/clients/{id}', [$controller, 'deleteClient']);
 }, requiresAdminAuth: true);

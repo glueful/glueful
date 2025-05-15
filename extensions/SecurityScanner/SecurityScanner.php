@@ -97,25 +97,37 @@ class SecurityScanner extends \Glueful\Extensions
      */
     private static function initializeScanners(): void
     {
-        $enabledScanners = self::$config['enabled_scanners'] ?? ['code', 'dependency', 'api'];
+        try {
+            $enabledScanners = self::$config['enabled_scanners'] ?? ['code', 'dependency', 'api'];
 
-        // Initialize code scanner if enabled
-        if (in_array('code', $enabledScanners)) {
-            self::$codeScanner = new CodeScanner(self::$config['code_scanner'] ?? []);
+            // Initialize code scanner if enabled
+            if (in_array('code', $enabledScanners)) {
+                self::$codeScanner = new CodeScanner(self::$config['code_scanner'] ?? []);
+            }
+
+            // Initialize dependency scanner if enabled
+            if (in_array('dependency', $enabledScanners)) {
+                self::$dependencyScanner = new DependencyScanner(self::$config['dependency_scanner'] ?? []);
+            }
+
+            // Initialize API scanner if enabled
+            if (in_array('api', $enabledScanners)) {
+                self::$apiScanner = new ApiScanner(self::$config['api_scanner'] ?? []);
+            }
+
+            // Initialize dashboard with try/catch to prevent failures
+            try {
+                self::$dashboard = new SecurityDashboard(self::$config['dashboard'] ?? []);
+            } catch (\Exception $e) {
+                if (self::$logger) {
+                    self::$logger->error('Error initializing dashboard: ' . $e->getMessage());
+                }
+            }
+        } catch (\Exception $e) {
+            if (self::$logger) {
+                self::$logger->error('Error initializing scanners: ' . $e->getMessage());
+            }
         }
-
-        // Initialize dependency scanner if enabled
-        if (in_array('dependency', $enabledScanners)) {
-            self::$dependencyScanner = new DependencyScanner(self::$config['dependency_scanner'] ?? []);
-        }
-
-        // Initialize API scanner if enabled
-        if (in_array('api', $enabledScanners)) {
-            self::$apiScanner = new ApiScanner(self::$config['api_scanner'] ?? []);
-        }
-
-        // Initialize dashboard
-        self::$dashboard = new SecurityDashboard(self::$config['dashboard'] ?? []);
     }
 
     /**
@@ -133,45 +145,41 @@ class SecurityScanner extends \Glueful\Extensions
                 // Get scan schedule configuration
                 $scanSchedule = self::$config['scan_schedule'] ?? [];
 
-                // Register code scanner job
+                // Register code scanner job - FIX ORDER OF PARAMETERS
                 if (isset($scanSchedule['code']) && in_array('code', self::$config['enabled_scanners'] ?? [])) {
                     $scheduler->register(
-                        'security_scan_code',
-                        'Security code scan',
-                        $scanSchedule['code'],
-                        [self::class, 'runCodeScan']
+                        $scanSchedule['code'] ?? '0 3 * * *', // Schedule first
+                        [self::class, 'runCodeScan'], // Callable second (use existing method)
+                        'security_scan_code' // Name third
                     );
                 }
 
-                // Register dependency scanner job
+                // Register dependency scanner job - FIX ORDER OF PARAMETERS
                 if (
                     isset($scanSchedule['dependency']) &&
                     in_array('dependency', self::$config['enabled_scanners'] ?? [])
                 ) {
                     $scheduler->register(
-                        'security_scan_dependencies',
-                        'Security dependency scan',
-                        $scanSchedule['dependency'],
-                        [self::class, 'runDependencyScan']
+                        $scanSchedule['dependency'], // Schedule first
+                        [self::class, 'runDependencyScan'], // Callable second
+                        'security_scan_dependencies' // Name third
                     );
                 }
 
-                // Register API scanner job
+                // Register API scanner job - FIX ORDER OF PARAMETERS
                 if (isset($scanSchedule['api']) && in_array('api', self::$config['enabled_scanners'] ?? [])) {
                     $scheduler->register(
-                        'security_scan_api',
-                        'Security API scan',
-                        $scanSchedule['api'],
-                        [self::class, 'runApiScan']
+                        $scanSchedule['api'], // Schedule first
+                        [self::class, 'runApiScan'], // Callable second
+                        'security_scan_api' // Name third
                     );
                 }
 
-                // Register full security scan job (weekly)
+                // Register full security scan job (weekly) - FIX ORDER OF PARAMETERS
                 $scheduler->register(
-                    'security_scan_full',
-                    'Full security scan',
-                    'weekly',
-                    [self::class, 'runFullScan']
+                    'weekly', // Schedule first
+                    [self::class, 'runFullScan'], // Callable second
+                    'security_scan_full' // Name third
                 );
 
                 if (self::$logger) {
@@ -301,7 +309,7 @@ class SecurityScanner extends \Glueful\Extensions
 
         // Generate and store report
         if (self::$dashboard) {
-            self::$dashboard->generateReport($results);
+            self::$dashboard->generateReport(json_encode($results));
         }
 
         return $results;

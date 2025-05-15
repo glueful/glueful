@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\OAuthServer\Auth\OAuth;
 
-use Glueful\Container;
 use Glueful\Database\Connection;
+use Glueful\Database\QueryBuilder;
 use Glueful\Http\Response;
-use Glueful\Http\Request;
-use Glueful\Http\Controller;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * OAuth Controller
@@ -17,25 +16,31 @@ use Glueful\Http\Controller;
  *
  * @package Glueful\Extensions\OAuthServer\Auth\OAuth
  */
-class OAuthController extends Controller
+class OAuthController
 {
     /**
      * @var OAuthServer OAuth server instance
      */
     private OAuthServer $oauthServer;
-
+    
     /**
-     * @var Connection Database connection
+     * @var QueryBuilder Database query builder
      */
-    private Connection $db;
+    private QueryBuilder $queryBuilder;
 
     /**
      * Constructor
      */
     public function __construct()
     {
-        $this->oauthServer = Container::resolve('oauth.server');
-        $this->db = Connection::getInstance();
+        $this->oauthServer = new OAuthServer();
+        
+        // Initialize query builder
+        $connection = new Connection();
+        $this->queryBuilder = new QueryBuilder(
+            $connection->getPDO(), 
+            $connection->getDriver()
+        );
     }
 
     /**
@@ -53,10 +58,10 @@ class OAuthController extends Controller
     public function token(Request $request): Response
     {
         try {
-            $requestData = $request->getPostParams();
+            $requestData = $request->request->all();
 
             // Check for HTTP Basic Auth for client credentials
-            $authHeader = $request->getHeader('Authorization');
+            $authHeader = $request->headers->get('Authorization');
             if ($authHeader && strpos(strtolower($authHeader), 'basic ') === 0) {
                 $credentials = base64_decode(substr($authHeader, 6));
                 list($clientId, $clientSecret) = explode(':', $credentials);
@@ -67,17 +72,17 @@ class OAuthController extends Controller
 
             $tokenResponse = $this->oauthServer->issueToken($requestData);
 
-            return Response::json($tokenResponse);
+            return Response::ok($tokenResponse)->send();
         } catch (\InvalidArgumentException $e) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => $e->getMessage()
-            ], 400);
+            return Response::error(
+                'invalid_request: ' . $e->getMessage(),
+                Response::HTTP_BAD_REQUEST
+            )->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'An unexpected error occurred'
-            ], 500);
+            return Response::error(
+                'server_error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
     }
 
@@ -91,72 +96,88 @@ class OAuthController extends Controller
      */
     public function authorize(Request $request): Response
     {
-        $params = $request->getQueryParams();
+        try {
+            $params = $request->query->all();
 
-        // Validate required parameters
-        if (empty($params['response_type']) || $params['response_type'] !== 'code') {
-            return Response::json([
-                'error' => 'unsupported_response_type',
-                'error_description' => 'Only code response type is supported'
-            ], 400);
+            // Validate required parameters
+            if (empty($params['response_type']) || $params['response_type'] !== 'code') {
+                return Response::error(
+                    'Only code response type is supported',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'unsupported_response_type',
+                    'error_description' => 'Only code response type is supported']
+                )->send();
+            }
+
+            if (empty($params['client_id'])) {
+                return Response::error(
+                    'Client ID is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client ID is required']
+                )->send();
+            }
+
+            if (empty($params['redirect_uri'])) {
+                return Response::error(
+                    'Redirect URI is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Redirect URI is required']
+                )->send();
+            }
+
+            // Verify the client
+            $client = $this->oauthServer->getClientRepository()->getClientById($params['client_id']);
+
+            if (!$client) {
+                return Response::error(
+                    'Client not found',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_client', 'error_description' => 'Client not found']
+                )->send();
+            }
+
+            // Verify if redirect URI is registered for this client
+            if (!$this->isValidRedirectUri($client, $params['redirect_uri'])) {
+                return Response::error(
+                    'Invalid redirect URI for this client',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Invalid redirect URI for this client']
+                )->send();
+            }
+
+            // Check if user is authenticated
+            $user = $request->getUser();
+
+            if (!$user) {
+                // User is not authenticated, redirect to login
+                // Store the authorization request in the session
+                $session = $request->getSession();
+                $session->set('oauth_auth_request', $params);
+
+                // Set up a redirect response manually since Response::redirect() doesn't exist
+                return Response::ok([
+                    'redirect' => '/login?redirect_after=' . urlencode('/oauth/authorize')
+                ], 'Redirecting to login')->send();
+            }
+
+            // Display authorization form
+            $scopes = !empty($params['scope']) ? explode(' ', $params['scope']) : [];
+
+            $viewData = [
+                'client' => $client,
+                'scopes' => $scopes,
+                'user' => $user,
+                'request_params' => $params,
+                'view' => 'oauth/authorize' // Specify which view to render
+            ];
+
+            return Response::ok($viewData)->send();
+        } catch (\Exception $e) {
+            return Response::error(
+                'server_error: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
         }
-
-        if (empty($params['client_id'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client ID is required'
-            ], 400);
-        }
-
-        if (empty($params['redirect_uri'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Redirect URI is required'
-            ], 400);
-        }
-
-        // Verify the client
-        $client = $this->oauthServer->getClientRepository()->getClientById($params['client_id']);
-
-        if (!$client) {
-            return Response::json([
-                'error' => 'invalid_client',
-                'error_description' => 'Client not found'
-            ], 400);
-        }
-
-        // Verify if redirect URI is registered for this client
-        if (!$this->isValidRedirectUri($client, $params['redirect_uri'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Invalid redirect URI for this client'
-            ], 400);
-        }
-
-        // Check if user is authenticated
-        $user = $request->getUser();
-
-        if (!$user) {
-            // User is not authenticated, redirect to login
-            // Store the authorization request in the session
-            $session = $request->getSession();
-            $session->set('oauth_auth_request', $params);
-
-            // Redirect to login page
-            return Response::redirect('/login?redirect_after=' . urlencode('/oauth/authorize'));
-        }
-
-        // Display authorization form
-        $scopes = !empty($params['scope']) ? explode(' ', $params['scope']) : [];
-
-        $viewData = [
-            'client' => $client,
-            'scopes' => $scopes,
-            'user' => $user,
-            'request_params' => $params
-        ];
-
-        return Response::view('oauth/authorize', $viewData);
     }
 
     /**
@@ -169,37 +190,40 @@ class OAuthController extends Controller
      */
     public function approveAuthorization(Request $request): Response
     {
-        $params = $request->getPostParams();
-
-        // Check if approval was granted
-        if (empty($params['approve']) || $params['approve'] !== 'true') {
-            // User denied the authorization
-            $redirectUri = $params['redirect_uri'];
-            $redirectUri .= strpos($redirectUri, '?') === false ? '?' : '&';
-            $redirectUri .= 'error=access_denied&error_description=' . urlencode('The user denied the request');
-
-            return Response::redirect($redirectUri);
-        }
-
-        // User approved, create authorization code
-        $user = $request->getUser();
-
-        if (!$user) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'User session expired'
-            ], 400);
-        }
-
-        // Parse requested scopes
-        $scopes = !empty($params['scope']) ? explode(' ', $params['scope']) : [];
-
-        // Get code challenge for PKCE
-        $codeChallenge = $params['code_challenge'] ?? null;
-        $codeChallengeMethod = $params['code_challenge_method'] ?? 'plain';
-
-        // Create authorization code
         try {
+            $params = $request->request->all();
+
+            // Check if approval was granted
+            if (empty($params['approve']) || $params['approve'] !== 'true') {
+                // User denied the authorization
+                $redirectUri = $params['redirect_uri'];
+                $redirectUri .= strpos($redirectUri, '?') === false ? '?' : '&';
+                $redirectUri .= 'error=access_denied&error_description=' . urlencode('The user denied the request');
+
+                // Set up a redirect response manually
+                return Response::ok([
+                    'redirect' => $redirectUri
+                ], 'Redirecting with error')->send();
+            }
+
+            // User approved, create authorization code
+            $user = $request->getUser();
+
+            if (!$user) {
+                return Response::error(
+                    'User session expired',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'server_error', 'error_description' => 'User session expired']
+                )->send();
+            }
+
+            // Parse requested scopes
+            $scopes = !empty($params['scope']) ? explode(' ', $params['scope']) : [];
+
+            // Get code challenge for PKCE
+            $codeChallenge = $params['code_challenge'] ?? null;
+            $codeChallengeMethod = $params['code_challenge_method'] ?? 'plain';
+
             $authCode = $this->oauthServer->createAuthorizationCode(
                 $params['client_id'],
                 $user['id'],
@@ -219,13 +243,19 @@ class OAuthController extends Controller
                 $redirectUri .= '&state=' . urlencode($params['state']);
             }
 
-            return Response::redirect($redirectUri);
+            // Set up a redirect response manually
+            return Response::ok([
+                'redirect' => $redirectUri
+            ], 'Redirecting with authorization code')->send();
         } catch (\Exception $e) {
-            $redirectUri = $params['redirect_uri'];
+            $redirectUri = $params['redirect_uri'] ?? '/';
             $redirectUri .= strpos($redirectUri, '?') === false ? '?' : '&';
             $redirectUri .= 'error=server_error&error_description=' . urlencode('Failed to create authorization code');
-
-            return Response::redirect($redirectUri);
+            
+            // Set up a redirect response manually
+            return Response::ok([
+                'redirect' => $redirectUri
+            ], 'Redirecting with error')->send();
         }
     }
 
@@ -239,48 +269,51 @@ class OAuthController extends Controller
      */
     public function revoke(Request $request): Response
     {
-        $params = $request->getPostParams();
-
-        // Validate required parameters
-        if (empty($params['token'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Token is required'
-            ], 400);
-        }
-
-        if (empty($params['client_id'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client ID is required'
-            ], 400);
-        }
-
-        // Optional token_type_hint - default to access token
-        $tokenTypeHint = $params['token_type_hint'] ?? 'access_token';
-
         try {
+            $params = $request->request->all();
+
+            // Validate required parameters
+            if (empty($params['token'])) {
+                return Response::error(
+                    'Token is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Token is required']
+                )->send();
+            }
+
+            if (empty($params['client_id'])) {
+                return Response::error(
+                    'Client ID is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client ID is required']
+                )->send();
+            }
+
+            // Optional token_type_hint - default to access token
+            $tokenTypeHint = $params['token_type_hint'] ?? 'access_token';
+
             // Revoke the token based on type hint
             $revoked = false;
 
             if ($tokenTypeHint === 'refresh_token') {
-                $revoked = $this->oauthServer->revokeRefreshToken($params['token']);
+                $revoked = $this->oauthServer->revokeToken($params['token'], 'refresh_token');
             } else {
-                $revoked = $this->oauthServer->revokeAccessToken($params['token']);
+                $revoked = $this->oauthServer->revokeToken($params['token'], 'access_token');
 
                 // If not found as access token, try as refresh token
                 if (!$revoked) {
-                    $revoked = $this->oauthServer->revokeRefreshToken($params['token']);
+                    $revoked = $this->oauthServer->revokeToken($params['token'], 'refresh_token');
                 }
             }
 
             // According to RFC 7009, always return 200 OK even if token was invalid
-            return Response::json(null, 200);
+            return Response::ok(null, 'Token revocation successful')->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'An unexpected error occurred'
-            ], 500);
+            return Response::error(
+                'An unexpected error occurred',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'An unexpected error occurred']
+            )->send();
         }
     }
 
@@ -294,56 +327,52 @@ class OAuthController extends Controller
      */
     public function introspect(Request $request): Response
     {
-        $params = $request->getPostParams();
-
-        // Validate required parameters
-        if (empty($params['token'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Token is required'
-            ], 400);
-        }
-
-        // Verify client authentication
-        $clientId = $params['client_id'] ?? null;
-        $clientSecret = $params['client_secret'] ?? null;
-
-        if (!$clientId || !$clientSecret) {
-            // Check HTTP Basic Auth header
-            $authHeader = $request->getHeader('Authorization');
-            if ($authHeader && strpos(strtolower($authHeader), 'basic ') === 0) {
-                $credentials = base64_decode(substr($authHeader, 6));
-                list($clientId, $clientSecret) = explode(':', $credentials);
-            }
-        }
-
-        if (!$clientId || !$clientSecret) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client authentication required'
-            ], 401);
-        }
-
-        // Verify the client
-        $client = $this->oauthServer->getClientRepository()->getClientByIdAndSecret(
-            $clientId,
-            $clientSecret
-        );
-
-        if (!$client) {
-            return Response::json([
-                'active' => false
-            ]);
-        }
-
         try {
+            $params = $request->request->all();
+
+            // Validate required parameters
+            if (empty($params['token'])) {
+                return Response::error(
+                    'Token is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Token is required']
+                )->send();
+            }
+
+            // Verify client authentication
+            $clientId = $params['client_id'] ?? null;
+            $clientSecret = $params['client_secret'] ?? null;
+
+            if (!$clientId || !$clientSecret) {
+                // Check HTTP Basic Auth header
+                $authHeader = $request->headers->get('Authorization');
+                if ($authHeader && strpos(strtolower($authHeader), 'basic ') === 0) {
+                    $credentials = base64_decode(substr($authHeader, 6));
+                    list($clientId, $clientSecret) = explode(':', $credentials);
+                }
+            }
+
+            if (!$clientId || !$clientSecret) {
+                return Response::unauthorized(
+                    'Client authentication required'
+                )->send();
+            }
+
+            // Verify the client
+            $client = $this->oauthServer->getClientRepository()->getClientByIdAndSecret(
+                $clientId,
+                $clientSecret
+            );
+
+            if (!$client) {
+                return Response::ok(['active' => false])->send();
+            }
+
             // Validate the token
             $tokenInfo = $this->oauthServer->validateToken($params['token']);
 
             if (!$tokenInfo) {
-                return Response::json([
-                    'active' => false
-                ]);
+                return Response::ok(['active' => false])->send();
             }
 
             // Prepare introspection response
@@ -359,12 +388,13 @@ class OAuthController extends Controller
                 $response['sub'] = $tokenInfo['user_id'];
             }
 
-            return Response::json($response);
+            return Response::ok($response)->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'An unexpected error occurred'
-            ], 500);
+            return Response::error(
+                'An unexpected error occurred',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'An unexpected error occurred']
+            )->send();
         }
     }
 
@@ -377,15 +407,14 @@ class OAuthController extends Controller
     public function listClients(Request $request): Response
     {
         try {
-            $stmt = $this->db->prepare("
-                SELECT id, name, description, redirect_uris, allowed_grant_types, 
-                       created_at, updated_at
-                FROM oauth_clients
-                ORDER BY name ASC
-            ");
-
-            $stmt->execute();
-            $clients = $stmt->fetchAll();
+            // Using QueryBuilder instead of direct PDO
+            $clients = $this->queryBuilder
+                ->select('oauth_clients', [
+                    'id', 'name', 'description', 'redirect_uris', 
+                    'allowed_grant_types', 'created_at', 'updated_at'
+                ])
+                ->orderBy(['name' => 'ASC'])
+                ->get();
 
             // Process clients - convert serialized data
             foreach ($clients as &$client) {
@@ -393,14 +422,13 @@ class OAuthController extends Controller
                 $client['allowed_grant_types'] = json_decode($client['allowed_grant_types'] ?? '[]', true);
             }
 
-            return Response::json([
-                'clients' => $clients
-            ]);
+            return Response::ok(['clients' => $clients])->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'Failed to list clients'
-            ], 500);
+            return Response::error(
+                'Failed to list clients',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'Failed to list clients']
+            )->send();
         }
     }
 
@@ -412,52 +440,49 @@ class OAuthController extends Controller
      */
     public function createClient(Request $request): Response
     {
-        $params = $request->getPostParams();
-
-        // Validate required parameters
-        if (empty($params['name'])) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client name is required'
-            ], 400);
-        }
-
-        // Generate client ID and secret
-        $clientId = bin2hex(random_bytes(16));
-        $clientSecret = bin2hex(random_bytes(32));
-
-        // Prepare grant types
-        $allowedGrantTypes = $params['allowed_grant_types'] ?? ['authorization_code'];
-        if (!is_array($allowedGrantTypes)) {
-            $allowedGrantTypes = explode(',', $allowedGrantTypes);
-        }
-
-        // Prepare redirect URIs
-        $redirectUris = $params['redirect_uris'] ?? [];
-        if (!is_array($redirectUris)) {
-            $redirectUris = explode(',', $redirectUris);
-        }
-
         try {
-            $stmt = $this->db->prepare("
-                INSERT INTO oauth_clients
-                (id, secret, name, description, redirect_uris, allowed_grant_types, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
+            $params = $request->request->all();
+
+            // Validate required parameters
+            if (empty($params['name'])) {
+                return Response::error(
+                    'Client name is required', 
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client name is required']
+                )->send();
+            }
+
+            // Generate client ID and secret
+            $clientId = bin2hex(random_bytes(16));
+            $clientSecret = bin2hex(random_bytes(32));
+
+            // Prepare grant types
+            $allowedGrantTypes = $params['allowed_grant_types'] ?? ['authorization_code'];
+            if (!is_array($allowedGrantTypes)) {
+                $allowedGrantTypes = explode(',', $allowedGrantTypes);
+            }
+
+            // Prepare redirect URIs
+            $redirectUris = $params['redirect_uris'] ?? [];
+            if (!is_array($redirectUris)) {
+                $redirectUris = explode(',', $redirectUris);
+            }
 
             $now = time();
-            $stmt->execute([
-                $clientId,
-                password_hash($clientSecret, PASSWORD_DEFAULT),
-                $params['name'],
-                $params['description'] ?? null,
-                json_encode($redirectUris),
-                json_encode($allowedGrantTypes),
-                $now,
-                $now
+            
+            // Using QueryBuilder's insert method
+            $this->queryBuilder->insert('oauth_clients', [
+                'id' => $clientId,
+                'secret' => password_hash($clientSecret, PASSWORD_DEFAULT),
+                'name' => $params['name'],
+                'description' => $params['description'] ?? null,
+                'redirect_uris' => json_encode($redirectUris),
+                'allowed_grant_types' => json_encode($allowedGrantTypes),
+                'created_at' => $now,
+                'updated_at' => $now
             ]);
 
-            return Response::json([
+            $clientData = [
                 'client_id' => $clientId,
                 'client_secret' => $clientSecret, // Only shown once
                 'name' => $params['name'],
@@ -466,12 +491,15 @@ class OAuthController extends Controller
                 'allowed_grant_types' => $allowedGrantTypes,
                 'created_at' => $now,
                 'updated_at' => $now
-            ], 201);
+            ];
+
+            return Response::created($clientData, 'OAuth client created successfully')->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'Failed to create client: ' . $e->getMessage()
-            ], 500);
+            return Response::error(
+                'Failed to create client: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'Failed to create client: ' . $e->getMessage()]
+            )->send();
         }
     }
 
@@ -484,43 +512,41 @@ class OAuthController extends Controller
      */
     public function getClient(Request $request, array $params = []): Response
     {
-        $clientId = $params['id'] ?? null;
-
-        if (!$clientId) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client ID is required'
-            ], 400);
-        }
-
         try {
-            $stmt = $this->db->prepare("
-                SELECT id, name, description, redirect_uris, allowed_grant_types, 
-                       created_at, updated_at
-                FROM oauth_clients
-                WHERE id = ?
-            ");
+            $clientId = $params['id'] ?? null;
 
-            $stmt->execute([$clientId]);
-            $client = $stmt->fetch();
+            if (!$clientId) {
+                return Response::error(
+                    'Client ID is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client ID is required']
+                )->send();
+            }
+
+            // Using QueryBuilder to select client
+            $client = $this->queryBuilder
+                ->select('oauth_clients', [
+                    'id', 'name', 'description', 'redirect_uris', 
+                    'allowed_grant_types', 'created_at', 'updated_at'
+                ])
+                ->where(['id' => $clientId])
+                ->first();
 
             if (!$client) {
-                return Response::json([
-                    'error' => 'not_found',
-                    'error_description' => 'Client not found'
-                ], 404);
+                return Response::notFound('Client not found')->send();
             }
 
             // Process client - convert serialized data
             $client['redirect_uris'] = json_decode($client['redirect_uris'] ?? '[]', true);
             $client['allowed_grant_types'] = json_decode($client['allowed_grant_types'] ?? '[]', true);
 
-            return Response::json($client);
+            return Response::ok($client)->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'Failed to retrieve client'
-            ], 500);
+            return Response::error(
+                'Failed to retrieve client',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'Failed to retrieve client']
+            )->send();
         }
     }
 
@@ -533,96 +559,84 @@ class OAuthController extends Controller
      */
     public function updateClient(Request $request, array $params = []): Response
     {
-        $clientId = $params['id'] ?? null;
-
-        if (!$clientId) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client ID is required'
-            ], 400);
-        }
-
-        $requestData = $request->getPostParams();
-
-        // Check if client exists
-        $stmt = $this->db->prepare("SELECT id FROM oauth_clients WHERE id = ?");
-        $stmt->execute([$clientId]);
-        if (!$stmt->fetch()) {
-            return Response::json([
-                'error' => 'not_found',
-                'error_description' => 'Client not found'
-            ], 404);
-        }
-
-        // Build update query
-        $updateFields = [];
-        $updateParams = [];
-
-        if (isset($requestData['name'])) {
-            $updateFields[] = "name = ?";
-            $updateParams[] = $requestData['name'];
-        }
-
-        if (isset($requestData['description'])) {
-            $updateFields[] = "description = ?";
-            $updateParams[] = $requestData['description'];
-        }
-
-        if (isset($requestData['redirect_uris'])) {
-            $redirectUris = $requestData['redirect_uris'];
-            if (!is_array($redirectUris)) {
-                $redirectUris = explode(',', $redirectUris);
-            }
-            $updateFields[] = "redirect_uris = ?";
-            $updateParams[] = json_encode($redirectUris);
-        }
-
-        if (isset($requestData['allowed_grant_types'])) {
-            $grantTypes = $requestData['allowed_grant_types'];
-            if (!is_array($grantTypes)) {
-                $grantTypes = explode(',', $grantTypes);
-            }
-            $updateFields[] = "allowed_grant_types = ?";
-            $updateParams[] = json_encode($grantTypes);
-        }
-
-        // Regenerate client secret if requested
-        $newSecret = null;
-        if (!empty($requestData['reset_secret']) && $requestData['reset_secret'] === 'true') {
-            $newSecret = bin2hex(random_bytes(32));
-            $updateFields[] = "secret = ?";
-            $updateParams[] = password_hash($newSecret, PASSWORD_DEFAULT);
-        }
-
-        // Add updated_at timestamp
-        $updateFields[] = "updated_at = ?";
-        $updateParams[] = time();
-
-        // Add client ID to parameters
-        $updateParams[] = $clientId;
-
-        if (empty($updateFields)) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'No fields to update'
-            ], 400);
-        }
-
         try {
-            $sql = "UPDATE oauth_clients SET " . implode(", ", $updateFields) . " WHERE id = ?";
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($updateParams);
+            $clientId = $params['id'] ?? null;
+
+            if (!$clientId) {
+                return Response::error(
+                    'Client ID is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client ID is required']
+                )->send();
+            }
+
+            $requestData = $request->request->all();
+
+            // Check if client exists
+            $clientExists = $this->queryBuilder
+                ->select('oauth_clients', ['id'])
+                ->where(['id' => $clientId])
+                ->first();
+
+            if (!$clientExists) {
+                return Response::notFound('Client not found')->send();
+            }
+
+            $updateData = [];
+
+            if (isset($requestData['name'])) {
+                $updateData['name'] = $requestData['name'];
+            }
+
+            if (isset($requestData['description'])) {
+                $updateData['description'] = $requestData['description'];
+            }
+
+            if (isset($requestData['redirect_uris'])) {
+                $redirectUris = $requestData['redirect_uris'];
+                if (!is_array($redirectUris)) {
+                    $redirectUris = explode(',', $redirectUris);
+                }
+                $updateData['redirect_uris'] = json_encode($redirectUris);
+            }
+
+            if (isset($requestData['allowed_grant_types'])) {
+                $grantTypes = $requestData['allowed_grant_types'];
+                if (!is_array($grantTypes)) {
+                    $grantTypes = explode(',', $grantTypes);
+                }
+                $updateData['allowed_grant_types'] = json_encode($grantTypes);
+            }
+
+            // Regenerate client secret if requested
+            $newSecret = null;
+            if (!empty($requestData['reset_secret']) && $requestData['reset_secret'] === 'true') {
+                $newSecret = bin2hex(random_bytes(32));
+                $updateData['secret'] = password_hash($newSecret, PASSWORD_DEFAULT);
+            }
+
+            // Add updated_at timestamp
+            $updateData['updated_at'] = time();
+
+            if (empty($updateData)) {
+                return Response::error(
+                    'No fields to update',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'No fields to update']
+                )->send();
+            }
+
+            // Using QueryBuilder's update method
+            $this->queryBuilder->update('oauth_clients', $updateData, ['id' => $clientId]);
 
             // Get updated client
-            $stmt = $this->db->prepare("
-                SELECT id, name, description, redirect_uris, allowed_grant_types, 
-                       created_at, updated_at
-                FROM oauth_clients
-                WHERE id = ?
-            ");
-
-            $stmt->execute([$clientId]);
-            $client = $stmt->fetch();
+            $client = $this->queryBuilder
+                ->select('oauth_clients', [
+                    'id', 'name', 'description', 'redirect_uris', 
+                    'allowed_grant_types', 'created_at', 'updated_at'
+                ])
+                ->where(['id' => $clientId])
+                ->first();
 
             // Process client - convert serialized data
             $client['redirect_uris'] = json_decode($client['redirect_uris'] ?? '[]', true);
@@ -633,12 +647,13 @@ class OAuthController extends Controller
                 $client['client_secret'] = $newSecret;
             }
 
-            return Response::json($client);
+            return Response::ok($client, 'Client updated successfully')->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'Failed to update client: ' . $e->getMessage()
-            ], 500);
+            return Response::error(
+                'Failed to update client: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'Failed to update client: ' . $e->getMessage()]
+            )->send();
         }
     }
 
@@ -651,43 +666,45 @@ class OAuthController extends Controller
      */
     public function deleteClient(Request $request, array $params = []): Response
     {
-        $clientId = $params['id'] ?? null;
-
-        if (!$clientId) {
-            return Response::json([
-                'error' => 'invalid_request',
-                'error_description' => 'Client ID is required'
-            ], 400);
-        }
-
         try {
-            // Check if client exists
-            $stmt = $this->db->prepare("SELECT id FROM oauth_clients WHERE id = ?");
-            $stmt->execute([$clientId]);
-            if (!$stmt->fetch()) {
-                return Response::json([
-                    'error' => 'not_found',
-                    'error_description' => 'Client not found'
-                ], 404);
+            $clientId = $params['id'] ?? null;
+
+            if (!$clientId) {
+                return Response::error(
+                    'Client ID is required',
+                    Response::HTTP_BAD_REQUEST,
+                    ['error' => 'invalid_request', 'error_description' => 'Client ID is required']
+                )->send();
             }
 
-            // Delete all related tokens first
-            $this->db->prepare("DELETE FROM oauth_access_tokens WHERE client_id = ?")->execute([$clientId]);
-            $this->db->prepare("DELETE FROM oauth_refresh_tokens WHERE client_id = ?")->execute([$clientId]);
-            $this->db->prepare("DELETE FROM oauth_authorization_codes WHERE client_id = ?")->execute([$clientId]);
+            // Check if client exists
+            $clientExists = $this->queryBuilder
+                ->select('oauth_clients', ['id'])
+                ->where(['id' => $clientId])
+                ->first();
 
-            // Delete client
-            $stmt = $this->db->prepare("DELETE FROM oauth_clients WHERE id = ?");
-            $stmt->execute([$clientId]);
+            if (!$clientExists) {
+                return Response::notFound('Client not found')->send();
+            }
 
-            return Response::json([
-                'success' => true
-            ], 200);
+            // Using QueryBuilder's transaction for related operations
+            $this->queryBuilder->transaction(function ($queryBuilder) use ($clientId) {
+                // Delete all related tokens first
+                $queryBuilder->delete('oauth_access_tokens', ['client_id' => $clientId], false);
+                $queryBuilder->delete('oauth_refresh_tokens', ['client_id' => $clientId], false);
+                $queryBuilder->delete('oauth_authorization_codes', ['client_id' => $clientId], false);
+                
+                // Delete client
+                $queryBuilder->delete('oauth_clients', ['id' => $clientId], false);
+            });
+
+            return Response::ok(['success' => true], 'Client deleted successfully')->send();
         } catch (\Exception $e) {
-            return Response::json([
-                'error' => 'server_error',
-                'error_description' => 'Failed to delete client: ' . $e->getMessage()
-            ], 500);
+            return Response::error(
+                'Failed to delete client: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                ['error' => 'server_error', 'error_description' => 'Failed to delete client: ' . $e->getMessage()]
+            )->send();
         }
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\OAuthServer\Auth\OAuth\Repositories;
 
 use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
@@ -33,47 +34,51 @@ class ScopeRepository implements ScopeRepositoryInterface
     }
 
     /**
-     * Get a scope entity by the scope identifier
+     * Get a scope entity by the identifier.
      *
-     * @param string $scopeIdentifier The scope identifier
-     * @return ScopeEntity|null
+     * @param string $identifier The scope identifier
+     *
+     * @return ScopeEntityInterface|null
      */
-    public function getScopeEntityByIdentifier($scopeIdentifier)
+    public function getScopeEntityByIdentifier($identifier): ?ScopeEntityInterface
     {
-        // Query for the scope
-        $scopes = $this->queryBuilder->select('oauth_scopes', ['id', 'description'])
-            ->where(['id' => $scopeIdentifier])
-            ->limit(1)
-            ->get();
+        // Check if scope exists in your database or in a predefined list
+        $availableScopes = [
+            'read' => 'Read access to user resources',
+            'write' => 'Write access to user resources',
+            'profile' => 'Access to user profile',
+            'email' => 'Access to user email',
+            // Add more scopes as needed
+        ];
 
-        if (empty($scopes)) {
-            return null;
+        if (!array_key_exists($identifier, $availableScopes)) {
+            return null; // Scope not found
         }
 
-        $scope = $scopes[0];
+        // Create and return scope entity
+        $scope = new ScopeEntity();
+        $scope->setIdentifier($identifier);
+        $scope->setDescription($availableScopes[$identifier]);
 
-        $scopeEntity = new ScopeEntity();
-        $scopeEntity->setIdentifier($scope['id']);
-        $scopeEntity->setDescription($scope['description']);
-
-        return $scopeEntity;
+        return $scope;
     }
 
     /**
      * Filter out scopes that are not valid for the current client and user
      *
-     * @param array $scopes The scopes requested
+     * @param ScopeEntityInterface[] $scopes The scopes requested
      * @param string $grantType The grant type used in the request
      * @param ClientEntityInterface $clientEntity The client making the request
      * @param string|null $userIdentifier The user identifier for user-specific scopes
-     * @return array The filtered scopes
+     * @return ScopeEntityInterface[] The filtered scopes
      */
     public function finalizeScopes(
         array $scopes,
         $grantType,
         ClientEntityInterface $clientEntity,
-        $userIdentifier = null
-    ) {
+        $userIdentifier = null,
+        ?string $authCodeId = null
+    ): array {
         // Retrieve allowed scopes for this client
         $allowedScopes = $this->queryBuilder->select('oauth_client_scopes', ['scope_id'])
             ->where(['client_id' => $clientEntity->getIdentifier()])
@@ -90,6 +95,15 @@ class ScopeRepository implements ScopeRepositoryInterface
             $scopeId = $scope->getIdentifier();
             if (in_array($scopeId, $allowedScopeIds)) {
                 $filteredScopes[] = $scope;
+            }
+        }
+
+        // If no scopes are allowed or requested, provide default scope
+        if (empty($filteredScopes)) {
+            // Add default 'read' scope if appropriate
+            $defaultScope = $this->getScopeEntityByIdentifier('read');
+            if ($defaultScope !== null) {
+                $filteredScopes[] = $defaultScope;
             }
         }
 

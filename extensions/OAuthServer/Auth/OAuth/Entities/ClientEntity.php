@@ -72,7 +72,7 @@ class ClientEntity implements ClientEntityInterface
     /**
      * {@inheritdoc}
      */
-    public function getRedirectUri()
+    public function getRedirectUri(): array|string
     {
         return $this->redirectUri;
     }

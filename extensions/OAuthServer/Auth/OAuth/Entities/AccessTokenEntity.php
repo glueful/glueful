@@ -41,6 +41,11 @@ class AccessTokenEntity implements AccessTokenEntityInterface
     private array $scopes = [];
 
     /**
+     * @var \League\OAuth2\Server\CryptKey|null Private key
+     */
+    private $privateKey;
+
+    /**
      * {@inheritdoc}
      */
     public function getIdentifier(): string
@@ -83,7 +88,7 @@ class AccessTokenEntity implements AccessTokenEntityInterface
     /**
      * {@inheritdoc}
      */
-    public function getUserIdentifier()
+    public function getUserIdentifier(): string
     {
         return $this->userIdentifier;
     }
@@ -112,11 +117,24 @@ class AccessTokenEntity implements AccessTokenEntityInterface
         $this->scopes[] = $scope;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function getScopes(): array
     {
         return $this->scopes;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function setPrivateKey($privateKey): void
+    {
+        $this->privateKey = $privateKey;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function toString(): string
+    {
+        return (string) $this->identifier;
     }
 }
