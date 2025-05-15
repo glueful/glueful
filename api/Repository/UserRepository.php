@@ -626,4 +626,48 @@ class UserRepository
             return null;
         }
     }
+
+    /**
+     * Get the currently authenticated user
+     *
+     * Retrieves the current user directly from the session cache using the token in the request.
+     * This avoids re-authenticating the request and is more efficient.
+     *
+     * @return array|null User data or null if not authenticated
+     */
+    public function getCurrentUser(): ?array
+    {
+        try {
+            // Get current request
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+
+            // Extract token from the Authorization header
+            $authHeader = $request->headers->get('Authorization');
+            if (!$authHeader) {
+                return null;
+            }
+
+            // Remove 'Bearer ' prefix if present
+            $token = (strpos($authHeader, 'Bearer ') === 0) ? substr($authHeader, 7) : $authHeader;
+
+            if (empty($token)) {
+                return null;
+            }
+
+            // Get session data directly from the session cache
+            $userData = \Glueful\Auth\SessionCacheManager::getSession($token);
+
+            if ($userData && isset($userData['uuid'])) {
+                // If we just have a basic user record with UUID, get the full user data
+                if (count($userData) <= 2) {
+                    return $this->findByUUID($userData['uuid']);
+                }
+                return $userData;
+            }
+        } catch (\Throwable $e) {
+            // Silently handle auth errors - logging should continue to work
+            // even if authentication fails
+        }
+        return null;
+    }
 }
