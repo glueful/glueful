@@ -10,7 +10,7 @@ use Glueful\Database\QueryBuilder;
 
 /**
  * Role Repository Test
- * 
+ *
  * Tests for the RoleRepository class functionality including:
  * - Role retrieval operations
  * - Role-based access control (RBAC) functionality
@@ -20,26 +20,26 @@ class RoleRepositoryTest extends TestCase
 {
     /** @var TestRoleRepository */
     private TestRoleRepository $roleRepository;
-    
+
     /**
      * @var MockObject&QueryBuilder
      */
     private $mockQueryBuilder;
-    
+
     /**
      * Setup before each test
      */
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create mock objects
         $this->mockQueryBuilder = $this->createMock(QueryBuilder::class);
-        
+
         // Create repository with our mock query builder
         $this->roleRepository = new TestRoleRepository($this->mockQueryBuilder);
     }
-    
+
     /**
      * Test getting all roles
      */
@@ -63,20 +63,20 @@ class RoleRepositoryTest extends TestCase
                 'description' => 'Standard user role'
             ]
         ];
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($rolesData);
-            
+
         // Call the method
         $result = $this->roleRepository->getRoles();
-        
+
         // Assert result
         $this->assertEquals($rolesData, $result);
     }
-    
+
     /**
      * Test getting role by UUID
      */
@@ -88,7 +88,7 @@ class RoleRepositoryTest extends TestCase
             'name' => 'admin',
             'description' => 'Administrator role'
         ];
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
@@ -98,14 +98,14 @@ class RoleRepositoryTest extends TestCase
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn([$roleData]);
-            
+
         // Call the method
         $result = $this->roleRepository->getRoleByUUID('11111111-1111-1111-1111-111111111111');
-        
+
         // Assert result
         $this->assertEquals($roleData, $result);
     }
-    
+
     /**
      * Test getting role name
      */
@@ -113,7 +113,7 @@ class RoleRepositoryTest extends TestCase
     {
         // Sample role name
         $roleName = 'admin';
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
@@ -123,14 +123,14 @@ class RoleRepositoryTest extends TestCase
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn([['name' => $roleName]]);
-            
+
         // Call the method
         $result = $this->roleRepository->getRoleName('11111111-1111-1111-1111-111111111111');
-        
+
         // Assert result
         $this->assertEquals($roleName, $result);
     }
-    
+
     /**
      * Test getting user roles
      */
@@ -151,7 +151,7 @@ class RoleRepositoryTest extends TestCase
                 'description' => 'Editor role'
             ]
         ];
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('join')
             ->willReturnSelf();
@@ -161,14 +161,14 @@ class RoleRepositoryTest extends TestCase
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($userRoles);
-            
+
         // Call the method
         $result = $this->roleRepository->getUserRoles('user-uuid');
-        
+
         // Assert result
         $this->assertEquals($userRoles, $result);
     }
-    
+
     /**
      * Test assigning role to user
      */
@@ -177,14 +177,14 @@ class RoleRepositoryTest extends TestCase
         // Configure query builder for successful insert
         $this->mockQueryBuilder->method('insert')
             ->willReturn(1); // Return 1 row inserted
-            
+
         // Call the method
         $result = $this->roleRepository->assignRole('user-uuid', 'role-uuid');
-        
+
         // Assert result
         $this->assertTrue($result);
     }
-    
+
     /**
      * Test removing role from user
      */
@@ -193,14 +193,14 @@ class RoleRepositoryTest extends TestCase
         // Configure query builder for successful delete
         $this->mockQueryBuilder->method('delete')
             ->willReturn(true); // Return true for successful deletion
-            
+
         // Call the method
         $result = $this->roleRepository->unassignRole('user-uuid', 'role-uuid');
-        
+
         // Assert result
         $this->assertTrue($result);
     }
-    
+
     /**
      * Test checking if user has role
      */
@@ -215,11 +215,11 @@ class RoleRepositoryTest extends TestCase
             ->willReturnSelf();
         $this->mockQueryBuilder->method('count')
             ->willReturnOnConsecutiveCalls(1, 0);
-            
+
         // Test user has role
         $result1 = $this->roleRepository->userHasRole('user-uuid', 'admin');
         $this->assertTrue($result1);
-        
+
         // Test user doesn't have role
         $result2 = $this->roleRepository->userHasRole('user-uuid', 'super-admin');
         $this->assertFalse($result2);

@@ -19,12 +19,12 @@ class ExceptionHandlerTest extends TestCase
      * @var \PHPUnit\Framework\MockObject\MockObject&\Glueful\Logging\LogManagerInterface
      */
     private $mockLogManager;
-    
+
     /**
      * @var \PHPUnit\Framework\MockObject\MockObject|LoggerInterface
      */
     private $mockLogger;
-    
+
     /**
      * @var array<string, \PHPUnit\Framework\MockObject\MockObject|LoggerInterface>
      */
@@ -36,13 +36,13 @@ class ExceptionHandlerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create a mock logger for testing
         $this->mockLogger = $this->createMock(LoggerInterface::class);
-        
+
         // Create a mock log manager for testing
         $this->mockLogManager = $this->createMock(LogManagerInterface::class);
-        
+
         // Configure getLogger to return different loggers based on the channel
         $this->mockLogManager->method('getLogger')
             ->will($this->returnCallback(function($channel) {
@@ -51,14 +51,14 @@ class ExceptionHandlerTest extends TestCase
                 }
                 return $this->mockLoggers[$channel];
             }));
-        
+
         // Inject the mock log manager
         ExceptionHandler::setLogManager($this->mockLogManager);
-        
+
         // Enable test mode
         ExceptionHandler::setTestMode(true);
     }
-    
+
     /**
      * Clean up after tests
      */
@@ -66,13 +66,13 @@ class ExceptionHandlerTest extends TestCase
     {
         // Reset the log manager
         ExceptionHandler::setLogManager(null);
-        
+
         // Disable test mode
         ExceptionHandler::setTestMode(false);
-        
+
         parent::tearDown();
     }
-    
+
     /**
      * Test handling of ValidationException
      */
@@ -87,7 +87,7 @@ public function testHandleValidationException(): void
         'email' => ['The email must be a valid email address']
     ];
     $exception = new ValidationException($errors);
-    
+
     // Configure the validation logger to expect an error call
     // The mockLogManager will create it when getLogger('validation') is called
     $this->mockLoggers['validation'] = $this->createMock(LoggerInterface::class);
@@ -102,35 +102,35 @@ public function testHandleValidationException(): void
                        isset($context['type']);
             })
         );
-    
+
     // Enable test mode
     ExceptionHandler::setTestMode(true);
-    
+
     // Act - Call the handleException method
     ExceptionHandler::handleException($exception);
-    
+
     // Get the captured response
     $responseData = ExceptionHandler::getTestResponse();
-    
+
     // Assert - Check channel mapping and exception properties
     $reflection = new \ReflectionClass(ExceptionHandler::class);
     $channelMapProperty = $reflection->getProperty('channelMap');
     $channelMapProperty->setAccessible(true);
     $channelMap = $channelMapProperty->getValue();
-    
+
     // Assert the channel mapping
     $this->assertEquals('validation', $channelMap[ValidationException::class]);
-    
+
     // Assert exception properties
     $this->assertEquals($errors, $exception->getErrors());
     $this->assertEquals(422, $exception->getStatusCode());
-    
+
     // Assert response format
     $this->assertNotNull($responseData);
     $this->assertEquals(422, $responseData['status']);
     $this->assertEquals('Validation failed', $responseData['message']); // Note: The message in the handler is "Validation failed", not "Validation failed"
     $this->assertEquals($errors, $responseData['data']);
 }
-    
+
     // Update other test methods similarly...
 }

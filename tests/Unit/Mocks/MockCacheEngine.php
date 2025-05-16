@@ -3,15 +3,15 @@ namespace Tests\Unit\Mocks;
 
 /**
  * Mock Cache Engine for testing
- * 
+ *
  * This class mocks the behavior of the CacheEngine class for testing purposes.
  * It stores data in memory rather than using an actual cache system.
  */
-class MockCacheEngine 
+class MockCacheEngine
 {
     /** @var array In-memory store for cache data */
     protected static array $cacheData = [];
-    
+
     /** @var string Key prefix */
     private static string $prefix = '';
 
@@ -21,7 +21,7 @@ class MockCacheEngine
      * @param string $prefix The prefix for cache keys
      * @return bool Always returns true
      */
-    public static function initialize(string $prefix = '', string $driver = ''): bool 
+    public static function initialize(string $prefix = '', string $driver = ''): bool
     {
         self::$prefix = $prefix;
         return true;
@@ -33,7 +33,7 @@ class MockCacheEngine
      * @param string $key The cache key
      * @return mixed The stored value or null if not found
      */
-    public static function get(string $key): mixed 
+    public static function get(string $key): mixed
     {
         return self::$cacheData[$key] ?? null;
     }
@@ -46,7 +46,7 @@ class MockCacheEngine
      * @param int $ttl Time to live (ignored in mock)
      * @return bool Always returns true
      */
-    public static function set(string $key, mixed $value, int $ttl = 3600): bool 
+    public static function set(string $key, mixed $value, int $ttl = 3600): bool
     {
         self::$cacheData[$key] = $value;
         return true;
@@ -58,14 +58,14 @@ class MockCacheEngine
      * @param string $key The cache key
      * @return bool Always returns true
      */
-    public static function delete(string $key): bool 
+    public static function delete(string $key): bool
     {
         if (isset(self::$cacheData[$key])) {
             unset(self::$cacheData[$key]);
         }
         return true;
     }
-    
+
     /**
      * Reset the mock cache (for testing)
      *
@@ -75,10 +75,10 @@ class MockCacheEngine
     {
         self::$cacheData = [];
     }
-    
+
     /**
      * Set raw cache data for testing
-     * 
+     *
      * @param array $data The data to set
      * @return void
      */

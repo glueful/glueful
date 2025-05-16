@@ -18,7 +18,8 @@ A modern, secure, and scalable API framework designed for building robust PHP ap
 - Database migrations and schema management
 - Rate limiting capabilities
 - JWT-based authentication
-- Audit logging for security events
+- Comprehensive audit logging for security events
+- Performance-optimized database query logging with N+1 detection
 - File storage and management
 - Modular extension system
 - Comprehensive testing infrastructure

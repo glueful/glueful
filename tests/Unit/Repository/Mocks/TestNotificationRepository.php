@@ -6,8 +6,8 @@ use Glueful\Database\QueryBuilder;
 use Tests\Unit\Database\Mocks\MockSQLiteConnection;
 
 /**
- * Test Notification Repository 
- * 
+ * Test Notification Repository
+ *
  * Extends the real NotificationRepository but allows dependency injection
  * for easier testing.
  */
@@ -15,13 +15,13 @@ class TestNotificationRepository extends NotificationRepository
 {
     /**
      * Constructor with dependency injection support
-     * 
+     *
      * @param QueryBuilder|null $queryBuilder Optional query builder to inject
      */
     public function __construct(?QueryBuilder $queryBuilder = null)
     {
         // Skip parent constructor to avoid real database connection
-        
+
         if ($queryBuilder) {
             // Use reflection to set the private property in the parent class
             $reflection = new \ReflectionClass(NotificationRepository::class);
@@ -31,21 +31,21 @@ class TestNotificationRepository extends NotificationRepository
         } else {
             $connection = new MockSQLiteConnection();
             $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            
+
             // Use reflection to set the private property in the parent class
             $reflection = new \ReflectionClass(NotificationRepository::class);
             $queryBuilderProperty = $reflection->getProperty('queryBuilder');
             $queryBuilderProperty->setAccessible(true);
             $queryBuilderProperty->setValue($this, $queryBuilder);
-            
+
             // Create necessary tables for notification testing
             $this->setupNotificationTables($connection->getPDO());
         }
     }
-    
+
     /**
      * Create tables needed for notification tests
-     * 
+     *
      * @param \PDO $pdo
      */
     private function setupNotificationTables(\PDO $pdo): void
@@ -65,7 +65,7 @@ class TestNotificationRepository extends NotificationRepository
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL
         )");
-        
+
         // Create notification_preferences table
         $pdo->exec("CREATE TABLE IF NOT EXISTS notification_preferences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +79,7 @@ class TestNotificationRepository extends NotificationRepository
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL
         )");
-        
+
         // Create notification_templates table
         $pdo->exec("CREATE TABLE IF NOT EXISTS notification_templates (
             id TEXT PRIMARY KEY,

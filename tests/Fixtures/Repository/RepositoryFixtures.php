@@ -5,14 +5,14 @@ namespace Tests\Fixtures\Repository;
 
 /**
  * Repository Test Fixtures
- * 
+ *
  * Provides sample data for repository unit tests
  */
 class RepositoryFixtures
 {
     /**
      * Get sample user data
-     * 
+     *
      * @param bool $withId Whether to include ID field
      * @return array Sample user data
      */
@@ -27,17 +27,17 @@ class RepositoryFixtures
             'created_at' => '2023-01-01 00:00:00',
             'updated_at' => '2023-01-01 00:00:00'
         ];
-        
+
         if ($withId) {
             $data['id'] = 1;
         }
-        
+
         return $data;
     }
-    
+
     /**
      * Get sample user profile data
-     * 
+     *
      * @return array Sample profile data
      */
     public static function getSampleUserProfileData(): array
@@ -52,10 +52,10 @@ class RepositoryFixtures
             'updated_at' => '2023-01-01 00:00:00'
         ];
     }
-    
+
     /**
      * Get sample role data
-     * 
+     *
      * @return array Array of sample roles
      */
     public static function getSampleRoleData(): array
@@ -78,10 +78,10 @@ class RepositoryFixtures
             ]
         ];
     }
-    
+
     /**
      * Get sample permissions data
-     * 
+     *
      * @return array Array of sample permissions
      */
     public static function getSamplePermissionsData(): array
@@ -109,10 +109,10 @@ class RepositoryFixtures
             ]
         ];
     }
-    
+
     /**
      * Get sample notification data
-     * 
+     *
      * @return array Array of sample notifications
      */
     public static function getSampleNotificationsData(): array
@@ -146,10 +146,10 @@ class RepositoryFixtures
             ]
         ];
     }
-    
+
     /**
      * Get sample notification preferences data
-     * 
+     *
      * @return array Array of sample notification preferences
      */
     public static function getSamplePreferencesData(): array

@@ -18,6 +18,10 @@ use Glueful\Database\RawExpression;
  * - Automatic deadlock handling
  * - Soft delete integration
  * - Pagination support
+ * - Query purpose annotation
+ * - Advanced query logging with table name extraction
+ * - Query complexity analysis
+ * - N+1 query detection
  *
  * Design patterns:
  * - Fluent interface for method chaining
@@ -28,6 +32,16 @@ use Glueful\Database\RawExpression;
  * - Automatic parameter binding
  * - Identifier escaping
  * - Transaction isolation
+ * - Parameter sanitization in logs
+ *
+ * Example with query purpose annotation:
+ * ```php
+ * $users = $queryBuilder
+ *     ->withPurpose('User authentication check')
+ *     ->select('users', ['id', 'email'])
+ *     ->where(['status' => 'active', 'email' => $email])
+ *     ->get();
+ * ```
  */
 class QueryBuilder
 {
@@ -69,6 +83,9 @@ class QueryBuilder
 
     /** @var bool Enable debug mode */
     private bool $debugMode = false;  // Default: Off
+
+    /** @var string|null Purpose of the current query for business context */
+    private ?string $queryPurpose = null;
 
     /** @var QueryLogger Logger for queries and database operations */
     protected QueryLogger $logger;
@@ -1065,15 +1082,20 @@ class QueryBuilder
     {
         // Start timing the query with debug context if enabled
         $timerId = $this->logger->startTiming($this->debugMode ? 'query_with_debug' : 'query');
+
+        // Capture current purpose and reset it to allow for new purposes on subsequent queries
+        $purpose = $this->queryPurpose;
+        $this->queryPurpose = null;
+
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-             // Log successful query
-            $this->logger->logQuery($sql, $params, $timerId, null);
+             // Log successful query with purpose
+            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode, $purpose);
             return $stmt;
         } catch (PDOException $e) {
-            // Log failed query
-            $this->logger->logQuery($sql, $params, $timerId, $e);
+            // Log failed query with purpose
+            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode, $purpose);
             throw $e;
         }
     }
@@ -1254,6 +1276,21 @@ class QueryBuilder
             $this->logger->logQuery($this->query, $this->bindings, $timerId, $e);
             throw $e;
         }
+    }
+
+    /**
+     * Set a business purpose for the query
+     *
+     * This provides context for logging and helps with understanding
+     * the business purpose of database operations
+     *
+     * @param string $purpose Business purpose for the query
+     * @return self Builder instance for chaining
+     */
+    public function withPurpose(string $purpose): self
+    {
+        $this->queryPurpose = $purpose;
+        return $this;
     }
 
     // The isSensitiveTable method is already defined earlier in this class
