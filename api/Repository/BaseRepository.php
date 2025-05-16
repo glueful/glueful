@@ -34,7 +34,7 @@ abstract class BaseRepository
     protected string $table;
 
     /** @var string Primary key field name, defaults to 'id' */
-    protected string $primaryKey = 'id';
+    protected string $primaryKey = 'uuid';
 
     /** @var bool Whether this repository handles sensitive data requiring stricter auditing */
     protected bool $containsSensitiveData = false;
@@ -67,23 +67,6 @@ abstract class BaseRepository
 
         // Get the audit logger instance
         $this->auditLogger = AuditLogger::getInstance();
-    }
-
-    /**
-     * Find a record by its primary key
-     *
-     * @param string|int $id Record identifier
-     * @param array|null $fields Fields to retrieve
-     * @return array|null Record data or null if not found
-     */
-    public function findById($id, ?array $fields = null): ?array
-    {
-        $query = $this->db->select($this->table, $fields ?? $this->defaultFields)
-            ->where([$this->primaryKey => $id])
-            ->limit(1)
-            ->get();
-
-        return $query ? $query[0] : null;
     }
 
     /**
@@ -140,16 +123,11 @@ abstract class BaseRepository
      */
     public function create(array $data, ?string $userId = null)
     {
-        // Add creation timestamp if not provided
-        if (!isset($data['created_at'])) {
-            $data['created_at'] = date('Y-m-d H:i:s');
-        }
-
         // Execute the insert
         $id = $this->db->insert($this->table, $data);
 
         // Audit log the creation
-        // $this->auditDataAction('create', $id, $data, $userId);
+        $this->auditDataAction('create', $id, $data, $userId);
 
         return $id;
     }
@@ -164,19 +142,14 @@ abstract class BaseRepository
      */
     public function update($id, array $data, ?string $userId = null): bool
     {
-        // Add update timestamp if not provided
-        if (!isset($data['updated_at'])) {
-            $data['updated_at'] = date('Y-m-d H:i:s');
-        }
-
         // Get the original record before updating (for audit comparison)
-        $originalData = $this->findById($id);
+        $originalData = $this->findBy($this->primaryKey, $id);
 
         // Execute the update
         $result = $this->db->update($this->table, $data, [$this->primaryKey => $id]);
 
         // Audit log the update with the changes
-        // $this->auditDataAction('update', $id, $data, $userId, $originalData);
+        $this->auditDataAction('update', $id, $data, $userId, $originalData);
 
         return $result > 0;
     }
@@ -191,13 +164,13 @@ abstract class BaseRepository
     public function delete($id, ?string $userId = null): bool
     {
         // Get the record before deleting (for audit log)
-        $originalData = $this->findById($id);
+        $originalData = $this->findBy($this->primaryKey, $id);
 
         // Execute the delete
         $result = $this->db->delete($this->table, [$this->primaryKey => $id]);
 
         // Audit log the deletion
-        // $this->auditDataAction('delete', $id, [], $userId, $originalData);
+        $this->auditDataAction('delete', $id, [], $userId, $originalData);
 
         return $result > 0;
     }

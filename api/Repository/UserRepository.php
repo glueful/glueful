@@ -111,7 +111,7 @@ class UserRepository extends BaseRepository
     public function findByUUID(string $uuid): ?array
     {
         // Use BaseRepository's findById method since UUID is our primary key
-        return $this->findById($uuid);
+        return $this->findBy($this->primaryKey, $uuid);
     }
 
     /**
@@ -203,9 +203,6 @@ class UserRepository extends BaseRepository
         $success = $this->update($user['uuid'], [
             'password' => $password
         ], $userId);
-
-        // Note: We removed the duplicate audit log call here to prevent memory issues
-        // The parent::update() already logs this event through auditDataAction
 
         return $success;
     }

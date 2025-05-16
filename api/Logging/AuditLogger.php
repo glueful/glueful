@@ -42,6 +42,9 @@ class AuditLogger extends LogManager
     /** @var string Database table for tracked entities */
     protected string $entitiesTable = 'audit_entities';
 
+    /** @var bool Flag indicating whether logging is active */
+    private static bool $isLogging = false;
+
     /** @var array Audit log retention policies by category (days) */
     protected array $retentionPolicies = [
         AuditEvent::CATEGORY_AUTH => 365,     // Authentication events: 1 year
@@ -350,24 +353,41 @@ class AuditLogger extends LogManager
      */
     public function logAuditEvent(AuditEvent $event): string
     {
-        // Verify integrity of the event
-        if (!$event->verifyIntegrity()) {
-            throw new \RuntimeException("Audit event integrity check failed.");
+        // Use a local static variable to track recursion within this specific call
+        static $localIsLogging = false;
+        
+        // Prevent deep recursive logging but allow initial entry
+        if ($localIsLogging) {
+            return $event->getEventId();
         }
 
-        // Store in database if enabled
-        if ($this->storageBackends['database']) {
-            $this->storeAuditEventInDatabase($event);
-        }
+        try {
+            $localIsLogging = true;
+            // Set the class-level flag but don't rely on it exclusively for recursion detection
+            self::$isLogging = true;
 
-        // Log through Monolog if file backend is enabled
-        if ($this->storageBackends['file']) {
-            $this->logToFile($event);
-        }
+            // Verify integrity of the event
+            if (!$event->verifyIntegrity()) {
+                throw new \RuntimeException("Audit event integrity check failed.");
+            }
+            
+            // Store in database if enabled
+            if ($this->storageBackends['database']) {
+                $dbResult = $this->storeAuditEventInDatabase($event);
+            }
 
-        // Send to external service if configured
-        if ($this->storageBackends['external'] && $this->externalServiceUrl) {
-            $this->sendToExternalService($event);
+            // Log through Monolog if file backend is enabled
+            if ($this->storageBackends['file']) {
+                $this->logToFile($event);
+            }
+
+            // Send to external service if configured
+            if ($this->storageBackends['external'] && $this->externalServiceUrl) {
+                $this->sendToExternalService($event);
+            }
+        } finally {
+            self::$isLogging = false;
+            $localIsLogging = false;
         }
 
         return $event->getEventId();
@@ -386,6 +406,17 @@ class AuditLogger extends LogManager
         // Generate a unique UUID for the record
         $eventData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
 
+        // Format timestamp to MySQL DATETIME format (from ISO 8601)
+        if (isset($eventData['timestamp'])) {
+            try {
+                $dateTime = new \DateTime($eventData['timestamp']);
+                $eventData['timestamp'] = $dateTime->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+                // If parsing fails, use current time as fallback
+                $eventData['timestamp'] = date('Y-m-d H:i:s');
+            }
+        }
+
         // Calculate retention date based on category
         $retentionDays = $this->retentionPolicies[$event->getCategory()] ?? 365; // Default: 1 year
         $retentionDate = (new \DateTimeImmutable())->modify("+{$retentionDays} days")->format('Y-m-d H:i:s');
@@ -399,13 +430,22 @@ class AuditLogger extends LogManager
         }
 
         try {
+            // Check if table exists
+            $tableExists = $this->schema->tableExists($this->auditTable);
+            
+            if (!$tableExists) {
+                $this->ensureAuditTablesExist();
+                $tableExists = $this->schema->tableExists($this->auditTable);
+            }
+
             // Insert the audit event
             $result = $this->db->insert($this->auditTable, $eventData);
 
             return $result !== false;
         } catch (\Exception $e) {
             // Log error but don't throw exception to avoid breaking application flow
-            parent::error("Failed to store audit event in database: " . $e->getMessage(), [
+            $errorMsg = "Failed to store audit event in database: " . $e->getMessage();
+            parent::error($errorMsg, [
                 'event_id' => $event->getEventId(),
                 'error' => $e->getMessage()
             ]);
@@ -422,24 +462,35 @@ class AuditLogger extends LogManager
      */
     protected function logToFile(AuditEvent $event): void
     {
-        // Map event severity to Monolog level
-        $level = $this->severityLevelMap[$event->getSeverity()] ?? Level::Info;
+        // Check for recursion
+        if (self::$isLogging) {
+            return;
+        }
 
-        // Get event data for logging
-        $eventData = $event->toArray();
+        try {
+            self::$isLogging = true;
 
-        // Log to the channel matching the event category
-        $this->getInternalLogger()
-            ->withName($event->getCategory())
-            ->log(
-                $level,
-                sprintf(
-                    "AUDIT: [%s] %s",
-                    $event->getAction(),
-                    json_encode($eventData, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR)
-                ),
-                ['audit_event' => $eventData]
-            );
+            // Map event severity to Monolog level
+            $level = $this->severityLevelMap[$event->getSeverity()] ?? Level::Info;
+
+            // Get event data for logging
+            $eventData = $event->toArray();
+
+            // Log to the channel matching the event category
+            $this->getInternalLogger()
+                ->withName($event->getCategory())
+                ->log(
+                    $level,
+                    sprintf(
+                        "AUDIT: [%s] %s",
+                        $event->getAction(),
+                        json_encode($eventData, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR)
+                    ),
+                    ['audit_event' => $eventData]
+                );
+        } finally {
+            self::$isLogging = false;
+        }
     }
 
     /**
@@ -494,11 +545,17 @@ class AuditLogger extends LogManager
         string $severity = AuditEvent::SEVERITY_INFO,
         array $details = []
     ): string {
+
+        // Prevent recursive logging
+        if (self::$isLogging) {
+            return 'recursive-' . uniqid();
+        }
         // Create a new audit event
         $event = new AuditEvent($category, $action, $severity, $details);
 
         // Try to get authenticated user from the user repository
         try {
+             self::$isLogging = true;
             $userRepo = new UserRepository();
             $currentUser = $userRepo->getCurrentUser();
 
@@ -507,6 +564,8 @@ class AuditLogger extends LogManager
             }
         } catch (\Exception $e) {
             // Silently handle auth errors - logging should continue even if auth fails
+        } finally {
+            self::$isLogging = false; // Always reset flag even if exceptions occur
         }
 
         // Log the event
@@ -528,13 +587,24 @@ class AuditLogger extends LogManager
         array $details = [],
         string $severity = AuditEvent::SEVERITY_INFO
     ): string {
-        $event = new AuditEvent(AuditEvent::CATEGORY_AUTH, $action, $severity, $details);
-
-        if ($userId) {
-            $event->setActor($userId);
+        // Use a static local variable for recursion detection within this method
+        static $localIsLogging = false;
+        
+        // Prevent recursive logging but only for deep recursion
+        if ($localIsLogging) {
+            return 'recursive-' . uniqid();
         }
 
-        return $this->logAuditEvent($event);
+        try {
+            $localIsLogging = true;
+            $event = new AuditEvent(AuditEvent::CATEGORY_AUTH, $action, $severity, $details);
+            if ($userId) {
+                $event->setActor($userId);
+            }
+            return $this->logAuditEvent($event);
+        } finally {
+            $localIsLogging = false;
+        }
     }
 
     /**
@@ -588,17 +658,28 @@ class AuditLogger extends LogManager
         array $details = [],
         string $severity = AuditEvent::SEVERITY_INFO
     ): string {
-        $event = new AuditEvent(AuditEvent::CATEGORY_DATA, $action, $severity, $details);
-
-        if ($userId) {
-            $event->setActor($userId);
+        // Prevent recursive logging
+        if (self::$isLogging) {
+            return 'recursive-' . uniqid();
         }
 
-        if ($dataId && $dataType) {
-            $event->setTarget($dataId, $dataType);
-        }
+        try {
+            self::$isLogging = true;
 
-        return $this->logAuditEvent($event);
+            $event = new AuditEvent(AuditEvent::CATEGORY_DATA, $action, $severity, $details);
+
+            if ($userId) {
+                $event->setActor($userId);
+            }
+
+            if ($dataId && $dataType) {
+                $event->setTarget($dataId, $dataType);
+            }
+
+            return $this->logAuditEvent($event);
+        } finally {
+            self::$isLogging = false;
+        }
     }
 
     /**

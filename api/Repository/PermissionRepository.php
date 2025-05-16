@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Repository;
 
-use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 
 /**
@@ -17,17 +15,13 @@ use Glueful\Helpers\Utils;
  * - Permission assignment and revocation
  * - Access control queries
  *
- * This repository implements the repository pattern to abstract
- * database operations for permission management and provide a clean API
- * for permission data access and manipulation.
+ * This repository extends BaseRepository to leverage common CRUD operations
+ * and audit logging functionality.
  *
  * @package Glueful\Repository
  */
-class PermissionRepository
+class PermissionRepository extends BaseRepository
 {
-    /** @var QueryBuilder Database query builder instance */
-    private QueryBuilder $db;
-
     /**
      * Initialize repository
      *
@@ -36,8 +30,13 @@ class PermissionRepository
      */
     public function __construct()
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        // Set the table and other configuration before calling parent constructor
+        $this->table = 'role_permissions';
+        $this->primaryKey = 'uuid';
+        $this->defaultFields = ['uuid', 'role_uuid', 'model', 'permissions', 'created_at', 'updated_at'];
+
+        // Call parent constructor to set up database connection
+        parent::__construct();
     }
 
     /**
@@ -122,14 +121,17 @@ class PermissionRepository
             $permissionsData = json_encode(explode(',', $permissions));
         }
 
-        // Insert permission record
-        $success = $this->db->insert('user_permissions', [
+        // Create data array for insert
+        $data = [
             'uuid' => $uuid,
             'user_uuid' => $userUuid,
             'model' => $model,
             'permissions' => $permissionsData,
             'created_at' => date('Y-m-d H:i:s')
-        ]);
+        ];
+
+        // Insert permission record using direct db call since we're using a different table
+        $success = $this->db->insert('user_permissions', $data);
 
         // Invalidate permission cache if successful
         if ($success) {
@@ -176,13 +178,7 @@ class PermissionRepository
      */
     public function getRolePermissions(string $roleUuid): array
     {
-        $permissions = $this->db->select('role_permissions', [
-                'role_uuid',
-                'model',
-                'permissions',
-                'created_at',
-                'updated_at'
-            ])
+        $permissions = $this->db->select($this->table, $this->defaultFields)
             ->where(['role_uuid' => $roleUuid])
             ->get();
 
@@ -222,20 +218,16 @@ class PermissionRepository
         // Generate UUID for new permission record
         $uuid = Utils::generateNanoID();
 
-        // Format permissions based on input type
-        // if (is_array($permissions)) {
-        //     $permissionsData = json_encode($permissions);
-        // } else {
-        //     $permissionsData = json_encode(explode(',', $permissions));
-        // }
-
-        // Insert permission record
-        $success = $this->db->insert('role_permissions', [
+        // Create data array for insert
+        $data = [
             'uuid' => $uuid,
             'role_uuid' => $roleUuid,
             'model' => $model,
             'permissions' => $permissions,
-        ]);
+        ];
+
+        // Use BaseRepository create method
+        $success = $this->create($data);
 
         return $success ? $uuid : false;
     }
@@ -252,11 +244,17 @@ class PermissionRepository
      */
     public function removeRolePermission(string $roleUuid, string $model): bool
     {
-        return $this->db->delete(
-            'role_permissions',
-            ['role_uuid' => $roleUuid, 'model' => $model],
-            false
-        );
+        // Find the permission record to delete
+        $permission = $this->db->select($this->table, ['uuid'])
+            ->where(['role_uuid' => $roleUuid, 'model' => $model])
+            ->get();
+
+        if (!empty($permission)) {
+            // Use BaseRepository delete method for better audit logging
+            return $this->delete($permission[0]['uuid']);
+        }
+
+        return false;
     }
 
     /**
@@ -280,23 +278,19 @@ class PermissionRepository
         }
 
         // Check if permission record exists
-        $existingPermission = $this->db->select('role_permissions', ['uuid'])
+        $existingPermission = $this->db->select($this->table, ['uuid'])
             ->where(['role_uuid' => $roleUuid, 'model' => $model])
             ->limit(1)
             ->get();
 
         if ($existingPermission) {
-            // Update existing permission using update method
+            // Update existing permission using BaseRepository update method
             $updateData = [
                 'permissions' => $permissionsData,
                 'updated_at' => date('Y-m-d H:i:s')
             ];
 
-            return $this->db->update(
-                'role_permissions',
-                $updateData,
-                ['uuid' => $existingPermission[0]['uuid']]
-            ) > 0;
+            return $this->update($existingPermission[0]['uuid'], $updateData);
         } else {
             // Create new permission
             return (bool) $this->assignRolePermission($roleUuid, $model, $permissions);
@@ -391,21 +385,23 @@ class PermissionRepository
      *
      * @param string $model The model/resource name (e.g., 'users', 'posts')
      * @param array $permissions Array of permission actions (e.g., ['read', 'write', 'delete'])
-     * @return mixed The created permission record
-     * @throws \Exception If permission creation fails
+     * @param string $roleUuid Role UUID to assign permission to
+     * @return mixed The created permission record UUID or false if failed
      */
-    public function createPermission(string $model, array $permissions, $roleUuid): mixed
+    public function createPermission(string $model, array $permissions, string $roleUuid): mixed
     {
-        // Generate UUID for new permission record
-        $uuid = Utils::generateNanoID();
-        $success = $this->db->insert('role_permissions', [
-            'uuid' => $uuid,
+        // Create data array for insert
+        $data = [
+            'uuid' => Utils::generateNanoID(),
             'role_uuid' => $roleUuid,
             'model' => $model,
             'permissions' => $permissions,
-        ]);
+        ];
 
-        return $success ? $uuid : false;
+        // Use BaseRepository create method
+        $success = $this->create($data);
+
+        return $success ? $data['uuid'] : false;
     }
 
     /**
@@ -417,7 +413,7 @@ class PermissionRepository
      */
     public function updatePermission(string $uuid, array $data): bool
     {
-        return $this->db->upsert('role_permissions', $data, ['uuid' => $uuid]) > 0;
+        return $this->update($uuid, $data);
     }
 
     /**
@@ -429,15 +425,7 @@ class PermissionRepository
      */
     public function getAllPermissions(): array
     {
-        return $this->db->select('role_permissions', [
-                'uuid',
-                'role_uuid',
-                'model',
-                'permissions',
-                'created_at',
-                'updated_at'
-            ])
-            ->get();
+        return $this->getAll();
     }
 
     /**
