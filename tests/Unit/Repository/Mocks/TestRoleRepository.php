@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Repository\Mocks;
 
 use Glueful\Repository\RoleRepository;
@@ -57,11 +58,36 @@ class TestRoleRepository extends RoleRepository
      * Override assignRole to avoid PermissionManager dependency
      *
      * @param string $userUuid User UUID to assign role to
-     * @param string $roleUuid Role UUID to assign
+     * @param string|array $roleUuid Role UUID to assign
+     * @param string|null $organizationUuid Organization UUID
+     * @param bool|null $skipCache Optional cache control parameter
+     * @param string|null $context Optional context string
+     * @param string|null $condition Optional condition
      * @return bool Success status
      */
-    public function assignRole(string $userUuid, string $roleUuid): bool
-    {
+    public function assignRole(
+        string $userUuid,
+        string|array $roleUuid,
+        ?string $organizationUuid = null,
+        ?bool $skipCache = null,
+        ?string $context = null,
+        ?string $condition = null
+    ): bool {
+        if (is_array($roleUuid)) {
+            $success = true;
+            foreach ($roleUuid as $singleRoleUuid) {
+                $data = [
+                    'user_uuid' => $userUuid,
+                    'role_uuid' => $singleRoleUuid,
+                ];
+                $result = $this->testDb->insert('user_roles_lookup', $data);
+                if (!$result) {
+                    $success = false;
+                }
+            }
+            return $success;
+        }
+
         $data = [
             'user_uuid' => $userUuid,
             'role_uuid' => $roleUuid,
@@ -76,10 +102,16 @@ class TestRoleRepository extends RoleRepository
      *
      * @param string $userUuid User UUID to remove role from
      * @param string $roleUuid Role UUID to remove
+     * @param string|null $organizationUuid Optional organization UUID
+     * @param bool|null $skipCache Optional cache control parameter
      * @return bool Success status
      */
-    public function unassignRole(string $userUuid, string $roleUuid): bool
-    {
+    public function unassignRole(
+        string $userUuid,
+        string $roleUuid,
+        ?string $organizationUuid = null,
+        ?bool $skipCache = null
+    ): bool {
         $result = $this->testDb->delete('user_roles_lookup', [
             'user_uuid' => $userUuid,
             'role_uuid' => $roleUuid
