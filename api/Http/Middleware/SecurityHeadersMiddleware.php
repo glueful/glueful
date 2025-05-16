@@ -95,7 +95,7 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
      * @param Response $response The response
      * @param Request $request The request (for checking HTTPS)
      */
-    private function addSecurityHeaders(Response $response, Request $request = null): void
+    private function addSecurityHeaders(Response $response, ?Request $request = null): void
     {
         // Content Security Policy
         if ($this->config['content_security_policy']['enabled']) {
