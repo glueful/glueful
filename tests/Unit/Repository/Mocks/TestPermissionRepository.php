@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Repository\Mocks;
 
 use Glueful\Repository\PermissionRepository;
@@ -32,6 +33,11 @@ class TestPermissionRepository extends PermissionRepository
     public function __construct(?QueryBuilder $queryBuilder = null, ?RoleRepository $roleRepository = null)
     {
         // Skip parent constructor to avoid real database connection
+
+        // Initialize properties that would normally be set in parent
+        $this->table = 'role_permissions';
+        $this->primaryKey = 'uuid';
+        $this->defaultFields = ['uuid', 'role_uuid', 'model', 'permissions', 'created_at', 'updated_at'];
 
         if ($queryBuilder) {
             // Use reflection to set the private property in the parent class

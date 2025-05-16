@@ -1,10 +1,13 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Tests\Unit\Repository;
 
 use Tests\Unit\Repository\Mocks\TestUserRepository;
 use Tests\Unit\Repository\Mocks\MockUserConnection;
+use Tests\Helpers\DatabaseMock;
+use Tests\Helpers\AuditLoggerMock;
 use Tests\TestCase;
 use Glueful\DTOs\UsernameDTO;
 use Glueful\DTOs\EmailDTO;
@@ -39,18 +42,12 @@ class UserRepositoryTest extends TestCase
     {
         parent::setUp();
 
-        // Create mock connection with in-memory SQLite
-        $connection = new MockUserConnection();
-
-        // Create mock objects
-        $this->mockQueryBuilder = $this->createMock(QueryBuilder::class);
+        // Create mock objects using our helper
+        $this->mockQueryBuilder = DatabaseMock::createMockQueryBuilder($this);
         $this->mockValidator = $this->createMock(Validator::class);
 
         // Create repository with our mock objects
         $this->userRepository = new TestUserRepository($this->mockQueryBuilder, $this->mockValidator);
-
-        // Create required tables for testing
-        $connection->createUserTables();
     }
 
     /**
