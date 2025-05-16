@@ -8,7 +8,7 @@ return [
         'TestExtension',
         'AnotherTestExtension'
     ],
-    
+
     // Per-extension configuration
     'config' => [
         'TestExtension' => [
@@ -20,7 +20,7 @@ return [
             'api_key' => 'test_key_12345'
         ]
     ],
-    
+
     // Extension load order
     'load_order' => [
         'TestExtension',

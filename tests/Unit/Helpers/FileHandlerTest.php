@@ -23,28 +23,28 @@ class FileHandlerTest extends TestCase
     private TestFileUploaderWrapper $uploaderWrapper;
     private MockObject $mockAuth;
     private MockObject $mockStorage;
-    
+
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Instead of using a real FileUploader, use our TestFileUploaderWrapper
         $this->uploaderWrapper = new TestFileUploaderWrapper();
-        
+
         // Create mock for AuthenticationService
         $this->mockAuth = $this->createMock(AuthenticationService::class);
-        
+
         // Create mock for StorageInterface
         $this->mockStorage = $this->createMock(StorageInterface::class);
-        
+
         // Create the TestFileHandler instance with our wrapper
         $this->fileHandler = new TestFileHandler($this->uploaderWrapper);
-        
+
         // Directly set the auth property on our TestFileHandler instance
         // No need for reflection since we're using our test subclass that has this property
         $this->fileHandler->auth = $this->mockAuth;
     }
-    
+
     /**
      * Set the mocked token value for testing using our test helper
      */
@@ -52,7 +52,7 @@ class FileHandlerTest extends TestCase
     {
         AuthTestHelper::setMockedToken($token);
     }
-    
+
     /**
      * Access a private method for testing
      * Using modern approach that doesn't need setAccessible
@@ -64,7 +64,7 @@ class FileHandlerTest extends TestCase
         $method = new ReflectionMethod(get_class($object), $methodName);
         return $method->invokeArgs($object, $parameters);
     }
-    
+
     /**
      * Test file upload processing
      */
@@ -72,13 +72,13 @@ class FileHandlerTest extends TestCase
     {
         // Set up the mocked token
         $this->setMockedToken('valid-token');
-        
+
         // Prepare test data
         $getParams = [
             'user_id' => '123',
             'token' => 'valid-token'
         ];
-        
+
         $fileParams = [
             'file' => [
                 'name' => 'test.jpg',
@@ -100,23 +100,23 @@ class FileHandlerTest extends TestCase
             ],
             'message' => 'File uploaded successfully'
         ]);
-        
+
         // Execute the method under test
         $result = $this->fileHandler->handleFileUpload($getParams, $fileParams);
-        
+
         // Assert the expected results
         $this->assertTrue($result['success']);
         $this->assertEquals('File uploaded successfully', $result['message']);
         $this->assertArrayHasKey('uuid', $result['data']);
         $this->assertArrayHasKey('url', $result['data']);
-        
+
         // Verify that the uploader was called with correct parameters
         $this->assertEquals(1, $this->uploaderWrapper->getCallCount('handleUpload'));
         $this->assertEquals('valid-token', $this->uploaderWrapper->uploadCalls[0]['token']);
         $this->assertEquals($getParams, $this->uploaderWrapper->uploadCalls[0]['getParams']);
         $this->assertEquals($fileParams, $this->uploaderWrapper->uploadCalls[0]['fileParams']);
     }
-    
+
     /**
      * Test file upload handling when authentication is missing
      */
@@ -124,16 +124,16 @@ class FileHandlerTest extends TestCase
     {
         // Set mocked token to null to simulate missing authentication
         $this->setMockedToken(null);
-        
+
         // Execute the method under test
         $result = $this->fileHandler->handleFileUpload([], []);
-        
+
         // Assert the expected results
         $this->assertFalse($result['success']);
         $this->assertEquals('Authentication required', $result['message']);
         $this->assertEquals(401, $result['code']);
     }
-    
+
     /**
      * Test base64 file upload processing
      */
@@ -141,18 +141,18 @@ class FileHandlerTest extends TestCase
     {
         // Set mocked token for authentication
         $this->setMockedToken('valid-token');
-        
+
         // Prepare test data
         $getParams = [
             'name' => 'encoded.jpg',
             'mime_type' => 'image/jpeg',
             'user_id' => '123'
         ];
-        
+
         $postParams = [
             'base64' => 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD...'
         ];
-        
+
         // Configure expected results for both method calls
         $this->uploaderWrapper->setExpectedResult('handleBase64Upload', '/tmp/generated-temp-file');
         $this->uploaderWrapper->setExpectedResult('handleUpload', [
@@ -163,22 +163,22 @@ class FileHandlerTest extends TestCase
             ],
             'message' => 'Base64 file uploaded successfully'
         ]);
-        
+
         // Execute the method under test
         $result = $this->fileHandler->handleBase64Upload($getParams, $postParams);
-        
+
         // Assert the expected results
         $this->assertTrue($result['success']);
         $this->assertEquals('Base64 file uploaded successfully', $result['message']);
         $this->assertArrayHasKey('uuid', $result['data']);
         $this->assertArrayHasKey('url', $result['data']);
-        
+
         // Verify that both methods were called correctly
         $this->assertEquals(1, $this->uploaderWrapper->getCallCount('handleBase64Upload'));
         $this->assertEquals(1, $this->uploaderWrapper->getCallCount('handleUpload'));
         $this->assertEquals('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD...', $this->uploaderWrapper->base64UploadCalls[0]['base64']);
     }
-    
+
     /**
      * Test file retrieval by UUID
      */
@@ -195,7 +195,7 @@ class FileHandlerTest extends TestCase
             'storage_type' => 'local',
             'status' => 'active'
         ];
-        
+
         // Create a specific test instance for this test
         $testHandler = new class($this->uploaderWrapper) extends TestFileHandler {
             public function getBlobInfo(string $uuid): ?array {
@@ -212,7 +212,7 @@ class FileHandlerTest extends TestCase
                 }
                 return null;
             }
-            
+
             public function getStorageDriver(string $storageType = 'local') {
                 $mockStorage = new class() {
                     public function getUrl(string $path): string {
@@ -221,7 +221,7 @@ class FileHandlerTest extends TestCase
                 };
                 return $mockStorage;
             }
-            
+
             public function getBlobAsFile($storage, array $fileInfo): array {
                 return [
                     'uuid' => $fileInfo['uuid'],
@@ -233,10 +233,10 @@ class FileHandlerTest extends TestCase
                 ];
             }
         };
-        
+
         // Execute the method using the real getBlob implementation with our overrides
         $result = $testHandler->getBlob($fileUuid, 'info');
-        
+
         // Assert results
         $this->assertTrue($result['success']);
         $this->assertEquals('File information retrieved', $result['message']);
@@ -245,7 +245,7 @@ class FileHandlerTest extends TestCase
         $this->assertArrayHasKey('name', $result['data']);
         $this->assertArrayHasKey('mime_type', $result['data']);
     }
-    
+
     /**
      * Test file retrieval when file not found
      */
@@ -253,7 +253,7 @@ class FileHandlerTest extends TestCase
     {
         // Create a mock private method to getBlobInfo
         $fileUuid = 'non-existent-uuid';
-        
+
         // Create a specific test instance for this test with our overrides
         $testHandler = new class($this->uploaderWrapper) extends TestFileHandler {
             public function getBlobInfo(string $uuid): ?array {
@@ -261,30 +261,30 @@ class FileHandlerTest extends TestCase
                 return null;
             }
         };
-        
+
         // Execute the method using the real implementation with our override
         $result = $testHandler->getBlob($fileUuid, 'info');
-        
+
         // Assert results
         $this->assertFalse($result['success']);
         $this->assertEquals('File not found', $result['message']);
         $this->assertEquals(404, $result['code']);
     }
-    
+
     /**
      * Test image processing functionality
      */
     public function testImageProcessing(): void
     {
         $fileUuid = '550e8400-e29b-41d4-a716-446655440000';
-        
+
         // Image processing parameters
         $params = [
             'w' => 300,
             'h' => 200,
             'q' => 85
         ];
-        
+
         // Create a specific test instance with our overrides
         $testHandler = new class($this->uploaderWrapper) extends TestFileHandler {
             public function getBlobInfo(string $uuid): ?array {
@@ -301,7 +301,7 @@ class FileHandlerTest extends TestCase
                 }
                 return null;
             }
-            
+
             public function getStorageDriver(string $storageType = 'local') {
                 $mockStorage = new class() {
                     public function getUrl(string $path): string {
@@ -310,7 +310,7 @@ class FileHandlerTest extends TestCase
                 };
                 return $mockStorage;
             }
-            
+
             public function processImageBlob(string $src, array $params): array {
                 return [
                     'url' => 'http://example.com/cache/images/8f7d8bc7.jpg',
@@ -324,10 +324,10 @@ class FileHandlerTest extends TestCase
                 ];
             }
         };
-        
+
         // Execute the method using the real implementation with our overrides
         $result = $testHandler->getBlob($fileUuid, 'image', $params);
-        
+
         // Assert results
         $this->assertTrue($result['success']);
         $this->assertEquals('Image processed successfully', $result['message']);
@@ -345,10 +345,10 @@ class FileHandlerTest extends TestCase
     {
         // Reset our static mock
         AuthTestHelper::setMockedToken(null);
-        
+
         parent::tearDown();
     }
-    
+
     /**
      * Test file type detection
      */
@@ -356,40 +356,40 @@ class FileHandlerTest extends TestCase
     {
         // Test various mime types to ensure they're properly categorized
         $imageTypes = [
-            'image/jpeg', 
-            'image/png', 
+            'image/jpeg',
+            'image/png',
             'image/gif',
             'image/webp'
         ];
-        
+
         $videoTypes = [
             'video/mp4',
             'video/quicktime',
             'video/mpeg'
         ];
-        
+
         $documentTypes = [
             'application/pdf',
             'application/msword',
             'text/plain'
         ];
-        
+
         // Use reflection to access the private method
         // In PHP 8+, we don't need to call setAccessible explicitly
         $method = new ReflectionMethod(FileHandler::class, 'getFileType');
-        
+
         // Test image types
         foreach ($imageTypes as $mimeType) {
             $result = $method->invoke($this->fileHandler, $mimeType);
             $this->assertEquals('image', $result, "Mime type $mimeType should be categorized as 'image'");
         }
-        
+
         // Test video types
         foreach ($videoTypes as $mimeType) {
             $result = $method->invoke($this->fileHandler, $mimeType);
             $this->assertEquals('video', $result, "Mime type $mimeType should be categorized as 'video'");
         }
-        
+
         // Test document types
         foreach ($documentTypes as $mimeType) {
             $result = $method->invoke($this->fileHandler, $mimeType);

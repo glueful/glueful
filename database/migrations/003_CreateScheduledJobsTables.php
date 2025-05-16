@@ -5,31 +5,31 @@ use Glueful\Database\Schema\SchemaManager;
 
 /**
  * Create Scheduled Jobs Tables Migration
- * 
+ *
  * Creates tables for the job scheduling system:
  * - scheduled_jobs: Stores job definitions and schedules
  * - job_executions: Tracks job execution history and results
- * 
+ *
  * This migration enables a robust job scheduling system with:
  * - Cron-based scheduling
  * - Execution history and results tracking
  * - Parameterized jobs
  * - Job status management
- * 
+ *
  * @package Glueful\Database\Migrations
  */
 class CreateScheduledJobsTables implements MigrationInterface
 {
     /**
      * Execute the migration
-     * 
+     *
      * Creates the scheduled_jobs and job_executions tables with:
      * - UUID primary keys
      * - Foreign key relationships
      * - JSON parameter storage
      * - Proper indexing
      * - Status tracking fields
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function up(SchemaManager $schema): void
@@ -81,9 +81,9 @@ class CreateScheduledJobsTables implements MigrationInterface
 
     /**
      * Reverse the migration
-     * 
+     *
      * Drops tables in correct order to respect foreign key constraints
-     * 
+     *
      * @param SchemaManager $schema Database schema manager
      */
     public function down(SchemaManager $schema): void
@@ -95,7 +95,7 @@ class CreateScheduledJobsTables implements MigrationInterface
 
     /**
      * Get migration description
-     * 
+     *
      * @return string Migration description
      */
     public function getDescription(): string

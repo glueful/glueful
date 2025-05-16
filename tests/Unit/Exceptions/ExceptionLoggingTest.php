@@ -19,7 +19,7 @@ class ExceptionLoggingTest extends TestCase
      * @var \PHPUnit\Framework\MockObject\MockObject|LogManagerInterface
      */
     private $mockLogManager;
-    
+
     /**
      * @var array<string, \PHPUnit\Framework\MockObject\MockObject|LoggerInterface>
      */
@@ -31,10 +31,10 @@ class ExceptionLoggingTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create a mock log manager
         $this->mockLogManager = $this->createMock(LogManagerInterface::class);
-        
+
         // Configure the mock log manager's getLogger method
         $this->mockLogManager->method('getLogger')
             ->will($this->returnCallback(function($channel) {
@@ -43,11 +43,11 @@ class ExceptionLoggingTest extends TestCase
                 }
                 return $this->mockLoggers[$channel];
             }));
-        
+
         // Inject the mock log manager
         ExceptionHandler::setLogManager($this->mockLogManager instanceof LogManagerInterface ? $this->mockLogManager : null);
     }
-    
+
     /**
      * Clean up after tests
      */
@@ -55,10 +55,10 @@ class ExceptionLoggingTest extends TestCase
     {
         // Reset the log manager
         ExceptionHandler::setLogManager(null);
-        
+
         parent::tearDown();
     }
-    
+
     /**
      * Test logging of validation exceptions
      */
@@ -70,7 +70,7 @@ class ExceptionLoggingTest extends TestCase
             'email' => ['The email must be a valid email address']
         ];
         $exception = new ValidationException($errors);
-        
+
         // Expect the validation logger to be called once
         $this->mockLoggers['validation'] = $this->createMock(LoggerInterface::class);
         $this->mockLoggers['validation']->expects($this->once())
@@ -78,13 +78,13 @@ class ExceptionLoggingTest extends TestCase
             ->with(
                 $this->equalTo('Validation failed'),
                 $this->callback(function ($context) {
-                    return isset($context['file']) && 
-                           isset($context['line']) && 
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
                            isset($context['trace']) &&
                            isset($context['type']);
                 })
             );
-        
+
         // Call logError
         ExceptionHandler::logError($exception);
     }
@@ -97,7 +97,7 @@ class ExceptionLoggingTest extends TestCase
         // Create an authentication exception
         $message = 'Invalid credentials';
         $exception = new AuthenticationException($message);
-        
+
         // Expect the auth logger to be called once
         $this->mockLoggers['auth'] = $this->createMock(LoggerInterface::class);
         $this->mockLoggers['auth']->expects($this->once())
@@ -105,17 +105,17 @@ class ExceptionLoggingTest extends TestCase
             ->with(
                 $this->equalTo($message),
                 $this->callback(function ($context) {
-                    return isset($context['file']) && 
-                           isset($context['line']) && 
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
                            isset($context['trace']) &&
                            isset($context['type']);
                 })
             );
-        
+
         // Call logError
         ExceptionHandler::logError($exception);
     }
-    
+
     /**
      * Test logging of not found exceptions
      */
@@ -124,7 +124,7 @@ class ExceptionLoggingTest extends TestCase
         // Create a not found exception
         $resourceName = 'User';
         $exception = new NotFoundException($resourceName);
-        
+
         // Expect the http logger to be called once
         $this->mockLoggers['http'] = $this->createMock(LoggerInterface::class);
         $this->mockLoggers['http']->expects($this->once())
@@ -132,17 +132,17 @@ class ExceptionLoggingTest extends TestCase
             ->with(
                 $this->equalTo("$resourceName not found"),
                 $this->callback(function ($context) {
-                    return isset($context['file']) && 
-                           isset($context['line']) && 
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
                            isset($context['trace']) &&
                            isset($context['type']);
                 })
             );
-        
+
         // Call logError
         ExceptionHandler::logError($exception);
     }
-    
+
     /**
      * Test logging of API exceptions
      */
@@ -153,7 +153,7 @@ class ExceptionLoggingTest extends TestCase
         $statusCode = 429;
         $data = ['retryAfter' => 30];
         $exception = new ApiException($message, $statusCode, $data);
-        
+
         // Expect the api logger to be called once
         $this->mockLoggers['api'] = $this->createMock(LoggerInterface::class);
         $this->mockLoggers['api']->expects($this->once())
@@ -161,13 +161,13 @@ class ExceptionLoggingTest extends TestCase
             ->with(
                 $this->equalTo($message),
                 $this->callback(function ($context) {
-                    return isset($context['file']) && 
-                           isset($context['line']) && 
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
                            isset($context['trace']) &&
                            isset($context['type']);
                 })
             );
-        
+
         // Call logError
         ExceptionHandler::logError($exception);
     }
@@ -180,33 +180,33 @@ class ExceptionLoggingTest extends TestCase
         // Create an exception
         $message = 'Test exception';
         $exception = new ApiException($message);
-        
+
         // Configure the mock log manager to throw an exception
         $this->mockLogManager = $this->createMock(LogManagerInterface::class);
         $this->mockLogManager->method('getLogger')
             ->willThrowException(new \Exception('Logger failed'));
-        
+
         // Inject the failing log manager
         ExceptionHandler::setLogManager($this->mockLogManager instanceof LogManagerInterface ? $this->mockLogManager : null);
-        
+
         // Capture error_log output
         $errorLogFile = tempnam(sys_get_temp_dir(), 'phpunit_');
         $originalErrorLog = ini_set('error_log', $errorLogFile);
-        
+
         // Call logError - this should fallback to error_log
         ExceptionHandler::logError($exception);
-        
+
         // Restore original error_log setting
         ini_set('error_log', $originalErrorLog);
-        
+
         // Check if error_log was called
         $logContent = file_get_contents($errorLogFile);
         $this->assertStringContainsString($message, $logContent);
-        
+
         // Clean up
         unlink($errorLogFile);
     }
-    
+
     /**
      * Test custom context in logging
      */
@@ -215,14 +215,14 @@ class ExceptionLoggingTest extends TestCase
         // Create an exception
         $message = 'Test exception';
         $exception = new ApiException($message);
-        
+
         // Custom context to add
         $customContext = [
             'user_id' => 123,
             'request_id' => 'abcd-1234',
             'additional_info' => 'Custom error context'
         ];
-        
+
         // Expect the api logger to be called once with the custom context
         $this->mockLoggers['api'] = $this->createMock(LoggerInterface::class);
         $this->mockLoggers['api']->expects($this->once())
@@ -230,8 +230,8 @@ class ExceptionLoggingTest extends TestCase
             ->with(
                 $this->equalTo($message),
                 $this->callback(function ($context) use ($customContext) {
-                    return isset($context['file']) && 
-                           isset($context['line']) && 
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
                            isset($context['trace']) &&
                            isset($context['type']) &&
                            isset($context['user_id']) &&
@@ -240,7 +240,7 @@ class ExceptionLoggingTest extends TestCase
                            $context['request_id'] === $customContext['request_id'];
                 })
             );
-        
+
         // Call logError with custom context
         ExceptionHandler::logError($exception, $customContext);
     }

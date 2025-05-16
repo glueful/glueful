@@ -10,13 +10,13 @@ class TestExtension extends Extensions
 {
     /** @var bool Flag indicating if initialize was called */
     public static bool $initializeCalled = false;
-    
+
     /** @var bool Flag indicating if registerServices was called */
     public static bool $registerServicesCalled = false;
-    
+
     /** @var bool Flag indicating if registerMiddleware was called */
     public static bool $registerMiddlewareCalled = false;
-    
+
     /**
      * Reset all static flags to their default values
      */
@@ -26,7 +26,7 @@ class TestExtension extends Extensions
         self::$registerServicesCalled = false;
         self::$registerMiddlewareCalled = false;
     }
-    
+
     /**
      * Initialize extension
      */
@@ -34,7 +34,7 @@ class TestExtension extends Extensions
     {
         self::$initializeCalled = true;
     }
-    
+
     /**
      * Register extension-provided services
      */
@@ -42,7 +42,7 @@ class TestExtension extends Extensions
     {
         self::$registerServicesCalled = true;
     }
-    
+
     /**
      * Register extension-provided middleware
      */
@@ -50,7 +50,7 @@ class TestExtension extends Extensions
     {
         self::$registerMiddlewareCalled = true;
     }
-    
+
     /**
      * Process extension request
      */
@@ -61,7 +61,7 @@ class TestExtension extends Extensions
             'name' => 'test-extension'
         ];
     }
-    
+
     /**
      * Get extension metadata
      */

@@ -21,7 +21,7 @@ class UserFixtures
     {
         // Create test users
         $passwordHasher = new PasswordHasher();
-        
+
         // Admin user
         $db->insert('users', [
             'uuid' => '12345678-1234-1234-1234-123456789abc',
@@ -32,7 +32,7 @@ class UserFixtures
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s')
         ]);
-        
+
         // Regular user
         $db->insert('users', [
             'uuid' => '87654321-4321-4321-4321-cba987654321',
@@ -43,7 +43,7 @@ class UserFixtures
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s')
         ]);
-        
+
         // Inactive user
         $db->insert('users', [
             'uuid' => 'abcdef12-5678-90ab-cdef-123456789abc',

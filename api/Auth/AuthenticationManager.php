@@ -261,8 +261,32 @@ class AuthenticationManager
             'method' => $request->getMethod()
         ];
 
-        // Log to file if Logging system is available
-        if (class_exists('\\Glueful\\Logging\\Logger')) {
+        // Use AuditLogger for enhanced security logging if available
+        if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+            try {
+                $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                $auditLogger->authEvent(
+                    'login_success',
+                    $userData['uuid'],
+                    $logData,
+                    \Glueful\Logging\AuditEvent::SEVERITY_INFO
+                );
+            } catch (\Throwable $e) {
+                // Fallback to basic logging if audit logging fails
+                if (class_exists('\\Glueful\\Logging\\Logger')) {
+                    try {
+                        call_user_func(
+                            ['\\Glueful\\Logging\\Logger', 'info'],
+                            'Authentication success',
+                            $logData
+                        );
+                    } catch (\Throwable $e) {
+                        // Silently fail if logging fails
+                    }
+                }
+            }
+        // Fallback to basic logging if AuditLogger is not available
+        } elseif (class_exists('\\Glueful\\Logging\\Logger')) {
             try {
                 call_user_func(
                     ['\\Glueful\\Logging\\Logger', 'info'],
@@ -272,35 +296,6 @@ class AuthenticationManager
             } catch (\Throwable $e) {
                 // Silently fail if logging fails
             }
-        }
-
-        // Store in database if needed
-        try {
-            if (class_exists('\\Glueful\\Database\\Connection')) {
-                $connection = new \Glueful\Database\Connection();
-                $pdo = $connection->getPDO();
-
-                // Only log to database if auth_sessions table exists
-                $stmt = $pdo->prepare("
-                    INSERT INTO auth_sessions (
-                        user_uuid, ip_address, user_agent, created_at, request_path, request_method
-                    ) VALUES (
-                        :user_uuid, :ip_address, :user_agent, :timestamp, :request_uri, :method
-                    )
-                ");
-
-                $stmt->execute([
-                    'user_uuid' => $logData['user_uuid'],
-                    'ip_address' => $logData['ip_address'],
-                    'user_agent' => $logData['user_agent'],
-                    'timestamp' => $logData['timestamp'],
-                    'request_uri' => $logData['request_uri'],
-                    'method' => $logData['method']
-                ]);
-            }
-        } catch (\Throwable $e) {
-            // Silently fail if database logging fails
-            // This ensures authentication still works even if logging fails
         }
     }
 }

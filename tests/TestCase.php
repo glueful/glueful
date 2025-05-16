@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase as BaseTestCase;
 
 /**
  * Base TestCase for Glueful
- * 
+ *
  * Provides common functionality for all tests in the Glueful framework.
  * Extend this class instead of PHPUnit's TestCase directly.
  */
@@ -21,17 +21,17 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Initialize mock autoloader if not already done
         $this->initializeMockAutoloader();
-        
+
         // Load environment variables for testing
         $this->loadTestEnvironment();
-        
+
         // Reset any static properties that might persist between tests
         $this->resetStaticProperties();
     }
-    
+
     /**
      * Initialize mock autoloader
      */
@@ -45,7 +45,7 @@ abstract class TestCase extends BaseTestCase
             }
         }
     }
-    
+
     /**
      * Load environment variables for testing
      */
@@ -57,7 +57,7 @@ abstract class TestCase extends BaseTestCase
             $dotenv->load();
         }
     }
-    
+
     /**
      * Reset static properties that might persist between tests
      */
@@ -66,7 +66,7 @@ abstract class TestCase extends BaseTestCase
         // Reset any static properties here
         // Example: \Glueful\Http\Router::reset();
     }
-    
+
     /**
      * Create a mock of a class with specific methods mocked
      */
@@ -74,7 +74,7 @@ abstract class TestCase extends BaseTestCase
     {
         return parent::createMock($className);
     }
-    
+
     /**
      * Helper method to create a test request
      */
@@ -83,10 +83,10 @@ abstract class TestCase extends BaseTestCase
         $request = \Symfony\Component\HttpFoundation\Request::create($uri, $method, $parameters);
         return $request;
     }
-    
+
     /**
      * Set a private static property on a class using reflection
-     * 
+     *
      * @param string $className The name of the class
      * @param string $propertyName The name of the static property
      * @param mixed $value The value to set
@@ -99,10 +99,10 @@ abstract class TestCase extends BaseTestCase
         $property->setAccessible(true);
         $property->setValue(null, $value);
     }
-    
+
     /**
      * Set static mock methods for a class
-     * 
+     *
      * @param string $className The class name to mock
      * @param array $methods The methods to mock and their return values
      * @return void
@@ -113,10 +113,10 @@ abstract class TestCase extends BaseTestCase
             $this->setStaticMethodMock($className, $methodName, $returnValue);
         }
     }
-    
+
     /**
      * Set a static method to return a specific value
-     * 
+     *
      * @param string $className The class name
      * @param string $methodName The method name
      * @param mixed $returnValue The value to return
@@ -129,17 +129,17 @@ abstract class TestCase extends BaseTestCase
             $this->mockRateLimiterStaticMethod($methodName, $returnValue);
             return;
         }
-        
+
         // For other classes, implement a generic approach if needed
         throw new \RuntimeException(
             "Static method mocking for class {$className} not implemented. " .
             "Add specific implementation in TestCase::setStaticMethodMock."
         );
     }
-    
+
     /**
      * Mock a static method in the RateLimiter class
-     * 
+     *
      * @param string $methodName The method to mock
      * @param mixed $returnValue The value to return
      * @return void

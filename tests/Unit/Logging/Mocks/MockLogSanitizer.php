@@ -17,7 +17,7 @@ class MockLogSanitizer
 
     /**
      * Sanitize context data by removing sensitive values
-     * 
+     *
      * @param array $context Context data to sanitize
      * @return array Sanitized context data
      */
@@ -25,7 +25,7 @@ class MockLogSanitizer
     {
         // Create a copy of the context to avoid modifying the original
         $sanitized = [];
-        
+
         foreach ($context as $key => $value) {
             // Check if it's a sensitive field
             if (self::isSensitiveField($key)) {
@@ -40,11 +40,11 @@ class MockLogSanitizer
                 } else {
                     $sanitized[$key] = '[REDACTED]';
                 }
-            } 
+            }
             // If array, recursively sanitize its contents
             elseif (is_array($value)) {
                 $sanitized[$key] = self::sanitizeContext($value);
-            } 
+            }
             // If a JSON string, try to sanitize its contents
             elseif (is_string($value) && self::isJsonString($value)) {
                 $decodedJson = json_decode($value, true);
@@ -54,19 +54,19 @@ class MockLogSanitizer
                 } else {
                     $sanitized[$key] = $value;
                 }
-            } 
+            }
             // Otherwise, keep as is
             else {
                 $sanitized[$key] = $value;
             }
         }
-        
+
         return $sanitized;
     }
 
     /**
      * Check if a field name is sensitive
-     * 
+     *
      * @param string $fieldName Field name to check
      * @return bool Whether the field is sensitive
      */
@@ -83,7 +83,7 @@ class MockLogSanitizer
 
     /**
      * Check if a string is a valid JSON string
-     * 
+     *
      * @param string $string String to check
      * @return bool Whether the string is valid JSON
      */
@@ -94,14 +94,14 @@ class MockLogSanitizer
         if (!str_starts_with($string, '{') && !str_starts_with($string, '[')) {
             return false;
         }
-        
+
         json_decode($string);
         return json_last_error() === JSON_ERROR_NONE;
     }
-    
+
     /**
      * Enrich log context with additional system information
-     * 
+     *
      * @param array $context Original context
      * @return array Enriched context
      */
@@ -111,13 +111,13 @@ class MockLogSanitizer
         if (isset($_SERVER['REQUEST_URI'])) {
             $context['request_uri'] = $_SERVER['REQUEST_URI'];
         }
-        
+
         // Add memory usage
         $context['memory_usage'] = memory_get_usage(true);
-        
+
         // Add hostname
         $context['hostname'] = gethostname();
-        
+
         return $context;
     }
 }

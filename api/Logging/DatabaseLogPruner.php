@@ -80,7 +80,6 @@ class DatabaseLogPruner
             return 0;
         }
 
-
             return $this->db->delete(
                 'app_logs',
                 ['id <' => $threshold['id']],

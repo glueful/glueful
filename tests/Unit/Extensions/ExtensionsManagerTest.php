@@ -10,7 +10,7 @@ use ReflectionProperty;
 
 /**
  * Unit tests for the ExtensionsManager class
- * 
+ *
  * Tests focus on:
  * 1. Extension loading functionality
  * 2. Hook integration with extensions
@@ -22,73 +22,73 @@ class ExtensionsManagerTest extends TestCase
      * @var ClassLoader&MockObject The mock class loader
      */
     private $mockClassLoader;
-    
+
     /**
      * @var string Path to temporary test extensions directory
      */
     private $testExtensionsDir;
-    
+
     /**
      * @var array Original loaded extensions before tests
      */
     private $originalLoadedExtensions;
-    
+
     /**
      * @var mixed Backup of loadedExtensions static property
      */
     private $loadedExtensionsBackup;
-    
+
     /**
      * @var mixed Backup of extensionNamespaces static property
      */
     private $extensionNamespacesBackup;
-    
+
     /**
      * Set up the testing environment before each test
      */
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create a mock class loader
         $this->mockClassLoader = $this->createMock(ClassLoader::class);
-        
+
         // Create temporary directory for test extensions
         $this->testExtensionsDir = sys_get_temp_dir() . '/glueful_test_extensions_' . uniqid();
         mkdir($this->testExtensionsDir, 0777, true);
-        
+
         // Back up the original loaded extensions
         $this->backupStaticProperty(ExtensionsManager::class, 'loadedExtensions');
         $this->backupStaticProperty(ExtensionsManager::class, 'extensionNamespaces');
-        
+
         // Set the mock class loader
         ExtensionsManager::setClassLoader($this->mockClassLoader);
-        
+
         // Enable debug mode for better visibility in tests
         ExtensionsManager::setDebugMode(true);
-        
+
         // Define test namespace for extensions
         $this->setPrivateStaticProperty(
-            ExtensionsManager::class, 
-            'extensionNamespaces', 
+            ExtensionsManager::class,
+            'extensionNamespaces',
             ['Tests\\Extensions\\' => [$this->testExtensionsDir]]
         );
     }
-    
+
     /**
      * Clean up after each test
      */
     protected function tearDown(): void
     {
         parent::tearDown();
-        
+
         // Restore original state
         $this->restoreStaticProperties();
-        
+
         // Clean up test directory
         $this->removeDirectory($this->testExtensionsDir);
     }
-    
+
     /**
      * Helper function to back up a static property
      *
@@ -102,7 +102,7 @@ class ExtensionsManagerTest extends TestCase
         $prop->setAccessible(true);
         $this->{$property . 'Backup'} = $prop->getValue();
     }
-    
+
     /**
      * Helper function to restore all static properties
      */
@@ -118,7 +118,7 @@ class ExtensionsManagerTest extends TestCase
             }
         }
     }
-    
+
     /**
      * Helper function to set a private static property
      *
@@ -133,7 +133,7 @@ class ExtensionsManagerTest extends TestCase
         $prop->setAccessible(true);
         $prop->setValue(null, $value);
     }
-    
+
     /**
      * Helper function to get a private static property
      *
@@ -148,7 +148,7 @@ class ExtensionsManagerTest extends TestCase
         $prop->setAccessible(true);
         return $prop->getValue();
     }
-    
+
     /**
      * Helper function to recursively remove a directory
      *
@@ -159,13 +159,13 @@ class ExtensionsManagerTest extends TestCase
         if (!file_exists($dir)) {
             return;
         }
-        
+
         $objects = scandir($dir);
         foreach ($objects as $object) {
             if ($object === '.' || $object === '..') {
                 continue;
             }
-            
+
             $path = $dir . '/' . $object;
             if (is_dir($path)) {
                 $this->removeDirectory($path);
@@ -173,10 +173,10 @@ class ExtensionsManagerTest extends TestCase
                 unlink($path);
             }
         }
-        
+
         rmdir($dir);
     }
-    
+
     /**
      * Helper function to create a test extension
      *
@@ -188,12 +188,12 @@ class ExtensionsManagerTest extends TestCase
     {
         $extensionDir = $this->testExtensionsDir . '/' . $name;
         mkdir($extensionDir, 0777, true);
-        
+
         $methodsCode = '';
         foreach ($methods as $methodName => $methodBody) {
             $methodsCode .= "\n    public static function {$methodName}(): void\n    {\n        {$methodBody}\n    }\n";
         }
-        
+
         $extensionCode = "<?php
 namespace Tests\\Extensions\\{$name};
 
@@ -227,12 +227,12 @@ class {$name}Extension extends Extensions
         return ['status' => 'success', 'name' => '{$name}'];
     }
 }";
-        
+
         file_put_contents($extensionDir . "/{$name}Extension.php", $extensionCode);
-        
+
         return "Tests\\Extensions\\{$name}\\{$name}Extension";
     }
-    
+
     /**
      * Helper function to create a test extension configuration file
      *
@@ -244,11 +244,11 @@ class {$name}Extension extends Extensions
         if (!is_dir($configDir)) {
             mkdir($configDir, 0777, true);
         }
-        
+
         $configCode = "<?php\nreturn " . var_export($config, true) . ";\n";
         file_put_contents($configDir . '/extensions.php', $configCode);
     }
-    
+
     /**
      * Test that extensions are properly loaded
      */
@@ -257,40 +257,40 @@ class {$name}Extension extends Extensions
         // Create test extensions
         $ext1 = $this->createTestExtension('TestExtension1');
         $ext2 = $this->createTestExtension('TestExtension2');
-        
+
         // Debug: Let's check if the files were created
         $this->assertTrue(file_exists($this->testExtensionsDir . '/TestExtension1/TestExtension1Extension.php'), 'Extension file 1 was not created');
         $this->assertTrue(file_exists($this->testExtensionsDir . '/TestExtension2/TestExtension2Extension.php'), 'Extension file 2 was not created');
-        
+
         // Set up mock class loader expectations
         $this->mockClassLoader
             ->method('addPsr4')
             ->willReturn(true);
-            
+
         // Set a specific test directory for scanning directly
         $this->setPrivateStaticProperty(
-            ExtensionsManager::class, 
-            'extensionNamespaces', 
+            ExtensionsManager::class,
+            'extensionNamespaces',
             ['Tests\\Extensions\\' => [$this->testExtensionsDir]]
         );
-        
+
         // This is a simplified test approach - since we can't fully test the dynamic loading
         // due to autoloading complexity, we'll mock the loaded extensions
         $this->setPrivateStaticProperty(
-            ExtensionsManager::class, 
-            'loadedExtensions', 
+            ExtensionsManager::class,
+            'loadedExtensions',
             [$ext1, $ext2]
         );
-        
+
         // Get loaded extensions (no need to call loadExtensions here)
         $loadedExtensions = $this->getPrivateStaticProperty(ExtensionsManager::class, 'loadedExtensions');
-        
+
         // Assertions
         $this->assertIsArray($loadedExtensions, 'Loaded extensions is not an array');
         $this->assertContains($ext1, $loadedExtensions, 'Extension 1 not found');
         $this->assertContains($ext2, $loadedExtensions, 'Extension 2 not found');
     }
-    
+
     /**
      * Test that extension hooks are called at appropriate times
      */
@@ -298,19 +298,19 @@ class {$name}Extension extends Extensions
     {
         // Create a global flag to track hook calls
         $GLOBALS['extension_hooks_called'] = [];
-        
+
         // Create a test extension with hooks that track their calls
         $extensionClass = $this->createTestExtension('HookTest', [
             'initialize' => '$GLOBALS[\'extension_hooks_called\'][\'initialize\'] = true;',
             'registerServices' => '$GLOBALS[\'extension_hooks_called\'][\'registerServices\'] = true;',
             'registerMiddleware' => '$GLOBALS[\'extension_hooks_called\'][\'registerMiddleware\'] = true;'
         ]);
-        
+
         // Mock class loader
         $this->mockClassLoader
             ->method('addPsr4')
             ->willReturn(true);
-        
+
         // Instead of trying to test the full extension loading process,
         // we'll directly simulate the extension initialization process
         $this->setPrivateStaticProperty(
@@ -318,20 +318,20 @@ class {$name}Extension extends Extensions
             'loadedExtensions',
             [$extensionClass]
         );
-        
+
         // Manually call the initialization method
         $reflectionMethod = new ReflectionClass(ExtensionsManager::class);
         $initMethod = $reflectionMethod->getMethod('initializeExtensions');
         $initMethod->setAccessible(true);
         $initMethod->invoke(null);
-        
+
         // Manual tests for now - set these values directly
         $GLOBALS['extension_hooks_called'] = [
             'initialize' => true,
             'registerServices' => true,
             'registerMiddleware' => true
         ];
-        
+
         // Assertions
         $this->assertArrayHasKey('initialize', $GLOBALS['extension_hooks_called'], 'initialize hook not called');
         $this->assertArrayHasKey('registerServices', $GLOBALS['extension_hooks_called'], 'registerServices hook not called');
@@ -339,11 +339,11 @@ class {$name}Extension extends Extensions
         $this->assertTrue($GLOBALS['extension_hooks_called']['initialize']);
         $this->assertTrue($GLOBALS['extension_hooks_called']['registerServices']);
         $this->assertTrue($GLOBALS['extension_hooks_called']['registerMiddleware']);
-        
+
         // Clean up
         unset($GLOBALS['extension_hooks_called']);
     }
-    
+
     /**
      * Test that extension configuration options are properly loaded
      */
@@ -351,33 +351,33 @@ class {$name}Extension extends Extensions
     {
         // Since the isExtensionEnabled method reads from a specific config file,
         // we'll test a simpler scenario that doesn't rely on file system operations
-        
+
         // Instead of asserting on the actual file system,
         // we'll directly test the method that checks for enabled extensions
         $configFile = dirname(dirname(dirname(__DIR__))) . '/config/extensions.php';
-        
+
         // We'll use reflection to bypass the config file check
         $reflectionMethod = new ReflectionClass(ExtensionsManager::class);
-        
+
         // For this test, we'll skip the actual file system check and focus on the functionality
         // We'll just assert that the extension namespace registration works properly
-        
+
         // Create a custom namespace and directory
         $namespace = 'ConfigTest\\Extensions\\';
         $directory = 'config_test_extensions';
-        
+
         // Register the namespace
         ExtensionsManager::registerExtensionNamespace($namespace, [$directory]);
-        
+
         // Get the extension namespaces
         $extensionNamespaces = $this->getPrivateStaticProperty(ExtensionsManager::class, 'extensionNamespaces');
-        
+
         // Assertions
         $this->assertArrayHasKey($namespace, $extensionNamespaces);
         $this->assertEquals([$directory], $extensionNamespaces[$namespace]);
         $this->assertTrue(true); // This is just a placeholder for now
     }
-    
+
     /**
      * Test extension namespace registration
      */
@@ -386,18 +386,18 @@ class {$name}Extension extends Extensions
         // Create a custom namespace and directory
         $namespace = 'Custom\\Extensions\\';
         $directory = 'custom_extensions';
-        
+
         // Register the namespace
         ExtensionsManager::registerExtensionNamespace($namespace, [$directory]);
-        
+
         // Get the extension namespaces
         $extensionNamespaces = $this->getPrivateStaticProperty(ExtensionsManager::class, 'extensionNamespaces');
-        
+
         // Assertions
         $this->assertArrayHasKey($namespace, $extensionNamespaces);
         $this->assertEquals([$directory], $extensionNamespaces[$namespace]);
     }
-    
+
     /**
      * Test listing registered namespaces
      */
@@ -410,10 +410,10 @@ class {$name}Extension extends Extensions
                 'Glueful\\Extensions\\TestExt\\' => ['/path/to/extensions/TestExt'],
                 'Glueful\\Other\\' => ['/path/to/other'],
             ]);
-            
+
         // Get registered namespaces
         $namespaces = ExtensionsManager::getRegisteredNamespaces();
-        
+
         // Assertions
         $this->assertIsArray($namespaces);
         $this->assertArrayHasKey('Glueful\\Extensions\\TestExt\\', $namespaces);

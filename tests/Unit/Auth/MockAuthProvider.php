@@ -17,7 +17,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
     private bool $canHandleTokenStatus = true;
     private array $generatedTokens = [];
     private ?array $refreshedTokens = null;
-    
+
     /**
      * Set the user data this provider will return
      */
@@ -26,7 +26,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->userData = $userData;
         return $this;
     }
-    
+
     /**
      * Set the error message this provider will return
      */
@@ -35,7 +35,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->error = $error;
         return $this;
     }
-    
+
     /**
      * Set the admin status this provider will report
      */
@@ -44,7 +44,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->adminStatus = $isAdmin;
         return $this;
     }
-    
+
     /**
      * Set whether token validation succeeds
      */
@@ -53,7 +53,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->tokenValidity = $isValid;
         return $this;
     }
-    
+
     /**
      * Set whether this provider can handle tokens
      */
@@ -62,7 +62,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->canHandleTokenStatus = $canHandle;
         return $this;
     }
-    
+
     /**
      * Set tokens to return from generateTokens
      */
@@ -71,7 +71,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->generatedTokens = $tokens;
         return $this;
     }
-    
+
     /**
      * Set tokens to return from refreshTokens
      */
@@ -80,7 +80,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         $this->refreshedTokens = $tokens;
         return $this;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -88,7 +88,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
     {
         return $this->userData;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -96,7 +96,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
     {
         return $this->adminStatus;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -104,7 +104,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
     {
         return $this->error;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -112,7 +112,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
     {
         return $this->tokenValidity;
     }
-    
+
     /**
      * {@inheritDoc}
      */
@@ -120,12 +120,12 @@ class MockAuthProvider implements AuthenticationProviderInterface
     {
         return $this->canHandleTokenStatus;
     }
-    
+
     /**
      * {@inheritDoc}
      */
     public function generateTokens(
-        array $userData, 
+        array $userData,
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
     ): array
@@ -138,10 +138,10 @@ class MockAuthProvider implements AuthenticationProviderInterface
                 'token_type' => 'Bearer'
             ];
         }
-        
+
         return $this->generatedTokens;
     }
-    
+
     /**
      * {@inheritDoc}
      */
