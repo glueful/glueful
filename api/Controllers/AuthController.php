@@ -40,11 +40,11 @@ class AuthController
     {
         // Create request object for IP and user agent information
         $request = SymfonyRequest::createFromGlobals();
-        
+
         try {
             // Get credentials using the getPostData method from our Helper Request class
             $credentials = Request::getPostData();
-            
+
             $clientIp = $request->getClientIp();
             $userAgent = $request->headers->get('User-Agent');
 
@@ -59,7 +59,7 @@ class AuthController
 
             // Get audit logger instance and check if it exists
             $auditLogger = AuditLogger::getInstance();
-            
+
             // Debugging
 
             if (!$result) {
@@ -76,7 +76,7 @@ class AuthController
                     ],
                     AuditEvent::SEVERITY_WARNING
                 );
-                
+
                 return Response::error('Invalid credentials', Response::HTTP_UNAUTHORIZED)->send();
             }
 
@@ -115,9 +115,10 @@ class AuthController
                 );
             } catch (\Exception $logEx) {
                 // Log any audit logging errors
-                error_log("[DEBUG] Audit logging exception: " . $logEx->getMessage() . "\n" . $logEx->getTraceAsString());
+                error_log("[DEBUG] Audit logging exception: " . $logEx->getMessage() . "\n" .
+                    $logEx->getTraceAsString());
             }
-            
+
             return Response::error(
                 'Login failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR
@@ -136,7 +137,7 @@ class AuthController
     {
         // Convert globals to Symfony Request for compatibility with our new system
         $request = SymfonyRequest::createFromGlobals();
-        
+
         try {
             $token = AuthenticationService::extractTokenFromRequest($request);
 
@@ -147,7 +148,7 @@ class AuthController
             // Try to get user information for the audit log before terminating the session
             $session = \Glueful\Auth\SessionCacheManager::getSession($token);
             $userId = $session['user']['uuid'] ?? $session['uuid'] ?? null;
-            
+
             // Get audit logger instance
             $auditLogger = AuditLogger::getInstance();
 
@@ -169,7 +170,7 @@ class AuthController
                     $logData,
                     AuditEvent::SEVERITY_INFO
                 );
-                
+
                 return Response::ok(null, 'Logged out successfully')->send();
             }
 
@@ -200,7 +201,7 @@ class AuthController
             } catch (\Exception $logEx) {
                 // Silently handle logging errors
             }
-            
+
             return Response::error(
                 'Logout failed: ' . $e->getMessage(),
                 Response::HTTP_INTERNAL_SERVER_ERROR

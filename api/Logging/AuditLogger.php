@@ -355,7 +355,7 @@ class AuditLogger extends LogManager
     {
         // Use a local static variable to track recursion within this specific call
         static $localIsLogging = false;
-        
+
         // Prevent deep recursive logging but allow initial entry
         if ($localIsLogging) {
             return $event->getEventId();
@@ -370,7 +370,7 @@ class AuditLogger extends LogManager
             if (!$event->verifyIntegrity()) {
                 throw new \RuntimeException("Audit event integrity check failed.");
             }
-            
+
             // Store in database if enabled
             if ($this->storageBackends['database']) {
                 $dbResult = $this->storeAuditEventInDatabase($event);
@@ -432,7 +432,7 @@ class AuditLogger extends LogManager
         try {
             // Check if table exists
             $tableExists = $this->schema->tableExists($this->auditTable);
-            
+
             if (!$tableExists) {
                 $this->ensureAuditTablesExist();
                 $tableExists = $this->schema->tableExists($this->auditTable);
@@ -589,7 +589,7 @@ class AuditLogger extends LogManager
     ): string {
         // Use a static local variable for recursion detection within this method
         static $localIsLogging = false;
-        
+
         // Prevent recursive logging but only for deep recursion
         if ($localIsLogging) {
             return 'recursive-' . uniqid();
