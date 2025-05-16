@@ -13,15 +13,16 @@ Router::group('/auth', function () use ($authController) {
      * @summary User Login
      * @description Authenticates a user with username/email and password
      * @tag Authentication
-     * @requestBody username:string="Username or email address" password:string="User password" {required=username,password}
+     * @requestBody username:string="Username or email address"
+     * @requestBody password:string="User password" {required=username,password}
      * @response 200 application/json "Login successful" {
      *   success:boolean="Success status",
      *   message:string="Success message",
      *   data:{
      *     tokens:{
-     *       access_token:string="JWT access token", 
-     *       refresh_token:string="JWT refresh token", 
-     *       token_type:string="Token type (Bearer)", 
+     *       access_token:string="JWT access token",
+     *       refresh_token:string="JWT refresh token",
+     *       token_type:string="Token type (Bearer)",
      *       expires_in:integer="Token expiration in seconds"
      *     },
      *     user:{
@@ -45,7 +46,7 @@ Router::group('/auth', function () use ($authController) {
      * @response 401 "Invalid credentials"
      * @response 400 "Missing required fields"
      */
-    Router::post('/login', function (Request $request) use ($authController){
+    Router::post('/login', function (Request $request) use ($authController) {
         return $authController->login();
     });
 
@@ -67,10 +68,10 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid email address"
      * @response 404 "Email not found"
      */
-    Router::post('/verify-email', function() use ($authController) {
+    Router::post('/verify-email', function () use ($authController) {
         return $authController->verifyEmail();
     });
-    
+
     /**
      * @route POST /auth/verify-otp
      * @summary Verify OTP
@@ -90,7 +91,7 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid OTP"
      * @response 401 "OTP expired"
      */
-    Router::post('/verify-otp', function() use ($authController) {
+    Router::post('/verify-otp', function () use ($authController) {
         return $authController->verifyOtp();
     });
 
@@ -112,7 +113,7 @@ Router::group('/auth', function () use ($authController) {
      * @response 404 "Email not found"
      * @response 400 "Invalid email format"
      */
-    Router::post('/forgot-password', function() use ($authController) {
+    Router::post('/forgot-password', function () use ($authController) {
         return $authController->forgotPassword();
     });
 
@@ -134,7 +135,7 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid password format"
      * @response 404 "Email not found"
      */
-    Router::post('/reset-password', function() use ($authController) {
+    Router::post('/reset-password', function () use ($authController) {
         return $authController->resetPassword();
     });
 
@@ -155,7 +156,7 @@ Router::group('/auth', function () use ($authController) {
      * }
      * @response 401 "Invalid or expired token"
      */
-    Router::post('/validate-token', function() use ($authController) {
+    Router::post('/validate-token', function () use ($authController) {
         return $authController->validateToken();
     });
 
@@ -181,7 +182,7 @@ Router::group('/auth', function () use ($authController) {
      * @response 401 "Invalid refresh token"
      * @response 400 "Missing refresh token"
      */
-    Router::post('/refresh-token', function() use ($authController) {
+    Router::post('/refresh-token', function () use ($authController) {
         return $authController->refreshToken();
     });
 
@@ -198,7 +199,7 @@ Router::group('/auth', function () use ($authController) {
      * }
      * @response 401 "Unauthorized - not logged in"
      */
-    Router::post('/logout', function($params) use ($authController) {
+    Router::post('/logout', function ($params) use ($authController) {
         return $authController->logout();
     });
 });

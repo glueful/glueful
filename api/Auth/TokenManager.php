@@ -8,6 +8,8 @@ use Glueful\Cache\CacheEngine;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
+use Glueful\Logging\AuditLogger;
+use Glueful\Logging\AuditEvent;
 
 /**
  * Token Management System
@@ -79,6 +81,21 @@ class TokenManager
         $accessToken = JWTService::generate($tokenPayload, $accessTokenLifetime);
         $refreshToken = bin2hex(random_bytes(32)); // 64 character random string
 
+        // Log token generation event
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'token_pair_generated',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_id' => $userData['uuid'] ?? null,
+                'token_lifetime' => $accessTokenLifetime,
+                'token_type' => 'bearer',
+                'is_persistent' => isset($userData['remember_me']) && $userData['remember_me'],
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]
+        );
+
         return [
         'access_token' => $accessToken,
         'refresh_token' => $refreshToken,
@@ -97,6 +114,19 @@ class TokenManager
     public static function mapTokenToSession(string $token, string $sessionId): bool
     {
         self::initialize();
+
+        // Log token to session mapping
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'token_mapped_to_session',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'session_id' => $sessionId,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]
+        );
+
         return CacheEngine::set(
             self::TOKEN_PREFIX . $token,
             $sessionId,
@@ -129,6 +159,20 @@ class TokenManager
     public static function removeTokenMapping(string $token): bool
     {
         self::initialize();
+
+        // Log token mapping removal
+        $auditLogger = AuditLogger::getInstance();
+        $sessionId = self::getSessionIdFromToken($token);
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'token_mapping_removed',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'session_id' => $sessionId,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]
+        );
+
         return CacheEngine::delete(self::TOKEN_PREFIX . $token);
     }
 
@@ -147,28 +191,42 @@ class TokenManager
         // Get the authentication manager instance
         $authManager = self::getAuthManager();
 
+        $isValid = false;
+
         // If provider is explicitly specified, use it
         if ($provider && $authManager) {
             $authProvider = $authManager->getProvider($provider);
             if ($authProvider) {
-                return $authProvider->validateToken($token) && !self::isTokenRevoked($token);
+                $isValid = $authProvider->validateToken($token) && !self::isTokenRevoked($token);
             }
-        }
-
-        // Try to detect token type and use appropriate provider
-        // Default to JWT validation for backward compatibility
-        if ($authManager) {
+        } elseif ($authManager) {
             // We need to loop through the available providers
             $providers = self::getAvailableProviders($authManager);
             foreach ($providers as $authProvider) {
                 if ($authProvider->canHandleToken($token)) {
-                    return $authProvider->validateToken($token) && !self::isTokenRevoked($token);
+                    $isValid = $authProvider->validateToken($token) && !self::isTokenRevoked($token);
+                    break;
                 }
             }
+        } else {
+            $isValid = JWTService::verify($token) && !self::isTokenRevoked($token);
         }
 
-        // Fallback to traditional JWT validation
-        return JWTService::verify($token) && !self::isTokenRevoked($token);
+        // Log token validation attempt
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            $isValid ? 'token_validated' : 'token_validation_failed',
+            $isValid ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING,
+            [
+                'provider' => $provider ?? 'auto-detect',
+                'is_valid' => $isValid,
+                'is_revoked' => self::isTokenRevoked($token),
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]
+        );
+
+        return $isValid;
     }
 
     /**
@@ -185,40 +243,75 @@ class TokenManager
     {
         // Get session data from refresh token
         $sessionData = self::getSessionFromRefreshToken($refreshToken);
-        if (!$sessionData) {
+
+        // Log refresh token attempt
+        $auditLogger = AuditLogger::getInstance();
+        $isValid = $sessionData !== null;
+
+        if (!$isValid) {
+            // Log invalid refresh token attempt
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_AUTH,
+                'token_refresh_failed',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'reason' => 'invalid_refresh_token',
+                    'provider' => $provider ?? 'auto-detect',
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                ]
+            );
             return null;
         }
 
         // Get the authentication manager instance
         $authManager = self::getAuthManager();
+        $tokens = null;
 
         // If provider is explicitly specified, use it
         if ($provider && $authManager) {
             $authProvider = $authManager->getProvider($provider);
             if ($authProvider) {
-                return $authProvider->refreshTokens($refreshToken, $sessionData);
+                $tokens = $authProvider->refreshTokens($refreshToken, $sessionData);
             }
         }
 
         // If no explicit provider but we have stored provider in session
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        $result = $queryBuilder->select('auth_sessions', ['provider'])
-            ->where(['refresh_token' => $refreshToken])
-            ->get();
+        if (!$tokens) {
+            $connection = new Connection();
+            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+            $result = $queryBuilder->select('auth_sessions', ['provider'])
+                ->where(['refresh_token' => $refreshToken])
+                ->get();
 
-        if (!empty($result) && isset($result[0]['provider']) && $result[0]['provider'] !== 'jwt') {
-            $storedProvider = $result[0]['provider'];
-            if ($authManager) {
-                $authProvider = $authManager->getProvider($storedProvider);
-                if ($authProvider) {
-                    return $authProvider->refreshTokens($refreshToken, $sessionData);
+            if (!empty($result) && isset($result[0]['provider']) && $result[0]['provider'] !== 'jwt') {
+                $storedProvider = $result[0]['provider'];
+                if ($authManager) {
+                    $authProvider = $authManager->getProvider($storedProvider);
+                    if ($authProvider) {
+                        $tokens = $authProvider->refreshTokens($refreshToken, $sessionData);
+                    }
                 }
             }
         }
 
         // Default to standard JWT token generation for backward compatibility
-        return self::generateTokenPair($sessionData);
+        if (!$tokens) {
+            $tokens = self::generateTokenPair($sessionData);
+        }
+
+        // Log successful token refresh
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'token_refreshed',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_id' => $sessionData['uuid'] ?? null,
+                'provider' => $provider ?? $result[0]['provider'] ?? 'jwt',
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]
+        );
+
+        return $tokens;
     }
 
     /**
@@ -334,7 +427,7 @@ class TokenManager
         $refreshTokenLifetime = $refreshTokenLifetime ??
             (int)config('session.refresh_token_lifetime', 7 * 24 * 3600);
 
-        return $queryBuilder->insert('auth_sessions', [
+        $result = $queryBuilder->insert('auth_sessions', [
             'uuid' => $uuid,
             'user_uuid' => $userUuid,
             'access_token' => $tokens['access_token'],
@@ -348,6 +441,25 @@ class TokenManager
             'last_token_refresh' => date('Y-m-d H:i:s'),
             'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
         ]);
+
+        // Log session creation
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'session_created',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_id' => $userUuid,
+                'session_id' => $uuid,
+                'provider' => $tokens['provider'] ?? 'jwt',
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'is_persistent' => $tokens['remember_me'] ?? false,
+                'refresh_token_lifetime' => $refreshTokenLifetime,
+                'access_token_lifetime' => (int)config('session.access_token_lifetime', 3600),
+            ]
+        );
+
+        return $result;
     }
 
     /**
@@ -363,11 +475,33 @@ class TokenManager
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-        return $queryBuilder->upsert(
+        // Get session details before revocation for audit logging
+        $sessionDetails = $queryBuilder->select('auth_sessions', ['user_uuid', 'provider', 'uuid'])
+            ->where(['access_token' => $token])
+            ->get();
+
+        $result = $queryBuilder->upsert(
             'auth_sessions',
             ['status' => 'revoked'],
             ['access_token' => $token]
         );
+
+        // Log token revocation event
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_AUTH,
+            'token_revoked',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_id' => !empty($sessionDetails) ? $sessionDetails[0]['user_uuid'] : null,
+                'session_id' => !empty($sessionDetails) ? $sessionDetails[0]['uuid'] : null,
+                'provider' => !empty($sessionDetails) ? $sessionDetails[0]['provider'] : 'jwt',
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'result' => $result > 0 ? 'success' : 'no_changes',
+            ]
+        );
+
+        return $result;
     }
 
     /**
