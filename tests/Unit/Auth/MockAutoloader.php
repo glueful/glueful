@@ -5,7 +5,7 @@ use Tests\Unit\Mocks\MockCacheEngine;
 
 /**
  * Mock autoloader for testing
- * 
+ *
  * This file provides mock implementations of some Glueful classes for testing.
  * It intercepts class loading requests and returns mock classes when appropriate.
  */
@@ -16,13 +16,13 @@ spl_autoload_register(function ($class) {
     $classMaps = [
         'Glueful\\Cache\\CacheEngine' => MockCacheEngine::class
     ];
-    
+
     // If the requested class is in our map, include our mock version
     if (isset($classMaps[$class])) {
         // The mock class should already be autoloaded by PHPUnit
         class_alias($classMaps[$class], $class);
         return true;
     }
-    
+
     return false;
 }, true, true); // prepend this autoloader

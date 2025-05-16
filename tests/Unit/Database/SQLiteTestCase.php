@@ -12,35 +12,35 @@ class SQLiteTestCase extends TestCase
 {
     /** @var MockSQLiteConnection */
     protected MockSQLiteConnection $connection;
-    
+
     /** @var QueryBuilder */
     protected QueryBuilder $db;
-    
+
     /**
      * Set up the test environment
      */
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create SQLite in-memory database
         $this->connection = new MockSQLiteConnection();
-        
+
         // Create query builder with soft deletes disabled for testing
         $pdo = $this->connection->getPDO();
         $driver = $this->connection->getDriver();
         $this->db = new QueryBuilder($pdo, $driver);
-        
+
         // Disable soft deletes for testing
         $this->setPrivateProperty($this->db, 'softDeletes', false);
-        
+
         // Create test tables
         $this->connection->createTestTables();
     }
-    
+
     /**
      * Set a private property on an object using reflection
-     * 
+     *
      * @param object $object The object to modify
      * @param string $propertyName The name of the property
      * @param mixed $value The new value
@@ -53,7 +53,7 @@ class SQLiteTestCase extends TestCase
         $property->setAccessible(true);
         $property->setValue($object, $value);
     }
-    
+
     /**
      * Insert sample data for testing
      */
@@ -61,7 +61,7 @@ class SQLiteTestCase extends TestCase
     {
         $this->connection->insertSampleData();
     }
-    
+
     /**
      * Clean up after the test
      */
@@ -73,7 +73,7 @@ class SQLiteTestCase extends TestCase
         $this->connection->getPDO()->exec('PRAGMA foreign_keys = OFF');
         $this->connection->getPDO()->exec('DROP TABLE IF EXISTS posts');
         $this->connection->getPDO()->exec('DROP TABLE IF EXISTS users');
-        
+
         parent::tearDown();
     }
 }

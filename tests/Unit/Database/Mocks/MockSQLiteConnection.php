@@ -8,7 +8,7 @@ use Glueful\Database\Schema\SQLiteSchemaManager;
 
 /**
  * Mock SQLite Connection for Testing
- * 
+ *
  * Provides an in-memory SQLite database for testing database operations
  * without affecting actual databases.
  */
@@ -25,14 +25,14 @@ class MockSQLiteConnection extends Connection
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false
         ]);
-        
+
         // Set SQLite driver
         $this->driver = new SQLiteDriver($this->pdo);
-        
+
         // Set SQLite schema manager
         $this->schemaManager = new SQLiteSchemaManager($this->pdo);
     }
-    
+
     /**
      * Creates standard testing tables for database tests
      */
@@ -46,7 +46,7 @@ class MockSQLiteConnection extends Connection
             'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
             'deleted_at' => 'DATETIME NULL'
         ]);
-        
+
         // Create posts table with foreign key
         $this->schemaManager->createTable('posts', [
             'id' => 'INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -62,7 +62,7 @@ class MockSQLiteConnection extends Connection
             'onDelete' => 'CASCADE'
         ]);
     }
-    
+
     /**
      * Insert sample data for testing
      */
@@ -73,7 +73,7 @@ class MockSQLiteConnection extends Connection
             ('john_doe', 'john@example.com'),
             ('jane_smith', 'jane@example.com'),
             ('bob_jones', 'bob@example.com')");
-            
+
         // Insert sample posts
         $this->pdo->exec("INSERT INTO posts (user_id, title, content) VALUES 
             (1, 'First Post', 'This is the first post content'),

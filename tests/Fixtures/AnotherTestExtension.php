@@ -10,13 +10,13 @@ class AnotherTestExtension extends Extensions
 {
     /** @var bool Flag indicating if initialize was called */
     public static bool $initializeCalled = false;
-    
+
     /** @var bool Flag indicating if registerServices was called */
     public static bool $registerServicesCalled = false;
-    
+
     /** @var array Holds configuration values */
     public static array $config = [];
-    
+
     /**
      * Reset all static properties to their default values
      */
@@ -26,21 +26,21 @@ class AnotherTestExtension extends Extensions
         self::$registerServicesCalled = false;
         self::$config = [];
     }
-    
+
     /**
      * Initialize extension
      */
     public static function initialize(): void
     {
         self::$initializeCalled = true;
-        
+
         // Load configuration
         $config = include dirname(__DIR__, 2) . '/config/extensions.php';
         if (isset($config['config']['AnotherTestExtension'])) {
             self::$config = $config['config']['AnotherTestExtension'];
         }
     }
-    
+
     /**
      * Register extension-provided services
      */
@@ -48,7 +48,7 @@ class AnotherTestExtension extends Extensions
     {
         self::$registerServicesCalled = true;
     }
-    
+
     /**
      * Process extension request
      */
@@ -60,7 +60,7 @@ class AnotherTestExtension extends Extensions
             'config' => self::$config
         ];
     }
-    
+
     /**
      * Get extension metadata
      */

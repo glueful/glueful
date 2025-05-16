@@ -11,13 +11,13 @@ use Glueful\Validation\Attributes\Rules;
 class RulesTest extends TestCase
 {
     private Validator $validator;
-    
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->validator = new Validator();
     }
-    
+
     /**
      * Data provider for testing string validation
      */
@@ -37,7 +37,7 @@ class RulesTest extends TestCase
             'array' => [['item'], false],
         ];
     }
-    
+
     /**
      * @dataProvider stringValuesProvider
      */
@@ -45,12 +45,12 @@ class RulesTest extends TestCase
     {
         $dto = new StringTestDTO();
         $dto->value = $value;
-        
+
         $result = $this->validator->validate($dto);
-        
+
         // Format display value for messages based on type
         $displayValue = is_array($value) ? 'Array' : (is_object($value) ? get_class($value) : (string)$value);
-        
+
         if ($shouldPass) {
             $this->assertTrue($result, "Value '$displayValue' should pass string validation");
             $this->assertEmpty($this->validator->errors());
@@ -59,7 +59,7 @@ class RulesTest extends TestCase
             $this->assertArrayHasKey('value', $this->validator->errors());
         }
     }
-    
+
     /**
      * Data provider for testing email validation
      */
@@ -80,7 +80,7 @@ class RulesTest extends TestCase
             'spaces' => ['user @example.com', false],
         ];
     }
-    
+
     /**
      * @dataProvider emailValuesProvider
      */
@@ -88,9 +88,9 @@ class RulesTest extends TestCase
     {
         $dto = new EmailOnlyTestDTO();
         $dto->email = $value;
-        
+
         $result = $this->validator->validate($dto);
-        
+
         if ($shouldPass) {
             $this->assertTrue($result, "Email '$value' should pass validation");
             $this->assertEmpty($this->validator->errors());
@@ -116,7 +116,7 @@ class RulesTest extends TestCase
             'very large' => [9999, false],
         ];
     }
-    
+
     /**
      * @dataProvider numericRangeProvider
      */
@@ -124,9 +124,9 @@ class RulesTest extends TestCase
     {
         $dto = new NumericRangeTestDTO();
         $dto->value = $value;
-        
+
         $result = $this->validator->validate($dto);
-        
+
         if ($shouldPass) {
             $this->assertTrue($result, "Value '$value' should pass range validation");
             $this->assertEmpty($this->validator->errors());
@@ -142,31 +142,31 @@ class RulesTest extends TestCase
     public function testRequiredValidation(): void
     {
         $dto = new RequiredTestDTO();
-        
+
         // Test with null value (should fail)
         $dto->value = null;
         $result = $this->validator->validate($dto);
         $this->assertFalse($result);
         $this->assertArrayHasKey('value', $this->validator->errors());
-        
+
         // Test with empty string (should fail)
         $dto->value = '';
         $result = $this->validator->validate($dto);
         $this->assertFalse($result);
         $this->assertArrayHasKey('value', $this->validator->errors());
-        
+
         // Test with zero (should pass, as it's a non-empty value)
         $dto->value = 0;
         $result = $this->validator->validate($dto);
         $this->assertTrue($result);
         $this->assertEmpty($this->validator->errors());
-        
+
         // Test with false (should pass, as it's a non-empty value)
         $dto->value = false;
         $result = $this->validator->validate($dto);
         $this->assertTrue($result);
         $this->assertEmpty($this->validator->errors());
-        
+
         // Test with string (should pass)
         $dto->value = 'value';
         $result = $this->validator->validate($dto);

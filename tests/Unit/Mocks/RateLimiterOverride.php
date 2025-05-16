@@ -12,7 +12,7 @@ class RateLimiter
 {
     /**
      * Create IP-based rate limiter
-     * 
+     *
      * @param string $ip IP address to track
      * @param int $maxAttempts Maximum attempts allowed
      * @param int $windowSeconds Time window in seconds
@@ -27,15 +27,15 @@ class RateLimiter
                 [$ip, $maxAttempts, $windowSeconds]
             );
         }
-        
+
         // This would normally return a real instance
         // For tests, this fallback should never be reached
         throw new \RuntimeException('No mock implementation for RateLimiter::perIp');
     }
-    
+
     /**
      * Create user-based rate limiter
-     * 
+     *
      * @param string $userId User identifier to track
      * @param int $maxAttempts Maximum attempts allowed
      * @param int $windowSeconds Time window in seconds
@@ -50,15 +50,15 @@ class RateLimiter
                 [$userId, $maxAttempts, $windowSeconds]
             );
         }
-        
+
         // This would normally return a real instance
         // For tests, this fallback should never be reached
         throw new \RuntimeException('No mock implementation for RateLimiter::perUser');
     }
-    
+
     /**
      * Create endpoint-specific rate limiter
-     * 
+     *
      * @param string $endpoint API endpoint to track
      * @param string $identifier Unique request identifier
      * @param int $maxAttempts Maximum attempts allowed
@@ -74,45 +74,45 @@ class RateLimiter
                 [$endpoint, $identifier, $maxAttempts, $windowSeconds]
             );
         }
-        
+
         // This would normally return a real instance
         // For tests, this fallback should never be reached
         throw new \RuntimeException('No mock implementation for RateLimiter::perEndpoint');
     }
-    
+
     /**
      * Record and validate attempt
-     * 
+     *
      * @return bool True if attempt is allowed
      */
     public function attempt(): bool
     {
         throw new \RuntimeException('Method not implemented in test mock');
     }
-    
+
     /**
      * Get remaining attempts
-     * 
+     *
      * @return int Remaining attempts
      */
     public function remaining(): int
     {
         throw new \RuntimeException('Method not implemented in test mock');
     }
-    
+
     /**
      * Get retry delay
-     * 
+     *
      * @return int Seconds until next attempt allowed
      */
     public function getRetryAfter(): int
     {
         throw new \RuntimeException('Method not implemented in test mock');
     }
-    
+
     /**
      * Check if limit exceeded
-     * 
+     *
      * @return bool True if rate limit is exceeded
      */
     public function isExceeded(): bool

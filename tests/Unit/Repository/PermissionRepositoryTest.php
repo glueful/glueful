@@ -11,7 +11,7 @@ use Glueful\Database\QueryBuilder;
 
 /**
  * Permission Repository Test
- * 
+ *
  * Tests for the PermissionRepository class functionality including:
  * - Permission retrieval by role
  * - Permission assignment and verification
@@ -21,33 +21,33 @@ class PermissionRepositoryTest extends TestCase
 {
     /** @var TestPermissionRepository */
     private TestPermissionRepository $permissionRepository;
-    
+
     /** @var MockObject|QueryBuilder */
     private $mockQueryBuilder;
-    
+
     /** @var MockObject|TestRoleRepository */
     private $mockRoleRepository;
-    
+
     /**
      * Setup before each test
      */
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create mock objects
         $this->mockQueryBuilder = $this->createMock(QueryBuilder::class);
-        
+
         // Create mock role repository
         $this->mockRoleRepository = $this->createMock(TestRoleRepository::class);
-        
+
         // Create repository with our mock query builder
         $this->permissionRepository = new TestPermissionRepository(
             $this->mockQueryBuilder instanceof QueryBuilder ? $this->mockQueryBuilder : null,
             $this->mockRoleRepository instanceof TestRoleRepository ? $this->mockRoleRepository : null
         );
     }
-    
+
     /**
      * Test getting permissions for a role
      */
@@ -56,7 +56,7 @@ class PermissionRepositoryTest extends TestCase
         // Sample permission data matching the table schema in migration
         $rawData = [
             [
-                'uuid' => '111aaaabbbcc', 
+                'uuid' => '111aaaabbbcc',
                 'role_uuid' => 'admin-uuid-123',
                 'model' => 'api.primary.users',
                 'permissions' => 'ABDC',
@@ -64,7 +64,7 @@ class PermissionRepositoryTest extends TestCase
                 'updated_at' => null
             ],
             [
-                'uuid' => '222bbbcccdd', 
+                'uuid' => '222bbbcccdd',
                 'role_uuid' => 'admin-uuid-123',
                 'model' => 'api.settings',
                 'permissions' => 'A',
@@ -72,7 +72,7 @@ class PermissionRepositoryTest extends TestCase
                 'updated_at' => null
             ],
             [
-                'uuid' => '333cccdddee', 
+                'uuid' => '333cccdddee',
                 'role_uuid' => 'admin-uuid-123',
                 'model' => 'api.files',
                 'permissions' => 'AB',
@@ -80,7 +80,7 @@ class PermissionRepositoryTest extends TestCase
                 'updated_at' => null
             ]
         ];
-        
+
         // Expected formatted result
         $expected = [
             'api.primary.users' => [
@@ -99,7 +99,7 @@ class PermissionRepositoryTest extends TestCase
                 'updated_at' => null
             ]
         ];
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
@@ -107,14 +107,14 @@ class PermissionRepositoryTest extends TestCase
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($rawData);
-            
+
         // Call the method
         $result = $this->permissionRepository->getRolePermissions('admin');
-        
+
         // Assert result
         $this->assertEquals($expected, $result);
     }
-    
+
     /**
      * Test checking if a role has a specific permission
      */
@@ -136,7 +136,7 @@ class PermissionRepositoryTest extends TestCase
                         'uuid' => '111aaaabbbcc',
                         'role_uuid' => 'admin-uuid',
                         'model' => 'api.primary.users',
-                        'permissions' => 'ABDC', 
+                        'permissions' => 'ABDC',
                         'created_at' => '2023-01-01 00:00:00',
                         'updated_at' => null
                     ],
@@ -160,22 +160,22 @@ class PermissionRepositoryTest extends TestCase
                     ]
                 ]
             );
-            
+
         // Test role has 'B' permission on 'api.primary.users' model
         $adminPermissions = $this->permissionRepository->getRolePermissions('admin-uuid');
         $this->assertTrue(
-            isset($adminPermissions['api.primary.users']) && 
+            isset($adminPermissions['api.primary.users']) &&
             strpos($adminPermissions['api.primary.users']['permissions'], 'B') !== false
         );
-        
+
         // Test role doesn't have 'D' permission on 'api.primary.users' model
         $userPermissions = $this->permissionRepository->getRolePermissions('user-uuid');
         $this->assertFalse(
-            isset($userPermissions['api.primary.users']) && 
+            isset($userPermissions['api.primary.users']) &&
             strpos($userPermissions['api.primary.users']['permissions'], 'D') !== false
         );
     }
-    
+
     /**
      * Test assigning a permission to a role
      */
@@ -184,19 +184,19 @@ class PermissionRepositoryTest extends TestCase
         // Configure query builder for successful insert
         $this->mockQueryBuilder->method('insert')
             ->willReturn(1);  // Return int 1 for 1 affected row
-        
+
         // Call the method
         $roleUuid = 'role-uuid-123';
         $model = 'api.primary.users';
         $permissions = 'ABDC';
-        
+
         $result = $this->permissionRepository->assignRolePermission($roleUuid, $model, $permissions);
-        
+
         // Assert result
         $this->assertNotFalse($result);
         $this->assertIsString($result); // Should return the UUID of the new permission
     }
-    
+
     /**
      * Test removing a permission from a role
      */
@@ -205,17 +205,17 @@ class PermissionRepositoryTest extends TestCase
         // Configure query builder for successful delete
         $this->mockQueryBuilder->method('delete')
             ->willReturn(true);  // Return boolean
-            
+
         // Call the method
         $roleUuid = 'role-uuid-123';
         $model = 'api.primary.users';
-        
+
         $result = $this->permissionRepository->removeRolePermission($roleUuid, $model);
-        
+
         // Assert result
         $this->assertTrue($result);
     }
-    
+
     /**
      * Test getting all permissions in the system
      */
@@ -233,7 +233,7 @@ class PermissionRepositoryTest extends TestCase
             ],
             [
                 'uuid' => '222bbbcccdd',
-                'role_uuid' => 'admin-uuid-123', 
+                'role_uuid' => 'admin-uuid-123',
                 'model' => 'api.settings',
                 'permissions' => 'A',
                 'created_at' => '2023-01-01 00:00:00',
@@ -248,20 +248,20 @@ class PermissionRepositoryTest extends TestCase
                 'updated_at' => null
             ]
         ];
-        
+
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($permissionsData);
-            
+
         // Call the method
         $result = $this->permissionRepository->getAllPermissions();
-        
+
         // Assert result
         $this->assertEquals($permissionsData, $result);
     }
-    
+
     /**
      * Test checking if a user has a specific permission
      */
@@ -274,7 +274,7 @@ class PermissionRepositoryTest extends TestCase
         $this->mockQueryBuilder
             ->method('where')
             ->willReturnSelf();
-        
+
         // Configure query builder to return test data for getUserPermissions
         $this->mockQueryBuilder
             ->expects($this->exactly(2)) // Called twice for our two test scenarios
@@ -283,14 +283,14 @@ class PermissionRepositoryTest extends TestCase
                 [], // First getUserPermissions returns empty
                 [] // Second getUserPermissions returns empty
             );
-        
+
         // Mock role repository to return roles for the user
         $this->mockRoleRepository
             ->method('getUserRoles')
             ->willReturn([
                 ['role_uuid' => 'role-1']
             ]);
-            
+
         // Mock the role permissions
         $this->mockRoleRepository
             ->expects($this->exactly(2))
@@ -302,11 +302,11 @@ class PermissionRepositoryTest extends TestCase
                     'updated_at' => null
                 ]
             ]);
-        
+
         // Test user has B permission
         $result1 = $this->permissionRepository->hasPermission('user-uuid', 'api.primary.users', 'B');
         $this->assertTrue($result1);
-        
+
         // Test user doesn't have D permission
         $result2 = $this->permissionRepository->hasPermission('user-uuid', 'api.primary.users', 'D');
         $this->assertFalse($result2);
