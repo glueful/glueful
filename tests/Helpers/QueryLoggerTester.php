@@ -48,8 +48,10 @@ class QueryLoggerTester
      * @param float[] $samplingRates Array of sampling rates to test
      * @return array Performance metrics for each sampling rate
      */
-    public function testAuditLoggingPerformance(int $iterations = 1000, array $samplingRates = [1.0, 0.5, 0.1, 0.01]): array
-    {
+    public function testAuditLoggingPerformance(
+        int $iterations = 1000,
+        array $samplingRates = [1.0, 0.5, 0.1, 0.01]
+    ): array {
         $results = [];
 
         foreach ($samplingRates as $rate) {

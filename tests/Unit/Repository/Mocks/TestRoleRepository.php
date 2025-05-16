@@ -25,7 +25,12 @@ class TestRoleRepository extends RoleRepository
      */
     public function __construct(?QueryBuilder $queryBuilder = null)
     {
-        // Skip parent constructor to avoid real database connection
+        // Initialize table and other properties needed by the BaseRepository
+        $this->table = 'roles';
+        $this->primaryKey = 'uuid';
+        $this->defaultFields = ['uuid', 'name', 'description'];
+        $this->containsSensitiveData = false;
+        $this->sensitiveFields = [];
 
         if ($queryBuilder) {
             // Use reflection to set the private property in the parent class
@@ -50,6 +55,8 @@ class TestRoleRepository extends RoleRepository
             // Also save reference for our test methods
             $this->testDb = $queryBuilder;
         }
+        // Skip the parent constructor completely as we're manually setting up everything
+        // parent::__construct();
     }
 
     // All database setup is now handled by MockRoleConnection
@@ -102,15 +109,13 @@ class TestRoleRepository extends RoleRepository
      *
      * @param string $userUuid User UUID to remove role from
      * @param string $roleUuid Role UUID to remove
-     * @param string|null $organizationUuid Optional organization UUID
-     * @param bool|null $skipCache Optional cache control parameter
+     * @param string|null $removedByUserId Optional ID of user who removed the role
      * @return bool Success status
      */
     public function unassignRole(
         string $userUuid,
         string $roleUuid,
-        ?string $organizationUuid = null,
-        ?bool $skipCache = null
+        ?string $removedByUserId = null
     ): bool {
         $result = $this->testDb->delete('user_roles_lookup', [
             'user_uuid' => $userUuid,

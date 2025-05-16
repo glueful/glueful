@@ -625,7 +625,7 @@ class QueryLogger
             $tables[] = $matches[1];
         }
 
-        // Extract tables from updates
+        // Extract tables from updates - using case-insensitive matching
         if (preg_match('/\bupdate\s+[`"]?(\w+)[`"]?/i', $sql, $matches)) {
             $tables[] = $matches[1];
         }
@@ -900,7 +900,7 @@ class QueryLogger
                   "Replace multiple individual queries with a single query using WHERE IN clause or JOIN.";
         } elseif (count($tables) === 1 && strpos($lowercaseQuery, 'join') === false) {
             return "Consider adding appropriate JOINs to retrieve related data in a single query, "
-                . "or implement batch loading.";
+                . "or implement batch loading with eager loading techniques.";
         } elseif (strpos($lowercaseQuery, 'limit 1') !== false) {
             return "Multiple single-row lookups detected. Consider using a batch query with WHERE IN clause " .
                 "to fetch all needed records at once.";
@@ -1018,6 +1018,9 @@ class QueryLogger
             $this->auditPerformanceMetrics['skipped_operations']++;
             return;
         }
+
+        // Count this operation as one we'll actually log
+        $this->auditPerformanceMetrics['logged_operations']++;
 
         // Convert query type to action name
         $action = match ($queryType) {

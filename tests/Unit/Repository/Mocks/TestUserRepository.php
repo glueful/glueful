@@ -1,10 +1,12 @@
 <?php
+
 namespace Tests\Unit\Repository\Mocks;
 
 use Glueful\Repository\UserRepository;
 use Glueful\Database\QueryBuilder;
 use Glueful\Validation\Validator;
-use Tests\Unit\Database\Mocks\MockSQLiteConnection;
+use Tests\Unit\Repository\Mocks\MockUserConnection;
+use Glueful\Logging\AuditLogger;
 
 /**
  * Test User Repository
@@ -37,17 +39,24 @@ class TestUserRepository extends UserRepository
      */
     public function __construct(?QueryBuilder $queryBuilder = null, ?Validator $validator = null)
     {
-        // Skip parent constructor to avoid real database connection
+        // Initialize required properties without calling parent constructor
+        $this->table = 'users';
+        $this->primaryKey = 'uuid';
+        $this->defaultFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
+        $this->containsSensitiveData = true;
+        $this->sensitiveFields = ['password', 'api_key', 'remember_token', 'reset_token'];
 
         if ($queryBuilder || $validator) {
-            // Use reflection to set the private properties in the parent class
+            // Use reflection to set the properties in the parent class
             $reflection = new \ReflectionClass(UserRepository::class);
+            $baseReflection = new \ReflectionClass(get_parent_class($reflection->getName()));
 
             if ($queryBuilder) {
                 $this->testDb = $queryBuilder;
-                $queryBuilderProperty = $reflection->getProperty('queryBuilder');
-                $queryBuilderProperty->setAccessible(true);
-                $queryBuilderProperty->setValue($this, $queryBuilder);
+                // Set the db property (QueryBuilder)
+                $dbProperty = $baseReflection->getProperty('db');
+                $dbProperty->setAccessible(true);
+                $dbProperty->setValue($this, $queryBuilder);
             }
 
             if ($validator) {
@@ -64,29 +73,32 @@ class TestUserRepository extends UserRepository
             $this->testDb = $queryBuilder;
             $this->testValidator = $validator;
 
-            // Use reflection to set the private properties in the parent class
+            // Use reflection to set properties
             $reflection = new \ReflectionClass(UserRepository::class);
+            $baseReflection = new \ReflectionClass(get_parent_class($reflection->getName()));
 
-            $queryBuilderProperty = $reflection->getProperty('queryBuilder');
-            $queryBuilderProperty->setAccessible(true);
-            $queryBuilderProperty->setValue($this, $queryBuilder);
+            // Set the db property (QueryBuilder)
+            $dbProperty = $baseReflection->getProperty('db');
+            $dbProperty->setAccessible(true);
+            $dbProperty->setValue($this, $queryBuilder);
 
             $validatorProperty = $reflection->getProperty('validator');
             $validatorProperty->setAccessible(true);
             $validatorProperty->setValue($this, $validator);
-
-            // Setup user tables for testing
-            $this->setupUserTables($connection->getPDO());
         }
+
+        // Create a mock AuditLogger for testing
+        $this->auditLogger = $this->createMockAuditLogger();
     }
 
     /**
      * Create new user - overridden for testing
      *
      * @param array $userData User data (username, email, password, etc.)
+     * @param string|null $createdByUserId UUID of user creating this user (for audit)
      * @return string|null New user UUID or null on failure
      */
-    public function create(array $userData): ?string
+    public function create(array $userData, ?string $createdByUserId = null): ?string
     {
         // Ensure required fields are present
         if (!isset($userData['username']) || !isset($userData['email']) || !isset($userData['password'])) {
@@ -139,10 +151,80 @@ class TestUserRepository extends UserRepository
     }
 
     /**
-     * Create tables needed for user tests
+     * Find user by username - overridden for testing
      *
-     * @param \PDO $pdo
+     * @param string $username Username to search for
+     * @return array|null User data or null if not found, or validation errors array
      */
+    public function findByUsername(string $username): ?array
+    {
+        // Query database for user
+        $query = $this->testDb->select('users', $this->userFields)
+            ->where(['username' => $username])
+            ->limit(1)
+            ->get();
+
+        if (!empty($query)) {
+            return $query[0];
+        }
+
+        return null;
+    }
+
+    /**
+     * Find user by UUID - overridden for testing
+     *
+     * @param string $uuid UUID to search for
+     * @return array|null User data or null if not found
+     */
+    public function findByUUID(string $uuid): ?array
+    {
+        // Query database for user
+        $query = $this->testDb->select('users', $this->userFields)
+            ->where(['uuid' => $uuid])
+            ->limit(1)
+            ->get();
+
+        if (!empty($query)) {
+            return $query[0];
+        }
+
+        return null;
+    }
+
+    /**
+     * Create a mock AuditLogger instance for testing
+     *
+     * @return AuditLogger
+     */
+    private function createMockAuditLogger(): AuditLogger
+    {
+        // Create a minimal implementation of AuditLogger that does nothing during tests
+        return new class extends AuditLogger
+        {
+            public function __construct()
+            {
+                // Skip parent constructor
+            }
+
+            public function log($level, $message, array $context = []): void
+            {
+                // Do nothing in tests
+                return;
+            }
+        };
+    }
+
+    /**
+     * Expose the mock AuditLogger for testing
+     *
+     * @return \Glueful\Logging\AuditLogger
+     */
+    public function createMockAuditLoggerForTest()
+    {
+        return $this->createMockAuditLogger();
+    }
+
     private function setupUserTables(\PDO $pdo): void
     {
         // Create users table

@@ -1,14 +1,17 @@
 <?php
+
 namespace Tests\Unit\Auth;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Component\HttpFoundation\Request;
 use Tests\TestCase;
+use Tests\Helpers\AuditLoggerMock;
 use Glueful\Auth\JwtAuthenticationProvider;
 use Glueful\Auth\JWTService;
 use Glueful\Auth\TokenManager;
 use Glueful\Auth\SessionCacheManager;
 use Glueful\Cache\CacheEngine;
+use Glueful\Logging\AuditLogger;
 
 /**
  * Tests for the JWT Authentication Provider
@@ -26,6 +29,11 @@ class JwtAuthenticationProviderTest extends TestCase
     private array $testUserData;
 
     /**
+     * @var MockObject Mock of the AuditLogger
+     */
+    private $mockAuditLogger;
+
+    /**
      * Set up test environment
      */
     protected function setUp(): void
@@ -35,6 +43,15 @@ class JwtAuthenticationProviderTest extends TestCase
         // Set up JWT Service
         $_ENV['JWT_KEY'] = 'test-jwt-secret-key-for-unit-tests';
         $_SERVER['JWT_KEY'] = 'test-jwt-secret-key-for-unit-tests';
+
+        // Mock the AuditLogger to prevent database connections
+        $this->mockAuditLogger = AuditLoggerMock::setup($this);
+
+        // Configure mock audit logger methods
+        $this->mockAuditLogger->method('audit')->willReturn('mock-audit-id-' . uniqid());
+        $this->mockAuditLogger->method('authEvent')->willReturn('mock-auth-id-' . uniqid());
+        $this->mockAuditLogger->method('dataEvent')->willReturn('mock-data-id-' . uniqid());
+        $this->mockAuditLogger->method('configEvent')->willReturn('mock-config-id-' . uniqid());
 
         // Create provider
         $this->provider = new JwtAuthenticationProvider();
@@ -214,5 +231,16 @@ class JwtAuthenticationProviderTest extends TestCase
         $request->cookies->set('token', $token);
         $userData = $this->provider->authenticate($request);
         $this->assertNull($userData, "Token from cookies should not be processed by current implementation");
+    }
+
+    /**
+     * Clean up after each test
+     */
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        // Reset the AuditLogger singleton
+        AuditLoggerMock::reset();
     }
 }
