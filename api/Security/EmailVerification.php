@@ -210,8 +210,8 @@ class EmailVerification
                 ]
             );
 
-            // Use the NotificationResultParser to handle the result
-            return \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
+            // Parse the result using the NotificationResultParser
+            $parsedResult = \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
                 $result,
                 [
                     'email' => $email,
@@ -219,12 +219,63 @@ class EmailVerification
                 ],
                 'Verification code sent successfully'
             );
+            // Log the verification email attempt to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $severity = $parsedResult['success']
+                        ? \Glueful\Logging\AuditEvent::SEVERITY_INFO
+                        : \Glueful\Logging\AuditEvent::SEVERITY_WARNING;
+
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_code_sent',
+                        $severity,
+                        [
+                            'email' => $email,
+                            'success' => $parsedResult['success'],
+                            'error_code' => $parsedResult['error_code'] ?? null,
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails - don't disrupt main flow
+                    error_log("Failed to log email verification to audit system: " . $e->getMessage());
+                }
+            }
+
+            return $parsedResult;
         } catch (\Exception $e) {
-            return [
+            $errorResult = [
                 'success' => false,
                 'message' => 'An error occurred during email verification: ' . $e->getMessage(),
                 'error_code' => 'system_error'
             ];
+
+            // Log the error to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_error',
+                        \Glueful\Logging\AuditEvent::SEVERITY_ERROR,
+                        [
+                            'email' => $email,
+                            'error' => $e->getMessage(),
+                            'error_code' => 'system_error',
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $auditError) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log email verification error to audit system: " . $auditError->getMessage());
+                }
+            }
+
+            return $errorResult;
         }
     }
 
@@ -333,6 +384,28 @@ class EmailVerification
 
         if (!$stored || empty($stored['otp']) || empty($stored['timestamp'])) {
             $this->incrementAttempts($email);
+
+            // Log the failed verification due to missing/expired OTP to audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_failed',
+                        \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                        [
+                            'email' => $email,
+                            'reason' => 'expired_or_missing_otp',
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log OTP verification failure to audit system: " . $e->getMessage());
+                }
+            }
+
             return false;
         }
 
@@ -342,11 +415,54 @@ class EmailVerification
             // Clear rate limiting on success
             $this->clearAttempts($email);
             CacheEngine::delete($key);
+
+            // Log the successful verification to audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_success',
+                        \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+                        [
+                            'email' => $email,
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log OTP verification success to audit system: " . $e->getMessage());
+                }
+            }
+
             return true;
         }
 
         // Increment failed attempts
         $this->incrementAttempts($email);
+
+        // Log the failed verification due to invalid OTP to audit system
+        if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+            try {
+                $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                $auditLogger->audit(
+                    \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                    'email_verification_failed',
+                    \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                    [
+                        'email' => $email,
+                        'reason' => 'invalid_otp',
+                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Silently fail if audit logging fails
+                error_log("Failed to log OTP verification failure to audit system: " . $e->getMessage());
+            }
+        }
+
         return false;
     }
 
@@ -375,6 +491,28 @@ class EmailVerification
 
         if ($attempts >= self::MAX_ATTEMPTS) {
             error_log("Account temporary locked for email: $email");
+
+            // Log the account lockout to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_account_locked',
+                        \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                        [
+                            'email' => $email,
+                            'attempts' => $attempts,
+                            'cooldown_minutes' => self::COOLDOWN_MINUTES,
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log verification account lockout to audit system: " . $e->getMessage());
+                }
+            }
         }
     }
 
@@ -400,6 +538,29 @@ class EmailVerification
         $requests = (int)(CacheEngine::get($key) ?? 0) + 1;
 
         if ($requests > self::MAX_DAILY_REQUESTS) {
+            // Log the daily limit exceeded to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'email_verification_daily_limit_exceeded',
+                        \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                        [
+                            'email' => $email,
+                            'requests' => $requests,
+                            'max_daily_requests' => self::MAX_DAILY_REQUESTS,
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                            'date' => date('Y-m-d')
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log verification daily limit exceeded to audit system: " . $e->getMessage());
+                }
+            }
+
             return false;
         }
 
@@ -445,6 +606,26 @@ class EmailVerification
             }
 
             if (!$verifier->isValidEmail($email)) {
+                // Log the invalid email format to the audit system
+                if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                    try {
+                        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                        $auditLogger->audit(
+                            \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                            'password_reset_invalid_email',
+                            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                            [
+                                'email' => $email,
+                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            ]
+                        );
+                    } catch (\Throwable $e) {
+                        // Silently fail if audit logging fails
+                        error_log("Failed to log invalid email format to audit system: " . $e->getMessage());
+                    }
+                }
+
                 return [
                     'success' => false,
                     'message' => 'Invalid email format',
@@ -455,6 +636,26 @@ class EmailVerification
             // Check if email exists in users table
             $userData = APIEngine::getData('users', 'list', ['email' => $email]);
             if (empty($userData)) {
+                // Log the email not found to the audit system
+                if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                    try {
+                        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                        $auditLogger->audit(
+                            \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                            'password_reset_email_not_found',
+                            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                            [
+                                'email' => $email,
+                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            ]
+                        );
+                    } catch (\Throwable $e) {
+                        // Silently fail if audit logging fails
+                        error_log("Failed to log email not found to audit system: " . $e->getMessage());
+                    }
+                }
+
                 return [
                     'success' => false,
                     'message' => 'Email address not found',
@@ -464,6 +665,26 @@ class EmailVerification
 
             // Check rate limiting
             if ($verifier->isRateLimited($email)) {
+                // Log the rate limiting to the audit system
+                if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                    try {
+                        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                        $auditLogger->audit(
+                            \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                            'password_reset_rate_limited',
+                            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                            [
+                                'email' => $email,
+                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            ]
+                        );
+                    } catch (\Throwable $e) {
+                        // Silently fail if audit logging fails
+                        error_log("Failed to log password reset rate limiting to audit system: " . $e->getMessage());
+                    }
+                }
+
                 return [
                     'success' => false,
                     'message' => 'Too many attempts. Please try again later.',
@@ -545,7 +766,7 @@ class EmailVerification
             );
 
             // Use the NotificationResultParser to handle the result
-            return \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
+            $parsedResult = \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
                 $result,
                 [
                     'email' => $email,
@@ -553,12 +774,65 @@ class EmailVerification
                 ],
                 'Password reset code sent to your email'
             );
+
+            // Log the password reset email attempt to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $severity = $parsedResult['success']
+                        ? \Glueful\Logging\AuditEvent::SEVERITY_INFO
+                        : \Glueful\Logging\AuditEvent::SEVERITY_WARNING;
+
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'password_reset_code_sent',
+                        $severity,
+                        [
+                            'email' => $email,
+                            'success' => $parsedResult['success'],
+                            'error_code' => $parsedResult['error_code'] ?? null,
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                            'user_data' => isset($userData[0]['uuid']) ? ['uuid' => $userData[0]['uuid']] : null
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    // Silently fail if audit logging fails - don't disrupt main flow
+                    error_log("Failed to log password reset to audit system: " . $e->getMessage());
+                }
+            }
+
+            return $parsedResult;
         } catch (\Exception $e) {
-            return [
+            $errorResult = [
                 'success' => false,
                 'message' => $e->getMessage(),
                 'error_code' => 'system_error'
             ];
+
+            // Log the error to the audit system
+            if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
+                try {
+                    $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+                    $auditLogger->audit(
+                        \Glueful\Logging\AuditEvent::CATEGORY_SYSTEM,
+                        'password_reset_error',
+                        \Glueful\Logging\AuditEvent::SEVERITY_ERROR,
+                        [
+                            'email' => $email,
+                            'error' => $e->getMessage(),
+                            'error_code' => 'system_error',
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        ]
+                    );
+                } catch (\Throwable $auditError) {
+                    // Silently fail if audit logging fails
+                    error_log("Failed to log password reset error to audit system: " . $auditError->getMessage());
+                }
+            }
+
+            return $errorResult;
         }
     }
 

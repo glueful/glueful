@@ -2,7 +2,7 @@
 
 /**
  * Mail Configuration
- * 
+ *
  * Email service settings and SMTP configurations.
  * Supports multiple mailer types with failover options.
  */
