@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Glueful\Security;
 
 use Glueful\Cache\CacheEngine;
+use Glueful\Logging\AuditEvent;
+use Glueful\Logging\AuditLogger;
 
 /**
  * Rate Limiter
@@ -49,6 +51,19 @@ class RateLimiter
 
         // Get current attempt count
         if (CacheEngine::zcard($key) >= $this->maxAttempts) {
+            // Audit log the rate limit violation
+            $auditLogger = new AuditLogger();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_SYSTEM,
+                'rate_limit_exceeded',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'key' => $this->key,
+                    'max_attempts' => $this->maxAttempts,
+                    'window_seconds' => $this->windowSeconds,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                ]
+            );
             return false;
         }
 
@@ -94,6 +109,19 @@ class RateLimiter
     public function reset(): void
     {
         CacheEngine::delete($this->getCacheKey());
+
+        // Audit log the rate limit reset
+        $auditLogger = new AuditLogger();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_SYSTEM,
+            'rate_limit_reset',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'key' => $this->key,
+                'max_attempts' => $this->maxAttempts,
+                'window_seconds' => $this->windowSeconds,
+            ]
+        );
     }
 
     /**
@@ -126,6 +154,19 @@ class RateLimiter
      */
     public static function perIp(string $ip, int $maxAttempts, int $windowSeconds): self
     {
+        // Audit log IP-based rate limiter creation
+        $auditLogger = new AuditLogger();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_SYSTEM,
+            'rate_limit_ip_created',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'ip' => $ip,
+                'max_attempts' => $maxAttempts,
+                'window_seconds' => $windowSeconds,
+            ]
+        );
+
         return new self("ip:$ip", $maxAttempts, $windowSeconds);
     }
 
@@ -139,6 +180,19 @@ class RateLimiter
      */
     public static function perUser(string $userId, int $maxAttempts, int $windowSeconds): self
     {
+        // Audit log user-based rate limiter creation
+        $auditLogger = new AuditLogger();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_SYSTEM,
+            'rate_limit_user_created',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_id' => $userId,
+                'max_attempts' => $maxAttempts,
+                'window_seconds' => $windowSeconds,
+            ]
+        );
+
         return new self("user:$userId", $maxAttempts, $windowSeconds);
     }
 
@@ -153,6 +207,20 @@ class RateLimiter
      */
     public static function perEndpoint(string $endpoint, string $identifier, int $maxAttempts, int $windowSeconds): self
     {
+        // Audit log endpoint-specific rate limiter creation
+        $auditLogger = new AuditLogger();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_SYSTEM,
+            'rate_limit_endpoint_created',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'endpoint' => $endpoint,
+                'identifier' => $identifier,
+                'max_attempts' => $maxAttempts,
+                'window_seconds' => $windowSeconds,
+            ]
+        );
+
         return new self("endpoint:$endpoint:$identifier", $maxAttempts, $windowSeconds);
     }
 }

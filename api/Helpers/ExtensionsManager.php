@@ -396,6 +396,7 @@ class ExtensionsManager
     public static function isExtensionEnabled(string $extensionName): bool
     {
         $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+
         if (!file_exists($configFile)) {
             return false;
         }
