@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Repository\Mocks;
 
 use PDO;
@@ -8,7 +9,7 @@ use Glueful\Database\Schema\SQLiteSchemaManager;
 
 /**
  * Mock SQLite Connection for User Repository Tests
- * 
+ *
  * Provides an in-memory SQLite database for testing user repository
  * operations without affecting actual databases.
  */
@@ -25,17 +26,17 @@ class MockUserConnection extends Connection
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false
         ]);
-        
+
         // Set SQLite driver
         $this->driver = new SQLiteDriver($this->pdo);
-        
+
         // Set SQLite schema manager
         $this->schemaManager = new SQLiteSchemaManager($this->pdo);
-        
+
         // Create the user tables
         $this->createUserTables();
     }
-    
+
     /**
      * Creates user tables for testing
      */
@@ -55,7 +56,7 @@ class MockUserConnection extends Connection
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL
         )");
-        
+
         // Create user_roles table
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS user_roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +65,7 @@ class MockUserConnection extends Connection
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, role_id)
         )");
-        
+
         // Create roles table for user role tests
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,10 +76,10 @@ class MockUserConnection extends Connection
             updated_at TIMESTAMP NULL
         )");
     }
-    
+
     /**
      * Seed test users
-     * 
+     *
      * @param array $data Optional array of user data to insert
      * @return bool True on success
      */
@@ -113,7 +114,7 @@ class MockUserConnection extends Connection
                 ]
             ];
         }
-        
+
         // Prepare and execute insert statements
         $stmt = $this->pdo->prepare("
             INSERT INTO users (
@@ -124,17 +125,17 @@ class MockUserConnection extends Connection
                 :status, :email_verified, :created_at, :updated_at
             )
         ");
-        
+
         foreach ($data as $record) {
             $stmt->execute($record);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Seed test roles
-     * 
+     *
      * @param array $data Optional array of role data to insert
      * @return bool True on success
      */
@@ -159,7 +160,7 @@ class MockUserConnection extends Connection
                 ]
             ];
         }
-        
+
         // Prepare and execute insert statements
         $stmt = $this->pdo->prepare("
             INSERT INTO roles (
@@ -168,17 +169,17 @@ class MockUserConnection extends Connection
                 :uuid, :name, :description, :created_at, :updated_at
             )
         ");
-        
+
         foreach ($data as $record) {
             $stmt->execute($record);
         }
-        
+
         return true;
     }
-    
+
     /**
      * Assign roles to users for testing
-     * 
+     *
      * @param array $assignments Array of user_id => role_id mappings
      * @return bool True on success
      */
@@ -191,17 +192,17 @@ class MockUserConnection extends Connection
                 ['user_id' => 2, 'role_id' => 1]  // admin -> admin role
             ];
         }
-        
+
         // Prepare and execute insert statements
         $stmt = $this->pdo->prepare("
             INSERT INTO user_roles (user_id, role_id, created_at)
             VALUES (:user_id, :role_id, CURRENT_TIMESTAMP)
         ");
-        
+
         foreach ($assignments as $assignment) {
             $stmt->execute($assignment);
         }
-        
+
         return true;
     }
 }

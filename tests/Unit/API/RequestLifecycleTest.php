@@ -6,7 +6,7 @@ use Glueful\Http\Router;
 
 /**
  * Tests for the API request lifecycle and middleware execution
- * 
+ *
  * These tests verify that:
  * - Middleware is executed in the correct order
  * - The request lifecycle flows correctly through the system
@@ -18,29 +18,29 @@ class RequestLifecycleTest extends TestCase
      * @var array To track middleware execution order
      */
     private $executionOrder = [];
-    
+
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Reset static properties that might persist between tests
         $this->resetRouterMiddleware();
-        
+
         // Reset execution order tracking
         $this->executionOrder = [];
-        
+
         // Suppress actual output during tests
         ob_start();
     }
-    
+
     protected function tearDown(): void
     {
         // Clean up output buffer
         ob_end_clean();
-        
+
         parent::tearDown();
     }
-    
+
     /**
      * Reset Router middleware stack between tests
      */
@@ -49,7 +49,7 @@ class RequestLifecycleTest extends TestCase
         $this->setPrivateStaticProperty(Router::class, 'middlewareStack', []);
         $this->setPrivateStaticProperty(Router::class, 'legacyMiddlewares', []);
     }
-    
+
     /**
      * Test that middleware is executed in the correct order
      */
@@ -57,11 +57,11 @@ class RequestLifecycleTest extends TestCase
     {
         // Skip this test for now as we need more complex setup to test middleware order
         $this->markTestSkipped('This test requires more specific integration with the Router class');
-        
+
         // This test would verify that middleware is executed in the right order
         // but requires more complex mocking of the Router internals
     }
-    
+
     /**
      * Test that middleware can modify the request/response flow
      */
@@ -70,7 +70,7 @@ class RequestLifecycleTest extends TestCase
         // Skip this test for now
         $this->markTestSkipped('This test requires more specific integration with the Router class');
     }
-    
+
     /**
      * Test that middleware can intercept the request and return early
      */
@@ -79,7 +79,7 @@ class RequestLifecycleTest extends TestCase
         // Skip this test for now
         $this->markTestSkipped('This test requires more specific integration with the Router class');
     }
-    
+
     /**
      * Test that the full request lifecycle flows correctly through middleware to controllers
      */
@@ -88,7 +88,7 @@ class RequestLifecycleTest extends TestCase
         // Skip this test for now
         $this->markTestSkipped('This test requires more specific integration with the Router class');
     }
-    
+
     /**
      * Test API error handling works through middleware
      */
@@ -96,7 +96,7 @@ class RequestLifecycleTest extends TestCase
     {
         // This is a simpler test we can implement that doesn't require complex Router mocking
         $this->assertTrue(true);
-        
+
         // Test that API properly catches and handles errors through the middleware chain
         // This would be implemented with real integration tests rather than complex mocks
     }

@@ -8,7 +8,7 @@ use Glueful\Database\Schema\SQLiteSchemaManager;
 
 /**
  * Mock SQLite Connection for Notification Repository Tests
- * 
+ *
  * Provides an in-memory SQLite database for testing notification repository
  * operations without affecting actual databases.
  */
@@ -25,17 +25,17 @@ class MockNotificationConnection extends Connection
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false
         ]);
-        
+
         // Set SQLite driver
         $this->driver = new SQLiteDriver($this->pdo);
-        
+
         // Set SQLite schema manager
         $this->schemaManager = new SQLiteSchemaManager($this->pdo);
-        
+
         // Create the notification tables
         $this->createNotificationTables();
     }
-    
+
     /**
      * Creates notification tables for testing
      */
@@ -56,7 +56,7 @@ class MockNotificationConnection extends Connection
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL
         )");
-        
+
         // Create notification_preferences table
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS notification_preferences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +70,7 @@ class MockNotificationConnection extends Connection
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL
         )");
-        
+
         // Create notification_templates table
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS notification_templates (
             id TEXT PRIMARY KEY,
@@ -84,7 +84,7 @@ class MockNotificationConnection extends Connection
             updated_at TIMESTAMP NULL
         )");
     }
-    
+
     /**
      * Insert sample notification data for testing
      */
@@ -94,12 +94,12 @@ class MockNotificationConnection extends Connection
         $this->pdo->exec("INSERT INTO notifications (uuid, type, subject, content, data, priority, notifiable_type, notifiable_id) VALUES 
             ('test-uuid-1', 'account_created', 'Welcome to Glueful', 'Welcome content', '{\"key\":\"value\"}', 'normal', 'user', 'user-123'),
             ('test-uuid-2', 'password_changed', 'Password Changed', 'Your password was changed', '{\"ip\":\"192.168.1.1\"}', 'high', 'user', 'user-123')");
-            
+
         // Insert sample notification preferences
         $this->pdo->exec("INSERT INTO notification_preferences (uuid, notifiable_type, notifiable_id, notification_type, channels, enabled, settings) VALUES 
             ('pref-uuid-1', 'user', 'user-123', 'account-updates', '{\"email\",\"push\"}', 1, '{\"frequency\":\"immediate\"}'),
             ('pref-uuid-2', 'user', 'user-123', 'marketing', '{\"email\"}', 0, '{\"frequency\":\"weekly\"}')");
-            
+
         // Insert sample notification templates
         $this->pdo->exec("INSERT INTO notification_templates (id, uuid, name, notification_type, channel, content, parameters) VALUES 
             ('template-1', 'template-uuid-1', 'Welcome Email', 'account_created', 'email', 'Hello {{name}}, welcome to our application.', '{\"subject\":\"Welcome to {{app_name}}\"}')");

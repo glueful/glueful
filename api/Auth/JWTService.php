@@ -184,6 +184,35 @@ class JWTService
     }
 
     /**
+     * Extract payload without signature validation
+     *
+     * Extracts and decodes the payload portion of a JWT token without
+     * validating the signature. This is useful for getting the subject (sub)
+     * or other non-secure information for logging purposes.
+     *
+     * NOTE: This method should NEVER be used for authentication or authorization
+     * as it does not verify the token's authenticity.
+     *
+     * @param string $token JWT token
+     * @return array|null Decoded payload or null if malformed
+     */
+    public static function getPayloadWithoutValidation(string $token): ?array
+    {
+        try {
+            // Split the token into parts
+            $parts = explode('.', $token);
+            if (count($parts) !== 3) {
+                return null;
+            }
+            // Decode the payload (middle part)
+            $payload = json_decode(self::base64UrlDecode($parts[1]), true);
+            return is_array($payload) ? $payload : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Extract claims from token
      *
      * Gets payload claims excluding JWT metadata.

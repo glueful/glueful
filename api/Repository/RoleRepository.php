@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Repository;
 
-use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 
 /**
@@ -16,17 +14,13 @@ use Glueful\Helpers\Utils;
  * - User-role association management
  * - Role permission mapping
  *
- * This repository implements the repository pattern to abstract
- * database operations for role management and provide a clean API
- * for role data access and manipulation.
+ * This repository extends BaseRepository to leverage common CRUD operations
+ * and audit logging functionality for role-related activities.
  *
  * @package Glueful\Repository
  */
-class RoleRepository
+class RoleRepository extends BaseRepository
 {
-    /** @var QueryBuilder Database query builder instance */
-    private QueryBuilder $db;
-
     /**
      * Initialize repository
      *
@@ -35,8 +29,17 @@ class RoleRepository
      */
     public function __construct()
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        // Set the table and other configuration before calling parent constructor
+        $this->table = 'roles';
+        $this->primaryKey = 'uuid';
+        $this->defaultFields = ['uuid', 'name', 'description'];
+
+        // Roles typically don't contain sensitive data like passwords
+        $this->containsSensitiveData = false;
+        $this->sensitiveFields = [];
+
+        // Call parent constructor to set up database connection and audit logger
+        parent::__construct();
     }
 
     /**
@@ -49,7 +52,7 @@ class RoleRepository
      */
     public function getRoles(): array
     {
-        return $this->db->select('roles', ['uuid', 'name', 'description'])->get();
+        return $this->getAll(['uuid', 'name', 'description']);
     }
 
     /**
@@ -62,12 +65,7 @@ class RoleRepository
      */
     public function getRoleByUUID(string $uuid): ?array
     {
-        $role = $this->db->select('roles', ['uuid', 'name', 'description'])
-            ->where(['uuid' => $uuid])
-            ->limit(1)
-            ->get();
-
-        return $role ? $role[0] : null;
+        return $this->findBy($this->primaryKey, $uuid);
     }
 
     /**
@@ -82,15 +80,15 @@ class RoleRepository
     public function getUserRoles(string $uuid): array
     {
         return $this->db
-        ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
-        ->select('user_roles_lookup', [
-            'user_roles_lookup.role_uuid',
-            'user_roles_lookup.user_uuid',
-            'roles.name AS role_name',
-            'roles.description'
-        ])
-        ->where(['user_roles_lookup.user_uuid' => $uuid])
-        ->get();
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+            ->select('user_roles_lookup', [
+                'user_roles_lookup.role_uuid',
+                'user_roles_lookup.user_uuid',
+                'roles.name AS role_name',
+                'roles.description'
+            ])
+            ->where(['user_roles_lookup.user_uuid' => $uuid])
+            ->get();
     }
 
     /**
@@ -98,33 +96,45 @@ class RoleRepository
      *
      * Creates a new role in the system with the specified attributes.
      * Automatically generates a UUID if not provided.
+     * This method leverages the parent create method for audit logging.
      *
      * @param array $data Role data (name, description, etc.)
+     * @param string|null $userId ID of user creating the role (for audit)
      * @return string|bool Role UUID if successful, false on failure
      */
-    public function addRole(array $data): string|bool
+    public function addRole(array $data, ?string $userId = null): string|bool
     {
         // Generate UUID if not provided
         if (!isset($data['uuid'])) {
             $data['uuid'] = Utils::generateNanoID();
         }
 
-        // Insert role record
-        $success = $this->db->insert('roles', $data);
+        // Set timestamps if not provided
+        if (!isset($data['created_at'])) {
+            $data['created_at'] = date('Y-m-d H:i:s');
+        }
+        if (!isset($data['updated_at'])) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
 
-        return $success ? $data['uuid'] : false;
+        // Insert role record using parent create method for audit logging
+        $result = parent::create($data, $userId);
+
+        return $result ? $data['uuid'] : false;
     }
 
     /**
      * Update existing role
      *
      * Modifies an existing role's attributes.
+     * This method leverages the parent update method for audit logging.
      *
      * @param string $uuid Role UUID to update
      * @param array $data Updated role data
+     * @param string|null $userId ID of user updating the role (for audit)
      * @return bool Success status
      */
-    public function updateRole(string $uuid, array $data): bool
+    public function updateRole(string $uuid, array $data, ?string $userId = null): bool
     {
         // Remove UUID from data to be updated
         $updateData = $data;
@@ -135,14 +145,8 @@ class RoleRepository
             $updateData['updated_at'] = date('Y-m-d H:i:s');
         }
 
-        // Update role using the update method with conditions
-        $affected = $this->db->update(
-            'roles',
-            $updateData,
-            ['uuid' => $uuid]
-        );
-
-        return $affected > 0;
+        // Update role using parent update method for audit logging
+        return parent::update($uuid, $updateData, $userId);
     }
 
     /**
@@ -150,13 +154,16 @@ class RoleRepository
      *
      * Removes a role from the system.
      * This operation may affect users assigned to this role.
+     * This method leverages the parent delete method for audit logging.
      *
      * @param string $uuid Role UUID to delete
+     * @param string|null $userId ID of user deleting the role (for audit)
      * @return bool Success status
      */
-    public function deleteRole(string $uuid): bool
+    public function deleteRole(string $uuid, ?string $userId = null): bool
     {
-        return $this->db->delete('roles', ['uuid' => $uuid]);
+        // Use parent delete method for audit logging
+        return parent::delete($uuid, $userId);
     }
 
     /**
@@ -168,9 +175,10 @@ class RoleRepository
      *
      * @param string $userUuid User UUID to assign role to
      * @param string $roleUuid Role UUID to assign
+     * @param string|null $assignedByUserId ID of user performing the assignment (for audit)
      * @return bool True if successful, false if already assigned
      */
-    public function assignRole(string $userUuid, string $roleUuid): bool
+    public function assignRole(string $userUuid, string $roleUuid, ?string $assignedByUserId = null): bool
     {
         // Check if assignment already exists
         $exists = $this->db->select('user_roles_lookup', ['role_uuid'])
@@ -185,9 +193,18 @@ class RoleRepository
         $data = [
             'user_uuid' => $userUuid,
             'role_uuid' => $roleUuid,
+            'created_at' => date('Y-m-d H:i:s')
         ];
 
-        $result = $this->db->insert('user_roles_lookup', $data);
+        // Store the original table and switch to user_roles_lookup temporarily
+        $originalTable = $this->table;
+        $this->table = 'user_roles_lookup';
+
+        // Use create method to get audit logging
+        $result = parent::create($data, $assignedByUserId);
+
+        // Restore the original table
+        $this->table = $originalTable;
 
         // Invalidate the user's permission cache
         if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
@@ -205,21 +222,55 @@ class RoleRepository
      *
      * @param string $userUuid User UUID to remove role from
      * @param string $roleUuid Role UUID to remove
+     * @param string|null $removedByUserId ID of user performing the removal (for audit)
      * @return bool Success status
      */
-    public function unassignRole(string $userUuid, string $roleUuid): bool
+    public function unassignRole(string $userUuid, string $roleUuid, ?string $removedByUserId = null): bool
     {
-        $result = $this->db->delete('user_roles_lookup', [
-            'user_uuid' => $userUuid,
-            'role_uuid' => $roleUuid
-        ]);
+        // Store original values
+        $originalTable = $this->table;
+        $originalPrimaryKey = $this->primaryKey;
 
-        // Invalidate the user's permission cache
-        if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
-            \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
+        try {
+            // Switch to user_roles_lookup temporarily and use a composite key
+            $this->table = 'user_roles_lookup';
+
+            // Get the original record for audit logging
+            $originalData = $this->db->select($this->table, ['*'])
+                ->where(['user_uuid' => $userUuid, 'role_uuid' => $roleUuid])
+                ->limit(1)
+                ->get();
+
+            $originalData = $originalData ? $originalData[0] : null;
+
+            // Delete the record directly as BaseRepository's delete doesn't support composite keys
+            $result = $this->db->delete('user_roles_lookup', [
+                'user_uuid' => $userUuid,
+                'role_uuid' => $roleUuid
+            ]);
+
+            // Manual audit logging since we're not using parent::delete
+            if ($result && $this->auditLogger && $originalData) {
+                $this->auditDataAction(
+                    'delete',
+                    $userUuid . '_' . $roleUuid, // Composite identifier
+                    [],
+                    $removedByUserId,
+                    $originalData
+                );
+            }
+
+            // Invalidate the user's permission cache
+            if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
+                \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
+            }
+
+            return $result;
+        } finally {
+            // Restore original values
+            $this->table = $originalTable;
+            $this->primaryKey = $originalPrimaryKey;
         }
-
-        return $result;
     }
 
     /**
@@ -314,7 +365,6 @@ class RoleRepository
             ->count('user_roles_lookup');
 
         return $result > 0;
-    //    return (bool)($result[0]['has_role'] ?? 0);
     }
 
     /**
@@ -327,11 +377,19 @@ class RoleRepository
      */
     public function getRoleName(string $roleUuid): ?string
     {
-        $role = $this->db->select('roles', ['name'])
-            ->where(['uuid' => $roleUuid])
-            ->limit(1)
-            ->get();
+        $role = $this->findBy('uuid', $roleUuid, ['name']);
+        return $role ? $role['name'] : null;
+    }
 
-        return $role ? $role[0]['name'] : null;
+    /**
+     * Get role UUID by name (static method for cross-repository use)
+     *
+     * @param string $name Role name
+     * @return string|null Role UUID or null if not found
+     */
+    public function getRoleUuidByName(string $name): ?string
+    {
+        $role = $this->findBy('name', $name, ['uuid']);
+        return $role ? $role['uuid'] : null;
     }
 }

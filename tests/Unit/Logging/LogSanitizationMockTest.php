@@ -12,7 +12,7 @@ use Tests\Unit\Logging\Mocks\MockLogSanitizer;
 class LogSanitizationMockTest extends TestCase
 {
     private MockLogManager $logger;
-    
+
     /**
      * Set up tests
      */
@@ -21,7 +21,7 @@ class LogSanitizationMockTest extends TestCase
         parent::setUp();
         $this->logger = new MockLogManager();
     }
-    
+
     /**
      * Test context sanitization removes sensitive data
      */
@@ -42,10 +42,10 @@ class LogSanitizationMockTest extends TestCase
                 'safe' => 'safe_value'
             ]
         ];
-        
+
         // Sanitize the context using our mock
         $sanitized = $this->logger->sanitizeContext($context);
-        
+
         // Check that sensitive fields were redacted
         $this->assertEquals('testuser', $sanitized['username']); // Should keep username
         $this->assertEquals('[REDACTED]', $sanitized['password']); // Should mask password
@@ -54,13 +54,13 @@ class LogSanitizationMockTest extends TestCase
         $this->assertEquals('[REDACTED]', $sanitized['auth_token']); // Should mask auth token
         $this->assertEquals('[REDACTED]', $sanitized['social_security']); // Should mask SSN
         $this->assertEquals('test@example.com', $sanitized['email']); // Should keep email
-        
+
         // Check nested values
         $this->assertEquals('[REDACTED]', $sanitized['nested']['password']); // Should mask nested password
         $this->assertEquals('[REDACTED]', $sanitized['nested']['token']); // Should mask nested token
         $this->assertEquals('safe_value', $sanitized['nested']['safe']); // Should keep safe value
     }
-    
+
     /**
      * Test that JSON data inside strings is also sanitized
      */
@@ -72,25 +72,25 @@ class LogSanitizationMockTest extends TestCase
             'password' => 'secret_in_json',
             'token' => 'json_token_123'
         ]);
-        
+
         $context = [
             'json_data' => $jsonString,
             'normal_field' => 'normal_value'
         ];
-        
+
         // Sanitize the context
         $sanitized = $this->logger->sanitizeContext($context);
-        
+
         // Check that the JSON string was sanitized
         $this->assertNotEquals($jsonString, $sanitized['json_data']); // Should be different from original
-        
+
         // Decode the sanitized JSON for easier checking
         $sanitizedJson = json_decode($sanitized['json_data'], true);
         $this->assertEquals('testuser', $sanitizedJson['user']); // Should keep user
         $this->assertEquals('[REDACTED]', $sanitizedJson['password']); // Should mask password
         $this->assertEquals('[REDACTED]', $sanitizedJson['token']); // Should mask token
     }
-    
+
     /**
      * Test context enrichment adds standard fields
      */
@@ -98,17 +98,17 @@ class LogSanitizationMockTest extends TestCase
     {
         // Create test environment
         $_SERVER['REQUEST_URI'] = '/test/endpoint';
-        
+
         // Enrich a context
         $enriched = $this->logger->enrichContext([]);
-        
+
         // Check that standard fields were added
         $this->assertArrayHasKey('request_uri', $enriched);
         $this->assertEquals('/test/endpoint', $enriched['request_uri']);
-        
+
         // Memory usage should be present
         $this->assertArrayHasKey('memory_usage', $enriched);
-        
+
         // Hostname should be present
         $this->assertArrayHasKey('hostname', $enriched);
     }

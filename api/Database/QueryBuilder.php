@@ -18,6 +18,10 @@ use Glueful\Database\RawExpression;
  * - Automatic deadlock handling
  * - Soft delete integration
  * - Pagination support
+ * - Query purpose annotation
+ * - Advanced query logging with table name extraction
+ * - Query complexity analysis
+ * - N+1 query detection
  *
  * Design patterns:
  * - Fluent interface for method chaining
@@ -28,6 +32,16 @@ use Glueful\Database\RawExpression;
  * - Automatic parameter binding
  * - Identifier escaping
  * - Transaction isolation
+ * - Parameter sanitization in logs
+ *
+ * Example with query purpose annotation:
+ * ```php
+ * $users = $queryBuilder
+ *     ->withPurpose('User authentication check')
+ *     ->select('users', ['id', 'email'])
+ *     ->where(['status' => 'active', 'email' => $email])
+ *     ->get();
+ * ```
  */
 class QueryBuilder
 {
@@ -69,6 +83,9 @@ class QueryBuilder
 
     /** @var bool Enable debug mode */
     private bool $debugMode = false;  // Default: Off
+
+    /** @var string|null Purpose of the current query for business context */
+    private ?string $queryPurpose = null;
 
     /** @var QueryLogger Logger for queries and database operations */
     protected QueryLogger $logger;
@@ -224,10 +241,51 @@ class QueryBuilder
         // This line already prepares AND executes the statement
         $stmt = $this->prepareAndExecute($sql, array_values($data));
 
-        // We just need to return the row count, without executing again
-        return $stmt->rowCount();
+        // Get affected rows
+        $rowCount = $stmt->rowCount();
+
+        return $rowCount;
     }
 
+    /**
+     * Determine if a table is considered sensitive for audit logging
+     *
+     * Sensitive tables contain data that should be audited for security,
+     * compliance, or privacy reasons. Operations on these tables are
+     * logged to the audit system.
+     *
+     * @param string $table Table name
+     * @return bool True if table is sensitive
+     */
+    protected function isSensitiveTable(string $table): bool
+    {
+        // Strip table prefix if any
+        $prefix = config('database.connections.mysql.prefix', '');
+        if (!empty($prefix) && strpos($table, $prefix) === 0) {
+            $table = substr($table, strlen($prefix));
+        }
+
+        // List of sensitive tables that require audit logging
+        $sensitiveTables = [
+            'users',
+            'permissions',
+            'roles',
+            'user_roles_lookup',
+            'profiles',
+            'api_keys',
+            'tokens',
+            'auth_sessions',
+            'audit_logs',
+            'oauth_access_tokens',
+            'oauth_auth_codes',
+            'oauth_clients',
+            'oauth_personal_access_clients',
+            'oauth_refresh_tokens',
+            'password_resets',
+        ];
+
+        return in_array($table, $sensitiveTables);
+    }
     /**
      * Insert or update record
      *
@@ -661,7 +719,9 @@ class QueryBuilder
 
         $stmt = $this->executeQuery($sql, array_values($conditions));
 
-        return $stmt->rowCount() > 0;
+        $result = $stmt->rowCount() > 0;
+
+        return $result;
     }
 
     /**
@@ -1022,15 +1082,20 @@ class QueryBuilder
     {
         // Start timing the query with debug context if enabled
         $timerId = $this->logger->startTiming($this->debugMode ? 'query_with_debug' : 'query');
+
+        // Capture current purpose and reset it to allow for new purposes on subsequent queries
+        $purpose = $this->queryPurpose;
+        $this->queryPurpose = null;
+
         try {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-             // Log successful query
-            $this->logger->logQuery($sql, $params, $timerId, null);
+             // Log successful query with purpose
+            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode, $purpose);
             return $stmt;
         } catch (PDOException $e) {
-            // Log failed query
-            $this->logger->logQuery($sql, $params, $timerId, $e);
+            // Log failed query with purpose
+            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode, $purpose);
             throw $e;
         }
     }
@@ -1162,7 +1227,10 @@ class QueryBuilder
         // Execute the update query using the centralized method
         $stmt = $this->prepareAndExecute($sql, $values);
 
-        return $stmt->rowCount();
+        // Get affected rows
+        $rowCount = $stmt->rowCount();
+
+        return $rowCount;
     }
 
     /**
@@ -1209,4 +1277,21 @@ class QueryBuilder
             throw $e;
         }
     }
+
+    /**
+     * Set a business purpose for the query
+     *
+     * This provides context for logging and helps with understanding
+     * the business purpose of database operations
+     *
+     * @param string $purpose Business purpose for the query
+     * @return self Builder instance for chaining
+     */
+    public function withPurpose(string $purpose): self
+    {
+        $this->queryPurpose = $purpose;
+        return $this;
+    }
+
+    // The isSensitiveTable method is already defined earlier in this class
 }

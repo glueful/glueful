@@ -13,7 +13,7 @@ class AuthTestHelper
      * @var string|null The mocked token value for testing
      */
     private static ?string $mockedToken = null;
-    
+
     /**
      * Set the mocked token value to be returned by extractTokenFromRequest
      *
@@ -23,10 +23,10 @@ class AuthTestHelper
     {
         self::$mockedToken = $token;
     }
-    
+
     /**
      * Mock implementation of the extractTokenFromRequest method
-     * 
+     *
      * @return string|null The mocked token value
      */
     public static function extractTokenFromRequest(): ?string
