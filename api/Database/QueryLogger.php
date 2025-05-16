@@ -899,8 +899,8 @@ class QueryLogger
                   "instead of multiple individual lookups. " .
                   "Replace multiple individual queries with a single query using WHERE IN clause or JOIN.";
         } elseif (count($tables) === 1 && strpos($lowercaseQuery, 'join') === false) {
-            return "Consider adding appropriate JOINs to retrieve related data in a single query, "
-                . "or implement batch loading with eager loading techniques.";
+            return "Consider adding appropriate JOINs to retrieve related data in a single query, " .
+                "or implement batch loading with eager loading techniques using WHERE IN clause.";
         } elseif (strpos($lowercaseQuery, 'limit 1') !== false) {
             return "Multiple single-row lookups detected. Consider using a batch query with WHERE IN clause " .
                 "to fetch all needed records at once.";

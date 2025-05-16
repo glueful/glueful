@@ -28,7 +28,7 @@ class TestNotificationRepository extends NotificationRepository
         $this->primaryKey = 'uuid';
         $this->defaultFields = ['*'];
         $this->containsSensitiveData = false;
-        
+
         // Set the db property (which was previously set to queryBuilder)
         $this->db = $queryBuilder;
 
@@ -122,7 +122,22 @@ class TestNotificationRepository extends NotificationRepository
      */
     public function findBy(string $field, $value, ?array $fields = null): ?array
     {
-        // Return dummy data for testing
+        // Return complete test data for findTemplateByUuid test
+        if ($field === 'uuid' && $value === 'template-uuid-123') {
+            return [
+                'id' => 'template-1',
+                'uuid' => 'template-uuid-123',
+                'name' => 'Welcome Email',
+                'notification_type' => 'account_created',
+                'channel' => 'email',
+                'content' => 'Hello {{name}}, welcome to our application.',
+                'parameters' => json_encode(['subject' => 'Welcome to {{app_name}}']),
+                'created_at' => '2023-01-01 00:00:00',
+                'updated_at' => null
+            ];
+        }
+
+        // Return default dummy data for other tests
         return [
             'id' => 1,
             'uuid' => $value,
@@ -132,7 +147,7 @@ class TestNotificationRepository extends NotificationRepository
 
     /**
      * Override findByUuid method to use TestNotification
-     * 
+     *
      * @param string $uuid Notification UUID
      * @return \Glueful\Notifications\Models\Notification|null The notification or null if not found
      */
@@ -151,7 +166,7 @@ class TestNotificationRepository extends NotificationRepository
 
     /**
      * Override findTemplateByUuid method to handle parameters correctly
-     * 
+     *
      * @param string $uuid Template UUID
      * @return \Glueful\Notifications\Models\NotificationTemplate|null
      */
@@ -164,46 +179,131 @@ class TestNotificationRepository extends NotificationRepository
             return null;
         }
 
-        // Ensure parameters is a string or null before json_decode
-        $parametersJson = $data['parameters'] ?? null;
-        $parameters = $parametersJson !== null ? json_decode($parametersJson, true) : [];
-        $parameters = $parameters ?? []; // Ensure we have at least an empty array
+        // Parse parameters from JSON string or use empty array if not available
+        $parameters = [];
+        if (isset($data['parameters']) && !empty($data['parameters'])) {
+            $parameters = json_decode($data['parameters'], true) ?: [];
+        }
 
-        return new \Glueful\Notifications\Models\NotificationTemplate(
-            (string)$data['id'],
-            $data['name'],
-            $data['notification_type'],
-            $data['channel'],
-            $data['content'],
+        // Create a hardcoded mock template instead of using PHPUnit's createMock()
+        $template = new class (
+            (string)($data['id'] ?? ''),
+            $data['name'] ?? 'Mock Template Name',
+            $data['notification_type'] ?? '',
+            $data['channel'] ?? '',
+            $data['content'] ?? '',
             $parameters,
-            $data['uuid']
-        );
+            $data['uuid'] ?? ''
+        ) extends \Glueful\Notifications\Models\NotificationTemplate {
+            public function __construct(
+                private string $mockId,
+                private string $mockName,
+                private string $mockNotificationType,
+                private string $mockChannel,
+                private string $mockContent,
+                private array $mockParameters,
+                private ?string $mockUuid
+            ) {
+                // Skip parent constructor to avoid type errors
+            }
+
+            public function getId(): string
+            {
+                return $this->mockId;
+            }
+
+            public function getName(): string
+            {
+                return $this->mockName;
+            }
+
+            public function getNotificationType(): string
+            {
+                return $this->mockNotificationType;
+            }
+
+            public function getChannel(): string
+            {
+                return $this->mockChannel;
+            }
+
+            public function getContent(): string
+            {
+                return $this->mockContent;
+            }
+
+            public function getParameters(): array
+            {
+                return $this->mockParameters;
+            }
+
+            public function getUuid(): ?string
+            {
+                return $this->mockUuid;
+            }
+        };
+
+        return $template;
+    }
+    /**
+     * Override the save method with mock implementation
+     *
+     * @param \Glueful\Notifications\Models\Notification $notification The notification to save
+     * @param string|null $userId ID of user performing the action, for audit logging
+     * @return bool Success status
+     */
+    public function save(\Glueful\Notifications\Models\Notification $notification, ?string $userId = null): bool
+    {
+        $data = $notification->toArray();
+
+        // Convert data field to JSON
+        if (isset($data['data']) && is_array($data['data'])) {
+            $data['data'] = json_encode($data['data']);
+        }
+
+        // Ensure UUID is present
+        if (!isset($data['uuid']) || empty($data['uuid'])) {
+            $data['uuid'] = 'mock-uuid-' . mt_rand(1000, 9999);
+        }
+
+        // If we have a configured db mock, use it
+        if (isset($this->db)) {
+            // Find existing by UUID using array-based lookup to avoid circular dependencies
+            $result = $this->db->select($this->table, ['*'])
+                ->where([$this->primaryKey => $data['uuid']])
+                ->get();
+
+            $existing = !empty($result);
+
+            if ($existing) {
+                // Update existing
+                unset($data['id']); // Remove ID to avoid issues
+                $this->db->update($this->table, $data, [$this->primaryKey => $data['uuid']]);
+            } else {
+                // Insert new
+                $this->db->insert($this->table, $data);
+            }
+        }
+
+        // Always return true for test scenarios
+        return true;
     }
 
-    /**
-     * Override deleteOldNotifications to handle null limit
-     * 
-     * @param int $olderThanDays Delete notifications older than this many days
-     * @param int|null $limit Maximum number to delete
-     * @param string|null $userId ID of user performing the action, for audit logging
-     * @return bool
-     */
     public function deleteOldNotifications(int $olderThanDays, ?int $limit = null, ?string $userId = null): bool
     {
         // Handle the case where days might be null
         $olderThanDays = $olderThanDays ?? 30; // Default to 30 days if null
-        
+
         // Cast $olderThanDays to int to avoid type issues
         $cutoff = date('Y-m-d H:i:s', strtotime('-' . (int)$olderThanDays . ' days'));
 
         $this->db->where(['created_at' => ['<', $cutoff]]);
-        
+
         // Explicitly cast to int to avoid issues in the mock
         $this->db->limit($limit !== null ? (int)$limit : (int)5000);
-        
+
         $deleted = $this->db->delete($this->table, []);
-        
+
         return $deleted ? true : false;
     }
 }
-
