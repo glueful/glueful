@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Exceptions;
 
 use Tests\TestCase;
@@ -45,7 +46,7 @@ class ExceptionHandlerTest extends TestCase
 
         // Configure getLogger to return different loggers based on the channel
         $this->mockLogManager->method('getLogger')
-            ->will($this->returnCallback(function($channel) {
+            ->will($this->returnCallback(function ($channel) {
                 if (!isset($this->mockLoggers[$channel])) {
                     $this->mockLoggers[$channel] = $this->createMock(LoggerInterface::class);
                 }
