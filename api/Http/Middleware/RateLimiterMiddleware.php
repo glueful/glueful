@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Security\RateLimiter;
+use Glueful\Security\AdaptiveRateLimiter;
 
 /**
  * Rate Limiter Middleware
@@ -18,6 +19,10 @@ use Glueful\Security\RateLimiter;
  * Features:
  * - IP-based rate limiting
  * - User-based rate limiting (when authenticated)
+ * - Endpoint-based rate limiting
+ * - Adaptive rate limiting with behavior profiling
+ * - Distributed rate limiting across multiple nodes
+ * - ML-powered anomaly detection
  * - Configurable limits and time windows
  * - Returns appropriate HTTP 429 responses when limits are exceeded
  * - Adds rate limit headers to responses
@@ -30,24 +35,40 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var int Time window in seconds */
     private int $windowSeconds;
 
-    /** @var string Rate limiter type (ip or user) */
+    /** @var string Rate limiter type (ip, user, endpoint) */
     private string $type;
+
+    /** @var bool Whether to use adaptive rate limiting */
+    private bool $useAdaptiveLimiter;
+
+    /** @var bool Whether to enable distributed rate limiting */
+    private bool $enableDistributed;
 
     /**
      * Create a new rate limiter middleware
      *
      * @param int $maxAttempts Maximum number of requests allowed
      * @param int $windowSeconds Time window in seconds
-     * @param string $type Rate limiter type (ip or user)
+     * @param string $type Rate limiter type (ip, user, endpoint)
+     * @param bool $useAdaptiveLimiter Whether to use adaptive rate limiting
+     * @param bool $enableDistributed Whether to enable distributed rate limiting
      */
     public function __construct(
         int $maxAttempts = 60,
         int $windowSeconds = 60,
-        string $type = 'ip'
+        string $type = 'ip',
+        ?bool $useAdaptiveLimiter = null,
+        ?bool $enableDistributed = null
     ) {
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
         $this->type = $type;
+
+        // Default to config values if not specified
+        $this->useAdaptiveLimiter = $useAdaptiveLimiter ??
+            (bool) config('security.rate_limiter.enable_adaptive', false);
+        $this->enableDistributed = $enableDistributed ??
+            (bool) config('security.rate_limiter.enable_distributed', false);
     }
 
     /**
@@ -85,7 +106,33 @@ class RateLimiterMiddleware implements MiddlewareInterface
      * @param Request $request The incoming request
      * @return RateLimiter The rate limiter instance
      */
-    private function createLimiter(Request $request): RateLimiter
+    private function createLimiter(Request $request): RateLimiter|AdaptiveRateLimiter
+    {
+        // Create context data for adaptive rate limiting
+        $context = [
+            'ip' => $request->getClientIp() ?: '0.0.0.0',
+            'user_agent' => $request->headers->get('User-Agent', ''),
+            'method' => $request->getMethod(),
+            'path' => $request->getPathInfo(),
+            'query_count' => count($request->query->all()),
+            'timestamp' => time(),
+        ];
+
+        // Standard vs. Adaptive rate limiting decision
+        if ($this->useAdaptiveLimiter) {
+            return $this->createAdaptiveLimiter($request, $context);
+        } else {
+            return $this->createStandardLimiter($request);
+        }
+    }
+
+    /**
+     * Create a standard rate limiter
+     *
+     * @param Request $request The incoming request
+     * @return RateLimiter Standard rate limiter instance
+     */
+    private function createStandardLimiter(Request $request): RateLimiter|AdaptiveRateLimiter
     {
         if ($this->type === 'user') {
             // Get user ID from the authenticated session
@@ -105,6 +152,17 @@ class RateLimiterMiddleware implements MiddlewareInterface
                 $this->maxAttempts,
                 $this->windowSeconds
             );
+        } elseif ($this->type === 'endpoint') {
+            // Create an endpoint-specific limiter
+            $endpoint = $request->getPathInfo();
+            $identifier = $request->getClientIp() ?: '0.0.0.0';
+
+            return RateLimiter::perEndpoint(
+                $endpoint,
+                $identifier,
+                $this->maxAttempts,
+                $this->windowSeconds
+            );
         }
 
         // Default to IP-based rate limiting
@@ -112,6 +170,46 @@ class RateLimiterMiddleware implements MiddlewareInterface
             $request->getClientIp() ?: '0.0.0.0',
             $this->maxAttempts,
             $this->windowSeconds
+        );
+    }
+
+    /**
+     * Create an adaptive rate limiter
+     *
+     * @param Request $request The incoming request
+     * @param array $context Request context for behavior analysis
+     * @return AdaptiveRateLimiter Adaptive rate limiter instance
+     */
+    private function createAdaptiveLimiter(Request $request, array $context): RateLimiter|AdaptiveRateLimiter
+    {
+        $key = '';
+
+        if ($this->type === 'user') {
+            // Get user ID from the authenticated session
+            $userId = $this->getUserIdFromRequest($request);
+
+            // If no user ID is available, fall back to IP-based limiting
+            if (!$userId) {
+                $key = "ip:" . ($request->getClientIp() ?: '0.0.0.0');
+            } else {
+                $key = "user:$userId";
+            }
+        } elseif ($this->type === 'endpoint') {
+            // Create an endpoint-specific limiter
+            $endpoint = $request->getPathInfo();
+            $identifier = $request->getClientIp() ?: '0.0.0.0';
+            $key = "endpoint:$endpoint:$identifier";
+        } else {
+            // Default to IP-based rate limiting
+            $key = "ip:" . ($request->getClientIp() ?: '0.0.0.0');
+        }
+
+        return new AdaptiveRateLimiter(
+            $key,
+            $this->maxAttempts,
+            $this->windowSeconds,
+            $context,
+            $this->enableDistributed
         );
     }
 
@@ -152,13 +250,26 @@ class RateLimiterMiddleware implements MiddlewareInterface
      */
     private function createRateLimitExceededResponse(RateLimiter $limiter): Response
     {
-        $response = new JsonResponse([
+        $responseData = [
             'success' => false,
             'message' => 'Too Many Requests',
             'retry_after' => $limiter->getRetryAfter(),
             'remaining' => 0,
             'code' => 429
-        ], 429);
+        ];
+
+        // Add adaptive information if available
+        if ($limiter instanceof AdaptiveRateLimiter) {
+            $responseData['adaptive'] = true;
+
+            // Add active rules if any were applied
+            $activeRules = $limiter->getActiveApplicableRules();
+            if (!empty($activeRules)) {
+                $responseData['rules_applied'] = array_keys($activeRules);
+            }
+        }
+
+        $response = new JsonResponse($responseData, 429);
 
         // Add rate limit headers
         $response->headers->set('X-RateLimit-Limit', (string) $this->maxAttempts);
@@ -181,6 +292,16 @@ class RateLimiterMiddleware implements MiddlewareInterface
         $response->headers->set('X-RateLimit-Limit', (string) $this->maxAttempts);
         $response->headers->set('X-RateLimit-Remaining', (string) $limiter->remaining());
         $response->headers->set('X-RateLimit-Reset', (string) (time() + $this->windowSeconds));
+
+        // Add adaptive headers if applicable
+        if ($limiter instanceof AdaptiveRateLimiter) {
+            $response->headers->set('X-Adaptive-RateLimit', 'true');
+
+            // Add distributed header if enabled
+            if ($this->enableDistributed) {
+                $response->headers->set('X-Distributed-RateLimit', 'true');
+            }
+        }
 
         return $response;
     }

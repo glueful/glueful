@@ -8,11 +8,10 @@ use Glueful\Http\Middleware\RequestHandlerInterface;
 use Tests\Unit\Mocks\MocksStatic;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-
-// Include our RateLimiter override for testing
-require_once __DIR__ . '/../../Mocks/RateLimiterOverride.php';
+use Tests\Mocks\MockAutoloader;
+use Tests\Mocks\RateLimiterAdapter;
 use Glueful\Security\RateLimiter;
-
+use Glueful\Security\AdaptiveRateLimiter;
 
 /**
  * Tests for the Rate Limiter Middleware
@@ -38,8 +37,11 @@ class RateLimiterMiddlewareTest extends TestCase
     {
         parent::setUp();
 
+        // Register mock classes using MockAutoloader
+        MockAutoloader::register();
+
         // Create a mock RateLimiter that we'll use for all tests
-        $this->mockRateLimiter = $this->createMock(RateLimiter::class);
+        $this->mockRateLimiter = new \Tests\Mocks\MockRateLimiter("test:limiter", 60, 60);
 
         // Initialize the global mocks array
         if (!isset($GLOBALS['MOCK_STATIC_IMPLEMENTATIONS'])) {
@@ -56,14 +58,16 @@ class RateLimiterMiddlewareTest extends TestCase
     public function testAllowsRequestsBelowLimit(): void
     {
         // Configure the mock RateLimiter
-        $this->mockRateLimiter->method('isExceeded')->willReturn(false);
-        $this->mockRateLimiter->method('attempt')->willReturn(true);
-        $this->mockRateLimiter->method('remaining')->willReturn(59);
+        $this->mockRateLimiter = new \Tests\Mocks\MockRateLimiter("test:limiter", 60, 60);
+
+        // Force specific behavior for test
+        \Tests\Mocks\MockRateLimiter::setIsExceeded("test:limiter", false);
+        \Tests\Mocks\MockRateLimiter::setRemaining("test:limiter", 59);
 
         // Set up the static mock for perIp
         $self = $this;
-        $this->mockStaticMethod(RateLimiter::class, 'perIp', function($ip, $maxAttempts, $windowSeconds) use ($self) {
-            return $self->mockRateLimiter;
+        $this->mockStaticMethod(RateLimiter::class, 'perIp', function ($ip, $maxAttempts, $windowSeconds) use ($self) {
+            return RateLimiterAdapter::castToRateLimiter($self->mockRateLimiter);
         });
 
         // Create the middleware
@@ -94,13 +98,13 @@ class RateLimiterMiddlewareTest extends TestCase
     public function testBlocksExcessiveRequests(): void
     {
         // Configure the mock RateLimiter
-        $this->mockRateLimiter->method('isExceeded')->willReturn(true);
-        $this->mockRateLimiter->method('getRetryAfter')->willReturn(30);
+        \Tests\Mocks\MockRateLimiter::setIsExceeded("ip:192.168.1.1", true);
+        \Tests\Mocks\MockRateLimiter::setRetryAfter("ip:192.168.1.1", 30);
 
         // Set up the static mock for perIp
-        $self = $this;
-        $this->mockStaticMethod(RateLimiter::class, 'perIp', function($ip, $maxAttempts, $windowSeconds) use ($self) {
-            return $self->mockRateLimiter;
+        $this->mockStaticMethod(RateLimiter::class, 'perIp', function ($ip, $maxAttempts, $windowSeconds) {
+            $mockLimiter = \Tests\Mocks\MockRateLimiter::perIp($ip, $maxAttempts, $windowSeconds);
+            return RateLimiterAdapter::castToRateLimiter($mockLimiter);
         });
 
         // Create the middleware
@@ -131,15 +135,18 @@ class RateLimiterMiddlewareTest extends TestCase
     public function testUserBasedRateLimiting(): void
     {
         // Configure the mock RateLimiter
-        $this->mockRateLimiter->method('isExceeded')->willReturn(false);
-        $this->mockRateLimiter->method('attempt')->willReturn(true);
-        $this->mockRateLimiter->method('remaining')->willReturn(99);
+        $mockUserLimiter = new \Tests\Mocks\MockRateLimiter("user:user123", 100, 3600);
+        \Tests\Mocks\MockRateLimiter::setIsExceeded("user:user123", false);
+        \Tests\Mocks\MockRateLimiter::setRemaining("user:user123", 99);
 
         // Set up the static mock for perUser
-        $self = $this;
-        $this->mockStaticMethod(RateLimiter::class, 'perUser', function($userId, $maxAttempts, $windowSeconds) use ($self) {
-            return $self->mockRateLimiter;
-        });
+        $this->mockStaticMethod(
+            RateLimiter::class,
+            'perUser',
+            function ($userId, $maxAttempts, $windowSeconds) use ($mockUserLimiter) {
+                return RateLimiterAdapter::castToRateLimiter($mockUserLimiter);
+            }
+        );
 
         // Create the middleware with user-based limiting
         $middleware = new RateLimiterMiddleware(100, 3600, 'user');
@@ -169,15 +176,18 @@ class RateLimiterMiddlewareTest extends TestCase
     public function testCustomRateLimitWindow(): void
     {
         // Configure the mock RateLimiter
-        $this->mockRateLimiter->method('isExceeded')->willReturn(false);
-        $this->mockRateLimiter->method('attempt')->willReturn(true);
-        $this->mockRateLimiter->method('remaining')->willReturn(4);
+        $mockCustomLimiter = new \Tests\Mocks\MockRateLimiter("custom:limiter", 5, 3600);
+        \Tests\Mocks\MockRateLimiter::setIsExceeded("custom:limiter", false);
+        \Tests\Mocks\MockRateLimiter::setRemaining("custom:limiter", 4);
 
         // Set up the static mock for perIp
-        $self = $this;
-        $this->mockStaticMethod(RateLimiter::class, 'perIp', function($ip, $maxAttempts, $windowSeconds) use ($self) {
-            return $self->mockRateLimiter;
-        });
+        $this->mockStaticMethod(
+            RateLimiter::class,
+            'perIp',
+            function ($ip, $maxAttempts, $windowSeconds) use ($mockCustomLimiter) {
+                return RateLimiterAdapter::castToRateLimiter($mockCustomLimiter);
+            }
+        );
 
         // Create the middleware with custom limits
         $middleware = new RateLimiterMiddleware(5, 3600); // 5 requests per hour
@@ -201,15 +211,18 @@ class RateLimiterMiddlewareTest extends TestCase
     public function testEndpointBasedRateLimiting(): void
     {
         // Configure the mock RateLimiter
-        $this->mockRateLimiter->method('isExceeded')->willReturn(false);
-        $this->mockRateLimiter->method('attempt')->willReturn(true);
-        $this->mockRateLimiter->method('remaining')->willReturn(29);
+        $mockEndpointLimiter = new \Tests\Mocks\MockRateLimiter("endpoint:limiter", 30, 60);
+        \Tests\Mocks\MockRateLimiter::setIsExceeded("endpoint:limiter", false);
+        \Tests\Mocks\MockRateLimiter::setRemaining("endpoint:limiter", 29);
 
         // Set up the static mock for perIp since the middleware falls back to IP for unknown types
-        $self = $this;
-        $this->mockStaticMethod(RateLimiter::class, 'perIp', function($ip, $maxAttempts, $windowSeconds) use ($self) {
-            return $self->mockRateLimiter;
-        });
+        $this->mockStaticMethod(
+            RateLimiter::class,
+            'perIp',
+            function ($ip, $maxAttempts, $windowSeconds) use ($mockEndpointLimiter) {
+                return RateLimiterAdapter::castToRateLimiter($mockEndpointLimiter);
+            }
+        );
 
         // Create the middleware with endpoint-based limiting
         // Note: Currently the middleware doesn't have endpoint-based limiting implemented
@@ -231,6 +244,45 @@ class RateLimiterMiddlewareTest extends TestCase
         // Verify rate limit headers
         $this->assertEquals('30', $response->headers->get('X-RateLimit-Limit'));
         $this->assertEquals('29', $response->headers->get('X-RateLimit-Remaining'));
+    }
+
+    /**
+     * Test adaptive rate limiting
+     */
+    public function testAdaptiveRateLimiting(): void
+    {
+        // Create a mock AdaptiveRateLimiter
+        $mockAdaptiveRateLimiter = new \Tests\Mocks\MockAdaptiveRateLimiter("ip:192.168.1.1", 50, 60);
+        \Tests\Mocks\MockAdaptiveRateLimiter::setAdaptiveIsExceeded("ip:192.168.1.1", false);
+        \Tests\Mocks\MockAdaptiveRateLimiter::setAdaptiveRemaining("ip:192.168.1.1", 49);
+        \Tests\Mocks\MockAdaptiveRateLimiter::setBehaviorScore("ip:192.168.1.1", 0.2);
+
+        // Set up the static mock for creating an AdaptiveRateLimiter
+        $this->mockStaticMethod(
+            RateLimiter::class,
+            'perIp',
+            function ($ip, $maxAttempts, $windowSeconds) use ($mockAdaptiveRateLimiter) {
+                return RateLimiterAdapter::castToRateLimiter($mockAdaptiveRateLimiter);
+            }
+        );
+
+        // Create the middleware with adaptive rate limiting enabled
+        $middleware = new RateLimiterMiddleware(50, 60, 'ip', true);
+
+        // Create a mock request
+        $request = new Request();
+        $request->server->set('REMOTE_ADDR', '192.168.1.1');
+
+        // Create a mock handler
+        $mockHandler = $this->createMockHandler();
+
+        // Process the request
+        $response = $middleware->process($request, $mockHandler);
+
+        // Verify rate limit headers
+        $this->assertEquals('50', $response->headers->get('X-RateLimit-Limit'));
+        $this->assertEquals('49', $response->headers->get('X-RateLimit-Remaining'));
+        $this->assertEquals('true', $response->headers->get('X-Adaptive-RateLimit'));
     }
 
     /**
@@ -263,7 +315,8 @@ class RateLimiterMiddlewareTest extends TestCase
 
         // Reset any static mocks
         $this->resetStaticMocks();
+
+        // Unregister mock classes
+        MockAutoloader::unregister();
     }
-
-
 }
