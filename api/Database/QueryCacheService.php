@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Glueful\Database;
 
 use Glueful\Cache\CacheEngine;
+use Glueful\Database\Attributes\CacheResult;
+use ReflectionMethod;
 
 /**
  * Query Cache Service
@@ -93,6 +95,61 @@ class QueryCacheService
         ];
 
         return $this->cache->invalidateTags($tags);
+    }
+
+    /**
+     * Cache the result of a repository method decorated with CacheResult attribute
+     *
+     * @param object $repository Repository instance
+     * @param string $method Method name
+     * @param array $args Method arguments
+     * @return mixed Method result
+     */
+    public function cacheRepositoryMethod(object $repository, string $method, array $args = [])
+    {
+        $reflection = new ReflectionMethod($repository, $method);
+        $attributes = $reflection->getAttributes(CacheResult::class);
+
+        if (empty($attributes)) {
+            // No CacheResult attribute, execute method directly
+            return $reflection->invokeArgs($repository, $args);
+        }
+
+        // Get CacheResult attribute instance
+        $cacheAttr = $attributes[0]->newInstance();
+
+        // Generate a unique key for this method call
+        $keyBase = $cacheAttr->keyPrefix ?: get_class($repository) . '::' . $method;
+        $key = $this->generateMethodCacheKey($keyBase, $args);
+
+        // Use the ttl from the attribute
+        $ttl = $cacheAttr->ttl;
+
+        // Cache or execute
+        return $this->cache->remember($key, function () use ($reflection, $repository, $args, $key, $cacheAttr) {
+            $result = $reflection->invokeArgs($repository, $args);
+
+            // Apply custom tags if provided in the attribute
+            if (!empty($cacheAttr->tags)) {
+                $this->cache->addTags($key, $cacheAttr->tags);
+            }
+
+            return $result;
+        }, $ttl);
+    }
+
+    /**
+     * Generate a cache key for a repository method
+     *
+     * @param string $keyBase Base key (usually class::method)
+     * @param array $args Method arguments
+     * @return string Cache key
+     */
+    protected function generateMethodCacheKey(string $keyBase, array $args): string
+    {
+        // Create a deterministic hash of the arguments
+        $argHash = md5(serialize($args));
+        return "repo_method:{$keyBase}:{$argHash}";
     }
 
     /**

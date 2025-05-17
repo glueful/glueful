@@ -59,6 +59,90 @@ Underlying cache storage mechanism with support for:
 - Automatic serialization/deserialization
 - Configurable TTL (time-to-live)
 
+### 4. Repository Method Caching with Attributes
+
+In addition to query builder caching, Glueful provides attribute-based caching for repository methods using the `CacheResult` attribute:
+
+```php
+<?php
+
+namespace App\Repositories;
+
+use Glueful\Database\Attributes\CacheResult;
+
+class ProductRepository
+{
+    /**
+     * Cache the results of this method for 2 hours
+     */
+    #[CacheResult(ttl: 7200, keyPrefix: 'products', tags: ['products', 'catalog'])]
+    public function getFeaturedProducts(): array
+    {
+        // Method implementation that might include complex database queries
+        return $this->queryBuilder
+            ->select('products', ['*'])
+            ->where(['featured' => true])
+            ->orderBy(['popularity' => 'DESC'])
+            ->get();
+    }
+    
+    /**
+     * Cache results with default TTL (1 hour)
+     */
+    #[CacheResult]
+    public function getProductsByCategory(string $category): array
+    {
+        // Database query implementation
+    }
+    
+    /**
+     * Cache with custom tags for targeted invalidation
+     */
+    #[CacheResult(ttl: 1800, tags: ['product-counts', 'dashboard-stats'])]
+    public function countProductsByStatus(): array
+    {
+        // Database query implementation
+    }
+}
+```
+
+To use a repository method with the `CacheResult` attribute, you need to route the method call through the `QueryCacheService`:
+
+```php
+// Inject the QueryCacheService
+public function __construct(
+    private ProductRepository $repository,
+    private QueryCacheService $cacheService
+) {}
+
+// Get results using the cache service
+public function getProducts(): array
+{
+    return $this->cacheService->cacheRepositoryMethod(
+        $this->repository, 
+        'getFeaturedProducts'
+    );
+}
+
+// With method arguments
+public function getProductsByCategory(string $category): array
+{
+    return $this->cacheService->cacheRepositoryMethod(
+        $this->repository, 
+        'getProductsByCategory',
+        [$category]
+    );
+}
+```
+
+#### CacheResult Attribute Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ttl` | int | 3600 | Time-to-live in seconds for the cached result |
+| `keyPrefix` | string | '' | Custom prefix for the cache key. If empty, uses class and method name |
+| `tags` | array | [] | Array of cache tags for targeted invalidation |
+
 ## Configuration
 
 The cache system can be configured in `config/database.php`:
