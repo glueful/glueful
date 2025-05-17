@@ -264,4 +264,21 @@ class Connection
     {
         return $this->driver;
     }
+
+    /**
+     * Get the name of the current database driver
+     *
+     * Returns the database engine name (mysql, pgsql, sqlite)
+     *
+     * @return string Database driver name
+     */
+    public function getDriverName(): string
+    {
+        return match (true) {
+            $this->driver instanceof MySQLDriver => 'mysql',
+            $this->driver instanceof PostgreSQLDriver => 'pgsql',
+            $this->driver instanceof SQLiteDriver => 'sqlite',
+            default => 'unknown'
+        };
+    }
 }
