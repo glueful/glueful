@@ -90,6 +90,15 @@ class QueryBuilder
     /** @var QueryLogger Logger for queries and database operations */
     protected QueryLogger $logger;
 
+    /** @var bool Whether to enable query optimization */
+    protected bool $optimizationEnabled = false;
+
+    /** @var float Minimum percentage improvement threshold for applying optimizations */
+    protected float $optimizationThreshold = 10.0;
+
+    /** @var QueryOptimizer|null Query optimizer instance */
+    protected ?QueryOptimizer $optimizer = null;
+
     /**
      * Initialize query builder
      *
@@ -166,7 +175,6 @@ class QueryBuilder
         $this->logger->logEvent("Transaction failed after maximum retries", [
             'max_retries' => $this->maxRetries
         ], 'error');
-
 
         throw new Exception("Transaction failed after {$this->maxRetries} retries due to deadlock.");
     }
@@ -996,9 +1004,56 @@ class QueryBuilder
      */
     public function get(): array
     {
+        // The optimization is now handled in the optimize() method, which is called before get()
         $stmt = $this->pdo->prepare($this->query);
         $stmt->execute($this->bindings);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Optimize the current query
+     *
+     * Analyzes the current query and applies optimizations if they meet
+     * the threshold criteria. Returns the QueryBuilder instance for chaining.
+     *
+     * @return self QueryBuilder instance for chaining
+     */
+    public function optimize(): self
+    {
+        // Run the optimization
+        $optimization = $this->getOptimizer()->optimizeQuery($this->query, $this->bindings);
+
+        // Check if the optimization exceeds the threshold
+        if ($optimization['estimated_improvement']['execution_time'] >= $this->optimizationThreshold) {
+            // Use the optimized query
+            $this->query = $optimization['optimized_query'];
+
+            // Log the optimization if in debug mode
+            if ($this->debugMode) {
+                $this->logger->logEvent('Applied query optimization', [
+                    'original_query' => $optimization['original_query'],
+                    'optimized_query' => $optimization['optimized_query'],
+                    'estimated_improvement' => $optimization['estimated_improvement'],
+                ], 'info');
+            }
+        }
+
+        // Enable optimization flag
+        $this->optimizationEnabled = true;
+
+        return $this;
+    }
+
+    /**
+     * Get the current SQL query
+     *
+     * Returns the SQL query string in its current state.
+     *
+     * @return string The current SQL query
+     */
+    public function toSql(): string
+    {
+        return $this->query;
     }
 
     /**
@@ -1166,6 +1221,55 @@ class QueryBuilder
     public function getLogger(): QueryLogger
     {
         return $this->logger;
+    }
+
+    /**
+     * Enable or disable query optimization
+     *
+     * When enabled, queries will be analyzed and potentially optimized
+     * before execution if the optimization meets the threshold requirements.
+     *
+     * @param bool $enable Whether to enable optimization
+     * @return self Builder instance for chaining
+     */
+    public function enableOptimization(bool $enable = true): self
+    {
+        $this->optimizationEnabled = $enable;
+        return $this;
+    }
+
+    /**
+     * Set the optimization threshold
+     *
+     * The threshold represents the minimum percentage improvement required
+     * to apply an optimization. Higher values mean optimizations will only
+     * be applied when they provide significant improvements.
+     *
+     * @param float $threshold Percentage threshold (1.0 = 1%)
+     * @return self Builder instance for chaining
+     */
+    public function setOptimizationThreshold(float $threshold): self
+    {
+        $this->optimizationThreshold = max(0.0, $threshold);
+        return $this;
+    }
+
+    /**
+     * Get the query optimizer instance
+     *
+     * Lazy-loads the optimizer if it hasn't been created yet.
+     *
+     * @return QueryOptimizer The query optimizer instance
+     */
+    public function getOptimizer(): QueryOptimizer
+    {
+        if ($this->optimizer === null) {
+            // Create connection wrapper for the optimizer using current PDO connection
+            $connection = new Connection();
+            $this->optimizer = new QueryOptimizer();
+            $this->optimizer->setConnection($connection);
+        }
+        return $this->optimizer;
     }
 
     /**

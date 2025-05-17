@@ -2,6 +2,8 @@
 
 namespace Glueful\Database;
 
+use Glueful\Database\Connection;
+
 /**
  * Query Optimizer
  *
@@ -17,9 +19,6 @@ namespace Glueful\Database;
  */
 class QueryOptimizer
 {
-    /** @var Connection Database connection instance */
-    private $connection;
-
     /** @var QueryAnalyzer Query analyzer instance */
     private $queryAnalyzer;
 
@@ -30,18 +29,30 @@ class QueryOptimizer
     private $driver;
 
     /**
-     * Initialize the query optimizer with a database connection
+     * Initialize the query optimizer
+     */
+    public function __construct()
+    {
+        $this->queryAnalyzer = new QueryAnalyzer();
+    }
+
+    /**
+     * Set the database connection for the optimizer
+     *
+     * This allows the optimizer to use an existing connection rather than
+     * creating a new one, which is especially useful when integrated with
+     * the QueryBuilder.
      *
      * @param Connection $connection The database connection
+     * @return self For method chaining
      */
-    public function __construct(Connection $connection)
+    public function setConnection(Connection $connection): self
     {
-        $this->connection = $connection;
-        $this->queryAnalyzer = new QueryAnalyzer();
-
         // Get database-specific information for optimization
         $this->driverName = $connection->getDriverName();
         $this->driver = $connection->getDriver();
+
+        return $this;
     }
 
     /**
