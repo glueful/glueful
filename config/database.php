@@ -2,7 +2,7 @@
 
 /**
  * Database Configuration
- * 
+ *
  * Defines database connections and settings.
  * Supports multiple database engines and connections.
  */

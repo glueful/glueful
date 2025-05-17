@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Helpers;
 
 use Composer\Autoload\ClassLoader;
+use Glueful\Helpers\CDNAdapterManager;
 
 /**
  * Extensions Manager
@@ -19,6 +20,8 @@ use Composer\Autoload\ClassLoader;
  */
 class ExtensionsManager
 {
+    use CDNAdapterManager;
+
     /** @var array Loaded extension instances */
     private static array $loadedExtensions = [];
 
@@ -379,11 +382,10 @@ class ExtensionsManager
     /**
      * Get all loaded extensions
      *
-     * @return array List of loaded extension class names
+     * @return array The loaded extensions
      */
     public static function getLoadedExtensions(): array
     {
-        self::loadExtensions();
         return self::$loadedExtensions;
     }
 
@@ -2292,7 +2294,7 @@ class ExtensionsManager
                     'was_core' => $isCoreExtension,
                     'config_updated' => $configUpdated
                 ]
-            ];
+                       ];
         } catch (\Throwable $e) {
             return [
                 'success' => false,
@@ -2684,9 +2686,15 @@ class ExtensionsManager
                     if ($updateInfo && isset($updateInfo['version'])) {
                         $result['latest_version'] = $updateInfo['version'];
                         $result['has_update'] = version_compare($updateInfo['version'], $currentVersion, '>');
-                        $result['download_url'] = $updateInfo['download_url'] ?? null;
-                        $result['release_notes'] = $updateInfo['release_notes'] ?? null;
-                        $result['release_date'] = $updateInfo['release_date'] ?? null;
+                        $result['download_url'] = isset($updateInfo['download_url'])
+                            ? $updateInfo['download_url']
+                            : null;
+                        $result['release_notes'] = isset($updateInfo['release_notes'])
+                            ? $updateInfo['release_notes']
+                            : null;
+                        $result['release_date'] = isset($updateInfo['release_date'])
+                            ? $updateInfo['release_date']
+                            : null;
                     }
                     break;
 
@@ -2706,7 +2714,6 @@ class ExtensionsManager
                 case 'local':
                     // Check local directory for updates
                     $updateInfo = self::checkLocalSource($extensionName, $currentVersion, $source);
-
                     if ($updateInfo && isset($updateInfo['version'])) {
                         $result['latest_version'] = $updateInfo['version'];
                         $result['has_update'] = version_compare($updateInfo['version'], $currentVersion, '>');
@@ -3342,6 +3349,49 @@ class ExtensionsManager
         }
         return $suggestions;
     }
+
+    /**
+     * Resolve a CDN adapter from available extensions
+     *
+     * This method looks for extensions that have registered CDN adapters
+     * and returns an instance of the requested provider's adapter.
+     *
+     * @param string $provider The name of the CDN provider to resolve
+     * @param array $config Configuration for the adapter
+     * @return \Glueful\Cache\CDN\CDNAdapterInterface|null
+     */
+    public function resolveCDNAdapter(string $provider, array $config = []): ?\Glueful\Cache\CDN\CDNAdapterInterface
+    {
+        // Normalize provider name for consistent lookup
+        $normalizedProvider = strtolower($provider);
+
+        // Look for extensions with CDN adapters
+        foreach (self::$loadedExtensions as $extension) {
+            if (!method_exists($extension, 'registerCDNAdapters')) {
+                continue;
+            }
+
+            // Get the adapters this extension provides
+            $adapters = $extension::registerCDNAdapters();
+
+            // Check if this extension provides the requested adapter
+            foreach ($adapters as $adapterProvider => $adapterClass) {
+                if (strtolower($adapterProvider) === $normalizedProvider) {
+                    // Found the adapter, try to instantiate it
+                    if (
+                        class_exists($adapterClass) &&
+                        is_subclass_of($adapterClass, \Glueful\Cache\CDN\CDNAdapterInterface::class)
+                    ) {
+                        return new $adapterClass($config);
+                    }
+                }
+            }
+        }
+
+        // No adapter found for this provider
+        return null;
+    }
+
     /**
      * Copy template files from source to target directory
      *

@@ -2,7 +2,7 @@
 
 /**
  * Storage Configuration
- * 
+ *
  * Defines file storage settings and cloud provider configurations.
  * Supports local filesystem and S3-compatible storage.
  */

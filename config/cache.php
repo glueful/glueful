@@ -2,17 +2,18 @@
 
 /**
  * Cache Configuration
- * 
+ *
  * Defines caching settings and driver configurations.
  * Supports Redis and Memcached with fallback options.
  */
+
 return [
     // Default cache driver (redis, memcached, file)
     'default' => env('CACHE_DRIVER', 'redis'),
 
     // Global cache prefix for key namespacing
     'prefix' => env('CACHE_PREFIX', 'glueful:'),
-    
+
     // Enable file-based fallback if primary cache fails
     'fallback_to_file' => env('CACHE_FALLBACK', true),
 
@@ -42,7 +43,7 @@ return [
                 'password' => env('MEMCACHED_PASSWORD'),
             ],
         ],
-        
+
         // File cache configuration
         'file' => [
             'driver' => 'file',
@@ -53,8 +54,19 @@ return [
     // Global cache settings
     'ttl' => env('CACHE_TTL', 3600),           // Default TTL in seconds
     'lock_ttl' => env('CACHE_LOCK_TTL', 60),   // Lock timeout in seconds
-    
+
     // Cache tag settings
     'enable_tags' => env('CACHE_TAGS', true),  // Enable cache tags support
-    'tags_store' => 'redis',                   // Store for cache tags
+    'tags_store' => 'redis',                  // Store for cache tags
+
+    // Edge caching configuration
+    'edge' => [
+        'enabled' => env('EDGE_CACHE_ENABLED', false),
+        'provider' => env('EDGE_CACHE_PROVIDER', 'cloudflare'),
+        'default_ttl' => env('EDGE_CACHE_TTL', 3600), // 1 hour
+        'rules' => [
+            // Route-specific cache rules can be defined here
+            // or managed by extensions
+        ],
+    ],
 ];

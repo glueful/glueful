@@ -3,7 +3,7 @@
 use Glueful\Helpers\Config;
 /**
  * Application Configuration
- * 
+ *
  * Core application settings and environment-specific configurations.
  * Values can be overridden using environment variables.
  */
@@ -11,14 +11,14 @@ return [
     // Application Environment (development, staging, production)
     'env' => env('APP_ENV', 'production'),
     'debug' => (bool) env('APP_DEBUG', false),
-    
+
     // API Information
     'version' => env('API_VERSION', '1.0.0'),    // API version number
     'name' => env('APP_NAME', 'Glueful'),
-    
+
     // Query Limits
     'list_limit' => 200,      // Maximum items per list query
-    
+
     // Logging Configuration
     'logging'=> [
         'log_channel' => env('LOG_CHANNEL', 'app'), // Default log channel

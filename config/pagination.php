@@ -2,7 +2,7 @@
 
 /**
  * Pagination Configuration
- * 
+ *
  * Defines global pagination settings for API result sets.
  * Controls default behavior and limits for paginated responses.
  */
