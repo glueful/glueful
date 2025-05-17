@@ -15,8 +15,8 @@ This roadmap outlines Glueful's strategic path from its current state to enterpr
 
 The roadmap represents our commitment to creating an enterprise-grade framework while maintaining an innovation path for emerging technologies.
 
-## Current Version: v0.25.0
-Next planned release: v0.26.0 (September 2025)
+## Current Version: v0.26.0
+Next planned release: v0.27.0 (November 2025)
 
 ## Path to v1.0.0
 
@@ -86,15 +86,18 @@ Next planned release: v0.26.0 (September 2025)
 - [x] Improved CI workflow with MySQL service integration
 
 
-### Mid-term Goals (3-6 Months)
+### Completed Goals (May 2025)
 
-#### v0.26.0 - Enterprise Security (September 2025)
-- [ ] Complete OAuth 2.0 server implementation
-- [ ] Add SAML and LDAP authentication providers
-- [ ] Implement comprehensive security scanning tools
-- [ ] Create enterprise audit logging system
-- [ ] Add compliance toolkits (GDPR, CCPA, HIPAA)
-- [ ] Enhance rate limiting with adaptive rules
+#### v0.26.0 - Enterprise Security (Completed May 17, 2025)
+- [x] Complete OAuth 2.0 server implementation
+- [x] Add SAML and LDAP authentication providers
+- [x] Implement comprehensive security scanning tools
+- [x] Create enterprise audit logging system
+- [x] Add compliance toolkits (GDPR, CCPA, HIPAA)
+- [x] Enhance rate limiting with adaptive rules
+
+
+### Mid-term Goals (3-6 Months)
 
 #### v0.27.0 - Performance Optimization (November 2025)
 - [ ] Implement edge caching architecture
@@ -347,4 +350,4 @@ The core team reviews roadmap suggestions monthly and updates this document to r
 
 ---
 
-*Last updated: May 14, 2025* (v0.25.0 release)
+*Last updated: May 17, 2025* (v0.26.0 release)

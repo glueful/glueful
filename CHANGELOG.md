@@ -2,6 +2,49 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.26.0] - 2025-05-17
+
+### Added
+- Complete OAuth 2.0 server implementation
+  - Full support for all standard grant types
+  - Token management with PKCE support
+  - Client registration and management
+  - Revocation and introspection endpoints
+- SAML and LDAP authentication providers
+  - SAML 2.0 integration with major identity providers
+  - LDAP/Active Directory authentication support
+  - Multiple provider configuration
+  - User provisioning and synchronization
+- Comprehensive security scanning tools
+  - Static code analysis for vulnerabilities
+  - Dependency scanning for known CVEs
+  - API endpoint security testing
+  - Security dashboard and reporting
+- Enterprise audit logging system
+  - Tamper-evident logging with cryptographic protection
+  - Standardized event schema for compliance
+  - Multiple storage backends
+  - Configurable retention policies
+- Compliance toolkits for regulatory requirements
+  - GDPR subject rights management
+  - CCPA consumer rights controls
+  - HIPAA PHI access management
+  - Data classification system
+- Adaptive rate limiting
+  - Behavior-based limiting with anomaly detection
+  - Machine learning integration
+  - Progressive rate limiting based on behavior patterns
+  - Distributed rate limiting across clusters
+
+### Improved
+- Enhanced security posture across the entire framework
+- Standardized approach to compliance requirements
+- Better protection against common attack vectors
+- More comprehensive security event tracking
+
+### Deprecated
+- Basic rate limiter implementation (will be removed in v1.0.0)
+
 ## [0.25.0] - 2025-05-14
 
 ### Added
