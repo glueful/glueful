@@ -99,6 +99,15 @@ class QueryBuilder
     /** @var QueryOptimizer|null Query optimizer instance */
     protected ?QueryOptimizer $optimizer = null;
 
+    /** @var bool Whether to enable query result caching */
+    protected bool $cachingEnabled = false;
+
+    /** @var int|null Cache TTL in seconds, null means use default from config */
+    protected ?int $cacheTtl = null;
+
+    /** @var QueryCacheService|null Query cache service instance */
+    protected ?QueryCacheService $cacheService = null;
+
     /**
      * Initialize query builder
      *
@@ -1004,7 +1013,24 @@ class QueryBuilder
      */
     public function get(): array
     {
-        // The optimization is now handled in the optimize() method, which is called before get()
+        // Use caching if enabled
+        if ($this->cachingEnabled) {
+            $cacheService = $this->getCacheService();
+
+            return $cacheService->getOrExecute(
+                $this->query,
+                $this->bindings,
+                function () {
+                    // Original get() logic
+                    $stmt = $this->pdo->prepare($this->query);
+                    $stmt->execute($this->bindings);
+                    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+                },
+                $this->cacheTtl
+            );
+        }
+
+        // Original logic if caching is not enabled
         $stmt = $this->pdo->prepare($this->query);
         $stmt->execute($this->bindings);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1042,6 +1068,65 @@ class QueryBuilder
         $this->optimizationEnabled = true;
 
         return $this;
+    }
+
+    /**
+     * Enable query result caching for this query
+     *
+     * When enabled, the query results will be stored in cache and
+     * subsequent identical queries will return the cached result
+     * until the TTL expires or the cache is invalidated.
+     *
+     * @param int|null $ttl Cache TTL in seconds (null = use default TTL)
+     * @return self QueryBuilder instance for chaining
+     */
+    public function cache(?int $ttl = null): self
+    {
+        $this->cachingEnabled = true;
+        $this->cacheTtl = $ttl;
+
+        // Log cache activation if in debug mode
+        if ($this->debugMode) {
+            $this->logger->logEvent('Query caching enabled', [
+                'query' => $this->query,
+                'ttl' => $ttl ?? 'default',
+            ], 'debug');
+        }
+
+        return $this;
+    }
+
+    /**
+     * Disable query result caching for this query
+     *
+     * @return self QueryBuilder instance for chaining
+     */
+    public function disableCache(): self
+    {
+        $this->cachingEnabled = false;
+
+        if ($this->debugMode) {
+            $this->logger->logEvent('Query caching disabled', [
+                'query' => $this->query,
+            ], 'debug');
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get the query cache service instance
+     *
+     * Lazy-loads the cache service if it hasn't been created yet.
+     *
+     * @return QueryCacheService The query cache service instance
+     */
+    public function getCacheService(): QueryCacheService
+    {
+        if ($this->cacheService === null) {
+            $this->cacheService = new QueryCacheService();
+        }
+        return $this->cacheService;
     }
 
     /**

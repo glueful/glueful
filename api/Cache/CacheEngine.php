@@ -210,4 +210,95 @@ class CacheEngine
     {
         return self::$driver !== null;
     }
+
+    /**
+     * Remember a value in cache, or execute a callback to generate it
+     *
+     * @param string $key Cache key
+     * @param \Closure $callback Function to generate value if not cached
+     * @param int $ttl Time to live in seconds
+     * @return mixed Cached or generated value
+     */
+    public static function remember(string $key, \Closure $callback, int $ttl = 3600): mixed
+    {
+        if (!self::ensureEnabled()) {
+            return $callback();
+        }
+
+        $fullKey = self::$prefix . $key;
+        $value = self::$driver->get($fullKey);
+
+        if ($value !== null) {
+            return $value;
+        }
+
+        $value = $callback();
+        self::$driver->set($fullKey, $value, $ttl);
+
+        return $value;
+    }
+
+    /**
+     * Invalidate cache entries by tags
+     *
+     * @param array|string $tags Tags to invalidate
+     * @return bool True if invalidation succeeded
+     */
+    public static function invalidateTags(array|string $tags): bool
+    {
+        if (!self::ensureEnabled()) {
+            return false;
+        }
+
+        if (is_string($tags)) {
+            $tags = [$tags];
+        }
+
+        $success = true;
+
+        foreach ($tags as $tag) {
+            // Get all keys associated with this tag
+            $tagKey = self::$prefix . "tag:{$tag}";
+            $keys = self::$driver->zrange($tagKey, 0, -1);
+
+            // Delete each key
+            foreach ($keys as $key) {
+                $success = $success && self::$driver->delete($key);
+            }
+
+            // Delete the tag set itself
+            $success = $success && self::$driver->delete($tagKey);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Add tags to a cache key
+     *
+     * @param string $key Cache key
+     * @param array|string $tags Tags to associate
+     * @return bool True if tags added successfully
+     */
+    public static function addTags(string $key, array|string $tags): bool
+    {
+        if (!self::ensureEnabled()) {
+            return false;
+        }
+
+        if (is_string($tags)) {
+            $tags = [$tags];
+        }
+
+        $fullKey = self::$prefix . $key;
+        $success = true;
+        $now = time();
+
+        foreach ($tags as $tag) {
+            $tagKey = self::$prefix . "tag:{$tag}";
+            $success = $success && self::$driver->zadd($tagKey, [$fullKey => $now]);
+        }
+
+        return $success;
+    }
 }

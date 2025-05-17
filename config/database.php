@@ -61,4 +61,23 @@ return [
         'table' => 'migrations',                      // Migrations table name
         'path' => dirname(__DIR__) . '/database/migrations', // Migrations directory
     ],
+    // Query cache settings
+    'query_cache' => [
+        'enabled' => env('QUERY_CACHE_ENABLED', true),           // Enable query result caching
+        'default_ttl' => env('QUERY_CACHE_TTL', 3600),           // Default TTL in seconds (1 hour)
+        'store' => env('QUERY_CACHE_STORE', 'redis'),            // Cache store to use
+        'auto_invalidate' => env('QUERY_CACHE_AUTO_INVALIDATE', true), // Automatically invalidate on write
+        'exclude_tables' => [                                    // Tables to exclude from caching
+            'migrations',
+            'jobs',
+            'failed_jobs',
+            'sessions'
+        ],
+        'exclude_patterns' => [                                  // Query patterns to exclude from caching
+            '/^UPDATE/i',
+            '/^INSERT/i',
+            '/^DELETE/i',
+            '/FOR UPDATE$/'
+        ]
+    ],
 ];
