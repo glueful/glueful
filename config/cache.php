@@ -69,4 +69,33 @@ return [
             // or managed by extensions
         ],
     ],
+    'distributed' => [
+        'enabled' => env('DISTRIBUTED_CACHE_ENABLED', false),
+        'strategy' => env('CACHE_REPLICATION_STRATEGY', 'consistent-hashing'),
+        'replicas' => env('CACHE_REPLICAS', 2),
+        'failover' => [
+            'enabled' => env('CACHE_FAILOVER_ENABLED', true),
+            'timeout' => env('CACHE_FAILOVER_TIMEOUT', 5),
+            'retry_after' => env('CACHE_FAILOVER_RETRY', 30),
+        ],
+        'nodes' => [
+            [
+                'id' => 'cache-01',
+                'driver' => 'redis',
+                'host' => env('REDIS_HOST_1', '127.0.0.1'),
+                'port' => env('REDIS_PORT_1', 6379),
+                'password' => env('REDIS_PASSWORD_1', null),
+                'weight' => 1
+            ],
+            [
+                'id' => 'cache-02',
+                'driver' => 'redis',
+                'host' => env('REDIS_HOST_2', '127.0.0.1'),
+                'port' => env('REDIS_PORT_2', 6380),
+                'password' => env('REDIS_PASSWORD_2', null),
+                'weight' => 1
+            ],
+            // Additional nodes
+        ]
+    ]
 ];
