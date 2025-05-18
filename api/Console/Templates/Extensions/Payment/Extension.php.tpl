@@ -97,8 +97,8 @@ class {{EXTENSION_NAME}} extends \Glueful\Extensions
             'author' => '{{AUTHOR_NAME}}',
             'type' => 'optional',
             'requires' => [
-                'glueful' => '>=1.0.0',
-                'php' => '>=8.1.0',
+                'glueful' => '>=0.27.0',
+                'php' => '>=8.2.0',
                 'extensions' => []
             ],
             'category' => 'payment',

@@ -195,7 +195,7 @@ class CloudflareAdapter extends \Glueful\Extensions
             'type' => 'optional',
             'requires' => [
                 'glueful' => '>=0.27.0',
-                'php' => '>=8.1.0',
+                'php' => '>=8.2.0',
                 'extensions' => []
             ]
         ];

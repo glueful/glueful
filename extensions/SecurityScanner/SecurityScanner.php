@@ -380,8 +380,8 @@ class SecurityScanner extends \Glueful\Extensions
             'version' => '1.0.0',
             'author' => 'Glueful Security Team',
             'requires' => [
-                'glueful' => '>=1.0.0',
-                'php' => '>=8.1.0',
+                'glueful' => '>=0.27.0',
+                'php' => '>=8.2.0',
                 'extensions' => []
             ]
         ];
