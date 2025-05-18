@@ -48,6 +48,7 @@ class Kernel
             \Glueful\Console\Commands\MigrateCommand::class,
             \Glueful\Console\Commands\DatabaseStatusCommand::class,
             \Glueful\Console\Commands\DatabaseResetCommand::class,
+            \Glueful\Console\Commands\QueryProfileCommand::class,
             \Glueful\Console\Commands\ExtensionsCommand::class,
             \Glueful\Console\Commands\SchedulerCommand::class,
             \Glueful\Console\Commands\CacheCommand::class,
