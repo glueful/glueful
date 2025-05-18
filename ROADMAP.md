@@ -15,8 +15,8 @@ This roadmap outlines Glueful's strategic path from its current state to enterpr
 
 The roadmap represents our commitment to creating an enterprise-grade framework while maintaining an innovation path for emerging technologies.
 
-## Current Version: v0.26.0
-Next planned release: v0.27.0 (November 2025)
+## Current Version: v0.27.0
+Next planned release: v0.28.0 (January 2026)
 
 ## Path to v1.0.0
 
@@ -96,16 +96,16 @@ Next planned release: v0.27.0 (November 2025)
 - [x] Add compliance toolkits (GDPR, CCPA, HIPAA)
 - [x] Enhance rate limiting with adaptive rules
 
+#### v0.27.0 - Performance Optimization (Released May 18, 2025)
+- [x] Implement edge caching architecture
+- [x] Add query optimization for complex database operations
+- [x] Create query result caching system
+- [x] Optimize memory usage in core components
+- [x] Add distributed cache support
+- [x] Implement query profiling tools
+
 
 ### Mid-term Goals (3-6 Months)
-
-#### v0.27.0 - Performance Optimization (November 2025)
-- [ ] Implement edge caching architecture
-- [ ] Add query optimization for complex database operations
-- [ ] Create query result caching system
-- [ ] Optimize memory usage in core components
-- [ ] Add distributed cache support
-- [ ] Implement query profiling tools
 
 ### Pre-1.0 Milestones (6-12 Months)
 
@@ -350,4 +350,4 @@ The core team reviews roadmap suggestions monthly and updates this document to r
 
 ---
 
-*Last updated: May 17, 2025* (v0.26.0 release)
+*Last updated: May 18, 2025* (v0.27.0 release)

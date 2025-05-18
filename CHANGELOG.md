@@ -2,6 +2,46 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.27.0] - 2025-05-18
+
+### Added
+- Edge caching architecture
+  - CDN integration with pluggable adapter system
+  - Edge caching configuration manager
+  - Cache invalidation patterns for dynamic content
+  - Multi-CDN provider support
+- Query optimization for complex database operations
+  - Database-specific query optimizations
+  - Query transformation for better performance
+  - Performance improvement estimations
+  - Integration with query builder
+- Query result caching system
+  - Intelligent query result caching
+  - Automatic cache invalidation
+  - Support for complex query caching
+  - Attribute-based cache configuration
+- Memory usage optimization in core components
+  - Memory monitoring and alerting
+  - Efficient memory management tools
+  - Memory-efficient iterators
+  - Streaming iterators for large datasets
+- Distributed cache support
+  - Multiple cache node management
+  - Configurable replication strategies
+  - Health monitoring for cache nodes
+  - Automatic failover mechanisms
+- Query profiling tools
+  - Detailed query performance analysis
+  - Execution plan visualization
+  - Query pattern recognition
+  - Performance bottleneck identification
+
+### Improved
+- Overall framework performance at scale
+- Database query execution speed
+- Memory efficiency for large workloads
+- Cache hit rates and distribution
+
 ## [0.26.0] - 2025-05-17
 
 ### Added
