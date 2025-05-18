@@ -150,6 +150,50 @@ class ExtensionsManager
     }
 
     /**
+     * Load only enabled API Extensions
+     *
+     * Dynamically discovers and loads only extensions that are enabled in the configuration:
+     * - Scans configured extension directories
+     * - Filters for enabled extensions only
+     * - Autoloads extension classes
+     * - Initializes extensions that implement standard interfaces
+     * - Registers enabled extension services in the container
+     *
+     * @return void
+     */
+    public static function loadEnabledExtensions(): void
+    {
+         // Get the list of enabled extensions from config
+        $enabledExtensions = self::getEnabledExtensions();
+        // Short-circuit if no extensions are enabled
+        if (empty($enabledExtensions)) {
+            self::debug("No extensions are enabled");
+            return;
+        }
+        // Register extension namespaces with Composer if available
+        self::registerExtensionNamespaces();
+
+        // Use base namespace and path to directly access enabled extensions
+        $baseNamespace = 'Glueful\\Extensions\\';
+        $baseDir = dirname(__DIR__, 2) . '/extensions';
+
+        foreach ($enabledExtensions as $extensionName) {
+            $extensionDir = $baseDir . '/' . $extensionName;
+            $extensionNamespace = $baseNamespace . $extensionName . '\\';
+
+            if (is_dir($extensionDir)) {
+                self::debug("Loading enabled extension: {$extensionName}");
+                self::scanAndLoadExtensions($extensionDir, $extensionNamespace);
+            } else {
+                self::debug("Enabled extension directory not found: {$extensionDir}");
+            }
+        }
+
+        // Initialize all loaded extensions
+        self::initializeExtensions();
+    }
+
+    /**
      * Register all extension namespaces with Composer ClassLoader
      *
      * @return void

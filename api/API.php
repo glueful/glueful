@@ -57,9 +57,9 @@ class API
             // Initialize core components
             self::initializeCore();
 
-            // Load extensions first - they may register routes
+            // Load enabled extensions first - they may register routes
             self::getLogger()->debug("Loading extensions...");
-            ExtensionsManager::loadExtensions();
+            ExtensionsManager::loadEnabledExtensions();
 
             // Now load all route definitions
             self::getLogger()->debug("Loading routes...");

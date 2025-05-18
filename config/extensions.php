@@ -11,6 +11,6 @@ return [
         'EmailNotification',
     ],
     'paths' => [
-        'extensions' => '/path/to/extensions'
+        'extensions' => dirname(__DIR__) . '/extensions'
     ],
 ];
