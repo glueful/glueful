@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Console\Commands;
 
+use AWS\CRT\Internal\Extension;
 use Glueful\Console\Command;
 use Glueful\Helpers\{ExtensionsManager, Utils};
 use Glueful\Extensions;
@@ -204,8 +205,8 @@ class ExtensionsCommand extends Command
         }
 
         // Load config with tiered extension information
-        $extensionConfigFile = $this->getConfigPath();
-        $config = $this->loadConfig($extensionConfigFile);
+        $extensionConfigFile = ExtensionsManager::getConfigPath();
+        $config = include $extensionConfigFile;
         $enabledExtensions = $config['enabled'] ?? [];
         $coreExtensions = $config['core'] ?? [];
         $optionalExtensions = $config['optional'] ?? [];
@@ -281,8 +282,8 @@ class ExtensionsCommand extends Command
         $reflection = new \ReflectionClass($extension);
         $shortName = $reflection->getShortName();
 
-        $configFile = $this->getConfigPath();
-        $config = $this->loadConfig($configFile);
+        $configFile = ExtensionsManager::getConfigPath();
+        $config = include $configFile;
 
         // Check if this is a core extension
         $isCoreExtension = in_array($shortName, $config['core'] ?? []);
@@ -368,7 +369,7 @@ class ExtensionsCommand extends Command
         }
 
         // Display extensions that depend on this one
-        $dependentExtensions = $this->findDependentExtensions($shortName);
+        $dependentExtensions = ExtensionsManager::checkDependenciesForDisable($shortName);
         if (!empty($dependentExtensions)) {
             $this->info("\nExtensions depending on this:");
             foreach ($dependentExtensions as $dependent) {
@@ -435,8 +436,8 @@ class ExtensionsCommand extends Command
         $reflection = new \ReflectionClass($extension);
         $shortName = $reflection->getShortName();
 
-        $configFile = $this->getConfigPath();
-        $config = $this->loadConfig($configFile);
+        $configFile = ExtensionsManager::getConfigPath();
+        $config = include $configFile;
         $enabledExtensions = $config['enabled'] ?? [];
 
         if (in_array($shortName, $enabledExtensions)) {
@@ -444,10 +445,12 @@ class ExtensionsCommand extends Command
             return;
         }
 
-        $enabledExtensions[] = $shortName;
-        $config['enabled'] = $enabledExtensions;
+        $result = ExtensionsManager::enableExtension($shortName);
 
-        $this->saveConfig($configFile, $config);
+        if (!$result['success']) {
+            $this->error($result['message']);
+            return;
+        }
 
         $this->success("Extension '$shortName' has been enabled");
     }
@@ -470,14 +473,14 @@ class ExtensionsCommand extends Command
         $reflection = new \ReflectionClass($extension);
         $shortName = $reflection->getShortName();
 
-        $configFile = $this->getConfigPath();
+        $configFile = ExtensionsManager::getConfigPath();
 
         if (!file_exists($configFile)) {
             $this->warning("No extensions are currently enabled");
             return;
         }
 
-        $config = $this->loadConfig($configFile);
+        $config = include $configFile;
         $enabledExtensions = $config['enabled'] ?? [];
 
         if (!in_array($shortName, $enabledExtensions)) {
@@ -507,7 +510,7 @@ class ExtensionsCommand extends Command
             }
 
             // Check for dependent extensions
-            $dependentExtensions = $this->findDependentExtensions($shortName);
+            $dependentExtensions = ExtensionsManager::checkDependenciesForDisable($shortName);
             if (!empty($dependentExtensions)) {
                 $this->warning("The following enabled extensions depend on '$shortName':");
                 foreach ($dependentExtensions as $dependent) {
@@ -529,7 +532,7 @@ class ExtensionsCommand extends Command
             $this->warning($this->colorText("Proceeding with disabling core extension '$shortName'...", 'red'));
         } else {
             // Check for dependent extensions for non-core extensions too
-            $dependentExtensions = $this->findDependentExtensions($shortName);
+            $dependentExtensions = ExtensionsManager::checkDependenciesForDisable($shortName);
             if (!empty($dependentExtensions)) {
                 $this->warning("The following enabled extensions depend on '$shortName':");
                 foreach ($dependentExtensions as $dependent) {
@@ -547,7 +550,7 @@ class ExtensionsCommand extends Command
         $enabledExtensions = array_diff($enabledExtensions, [$shortName]);
         $config['enabled'] = $enabledExtensions;
 
-        $this->saveConfig($configFile, $config);
+        ExtensionsManager::saveConfig($configFile, $config);
 
         if ($isCoreExtension) {
             $this->success("Core extension '$shortName' has been disabled");
@@ -839,7 +842,7 @@ class ExtensionsCommand extends Command
     protected function findExtension(string $extensionName): ?string
     {
         $extensions = ExtensionsManager::getLoadedExtensions();
-        error_log(print_r($extensions, true));
+        // error_log(print_r($extensions, true));
 
         foreach ($extensions as $extension) {
             $reflection = new \ReflectionClass($extension);
@@ -849,97 +852,6 @@ class ExtensionsCommand extends Command
         }
 
         return null;
-    }
-
-    /**
-     * Get config file path
-     *
-     * @return string Config file path
-     */
-    protected function getConfigPath(): string
-    {
-        $configDir = dirname(__DIR__, 2) . '/../config';
-
-        // Ensure config directory exists
-        if (!is_dir($configDir)) {
-            // Only attempt to create if it doesn't exist
-            if (!mkdir($configDir, 0755, true) && !is_dir($configDir)) {
-                // This is a more robust check: try to create it, and if that fails, check again if it exists
-                throw new \RuntimeException("Failed to create config directory: $configDir");
-            }
-        }
-
-        $configFile = $configDir . '/extensions.php';
-
-        // Create the extensions.php file if it doesn't exist
-        if (!file_exists($configFile)) {
-            $this->createConfigFile($configFile);
-        }
-
-        return $configFile;
-    }
-
-    /**
-     * Create default extensions config file
-     *
-     * @param string $configFile Path to config file to create
-     * @return bool Success status
-     */
-    protected function createConfigFile(string $configFile): bool
-    {
-        $defaultConfig = [
-            'enabled' => [],
-            'paths' => [
-                'extensions' => config('paths.project_extensions'),
-            ]
-        ];
-
-        $this->info("Creating extensions configuration file: $configFile");
-        return $this->saveConfig($configFile, $defaultConfig);
-    }
-
-    /**
-     * Get enabled extensions from config
-     *
-     * @param string $configFile Config file path
-     * @return array List of enabled extensions
-     */
-    protected function getEnabledExtensions(string $configFile): array
-    {
-        if (!file_exists($configFile)) {
-            return [];
-        }
-
-        $config = $this->loadConfig($configFile);
-        return $config['enabled'] ?? [];
-    }
-
-    /**
-     * Load configuration from file
-     *
-     * @param string $file Config file path
-     * @return array Configuration array
-     */
-    protected function loadConfig(string $file): array
-    {
-        if (!file_exists($file)) {
-            return ['enabled' => []];
-        }
-
-        return include $file;
-    }
-
-    /**
-     * Save configuration to file
-     *
-     * @param string $file Config file path
-     * @param array $config Configuration array
-     * @return bool Success status
-     */
-    protected function saveConfig(string $file, array $config): bool
-    {
-        $content = "<?php\nreturn " . var_export($config, true) . ";\n";
-        return file_put_contents($file, $content) !== false;
     }
 
 
@@ -1087,384 +999,6 @@ HELP;
     }
 
     /**
-     * Download or copy an archive file
-     *
-     * @param string $source Source URL or file path
-     * @return string|false Path to the temporary archive file or false on failure
-     */
-    protected function downloadOrCopyArchive(string $source): string|false
-    {
-        // Create temporary directory if it doesn't exist
-        $tempDir = sys_get_temp_dir() . '/glueful_extensions';
-        if (!is_dir($tempDir) && !mkdir($tempDir, 0755, true)) {
-            $this->error("Failed to create temporary directory: $tempDir");
-            return false;
-        }
-
-        // Generate a temporary file name
-        $tempFile = $tempDir . '/' . md5($source . time()) . '.zip';
-
-        $this->info("Retrieving extension package...");
-
-        // Handle URL or local file
-        if (filter_var($source, FILTER_VALIDATE_URL)) {
-            // It's a URL, download it
-            $this->line("Downloading from URL: $source");
-
-            $ch = curl_init($source);
-            $fp = fopen($tempFile, 'wb');
-
-            if (!$ch || !$fp) {
-                $this->error("Failed to initialize download");
-                return false;
-            }
-
-            curl_setopt($ch, CURLOPT_FILE, $fp);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-
-            if (!curl_exec($ch)) {
-                $this->error("Download failed: " . curl_error($ch));
-                curl_close($ch);
-                fclose($fp);
-                return false;
-            }
-
-            $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            fclose($fp);
-
-            if ($statusCode !== 200) {
-                $this->error("Download failed with HTTP status code: $statusCode");
-                return false;
-            }
-        } else {
-            // It's a local file, copy it
-            $this->line("Copying local file: $source");
-            if (!copy($source, $tempFile)) {
-                $this->error("Failed to copy file");
-                return false;
-            }
-        }
-
-        $this->success("Package retrieved successfully");
-        return $tempFile;
-    }
-
-    /**
-     * Extract an archive to the destination directory
-     *
-     * @param string $archiveFile Path to the archive file
-     * @param string $destDir Destination directory
-     * @return bool Success status
-     */
-    protected function extractArchive(string $archiveFile, string $destDir): bool
-    {
-        $this->info("Extracting extension...");
-
-        // Ensure destination directory exists
-        if (!is_dir($destDir) && !mkdir($destDir, 0755, true)) {
-            $this->error("Failed to create destination directory: $destDir");
-            return false;
-        }
-
-        // Extract using ZipArchive
-        $zip = new \ZipArchive();
-        if ($zip->open($archiveFile) !== true) {
-            $this->error("Failed to open archive: $archiveFile");
-            return false;
-        }
-
-        // Check if the archive has a single root folder
-        $rootFolderName = null;
-        $hasSingleRoot = $this->hasSingleRootFolder($zip, $rootFolderName);
-
-        // Extract the archive
-        if (!$zip->extractTo($hasSingleRoot ? dirname($destDir) : $destDir)) {
-            $this->error("Failed to extract archive");
-            $zip->close();
-            return false;
-        }
-
-        $zip->close();
-
-        // If the archive had a single root folder, rename it to the target name
-        if ($hasSingleRoot && $rootFolderName) {
-            $extractedPath = dirname($destDir) . '/' . $rootFolderName;
-            if (is_dir($extractedPath) && $extractedPath !== $destDir) {
-                if (!rename($extractedPath, $destDir)) {
-                    $this->error("Failed to rename extracted folder to target name");
-                    return false;
-                }
-            }
-        }
-
-        $this->success("Extension extracted successfully");
-        return true;
-    }
-
-    /**
-     * Check if a zip archive has a single root folder
-     *
-     * @param \ZipArchive $zip Zip archive
-     * @param string|null &$rootFolderName Variable to store the root folder name
-     * @return bool True if the archive has a single root folder
-     */
-    protected function hasSingleRootFolder(\ZipArchive $zip, ?string &$rootFolderName): bool
-    {
-        $rootFolders = [];
-
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $name = $zip->getNameIndex($i);
-
-            // Skip directories that are not at the root level
-            if (substr_count($name, '/') > 1) {
-                continue;
-            }
-
-            // If it's a root-level file
-            if (strpos($name, '/') === false) {
-                return false; // Archive doesn't have a single root folder
-            }
-
-            // Extract the root folder name
-            $rootFolder = substr($name, 0, strpos($name, '/'));
-            if (!empty($rootFolder) && !in_array($rootFolder, $rootFolders)) {
-                $rootFolders[] = $rootFolder;
-            }
-        }
-
-        if (count($rootFolders) === 1) {
-            $rootFolderName = $rootFolders[0];
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Validate extension structure
-     *
-     * @param \ReflectionClass $reflection Extension class reflection
-     * @return void
-     */
-    protected function validateExtensionStructure(\ReflectionClass $reflection): void
-    {
-        $this->info("Checking extension structure...");
-
-        $extensionName = $reflection->getShortName();
-        $extensionDir = dirname($reflection->getFileName());
-
-        // Required files
-        $requiredFiles = [
-            "$extensionName.php" => "Main extension class",
-            "README.md" => "Documentation",
-        ];
-
-        // Optional but recommended files
-        $recommendedFiles = [
-            "config.php" => "Configuration file",
-            "routes.php" => "Routes definition",
-        ];
-
-        // Check required files
-        $hasAllRequired = true;
-        foreach ($requiredFiles as $file => $description) {
-            if (file_exists("$extensionDir/$file")) {
-                $this->line("✓ $file - $description");
-            } else {
-                $this->warning("✗ Missing $file - $description");
-                $hasAllRequired = false;
-            }
-        }
-
-        // Check recommended files
-        foreach ($recommendedFiles as $file => $description) {
-            if (file_exists("$extensionDir/$file")) {
-                $this->line("✓ $file - $description");
-            } else {
-                $this->line("- $file - $description (recommended but not required)");
-            }
-        }
-
-        // Check class structure
-        $this->info("\nChecking class structure...");
-
-        // Required methods
-        $requiredMethods = [
-            'initialize' => 'Extension initialization',
-            'registerServices' => 'Service registration',
-            'registerMiddleware' => 'Middleware registration'
-        ];
-
-        foreach ($requiredMethods as $method => $description) {
-            if ($reflection->hasMethod($method)) {
-                $this->line("✓ $method() - $description");
-            } else {
-                $this->warning("✗ Missing $method() - $description");
-                $hasAllRequired = false;
-            }
-        }
-
-        // Metadata check
-        $this->info("\nChecking metadata...");
-        $metadataTags = [
-            'description' => $this->getExtensionMetadata($reflection, 'description'),
-            'version' => $this->getExtensionMetadata($reflection, 'version'),
-            'author' => $this->getExtensionMetadata($reflection, 'author')
-        ];
-
-        foreach ($metadataTags as $tag => $value) {
-            if (!empty($value)) {
-                $this->line("✓ @$tag: $value");
-            } else {
-                $this->warning("✗ Missing @$tag tag in class docblock");
-            }
-        }
-
-        // Final result
-        if ($hasAllRequired) {
-            $this->success("\nStructure validation passed");
-        } else {
-            $this->warning("\nStructure validation found issues");
-            $this->line("The extension may work, but it's recommended to fix these issues for better compatibility.");
-        }
-    }
-
-    /**
-     * Validate extension dependencies
-     *
-     * @param \ReflectionClass $reflection Extension class reflection
-     * @return void
-     */
-    protected function validateExtensionDependencies(\ReflectionClass $reflection): void
-    {
-        $this->info("\nChecking extension dependencies...");
-
-        $extensionClass = $reflection->getName();
-        $extensionName = $reflection->getShortName();
-
-        // Get enabled extensions
-        $enabledExtensions = $this->getEnabledExtensions($this->getConfigPath());
-
-        try {
-            // Get dependencies from the extension
-            $dependencies = [];
-
-            // Check if the extension implements getDependencies() method
-            if ($reflection->hasMethod('getDependencies') && method_exists($extensionClass, 'getDependencies')) {
-                $dependencies = $extensionClass::getDependencies();
-            }
-
-            // Check if the extension implements getMetadata() method
-            if ($reflection->hasMethod('getMetadata') && method_exists($extensionClass, 'getMetadata')) {
-                $metadata = $extensionClass::getMetadata();
-                if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
-                    $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
-                }
-            }
-
-            // Remove duplicates
-            $dependencies = array_unique($dependencies);
-
-            if (empty($dependencies)) {
-                $this->line("✓ No dependencies required");
-            } else {
-                $this->line("Found " . count($dependencies) . " dependencies:");
-                $allDependenciesMet = true;
-
-                foreach ($dependencies as $dependency) {
-                    // Check if dependency exists
-                    $dependencyClass = $this->findExtension($dependency);
-
-                    if ($dependencyClass) {
-                        // Check if dependency is enabled
-                        $isEnabled = in_array($dependency, $enabledExtensions);
-
-                        if ($isEnabled) {
-                            $this->line("✓ $dependency - Found and enabled");
-                        } else {
-                            $this->warning("✗ $dependency - Found but not enabled");
-                            $allDependenciesMet = false;
-                        }
-                    } else {
-                        $this->error("✗ $dependency - Not found in the system");
-                        $allDependenciesMet = false;
-                    }
-                }
-
-                // Final result
-                if ($allDependenciesMet) {
-                    $this->success("\nAll dependencies are met");
-                } else {
-                    $this->warning("\nSome dependencies are not met");
-                    $this->line(
-                        "You should enable or install the missing dependencies before enabling this extension."
-                    );
-                    $this->tip("Run 'php glueful extensions enable <dependency>' for each missing dependency.");
-                }
-            }
-
-            // Check if other extensions depend on this one
-            $dependentExtensions = [];
-
-            foreach (ExtensionsManager::getLoadedExtensions() as $otherExtension) {
-                if ($otherExtension === $extensionClass) {
-                    continue; // Skip self
-                }
-
-                $otherReflection = new \ReflectionClass($otherExtension);
-                $otherName = $otherReflection->getShortName();
-
-                // Only check enabled extensions
-                if (!in_array($otherName, $enabledExtensions)) {
-                    continue;
-                }
-
-                try {
-                    // Check if the extension implements getDependencies() method
-                    if ($otherReflection->hasMethod('getDependencies')) {
-                        $otherDependencies = $otherExtension::getDependencies();
-                        if (in_array($extensionName, $otherDependencies)) {
-                            $dependentExtensions[] = $otherName;
-                        }
-                    }
-
-                    // Check if the extension implements getMetadata() method
-                    if ($otherReflection->hasMethod('getMetadata')) {
-                        $otherMetadata = $otherExtension::getMetadata();
-                        if (
-                            isset($otherMetadata['requires']) &&
-                            isset($otherMetadata['requires']['extensions']) &&
-                            in_array($extensionName, $otherMetadata['requires']['extensions'])
-                        ) {
-                            if (!in_array($otherName, $dependentExtensions)) {
-                                $dependentExtensions[] = $otherName;
-                            }
-                        }
-                    }
-                } catch (\Exception $e) {
-                    // Skip extensions with errors
-                    continue;
-                }
-            }
-
-            // Display dependent extensions
-            if (!empty($dependentExtensions)) {
-                $this->info("\nExtensions that depend on $extensionName:");
-                foreach ($dependentExtensions as $dependent) {
-                    $this->line("- $dependent");
-                }
-                $this->warning("Disabling this extension may break the extensions listed above.");
-            } else {
-                $this->line("\n✓ No enabled extensions depend on $extensionName");
-            }
-        } catch (\Exception $e) {
-            $this->error("Error validating dependencies: " . $e->getMessage());
-        }
-    }
-
-    /**
      * Show a tip to the user
      *
      * @param string $message Tip message
@@ -1473,63 +1007,6 @@ HELP;
     protected function tip(string $message): void
     {
         $this->line($this->colorText("💡 $message", 'cyan'));
-    }
-
-    /**
-     * Find extensions that depend on the given extension
-     *
-     * @param string $extensionName The name of the extension
-     * @return array List of extension names that depend on this extension
-     */
-    protected function findDependentExtensions(string $extensionName): array
-    {
-        $dependentExtensions = [];
-        $enabledExtensions = $this->getEnabledExtensions($this->getConfigPath());
-
-        foreach (ExtensionsManager::getLoadedExtensions() as $otherExtension) {
-            $otherReflection = new \ReflectionClass($otherExtension);
-            $otherName = $otherReflection->getShortName();
-
-            // Skip if not enabled
-            if (!in_array($otherName, $enabledExtensions)) {
-                continue;
-            }
-
-            // Skip if it's the extension itself
-            if ($otherName === $extensionName) {
-                continue;
-            }
-
-            try {
-                // Check in getDependencies method
-                if ($otherReflection->hasMethod('getDependencies')) {
-                    $otherDependencies = $otherExtension::getDependencies();
-                    if (in_array($extensionName, $otherDependencies)) {
-                        $dependentExtensions[] = $otherName;
-                        continue; // Skip further checks for this extension
-                    }
-                }
-
-                // Check in getMetadata method
-                if ($otherReflection->hasMethod('getMetadata')) {
-                    $otherMetadata = $otherExtension::getMetadata();
-                    if (
-                        isset($otherMetadata['requires']) &&
-                        isset($otherMetadata['requires']['extensions']) &&
-                        in_array($extensionName, $otherMetadata['requires']['extensions'])
-                    ) {
-                        if (!in_array($otherName, $dependentExtensions)) {
-                            $dependentExtensions[] = $otherName;
-                        }
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Skip extensions with errors
-                continue;
-            }
-        }
-
-        return $dependentExtensions;
     }
 
     /**
@@ -1552,8 +1029,8 @@ HELP;
         $extensionDir = dirname($reflection->getFileName());
 
         // Check if the extension is enabled
-        $configFile = $this->getConfigPath();
-        $config = $this->loadConfig($configFile);
+        $configFile = ExtensionsManager::getConfigPath();
+        $config = include $configFile;
         $isEnabled = in_array($shortName, $config['enabled'] ?? []);
         $isCoreExtension = in_array($shortName, $config['core'] ?? []);
 
@@ -1585,7 +1062,7 @@ HELP;
         }
 
         // Check for dependent extensions
-        $dependentExtensions = $this->findDependentExtensions($shortName);
+        $dependentExtensions = ExtensionsManager::checkDependenciesForDisable($shortName);
         if (!empty($dependentExtensions)) {
             $this->warning("The following enabled extensions depend on '$shortName':");
             foreach ($dependentExtensions as $dependent) {
@@ -1649,9 +1126,9 @@ HELP;
         }
 
         // Sanitize and validate extension name
-        $extensionName = $this->sanitizeExtensionName($extensionName);
+        $extensionName = ExtensionsManager::sanitizeExtensionName($extensionName);
 
-        if (!$this->isValidExtensionName($extensionName)) {
+        if (!ExtensionsManager::isValidExtensionName($extensionName)) {
             $this->error("Invalid extension name: $extensionName");
             $this->line("Extension names must be in PascalCase format (e.g. MyExtension).");
             return;

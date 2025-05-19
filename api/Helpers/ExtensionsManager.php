@@ -25,6 +25,9 @@ class ExtensionsManager
     /** @var array Loaded extension instances */
     private static array $loadedExtensions = [];
 
+    /** @var array All registered extensions */
+    private static array $allExtensions = [];
+
     /** @var array Extension namespaces and their directories */
     private static array $extensionNamespaces = [
         'Glueful\\Extensions\\' => ['extensions']
@@ -141,7 +144,7 @@ class ExtensionsManager
         foreach (self::$extensionNamespaces as $namespace => $directories) {
             foreach ($directories as $directory) {
                 $dir = dirname(__DIR__, 2) . '/' . $directory;
-                self::scanAndLoadExtensions($dir, $namespace);
+                self::scanAndLoadExtensions($dir, $namespace, self::$allExtensions);
             }
         }
 
@@ -183,7 +186,7 @@ class ExtensionsManager
 
             if (is_dir($extensionDir)) {
                 self::debug("Loading enabled extension: {$extensionName}");
-                self::scanAndLoadExtensions($extensionDir, $extensionNamespace);
+                self::scanAndLoadExtensions($extensionDir, $extensionNamespace, self::$loadedExtensions);
             } else {
                 self::debug("Enabled extension directory not found: {$extensionDir}");
             }
@@ -341,7 +344,7 @@ class ExtensionsManager
      * @param string $namespace Base namespace for discovered classes
      * @return void
      */
-    private static function scanAndLoadExtensions(string $dir, string $namespace): void
+    private static function scanAndLoadExtensions(string $dir, string $namespace, array &$loadedExtensions): void
     {
         if (!is_dir($dir)) {
             error_log("Directory does not exist: $dir");
@@ -374,8 +377,8 @@ class ExtensionsManager
 
                     // Only register classes that extend the Extensions base class
                     if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                        if (!in_array($fullClassName, self::$loadedExtensions, true)) {
-                            self::$loadedExtensions[] = $fullClassName;
+                        if (!in_array($fullClassName, $loadedExtensions, true)) {
+                            $loadedExtensions[] = $fullClassName;
                             self::debug("Loaded extension: {$fullClassName}");
                         } else {
                             self::debug("Skipping duplicate extension: {$fullClassName}");
@@ -430,7 +433,10 @@ class ExtensionsManager
      */
     public static function getLoadedExtensions(): array
     {
-        return self::$loadedExtensions;
+        if (empty(self::$allExtensions)) {
+            self::loadExtensions();
+        }
+        return self::$allExtensions;
     }
 
     /**
@@ -441,7 +447,7 @@ class ExtensionsManager
      */
     public static function isExtensionEnabled(string $extensionName): bool
     {
-        $configFile = dirname(__DIR__) . '/../../config/extensions.php';
+        $configFile = dirname(__DIR__, 2) . '/config/extensions.php';
 
         if (!file_exists($configFile)) {
             return false;
@@ -488,6 +494,7 @@ class ExtensionsManager
 
         // Check if already enabled
         if (in_array($extensionName, $config['enabled'] ?? [])) {
+            error_log("Extension '$extensionName' is already enabled");
             return [
                 'success' => true,
                 'message' => "Extension '$extensionName' is already enabled"
@@ -638,10 +645,107 @@ class ExtensionsManager
      * @param array $config Configuration array
      * @return bool Success status
      */
-    private static function saveConfig(string $file, array $config): bool
+    public static function saveConfig(string $file, array $config): bool
     {
-        $content = "<?php\nreturn " . var_export($config, true) . ";\n";
+       // Start with the PHP opening tag
+        $content = "<?php\n\nreturn [\n";
+
+        // Process each top-level key
+        foreach ($config as $key => $value) {
+            $content .= "    '$key' => ";
+
+            if (is_array($value)) {
+                if (empty($value)) {
+                    $content .= "[\n\n    ],\n";
+                    continue;
+                }
+
+                $content .= "[\n";
+
+                // Check if this is a simple list or an associative array
+                $isNumericIndexed = array_keys($value) === range(0, count($value) - 1);
+
+                if ($isNumericIndexed) {
+                    // For simple lists, format each item on a new line
+                    foreach ($value as $item) {
+                        if (is_string($item)) {
+                            $content .= "        '$item',\n";
+                        } elseif (is_array($item)) {
+                            // Handle nested arrays
+                            $content .= self::formatNestedArray($item, 8);
+                        } else {
+                            $content .= "        $item,\n";
+                        }
+                    }
+                } else {
+                    // For associative arrays, use key => value format
+                    foreach ($value as $subKey => $subValue) {
+                        if (is_string($subKey)) {
+                            $content .= "        '$subKey' => ";
+                        } else {
+                            $content .= "        $subKey => ";
+                        }
+
+                        if (is_string($subValue)) {
+                            $content .= "'$subValue',\n";
+                        } elseif (is_array($subValue)) {
+                            // Handle nested arrays
+                            $content .= self::formatNestedArray($subValue, 12);
+                        } else {
+                            $content .= "$subValue,\n";
+                        }
+                    }
+                }
+
+                $content .= "    ],\n";
+            } elseif (is_string($value)) {
+                $content .= "'$value',\n";
+            } else {
+                $content .= "$value,\n";
+            }
+        }
+
+        $content .= "];\n";
+
         return file_put_contents($file, $content) !== false;
+    }
+
+    /**
+     * Helper method to format nested arrays with proper indentation
+     *
+     * @param array $array The array to format
+     * @param int $indentLevel Number of spaces to indent
+     * @return string Formatted array string
+     */
+    private static function formatNestedArray(array $array, int $indentLevel): string
+    {
+        if (empty($array)) {
+            return "[],\n";
+        }
+
+        $indent = str_repeat(' ', $indentLevel);
+        $result = "[\n";
+
+        foreach ($array as $key => $value) {
+            $result .= $indent;
+
+            if (is_string($key)) {
+                $result .= "'$key' => ";
+            } else {
+                $result .= "$key => ";
+            }
+
+            if (is_array($value)) {
+                $result .= self::formatNestedArray($value, $indentLevel + 4);
+            } elseif (is_string($value)) {
+                $result .= "'$value',\n";
+            } else {
+                $result .= "$value,\n";
+            }
+        }
+
+        $result .= str_repeat(' ', $indentLevel - 4) . "],\n";
+        return $result;
     }
 
     /**
@@ -652,7 +756,10 @@ class ExtensionsManager
      */
     public static function findExtension(string $extensionName): ?string
     {
-        foreach (self::$loadedExtensions as $extensionClass) {
+        if (empty(self::$allExtensions)) {
+            self::loadExtensions();
+        }
+        foreach (self::$allExtensions as $extensionClass) {
             $reflection = new \ReflectionClass($extensionClass);
             if ($reflection->getShortName() === $extensionName) {
                 return $extensionClass;
@@ -701,7 +808,7 @@ class ExtensionsManager
 
     public static function getConfigPath(): string
     {
-        $configDir = dirname(__DIR__) . '/../../config';
+        $configDir = dirname(__DIR__, 2) . '/config';
 
         // Ensure config directory exists
         if (!is_dir($configDir)) {
@@ -806,7 +913,7 @@ class ExtensionsManager
      * @param string $extensionName Extension name to check
      * @return array Result with success status and messages
      */
-    private static function checkDependenciesForDisable(string $extensionName): array
+    public static function checkDependenciesForDisable(string $extensionName): array
     {
         $enabledExtensions = self::getEnabledExtensions();
         $dependentExtensions = [];
@@ -1581,7 +1688,7 @@ class ExtensionsManager
      * @param \ReflectionClass $reflection Extension class reflection
      * @return array Result with success status and messages
      */
-    private static function validateExtensionStructure(\ReflectionClass $reflection): array
+    public static function validateExtensionStructure(\ReflectionClass $reflection): array
     {
         $extensionName = $reflection->getShortName();
         $extensionDir = dirname($reflection->getFileName());
@@ -1656,7 +1763,7 @@ class ExtensionsManager
      * @param \ReflectionClass $reflection Extension class reflection
      * @return array Result with success status and messages
      */
-    private static function validateExtensionDependencies(\ReflectionClass $reflection): array
+    public static function validateExtensionDependencies(\ReflectionClass $reflection): array
     {
         $extensionClass = $reflection->getName();
         $extensionName = $reflection->getShortName();

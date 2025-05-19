@@ -2,15 +2,16 @@
 
 return [
     'core' => [
-        'EmailNotification'
+        'EmailNotification',
     ],
     'optional' => [
-
+        'SocialLogin',
     ],
     'enabled' => [
         'EmailNotification',
+        'SocialLogin',
     ],
     'paths' => [
-        'extensions' => dirname(__DIR__) . '/extensions'
+        'extensions' => '/Users/michaeltawiahsowah/Sites/localhost/glueful/extensions',
     ],
 ];
