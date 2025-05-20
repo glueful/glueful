@@ -29,7 +29,7 @@ class MiddlewareDispatcher implements RequestHandlerInterface
      *
      * @param callable|null $fallbackHandler The fallback handler to use at the end of the middleware stack
      */
-    public function __construct(callable $fallbackHandler = null)
+    public function __construct(?callable $fallbackHandler = null)
     {
         $this->fallbackHandler = $fallbackHandler ?: function (Request $request) {
             // Default fallback handler returns a JSON 404 response

@@ -89,7 +89,7 @@
                     "Database"
                 ],
                 "summary": "Get comprehensive database statistics",
-                "description": "Retrieves detailed statistics for all tables in the database including size, schema, row counts, and other metrics",
+                "description": "Retrieves detailed statistics for all tables in the database including size, schema,",
                 "responses": {
                     "200": {
                         "description": "Database statistics retrieved successfully",
@@ -184,28 +184,9 @@
                                 "properties": {
                                     "name": {
                                         "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "columns": {
-                                        "type": "array"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Column type"
-                                    },
-                                    "nullable": {
-                                        "type": "boolean",
-                                        "description": "Whether column can be null"
-                                    },
-                                    "default": {
-                                        "type": "string",
-                                        "description": "Default value"
+                                        "description": "Table name"
                                     }
-                                },
-                                "required": [
-                                    "name",
-                                    "columns"
-                                ]
+                                }
                             }
                         }
                     }
@@ -248,16 +229,8 @@
                                     "name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "confirm": {
-                                        "type": "boolean",
-                                        "description": "Confirmation flag to drop the table"
                                     }
-                                },
-                                "required": [
-                                    "name",
-                                    "confirm"
-                                ]
+                                }
                             }
                         }
                     }
@@ -430,24 +403,8 @@
                                     "name": {
                                         "type": "string",
                                         "description": "Column name"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Column type"
-                                    },
-                                    "nullable": {
-                                        "type": "boolean",
-                                        "description": "Whether column can be null"
-                                    },
-                                    "default": {
-                                        "type": "string",
-                                        "description": "Default value"
                                     }
-                                },
-                                "required": [
-                                    "table",
-                                    "column"
-                                ]
+                                }
                             }
                         }
                     }
@@ -490,21 +447,8 @@
                                     "table": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "column": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "confirm": {
-                                        "type": "boolean",
-                                        "description": "Confirmation flag to drop the column"
                                     }
-                                },
-                                "required": [
-                                    "table",
-                                    "column",
-                                    "confirm"
-                                ]
+                                }
                             }
                         }
                     }
@@ -599,16 +543,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "constraint_name": {
-                                        "type": "string",
-                                        "description": "Constraint name"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "constraint_name"
-                                ]
+                                }
                             }
                         }
                     }
@@ -706,23 +642,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "index": {
-                                        "type": "object"
-                                    },
-                                    "column": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Index type (INDEX or UNIQUE)"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "index"
-                                ]
+                                }
                             }
                         }
                     }
@@ -768,27 +689,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "foreign_key": {
-                                        "type": "object"
-                                    },
-                                    "column": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "references": {
-                                        "type": "string",
-                                        "description": "Referenced column"
-                                    },
-                                    "on": {
-                                        "type": "string",
-                                        "description": "Referenced table"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "foreign_key"
-                                ]
+                                }
                             }
                         }
                     }
@@ -831,34 +733,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "columns": {
-                                        "type": "array"
-                                    },
-                                    "name": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Column type"
-                                    },
-                                    "options": {
-                                        "type": "object"
-                                    },
-                                    "nullable": {
-                                        "type": "boolean",
-                                        "description": "Whether column can be null"
-                                    },
-                                    "default": {
-                                        "type": "string",
-                                        "description": "Default value"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "columns"
-                                ]
+                                }
                             }
                         }
                     }
@@ -901,15 +777,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "column_names": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "column_names"
-                                ]
+                                }
                             }
                         }
                     }
@@ -952,15 +821,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "index_names": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "index_names"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1003,15 +865,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "constraint_names": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "constraint_names"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1054,23 +909,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "indexes": {
-                                        "type": "array"
-                                    },
-                                    "column": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Index type (INDEX or UNIQUE)"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "indexes"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1116,27 +956,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "foreign_keys": {
-                                        "type": "array"
-                                    },
-                                    "column": {
-                                        "type": "string",
-                                        "description": "Column name"
-                                    },
-                                    "references": {
-                                        "type": "string",
-                                        "description": "Referenced column"
-                                    },
-                                    "on": {
-                                        "type": "string",
-                                        "description": "Referenced table"
                                     }
-                                },
-                                "required": [
-                                    "table_name",
-                                    "foreign_keys"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1154,37 +975,10 @@
                     "Database"
                 ],
                 "summary": "Update table schema",
-                "description": "Updates table schema with multiple operations including adding/removing columns, indexes, and foreign keys",
+                "description": "Updates table schema with multiple operations including adding/removing columns,",
                 "responses": {
                     "200": {
-                        "description": "Schema updated successfully",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "added_columns": {
-                                            "type": "array"
-                                        },
-                                        "deleted_columns": {
-                                            "type": "array"
-                                        },
-                                        "added_indexes": {
-                                            "type": "array"
-                                        },
-                                        "deleted_indexes": {
-                                            "type": "array"
-                                        },
-                                        "added_foreign_keys": {
-                                            "type": "array"
-                                        },
-                                        "deleted_foreign_keys": {
-                                            "type": "array"
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        "description": "Schema updated successfully"
                     },
                     "400": {
                         "description": "Invalid request format"
@@ -1206,47 +1000,8 @@
                                     "table_name": {
                                         "type": "string",
                                         "description": "Table name"
-                                    },
-                                    "columns": {
-                                        "type": "array"
-                                    },
-                                    "name": {
-                                        "type": "string"
-                                    },
-                                    "type": {
-                                        "type": "string"
-                                    },
-                                    "options": {
-                                        "type": "object"
-                                    },
-                                    "indexes": {
-                                        "type": "array"
-                                    },
-                                    "column": {
-                                        "type": "string"
-                                    },
-                                    "foreign_keys": {
-                                        "type": "array"
-                                    },
-                                    "references": {
-                                        "type": "string"
-                                    },
-                                    "on": {
-                                        "type": "string"
-                                    },
-                                    "deleted_columns": {
-                                        "type": "array"
-                                    },
-                                    "deleted_indexes": {
-                                        "type": "array"
-                                    },
-                                    "deleted_foreign_keys": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "table_name"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1266,21 +1021,6 @@
                 "summary": "List all migrations",
                 "description": "Retrieves a list of all database migrations and their status",
                 "responses": {
-                    "200": {
-                        "description": "List of migrations",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "migrations": {
-                                            "type": "array"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
                     "403": {
                         "description": "Permission denied"
                     }
@@ -1541,25 +1281,8 @@
                                     "name": {
                                         "type": "string",
                                         "description": "Job name"
-                                    },
-                                    "command": {
-                                        "type": "string",
-                                        "description": "Job command"
-                                    },
-                                    "schedule": {
-                                        "type": "string",
-                                        "description": "Cron schedule expression"
-                                    },
-                                    "enabled": {
-                                        "type": "boolean",
-                                        "description": "Whether job is enabled initially"
                                     }
-                                },
-                                "required": [
-                                    "name",
-                                    "command",
-                                    "schedule"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1899,19 +1622,8 @@
                                     "id": {
                                         "type": "integer",
                                         "description": "Permission ID"
-                                    },
-                                    "name": {
-                                        "type": "string",
-                                        "description": "Permission name"
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "Permission description"
                                     }
-                                },
-                                "required": [
-                                    "id"
-                                ]
+                                }
                             }
                         }
                     }
@@ -1954,15 +1666,8 @@
                                     "roleId": {
                                         "type": "integer",
                                         "description": "Role ID"
-                                    },
-                                    "permissionIds": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "roleId",
-                                    "permissionIds"
-                                ]
+                                }
                             }
                         }
                     }
@@ -2005,15 +1710,8 @@
                                     "roleId": {
                                         "type": "integer",
                                         "description": "Role ID"
-                                    },
-                                    "permissionIds": {
-                                        "type": "array"
                                     }
-                                },
-                                "required": [
-                                    "roleId",
-                                    "permissionIds"
-                                ]
+                                }
                             }
                         }
                     }

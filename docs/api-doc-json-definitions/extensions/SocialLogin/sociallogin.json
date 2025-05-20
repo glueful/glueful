@@ -502,20 +502,8 @@
                                     "code": {
                                         "type": "string",
                                         "description": "Authorization code from Apple"
-                                    },
-                                    "state": {
-                                        "type": "string",
-                                        "description": "State token for CSRF protection"
-                                    },
-                                    "user": {
-                                        "type": "string",
-                                        "description": "JSON string containing user information (only provided on first login)"
                                     }
-                                },
-                                "required": [
-                                    "code",
-                                    "state"
-                                ]
+                                }
                             }
                         }
                     }

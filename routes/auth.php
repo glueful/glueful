@@ -13,8 +13,8 @@ Router::group('/auth', function () use ($authController) {
      * @summary User Login
      * @description Authenticates a user with username/email and password
      * @tag Authentication
-     * @requestBody username:string="Username or email address"
-     * @requestBody password:string="User password" {required=username,password}
+     * @requestBody username:string="Username or email address" password:string="User password"
+     * {required=username,password}
      * @response 200 application/json "Login successful" {
      *   success:boolean="Success status",
      *   message:string="Success message",
