@@ -1,0 +1,22 @@
+{
+  "extensions": {
+    "EmailNotification": {
+      "version": "1.2.0",
+      "enabled": true,
+      "installPath": "extensions/EmailNotification"
+    },
+    "SocialLogin": {
+      "version": "1.2.0",
+      "enabled": true,
+      "installPath": "extensions/SocialLogin"
+    }
+  },
+  "environments": {
+    "development": {
+      "enabledExtensions": ["EmailNotification", "SocialLogin"]
+    },
+    "production": {
+      "enabledExtensions": ["EmailNotification"]
+    }
+  }
+}

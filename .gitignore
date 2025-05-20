@@ -8,5 +8,3 @@ ui/env.json
 .phpunit.cache/
 UNIT_TESTING_PLAN.md
 /extensions/*
-!/extensions/extensions.json
-!/extensions/README.md
