@@ -16,7 +16,7 @@
       "enabledExtensions": ["EmailNotification", "SocialLogin"]
     },
     "production": {
-      "enabledExtensions": ["EmailNotification"]
+      "enabledExtensions": ["EmailNotification", "SocialLogin"]
     }
   }
 }
