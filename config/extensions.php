@@ -9,7 +9,7 @@ return [
 
     // Default settings (used if extensions.json is missing)
     'defaults' => [
-        'enabled' => ['core-tools'], // Core extensions always enabled
+        'enabled' => ['EmailNotification'], // Core extensions always enabled
     ],
 
     // Security settings
