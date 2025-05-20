@@ -7,3 +7,8 @@ docs/api-doc-json-definitions/*
 ui/env.json
 .phpunit.cache/
 UNIT_TESTING_PLAN.md
+/extensions/*
+# But keep the extensions.json file
+!/extensions/extensions.json
+# And keep the README
+!/extensions/README.md
