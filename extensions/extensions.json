@@ -1,13 +1,13 @@
 {
   "extensions": {
     "EmailNotification": {
-      "version": "1.2.0",
+      "version": "0.21.0",
       "enabled": true,
       "installPath": "extensions/EmailNotification"
     },
     "SocialLogin": {
-      "version": "1.2.0",
-      "enabled": true,
+      "version": "0.18.0",
+      "enabled": false,
       "installPath": "extensions/SocialLogin"
     }
   },
