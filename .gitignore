@@ -3,7 +3,7 @@
 vendor
 .env
 docs/swagger.json
-docs/api-doc-json-definitions/
+docs/api-doc-json-definitions/*
 ui/env.json
 .phpunit.cache/
 UNIT_TESTING_PLAN.md
