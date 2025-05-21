@@ -34,7 +34,7 @@ class ExtensionsController
             $extensions = ExtensionsManager::getLoadedExtensions();
             $extensionData = [];
             $extensionConfigFile = ExtensionsManager::getConfigPath();
-            $enabledExtensions = ExtensionsManager::getEnabledExtensions($extensionConfigFile);
+            $enabledExtensions = ExtensionsManager::getEnabledExtensions();
             $coreExtensions = ExtensionsManager::getCoreExtensions($extensionConfigFile);
             $optionalExtensions = ExtensionsManager::getOptionalExtensions($extensionConfigFile);
 

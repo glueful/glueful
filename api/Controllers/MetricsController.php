@@ -227,7 +227,7 @@ class MetricsController
 
             // Extensions status
             $extensions = ExtensionsManager::getLoadedExtensions();
-            $enabledExtensions = ExtensionsManager::getEnabledExtensions(ExtensionsManager::getConfigPath());
+            $enabledExtensions = ExtensionsManager::getEnabledExtensions();
 
             $extensionStatus = [];
             foreach ($extensions as $extension) {
