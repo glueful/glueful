@@ -68,7 +68,7 @@ class CommentsDocGenerator
 
         foreach ($extensionDirs as $extDir) {
             $extName = basename($extDir);
-            $routeFile = $extDir . '/routes.php';
+            $routeFile = $extDir . '/src/routes.php';
 
             if (file_exists($routeFile)) {
                 $docFile = $this->generateForExtension($extName, $routeFile);

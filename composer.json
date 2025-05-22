@@ -12,19 +12,18 @@
         "cache",
         "queue"
     ],
-    "homepage": "https://github.com/glueful/glueful",
+    "homepage": "https://glueful.com/",
     "license": "MIT",
     "authors": [
         {
             "name": "Michael Tawiah Sowah",
-            "email": "michaeltawiahsowah@gmail.com",
-            "role": "Developer"
+            "email": "michael@glueful.dev"
         }
     ],
     "support": {
         "issues": "https://github.com/glueful/glueful/issues",
         "source": "https://github.com/glueful/glueful",
-        "docs": "https://github.com/glueful/glueful/wiki"
+        "docs": "https://glueful.com/docs/getting-started"
     },
     "funding": [
         {
