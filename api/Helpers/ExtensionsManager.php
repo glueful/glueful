@@ -795,6 +795,18 @@ class ExtensionsManager
         return $default;
     }
 
+    public static function loadExtensionsConfig(): array
+    {
+        $configFile = config('extensions.config_file');
+
+        if (!file_exists($configFile)) {
+            // Create default config if it doesn't exist
+            // return self::createDefaultConfig();
+        }
+
+        return json_decode(file_get_contents($configFile), true) ?: [];
+    }
+
     /**
      * Check if an extension exists
      *
@@ -1093,21 +1105,20 @@ class ExtensionsManager
     /**
      * Get all enabled extensions from config
      *
-     * @param string|null $configFile Optional config file path
      * @return array List of enabled extension names
      */
-    public static function getEnabledExtensions(?string $configFile = null): array
+    public static function getEnabledExtensions(): array
     {
-        if ($configFile === null) {
-            $configFile = self::getConfigPath();
+        $config = self::loadExtensionsConfig();
+        $enabled = [];
+
+        foreach ($config['extensions'] as $name => $ext) {
+            if ($ext['enabled'] === true) {
+                $enabled[] = $name;
+            }
         }
 
-        if (!file_exists($configFile)) {
-            return [];
-        }
-
-        $config = include $configFile;
-        return $config['enabled'] ?? [];
+        return $enabled;
     }
 
     /**
