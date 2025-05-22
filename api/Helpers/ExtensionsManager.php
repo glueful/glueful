@@ -754,15 +754,37 @@ class ExtensionsManager
      * @param string $extensionName Extension name
      * @return string|null Full class name or null if not found
      */
-    public static function findExtension(string $extensionName): ?string
+    public static function findExtension(string $extensionName, bool $checkFilesOnly = false): ?string
     {
-        if (empty(self::$allExtensions)) {
-            self::loadExtensions();
+        // Validate extension name format
+        if (!self::isValidExtensionName($extensionName)) {
+            return null;
         }
-        foreach (self::$allExtensions as $extensionClass) {
-            $reflection = new \ReflectionClass($extensionClass);
-            if ($reflection->getShortName() === $extensionName) {
-                return $extensionClass;
+
+        // Get extensions path
+        $extensionsPath = config('extensions.extensions_dir');
+        if (empty($extensionsPath)) {
+            $extensionsPath = dirname(__DIR__, 2) . '/extensions/';
+        }
+
+        // Build expected extension directory and class file paths
+        $extensionDir = rtrim($extensionsPath, '/') . '/' . $extensionName;
+        $mainClassFile = $extensionDir . '/' . $extensionName . '.php';
+
+        // Check if directory and main class file exist
+        if (is_dir($extensionDir) && file_exists($mainClassFile)) {
+            // Extension files exist
+            $expectedClass = 'Glueful\\Extensions\\' . $extensionName . '\\' . $extensionName;
+
+            // If we're only checking files, return the expected class name
+            if ($checkFilesOnly) {
+                return $expectedClass;
+            }
+
+            // If we need to check if the class is loaded/loadable,
+            // we can try to load it or verify it exists
+            if (class_exists($expectedClass)) {
+                return $expectedClass;
             }
         }
 
