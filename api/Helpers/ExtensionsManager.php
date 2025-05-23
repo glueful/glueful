@@ -447,14 +447,15 @@ class ExtensionsManager
      */
     public static function isExtensionEnabled(string $extensionName): bool
     {
-        $configFile = dirname(__DIR__, 2) . '/config/extensions.php';
+        $config = self::loadExtensionsConfig();
 
-        if (!file_exists($configFile)) {
+        // Check if extension exists in the configuration
+        if (!isset($config['extensions'][$extensionName])) {
             return false;
         }
 
-        $config = include $configFile;
-        return in_array($extensionName, $config['enabled'] ?? []);
+        // Return the enabled status from the extension config
+        return $config['extensions'][$extensionName]['enabled'] === true;
     }
 
     /**
