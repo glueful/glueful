@@ -84,6 +84,24 @@ return [
         'max_age_days' => env('PASSWORD_MAX_AGE_DAYS', env('APP_ENV') === 'production' ? 90 : null),
     ],
 
+    // Request Validation
+    'request_validation' => [
+        'allowed_content_types' => [
+            'application/json',
+            'application/x-www-form-urlencoded',
+            'multipart/form-data'
+        ],
+        'max_request_size' => env('MAX_REQUEST_SIZE', '10MB'),
+        'require_user_agent' => env('REQUIRE_USER_AGENT', false),
+        'block_suspicious_ua' => env('BLOCK_SUSPICIOUS_UA', false),
+        'suspicious_ua_patterns' => [
+            '/bot/i',
+            '/crawler/i',
+            '/spider/i',
+            '/scraper/i'
+        ]
+    ],
+
     // Audit and Monitoring
     'audit' => [
         'enabled' => env('AUDIT_ENABLED', true),

@@ -2,9 +2,10 @@
 
 namespace Glueful\Security;
 
-use Glueful\Helpers\ConfigManager;
+use Glueful\Helpers\{ConfigManager, Utils};
 use Glueful\Exceptions\RateLimitExceededException;
 use Glueful\Exceptions\SecurityException;
+
 
 class SecurityManager
 {
@@ -44,29 +45,60 @@ class SecurityManager
 
     public function validateRequest($request): void
     {
-        // Validate content type
-        $contentType = $request->getHeaderLine('Content-Type');
-        $allowedTypes = $this->config['request_validation']['allowed_content_types'] ?? [];
+        $method = $request->getMethod();
+        
+        // Validate content type for POST/PUT/PATCH requests
+        if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
+            $contentType = $request->getHeaderLine('Content-Type');
+            $allowedTypes = $this->config['request_validation']['allowed_content_types'] ?? [
+                'application/json',
+                'application/x-www-form-urlencoded',
+                'multipart/form-data'
+            ];
 
-        if ($contentType && !empty($allowedTypes)) {
-            $isAllowed = false;
-            foreach ($allowedTypes as $type) {
-                if (strpos($contentType, $type) === 0) {
-                    $isAllowed = true;
-                    break;
+            if ($contentType && !empty($allowedTypes)) {
+                $isAllowed = false;
+                foreach ($allowedTypes as $type) {
+                    if (strpos($contentType, $type) === 0) {
+                        $isAllowed = true;
+                        break;
+                    }
+                }
+
+                if (!$isAllowed) {
+                    throw new SecurityException("Unsupported content type: $contentType", 415);
                 }
             }
+        }
 
-            if (!$isAllowed) {
-                throw new SecurityException("Unsupported content type: $contentType", 415);
-            }
+        // Validate request size
+        $maxSizeConfig = $this->config['request_validation']['max_request_size'] ?? '10MB';
+        $maxSize = Utils::parseSize($maxSizeConfig);
+        $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+
+        if ($contentLength > $maxSize) {
+            throw new SecurityException("Request too large", 413);
         }
 
         // Validate User-Agent if required
         if ($this->config['request_validation']['require_user_agent'] ?? false) {
             $userAgent = $request->getHeaderLine('User-Agent');
             if (empty($userAgent)) {
-                throw new SecurityException("User-Agent header required");
+                throw new SecurityException("User-Agent header required", 400);
+            }
+        }
+
+        // Check for suspicious user agents if configured
+        if ($this->config['request_validation']['block_suspicious_ua'] ?? false) {
+            $userAgent = $request->getHeaderLine('User-Agent');
+            $suspiciousPatterns = $this->config['request_validation']['suspicious_ua_patterns'] ?? [
+                '/bot/i', '/crawler/i', '/spider/i', '/scraper/i'
+            ];
+
+            foreach ($suspiciousPatterns as $pattern) {
+                if (preg_match($pattern, $userAgent)) {
+                    throw new SecurityException("Suspicious user agent blocked", 403);
+                }
             }
         }
     }
