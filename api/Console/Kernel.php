@@ -57,6 +57,7 @@ class Kernel
             \Glueful\Console\Commands\MemoryMonitorCommand::class,
             \Glueful\Console\Commands\SystemCheckCommand::class,
             \Glueful\Console\Commands\KeyGenerateCommand::class,
+            \Glueful\Console\Commands\ServeCommand::class,
         ]);
     }
 
