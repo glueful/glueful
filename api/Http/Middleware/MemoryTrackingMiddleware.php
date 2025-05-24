@@ -44,8 +44,8 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
     {
         $this->memoryManager = $memoryManager;
         $this->logger = $logger;
-        $this->enabled = config('performance.memory.monitoring.enabled', true);
-        $this->sampleRate = config('performance.memory.monitoring.sample_rate', 0.01);
+        $this->enabled = config('app.performance.memory.monitoring.enabled', true);
+        $this->sampleRate = config('app.performance.memory.monitoring.sample_rate', 0.01);
     }
 
     /**
@@ -132,7 +132,7 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
         float $executionTime,
         bool $isError = false
     ): void {
-        $logLevel = config('performance.memory.monitoring.log_level', 'info');
+        $logLevel = config('app.performance.memory.monitoring.log_level', 'info');
 
         // Only log if memory usage is high or there was an error
         if ($memoryUsed > 5242880 || $isError) { // 5MB threshold for logging

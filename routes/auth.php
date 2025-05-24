@@ -199,7 +199,7 @@ Router::group('/auth', function () use ($authController) {
      * }
      * @response 401 "Unauthorized - not logged in"
      */
-    Router::post('/logout', function ($params) use ($authController) {
+    Router::post('/logout', function () use ($authController) {
         return $authController->logout();
     });
 });

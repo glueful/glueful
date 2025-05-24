@@ -45,7 +45,7 @@ class MemoryAlertingService
     {
         $this->memoryManager = $memoryManager;
         $this->logger = $logger ?? new NullLogger();
-        $this->config = config('performance.memory.alerting', [
+        $this->config = config('app.performance.memory.alerting', [
             'enabled' => true,
             'cooldown' => 300, // 5 minutes between similar alerts
             'channels' => ['log', 'slack'],

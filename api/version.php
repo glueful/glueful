@@ -12,7 +12,5 @@ return [
     'version' => '0.27.0',
     'name' => 'Performance Optimization',
     'release_date' => '2025-05-18',
-    'min_php_version' => '8.2.0',
-    'next_planned_version' => '0.28.0',
-    'next_planned_release' => '2026-01'
+    'min_php_version' => '8.2.0'
 ];

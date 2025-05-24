@@ -250,11 +250,11 @@ class DocGenerator
             ],
             'servers' => [
                 [
-                    'url' => config('paths.api_base_url'),
+                    'url' => config('app.paths.api_base_url'),
                     'description' => 'Production API Server'
                 ],
                 [
-                    'url' => str_replace('api', 'staging-api', config('paths.api_base_url')),
+                    'url' => str_replace('api', 'staging-api', config('app.paths.api_base_url')),
                     'description' => 'Staging API Server'
                 ]
             ],

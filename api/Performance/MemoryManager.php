@@ -20,8 +20,8 @@ class MemoryManager
     public function __construct(?LoggerInterface $logger = null)
     {
         $this->memoryLimit = $this->parseMemoryLimit(ini_get('memory_limit'));
-        $this->alertThreshold = config('performance.memory.alert_threshold', 0.8);
-        $this->criticalThreshold = config('performance.memory.critical_threshold', 0.9);
+        $this->alertThreshold = config('app.performance.memory.alert_threshold', 0.8);
+        $this->criticalThreshold = config('app.performance.memory.critical_threshold', 0.9);
         $this->logger = $logger ?? new NullLogger();
     }
 

@@ -30,12 +30,12 @@ final class FileUploader
         private readonly string $cdnBaseUrl = '',
         private readonly ?string $storageDriver = null
     ) {
-        $driver = $this->storageDriver ?: config('storage.driver');
+        $driver = $this->storageDriver ?: config('services.storage.driver');
         $this->storage = match ($driver) {
             's3' => new S3Storage(),
             default => new LocalStorage(
-                $this->uploadsDirectory ?: config('paths.uploads'),
-                $this->cdnBaseUrl ?: config('paths.cdn')
+                $this->uploadsDirectory ?: config('app.paths.uploads'),
+                $this->cdnBaseUrl ?: config('app.paths.cdn')
             )
         };
     }

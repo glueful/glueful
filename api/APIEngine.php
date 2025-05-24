@@ -152,12 +152,12 @@ class APIEngine
 
         try {
             // Handle pagination configuration
-            $paginationEnabled = config('pagination.enabled', true);
+            $paginationEnabled = config('app.pagination.enabled', true);
             $usePagination = $param['paginate'] ?? $paginationEnabled;
             $page = max(1, (int)($param['page'] ?? 1));
             $perPage = $usePagination ? min(
-                config('pagination.max_size', 100),
-                max(1, (int)($param['per_page'] ?? config('pagination.default_size', 25)))
+                config('app.pagination.max_size', 100),
+                max(1, (int)($param['per_page'] ?? config('app.pagination.default_size', 25)))
             ) : null;
 
             // Handle sorting
@@ -327,7 +327,7 @@ class APIEngine
     private static function loadDefinition(string $function): array
     {
         $resource = self::$currentResource;
-        $path = config('paths.json_definitions') . $resource . '.' . $function . '.json';
+        $path = config('app.paths.json_definitions') . $resource . '.' . $function . '.json';
 
         if (!file_exists($path)) {
             // Use standard HTTP code 404 instead of Response::HTTP_NOT_FOUND

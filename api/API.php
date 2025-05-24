@@ -9,6 +9,7 @@ use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Exceptions\{ValidationException, AuthenticationException};
 use Glueful\Logging\LogManager;
+use Glueful\Http\Cors;
 use Throwable;
 
 /**

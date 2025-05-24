@@ -41,7 +41,7 @@ class MemoryPool
      */
     public function __construct(?int $maxSize = null)
     {
-        $this->maxSize = $maxSize ?? config('performance.memory.pool_size', 100);
+        $this->maxSize = $maxSize ?? config('app.performance.memory.pool_size', 100);
     }
 
     /**

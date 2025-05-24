@@ -1,32 +1,74 @@
 <?php
 
-use Glueful\Helpers\Config;
 /**
  * Application Configuration
  *
- * Core application settings and environment-specific configurations.
+ * Core application settings, paths, performance, and pagination configurations.
  * Values can be overridden using environment variables.
  */
+
 return [
     // Application Environment (development, staging, production)
     'env' => env('APP_ENV', 'production'),
     'debug' => (bool) env('APP_DEBUG', false),
 
     // API Information
-    'version' => env('API_VERSION', '1.0.0'),    // API version number
+    'version' => env('API_VERSION', '1.0.0'),
     'name' => env('APP_NAME', 'Glueful'),
 
-    // Query Limits
-    'list_limit' => 200,      // Maximum items per list query
+    // Application Paths
+    'paths' => [
+        'base' => dirname(__DIR__),
+        'api_base_directory' => dirname(__DIR__) . '/api/',
+        'api_docs' => dirname(__DIR__) . '/docs/',
+        'cdn' => env('BASE_URL', 'http://localhost/glueful') . '/storage/cdn/',
+        'domain' => env('BASE_URL', 'http://localhost/glueful/'),
+        'api_base_url' => env('API_BASE_URL', 'http://localhost/glueful/api/'),
+        'uploads' => dirname(__DIR__) . '/storage/cdn/',
+        'logs' => dirname(__DIR__) . '/storage/logs/',
+        'cache' => dirname(__DIR__) . '/storage/cache/',
+        'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
+        'project_extensions' => dirname(__DIR__) . '/extensions/',
+    ],
+
+    // Pagination Settings
+    'pagination' => [
+        'enabled' => env('PAGINATION_ENABLED', true),
+        'default_size' => env('PAGINATION_DEFAULT_SIZE', 25),
+        'max_size' => env('PAGINATION_MAX_SIZE', 100),
+        'list_limit' => env('PAGINATION_LIST_LIMIT', 1000),
+    ],
+
+    // Performance Settings
+    'performance' => [
+        'memory' => [
+            'monitoring' => [
+                'enabled' => env('MEMORY_MONITORING_ENABLED', true),
+                'alert_threshold' => env('MEMORY_ALERT_THRESHOLD', 0.8),
+                'critical_threshold' => env('MEMORY_CRITICAL_THRESHOLD', 0.9),
+                'log_level' => env('MEMORY_LOG_LEVEL', 'warning'),
+                'sample_rate' => env('MEMORY_SAMPLE_RATE', 0.01)
+            ],
+            'limits' => [
+                'query_cache' => env('MEMORY_LIMIT_QUERY_CACHE', 1000),
+                'object_pool' => env('MEMORY_LIMIT_OBJECT_POOL', 500),
+                'result_limit' => env('MEMORY_LIMIT_RESULTS', 10000)
+            ],
+            'gc' => [
+                'auto_trigger' => env('MEMORY_AUTO_GC', true),
+                'threshold' => env('MEMORY_GC_THRESHOLD', 0.85)
+            ]
+        ]
+    ],
 
     // Logging Configuration
-    'logging'=> [
-        'log_channel' => env('LOG_CHANNEL', 'app'), // Default log channel
-        'log_level' => env('LOG_LEVEL', 'debug'),  // Minimum log level
-        'log_to_file' => env('LOG_TO_FILE',true),    // Enable/Disable file logging
-        'log_to_db' => env('LOG_TO_DB',true),      // Enable/Disable database logging
-        'log_file_path' => dirname(__DIR__) . '/storage/logs/', // Log file path
+    'logging' => [
+        'log_channel' => env('LOG_CHANNEL', 'app'),
+        'log_level' => env('LOG_LEVEL', env('APP_ENV') === 'production' ? 'warning' : 'debug'),
+        'log_to_file' => env('LOG_TO_FILE', true),
+        'log_to_db' => env('LOG_TO_DB', true),
+        'log_file_path' => dirname(__DIR__) . '/storage/logs/',
         'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
-        'log_rotation_days' => 30, // Automatically delete logs older than 30 days
+        'log_rotation_days' => env('LOG_ROTATION_DAYS', 30),
     ],
 ];

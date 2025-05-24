@@ -43,7 +43,7 @@ class ApiDefinitionGenerator
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
 
-        $dir = config('paths.json_definitions');
+        $dir = config('app.paths.json_definitions');
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -136,7 +136,7 @@ class ApiDefinitionGenerator
      */
     private function generateTableDefinition(string $dbResource, string $tableName): void
     {
-        $filename = \config('paths.json_definitions') . "$dbResource.$tableName.json";
+        $filename = \config('app.paths.json_definitions') . "$dbResource.$tableName.json";
 
         if (isset($this->generatedFiles[$filename])) {
             return;
@@ -213,7 +213,7 @@ class ApiDefinitionGenerator
             ]
         ];
 
-        $path = config('paths.json_definitions') . "$dbResource.permissions.json";
+        $path = config('app.paths.json_definitions') . "$dbResource.permissions.json";
         file_put_contents(
             $path,
             json_encode($config, JSON_PRETTY_PRINT)
@@ -232,8 +232,8 @@ class ApiDefinitionGenerator
         $this->log("Generating API Documentation...");
 
         $docGenerator = new DocGenerator();
-        $definitionsPath = config('paths.json_definitions');
-        $definitionsDocPath = config('paths.api_docs') . 'api-doc-json-definitions/';
+        $definitionsPath = config('app.paths.json_definitions');
+        $definitionsDocPath = config('app.paths.api_docs') . 'api-doc-json-definitions/';
 
 
         // Process API doc definition files
@@ -410,7 +410,7 @@ class ApiDefinitionGenerator
 
     private function generateTableDefinitionFromColumns(string $dbResource, string $tableName, array $columns): void
     {
-        $filename = \config('paths.json_definitions') . "$dbResource.$tableName.json";
+        $filename = \config('app.paths.json_definitions') . "$dbResource.$tableName.json";
 
         if (isset($this->generatedFiles[$filename])) {
             return;
@@ -467,10 +467,10 @@ class ApiDefinitionGenerator
     {
         try {
             // Create both roles and permissions configurations if they don't exist
-            if (!file_exists(config('paths.json_definitions') . "{$this->dbResource}.roles.json")) {
+            if (!file_exists(config('app.paths.json_definitions') . "{$this->dbResource}.roles.json")) {
                 $this->createRolesConfig($this->dbResource);
             }
-            if (!file_exists(config('paths.json_definitions') . "{$this->dbResource}.permissions.json")) {
+            if (!file_exists(config('app.paths.json_definitions') . "{$this->dbResource}.permissions.json")) {
                 $this->createPermissionsConfig($this->dbResource);
             }
 
@@ -521,7 +521,7 @@ class ApiDefinitionGenerator
             ]
         ];
 
-        $path = config('paths.json_definitions') . "$dbResource.roles.json";
+        $path = config('app.paths.json_definitions') . "$dbResource.roles.json";
         file_put_contents(
             $path,
             json_encode($config, JSON_PRETTY_PRINT)
@@ -638,7 +638,7 @@ class ApiDefinitionGenerator
     private function collectCorePermissions(string $roleUuid): array
     {
         $permissions = [];
-        foreach (glob(config('paths.json_definitions') . "*.json") as $file) {
+        foreach (glob(config('app.paths.json_definitions') . "*.json") as $file) {
             $parts = explode('.', basename($file));
             if (count($parts) !== 3) {
                 continue;
@@ -748,7 +748,7 @@ class ApiDefinitionGenerator
     private function getExtensionPaths(): array
     {
         $paths = [];
-        foreach ([config('paths.api_extensions'), config('paths.project_extensions')] as $dir) {
+        foreach ([config('app.paths.api_extensions'), config('app.paths.project_extensions')] as $dir) {
             if (is_dir($dir)) {
                 $paths = [...$paths, ...$this->scanDirectory($dir)];
             } else {

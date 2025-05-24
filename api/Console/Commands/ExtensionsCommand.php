@@ -674,7 +674,7 @@ class ExtensionsCommand extends Command
 
         // Get the extension name (could be auto-generated if none was provided)
         $installedName = $result['name'] ?? $targetName;
-        $this->success("Extension installed at: " . config('paths.project_extensions') . $installedName);
+        $this->success("Extension installed at: " . config('app.paths.project_extensions') . $installedName);
 
         // If the extension was successfully installed, offer to enable it
         if ($this->confirm("Would you like to enable this extension now?")) {
