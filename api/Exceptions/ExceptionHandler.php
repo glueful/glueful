@@ -182,16 +182,19 @@ class ExceptionHandler
      */
     private static function outputJsonResponse(int $statusCode, string $message, $data = null): void
     {
-        // Build response array
+        // Build standardized response array
         $response = [
-            'status' => $statusCode,
+            'success' => false,
             'message' => $message,
+            'code' => $statusCode,  // Changed from 'status' to 'code' for consistency
+            'error' => [
+                'type' => self::getErrorType($statusCode),
+                'details' => $data,
+                'timestamp' => date('c'),
+                'request_id' => self::generateRequestId()
+            ],
+            'data' => null
         ];
-
-        // Add data if provided
-        if ($data !== null) {
-            $response['data'] = $data;
-        }
 
         if (self::$testMode) {
             // In test mode, capture the response instead of outputting it
@@ -206,9 +209,38 @@ class ExceptionHandler
         header('Content-Type: application/json');
 
         // Output JSON
-        echo json_encode($response);
+        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         // Exit
         exit;
+    }
+
+    /**
+     * Get error type based on HTTP status code
+     *
+     * @param int $statusCode HTTP status code
+     * @return string Error type
+     */
+    private static function getErrorType(int $statusCode): string
+    {
+        return match ($statusCode) {
+            400, 422 => 'VALIDATION_ERROR',
+            401 => 'AUTHENTICATION_ERROR',
+            403 => 'AUTHORIZATION_ERROR',
+            404 => 'NOT_FOUND_ERROR',
+            429 => 'RATE_LIMIT_ERROR',
+            413, 415 => 'SECURITY_ERROR',
+            default => 'SERVER_ERROR'
+        };
+    }
+
+    /**
+     * Generate a unique request ID for error tracking
+     *
+     * @return string Unique request identifier
+     */
+    private static function generateRequestId(): string
+    {
+        return 'req_' . bin2hex(random_bytes(6));
     }
 }

@@ -17,10 +17,17 @@ class NotFoundException extends ApiException
      *
      * Creates a new not found exception with standard 404 code.
      *
-     * @param string $resource Name of resource that wasn't found
+     * @param string $message Error message
+     * @param int $statusCode HTTP status code (defaults to 404)
+     * @param array|null $details Additional error details
+     * @param \Throwable|null $previous Previous exception
      */
-    public function __construct(string $resource = 'Resource')
-    {
-        parent::__construct("$resource not found", 404);
+    public function __construct(
+        string $message = 'Resource not found',
+        int $statusCode = 404,
+        array|null $details = null,
+        \Throwable|null $previous = null
+    ) {
+        parent::__construct($message, $statusCode, $details, $previous);
     }
 }

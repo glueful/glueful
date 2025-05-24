@@ -69,6 +69,9 @@ class Router
     private static array $currentGroupAuth = [];
     private static array $adminProtectedRoutes = []; // Routes that require admin authentication
 
+    /** @var array Route name cache to avoid redundant MD5 calculations */
+    private static array $routeNameCache = [];
+
     /**
      * Initialize the Router
      *
@@ -220,7 +223,8 @@ class Router
         $requiresAuth = $requiresAuth || ($groupAuth['auth'] ?? false);
         $requiresAdminAuth = $requiresAdminAuth || ($groupAuth['admin'] ?? false);
 
-        $routeName = md5($fullPath . implode('|', $methods));
+        $routeKey = $fullPath . '|' . implode('|', $methods);
+        $routeName = self::$routeNameCache[$routeKey] ??= md5($routeKey);
         $route = new Route($fullPath, ['_controller' => $handler], [], [], '', [], $methods);
         self::$routes->add($routeName, $route);
 

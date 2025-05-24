@@ -6,7 +6,7 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Repository\{PermissionRepository, RoleRepository};
-use Glueful\Helpers\Request;
+use Glueful\Helpers\{Request, DatabaseConnectionTrait};
 use Glueful\Database\{Connection, QueryBuilder};
 
 /**
@@ -21,6 +21,8 @@ use Glueful\Database\{Connection, QueryBuilder};
  */
 class PermissionsController
 {
+    use DatabaseConnectionTrait;
+
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
     private QueryBuilder $queryBuilder;
@@ -29,9 +31,7 @@ class PermissionsController
     {
         $this->roleRepo = new RoleRepository();
         $this->permissionRepo = new PermissionRepository();
-
-        $connection = new Connection();
-        $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->queryBuilder = $this->getQueryBuilder();
     }
 
     /**

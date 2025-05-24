@@ -18,12 +18,21 @@ class ValidationException extends ApiException
     /**
      * Constructor
      *
-     * @param array $errors Array of validation error messages
+     * @param string|array $errors Error message or array of validation error messages
+     * @param int $statusCode HTTP status code (defaults to 422)
+     * @param array|null $details Additional error details
      */
-    public function __construct(array $errors)
+    public function __construct($errors, int $statusCode = 422, array|null $details = null)
     {
-        parent::__construct('Validation failed', 422, $errors);
-        $this->errors = $errors;
+        if (is_string($errors)) {
+            $message = $errors;
+            $this->errors = $details ?? [];
+        } else {
+            $message = 'Validation failed';
+            $this->errors = $errors;
+        }
+
+        parent::__construct($message, $statusCode, $this->errors);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace Glueful\Security;
 use Glueful\Helpers\{ConfigManager, Utils};
 use Glueful\Exceptions\RateLimitExceededException;
 use Glueful\Exceptions\SecurityException;
+use Glueful\Cache\CacheEngine;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -48,6 +49,13 @@ class SecurityManager
     public function __construct()
     {
         $this->config = ConfigManager::get('security', []);
+
+        // Initialize cache engine for rate limiting if not already initialized
+        if (!CacheEngine::isEnabled()) {
+            $cachePrefix = config('cache.prefix', 'glueful:');
+            $cacheDriver = config('cache.default', 'redis');
+            CacheEngine::initialize($cachePrefix, $cacheDriver);
+        }
     }
 
     /**
@@ -211,17 +219,15 @@ class SecurityManager
      * @param string $key The cache key to retrieve
      * @param mixed $default The default value to return if key doesn't exist
      * @return mixed The cached value or default if not found
-     * @todo Implement integration with actual cache system (Redis, Memcached, etc.)
      */
     private function getCacheValue(string $key, $default = null)
     {
-        // TODO: Integrate with your cache system (Redis, Memcached, file cache, etc.)
-        // Example implementations:
-        // - Redis: return $this->redis->get($key) ?? $default;
-        // - Memcached: return $this->memcached->get($key) ?: $default;
-        // - File cache: return $this->fileCache->get($key, $default);
+        if (!CacheEngine::isEnabled()) {
+            return $default;
+        }
 
-        return $default;
+        $value = CacheEngine::get($key);
+        return $value !== null ? $value : $default;
     }
 
     /**
@@ -234,15 +240,17 @@ class SecurityManager
      * @param string $key The cache key to increment
      * @param int $ttl Time-to-live in seconds for the cache entry
      * @return void
-     * @todo Implement integration with actual cache system
      */
     private function incrementCacheValue(string $key, int $ttl): void
     {
-        // TODO: Integrate with your cache system
-        // Example implementations:
-        // - Redis: $this->redis->incr($key); $this->redis->expire($key, $ttl);
-        // - Memcached: $current = $this->memcached->get($key) ?: 0;
-        //             $this->memcached->set($key, $current + 1, $ttl);
-        // - File cache: $this->fileCache->increment($key, 1, $ttl);
+        if (!CacheEngine::isEnabled()) {
+            return;
+        }
+
+        // Get current value or start at 0
+        $current = (int) $this->getCacheValue($key, 0);
+
+        // Increment and set with TTL
+        CacheEngine::set($key, $current + 1, $ttl);
     }
 }
