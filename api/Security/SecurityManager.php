@@ -9,18 +9,18 @@ use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Security Manager Class
- * 
+ *
  * Provides centralized security validation and rate limiting functionality for the Glueful API.
  * This class handles request validation, content type checking, rate limiting, and other
  * security-related operations to protect the API from malicious requests and abuse.
- * 
+ *
  * Features:
  * - Request validation (content type, size, headers)
  * - Rate limiting with IP-based tracking
  * - User-Agent validation and suspicious pattern detection
  * - Configurable security policies via config files
  * - Integration with caching systems for rate limit storage
- * 
+ *
  * @package Glueful\Security
  * @author Glueful Core Team
  * @since 1.0.0
@@ -29,19 +29,19 @@ class SecurityManager
 {
     /**
      * Security configuration array loaded from config files
-     * 
+     *
      * Contains settings for:
      * - rate_limit: Rate limiting configuration
      * - request_validation: Request validation rules
      * - cors: Cross-origin resource sharing settings
-     * 
+     *
      * @var array
      */
     private array $config;
 
     /**
      * Initialize the Security Manager
-     * 
+     *
      * Loads security configuration from the ConfigManager and sets up
      * default values for rate limiting and request validation.
      */
@@ -52,17 +52,17 @@ class SecurityManager
 
     /**
      * Enforce rate limiting for incoming requests
-     * 
+     *
      * Implements IP-based rate limiting to prevent API abuse. Checks against
      * configured limits and throws an exception if the limit is exceeded.
      * Supports IP whitelisting for trusted sources.
-     * 
+     *
      * Rate limiting configuration:
      * - enabled: Whether rate limiting is active
      * - whitelist_ips: Array of IPs to exclude from rate limiting
      * - default_limit: Maximum requests allowed per window
      * - window_seconds: Time window for rate limit calculation
-     * 
+     *
      * @param string $ip The IP address to check rate limits for
      * @throws RateLimitExceededException When the rate limit is exceeded
      * @return void
@@ -99,23 +99,23 @@ class SecurityManager
 
     /**
      * Validate incoming HTTP requests for security compliance
-     * 
+     *
      * Performs comprehensive validation of HTTP requests including:
      * - Content type validation for POST/PUT/PATCH requests
      * - Request size limits to prevent DoS attacks
      * - User-Agent header validation
      * - Suspicious user agent pattern detection
-     * 
+     *
      * This method is designed to be called centrally before route processing
      * to ensure all requests meet security standards.
-     * 
+     *
      * Validation Rules:
      * - Content-Type must be in allowed list for data-modifying requests
      * - Request size must not exceed configured maximum
      * - User-Agent may be required based on configuration
      * - Suspicious patterns in User-Agent can be blocked
-     * 
-     * @param Request|null $request The HTTP request object to validate. 
+     *
+     * @param Request|null $request The HTTP request object to validate.
      *                             If null, creates from globals as fallback
      * @throws SecurityException When validation fails (400, 403, 413, 415 status codes)
      * @return void
@@ -127,14 +127,14 @@ class SecurityManager
         if (empty($request)) {
             $request = Request::createFromGlobals();
         }
-        
+
         $method = $request->getMethod();
-        
+
         // Validate content type for POST/PUT/PATCH requests
         // These methods typically send data and need proper content type headers
         if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
             $contentType = $request->headers->get('Content-Type');
-            
+
             // Get allowed content types from configuration
             $allowedTypes = $this->config['request_validation']['allowed_content_types'] ?? [
                 'application/json',                    // JSON API requests
@@ -145,7 +145,7 @@ class SecurityManager
             // Validate content type if present and allowed types are configured
             if ($contentType && !empty($allowedTypes)) {
                 $isAllowed = false;
-                
+
                 // Check if content type starts with any allowed type
                 // Using strpos for partial matching (handles charset, boundary params)
                 foreach ($allowedTypes as $type) {
@@ -184,7 +184,7 @@ class SecurityManager
         // Helps block automated scrapers, bots, and malicious tools
         if ($this->config['request_validation']['block_suspicious_ua'] ?? false) {
             $userAgent = $request->headers->get('User-Agent');
-            
+
             // Default patterns to detect common automated tools
             $suspiciousPatterns = $this->config['request_validation']['suspicious_ua_patterns'] ?? [
                 '/bot/i',      // Generic bots
@@ -204,10 +204,10 @@ class SecurityManager
 
     /**
      * Retrieve a value from the cache system
-     * 
+     *
      * This method integrates with the application's caching system to store
      * and retrieve rate limiting counters and other security-related data.
-     * 
+     *
      * @param string $key The cache key to retrieve
      * @param mixed $default The default value to return if key doesn't exist
      * @return mixed The cached value or default if not found
@@ -220,17 +220,17 @@ class SecurityManager
         // - Redis: return $this->redis->get($key) ?? $default;
         // - Memcached: return $this->memcached->get($key) ?: $default;
         // - File cache: return $this->fileCache->get($key, $default);
-        
+
         return $default;
     }
 
     /**
      * Increment a value in the cache system with TTL
-     * 
+     *
      * This method increments a counter in the cache (for rate limiting)
      * and sets an expiration time. If the key doesn't exist, it should
      * be created with an initial value of 1.
-     * 
+     *
      * @param string $key The cache key to increment
      * @param int $ttl Time-to-live in seconds for the cache entry
      * @return void
@@ -241,7 +241,7 @@ class SecurityManager
         // TODO: Integrate with your cache system
         // Example implementations:
         // - Redis: $this->redis->incr($key); $this->redis->expire($key, $ttl);
-        // - Memcached: $current = $this->memcached->get($key) ?: 0; 
+        // - Memcached: $current = $this->memcached->get($key) ?: 0;
         //             $this->memcached->set($key, $current + 1, $ttl);
         // - File cache: $this->fileCache->increment($key, 1, $ttl);
     }
