@@ -32,8 +32,5 @@ if (file_exists(__DIR__ . '/../.env.testing')) {
 define('TEST_ROOT', __DIR__);
 define('APP_ROOT', __DIR__ . '/..');
 
-// Load extensions bootstrap to set up namespaces for extensions
-require_once __DIR__ . '/bootstrap-extensions.php';
-
 // Optionally set up a test database
 // This would typically be done in specific integration tests
