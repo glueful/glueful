@@ -88,7 +88,7 @@ class CacheCommand extends Command
     public function execute(array $args = [], array $options = []): int
     {
         if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::SUCCESS;
         }
 

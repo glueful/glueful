@@ -83,4 +83,49 @@ class RandomStringGenerator
 
         return $result;
     }
+
+    /**
+     * Generate random hexadecimal string using bin2hex
+     *
+     * Creates cryptographically secure random hexadecimal string.
+     * This method is faster than generate() but limited to hex characters (0-9, a-f).
+     * Perfect for tokens, session IDs, and internal identifiers.
+     *
+     * @param int $length Desired string length
+     * @return string Generated random hexadecimal string
+     * @throws \InvalidArgumentException If length is invalid
+     */
+    public static function generateHex(int $length = 21): string
+    {
+        if ($length <= 0) {
+            throw new \InvalidArgumentException('Length must be greater than zero');
+        }
+
+        // bin2hex doubles the length, so we need half the bytes (rounded up)
+        $bytes = random_bytes((int) ceil($length / 2));
+        $hex = bin2hex($bytes);
+
+        // Return exact length requested
+        return substr($hex, 0, $length);
+    }
+
+    /**
+     * Generate random string optimized for specific use cases
+     *
+     * Provides optimized generation methods for common scenarios.
+     *
+     * @param int $length Desired string length
+     * @param string $type Type: 'hex', 'nanoid', 'numeric', 'alpha'
+     * @return string Generated random string
+     */
+    public static function generateFast(int $length = 21, string $type = 'nanoid'): string
+    {
+        return match ($type) {
+            'hex' => self::generateHex($length),
+            'numeric' => self::generate($length, self::CHARSET_NUMERIC),
+            'alpha' => self::generate($length, self::CHARSET_ALPHA),
+            'nanoid', 'default' => self::generate($length, self::CHARSET_NANOID),
+            default => throw new \InvalidArgumentException("Unsupported type: $type")
+        };
+    }
 }

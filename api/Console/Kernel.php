@@ -55,6 +55,8 @@ class Kernel
             \Glueful\Console\Commands\EdgeCachePurgeCommand::class,
             \Glueful\Console\Commands\Notifications\ProcessNotificationRetriesCommand::class,
             \Glueful\Console\Commands\MemoryMonitorCommand::class,
+            \Glueful\Console\Commands\SystemCheckCommand::class,
+            \Glueful\Console\Commands\KeyGenerateCommand::class,
         ]);
     }
 

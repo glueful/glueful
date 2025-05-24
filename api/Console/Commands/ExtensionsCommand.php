@@ -88,7 +88,7 @@ class ExtensionsCommand extends Command
     public function execute(array $args = [], array $options = []): int
     {
         if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::SUCCESS;
         }
 
@@ -97,7 +97,7 @@ class ExtensionsCommand extends Command
 
         if (!array_key_exists($action, $this->options)) {
             $this->error("Unknown action: $action");
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::FAILURE;
         }
 
@@ -951,16 +951,6 @@ Examples:
   php glueful extensions validate MyExtension
   php glueful extensions namespaces
 HELP;
-    }
-
-    /**
-     * Show command help
-     *
-     * @return void
-     */
-    protected function showHelp(): void
-    {
-        $this->line($this->getHelp());
     }
 
     /**

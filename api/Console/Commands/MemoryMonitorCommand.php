@@ -88,7 +88,7 @@ class MemoryMonitorCommand extends Command
     public function execute(array $args = [], array $options = []): int
     {
         if (isset($args[0]) && in_array($args[0], ['-h', '--help', 'help'])) {
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::SUCCESS;
         }
 
@@ -122,29 +122,39 @@ class MemoryMonitorCommand extends Command
     }
 
     /**
-     * Display help information for this command
+     * Get Command Help
      *
-     * @return void
+     * Provides detailed help information:
+     * - Shows command syntax
+     * - Lists available options
+     * - Shows usage examples
+     * - Documents arguments
+     *
+     * @return string Complete help text
      */
-    protected function showHelp(): void
+    public function getHelp(): string
     {
-        $this->info("\n{$this->description}");
-        $this->line("\n<comment>Usage:</comment>");
-        $this->line("  {$this->syntax}\n");
+        return <<<HELP
+Monitor memory usage of commands and processes:
 
-        $this->line("<comment>Options:</comment>");
-        foreach ($this->options as $option => $description) {
-            $this->line("  <info>{$option}</info>\t{$description}");
-        }
+Usage:
+  php glueful memory:monitor [options] [command]
 
-        $this->line("\n<comment>Examples:</comment>");
-        $this->line("  memory:monitor                          # Monitor the current process");
-        $this->line("  memory:monitor php -v                   # Monitor the 'php -v' command");
-        $this->line("  memory:monitor --interval=0.5 php -v    # Monitor every 0.5 seconds");
-        $this->line("  memory:monitor --threshold=50 php -v    # Alert when usage exceeds 50MB");
-        $this->line("  memory:monitor --log --csv=stats.csv    # Log results to stats.csv");
-        $this->line("  memory:monitor --duration=60            # Monitor for 60 seconds max");
-        $this->line("");
+Options:
+  --interval    Monitoring interval in seconds (default: 1)
+  --threshold   Alert threshold in MB (default: 20)
+  --duration    Maximum monitoring duration in seconds, 0 for unlimited (default: 0)
+  --log         Log the memory usage to file
+  --csv         CSV file to save memory metrics (default: memory-usage.csv)
+
+Examples:
+  php glueful memory:monitor
+  php glueful memory:monitor php -v
+  php glueful memory:monitor --interval=0.5 php -v
+  php glueful memory:monitor --threshold=50 php -v
+  php glueful memory:monitor --log --csv=stats.csv
+  php glueful memory:monitor --duration=60
+HELP;
     }
 
     /**

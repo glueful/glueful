@@ -100,6 +100,13 @@ HELP;
      */
     public function execute(array $args = []): int
     {
+
+        if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
+            $this->info($this->getHelp());
+            return Command::SUCCESS;
+        }
+
+        // Check if --force flag is present
         if (!in_array('--force', $args)) {
             $this->error("This will delete all data! Use --force to confirm.");
             return Command::FAILURE;

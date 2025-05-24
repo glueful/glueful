@@ -122,6 +122,11 @@ class MigrateCommand extends Command
      */
     public function execute(array $args = []): int
     {
+        if (isset($args[0]) && in_array($args[0], ['-h', '--help', 'help'])) {
+            $this->info($this->getHelp());
+            return Command::SUCCESS;
+        }
+
         $force = in_array('--force', $args);
         $dryRun = in_array('--dry-run', $args);
         $fileIndex = array_search('--file', $args);

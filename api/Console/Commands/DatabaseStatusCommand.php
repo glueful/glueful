@@ -101,6 +101,11 @@ HELP;
      */
     public function execute(array $args = []): int
     {
+        if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
+            $this->info($this->getHelp());
+            return Command::SUCCESS;
+        }
+
         try {
             $connection = new Connection();
             $this->schema = $connection->getSchemaManager();

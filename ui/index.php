@@ -1,8 +1,8 @@
 <?php
 require_once __DIR__ . '/../api/bootstrap.php';
-$baseUrl = config('paths.api_base_url');
+$baseUrl = config('app.paths.api_base_url');
 $appName = config('app.name');
-$domain = config('paths.domain');
+$domain = config('app.paths.domain');
 $dbEngine = config('database.engine');
 $db = config('database.'.$dbEngine.'.db');
 

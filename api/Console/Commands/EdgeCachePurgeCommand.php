@@ -90,6 +90,11 @@ class EdgeCachePurgeCommand extends Command
      */
     public function execute(array $args = []): int
     {
+        if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
+            $this->info($this->getHelp());
+            return Command::SUCCESS;
+        }
+
         // Parse options
         $this->parseOptions($args);
 
