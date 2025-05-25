@@ -10,6 +10,11 @@ $dotenv->load();
 // Load global helper functions (env, config, etc.)
 require_once __DIR__ . '/helpers.php';
 
+// Validate security configuration in production
+if (env('APP_ENV') === 'production') {
+    \Glueful\Security\SecurityManager::validateProductionConfig();
+}
+
 // Glueful\ExceptionHandler::register();
 
 // Initialize Cache Engine

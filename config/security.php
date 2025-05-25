@@ -15,8 +15,12 @@ return [
         'strict' => 3,      // Token + IP + User Agent validation
     ],
 
-    // Default security level (stricter for production)
-    'default_level' => env('DEFAULT_SECURITY_LEVEL', env('APP_ENV') === 'production' ? 2 : 1),
+    // Smart environment-aware security level (stricter for production, flexible for development)
+    'default_level' => env('DEFAULT_SECURITY_LEVEL', match (env('APP_ENV')) {
+        'production' => 2,  // Moderate security for production
+        'staging' => 2,     // Moderate security for staging
+        default => 1        // Flexible security for development
+    }),
 
     // Permission system settings
     'enabled_permissions' => env('ENABLE_PERMISSIONS', true),
@@ -24,7 +28,11 @@ return [
 
     // CORS Configuration
     'cors' => [
-        'allowed_origins' => env('CORS_ALLOWED_ORIGINS'),
+        // Smart CORS defaults: permissive in development, secure guidance in production
+        'allowed_origins' => env(
+            'CORS_ALLOWED_ORIGINS',
+            env('APP_ENV') === 'development' ? '*' : null  // null means must be explicitly set
+        ),
         'allowed_methods' => ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         'allowed_headers' => ['Content-Type', 'Authorization', 'X-Requested-With'],
         'expose_headers' => ['X-Total-Count', 'X-Page-Count'],
@@ -58,18 +66,30 @@ return [
         'behavior_ttl' => 86400,
         'anomaly_ttl' => 604800,
 
-        // Default rate limits (more restrictive for production)
+        // Smart environment-aware rate limits (stricter for production, relaxed for development)
         'defaults' => [
             'ip' => [
-                'max_attempts' => env('IP_RATE_LIMIT_MAX', env('APP_ENV') === 'production' ? 30 : 60),
+                'max_attempts' => env('IP_RATE_LIMIT_MAX', match (env('APP_ENV')) {
+                    'production' => 30,   // Strict for production
+                    'staging' => 45,      // Moderate for staging
+                    default => 60         // Relaxed for development
+                }),
                 'window_seconds' => env('IP_RATE_LIMIT_WINDOW', 60)
             ],
             'user' => [
-                'max_attempts' => env('USER_RATE_LIMIT_MAX', env('APP_ENV') === 'production' ? 500 : 1000),
+                'max_attempts' => env('USER_RATE_LIMIT_MAX', match (env('APP_ENV')) {
+                    'production' => 500,  // Strict for production
+                    'staging' => 750,     // Moderate for staging
+                    default => 1000       // Relaxed for development
+                }),
                 'window_seconds' => env('USER_RATE_LIMIT_WINDOW', 3600)
             ],
             'endpoint' => [
-                'max_attempts' => env('ENDPOINT_RATE_LIMIT_MAX', env('APP_ENV') === 'production' ? 15 : 30),
+                'max_attempts' => env('ENDPOINT_RATE_LIMIT_MAX', match (env('APP_ENV')) {
+                    'production' => 15,   // Strict for production
+                    'staging' => 22,      // Moderate for staging
+                    default => 30         // Relaxed for development
+                }),
                 'window_seconds' => env('ENDPOINT_RATE_LIMIT_WINDOW', 60)
             ]
         ]

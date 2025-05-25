@@ -9,8 +9,19 @@
 
 return [
     // Application Environment (development, staging, production)
-    'env' => env('APP_ENV', 'production'),
-    'debug' => (bool) env('APP_DEBUG', false),
+    'env' => env('APP_ENV', 'development'),
+
+    // Smart environment-aware debug default (false in production, true otherwise)
+    'debug' => (bool) env('APP_DEBUG', env('APP_ENV') !== 'production'),
+
+    // Smart environment-aware API documentation (disabled in production for security)
+    'api_docs_enabled' => env('API_DOCS_ENABLED', env('APP_ENV') !== 'production'),
+
+    // Smart environment-aware development mode
+    'dev_mode' => env('DEV_MODE', env('APP_ENV') === 'development'),
+
+    // Smart environment-aware HTTPS enforcement
+    'force_https' => env('FORCE_HTTPS', env('APP_ENV') === 'production'),
 
     // API Information
     'version' => env('API_VERSION', '1.0.0'),
@@ -64,7 +75,12 @@ return [
     // Logging Configuration
     'logging' => [
         'log_channel' => env('LOG_CHANNEL', 'app'),
-        'log_level' => env('LOG_LEVEL', env('APP_ENV') === 'production' ? 'warning' : 'debug'),
+        // Smart environment-aware log level (error in production, debug in development)
+        'log_level' => env('LOG_LEVEL', match (env('APP_ENV')) {
+            'production' => 'error',
+            'staging' => 'warning',
+            default => 'debug'
+        }),
         'log_to_file' => env('LOG_TO_FILE', true),
         'log_to_db' => env('LOG_TO_DB', true),
         'log_file_path' => dirname(__DIR__) . '/storage/logs/',

@@ -63,59 +63,53 @@ class KeyGenerateCommand extends Command
         $envContent = file_get_contents($envPath);
         $updated = false;
 
-        // Generate JWT Secret
+        // Generate JWT Key
         if (!$jwtOnly || in_array('--jwt', $args)) {
-            $jwtSecret = RandomStringGenerator::generateHex(64); // 64 characters for JWT
+            $jwtKey = RandomStringGenerator::generateHex(64); // 64 characters for JWT
 
-            if (preg_match('/^JWT_SECRET=(.*)$/m', $envContent, $matches)) {
-                if ($matches[1] && !$force) {
-                    $this->warning('JWT_SECRET already exists. Use --force to overwrite.');
+            if (preg_match('/^JWT_KEY=(.*)$/m', $envContent, $matches)) {
+                if ($matches[1] && $matches[1] !== 'your-secure-jwt-key-here' && !$force) {
+                    $this->warning('JWT_KEY already exists. Use --force to overwrite.');
                 } else {
-                    $envContent = preg_replace('/^JWT_SECRET=.*$/m', "JWT_SECRET=$jwtSecret", $envContent);
+                    $envContent = preg_replace('/^JWT_KEY=.*$/m', "JWT_KEY=$jwtKey", $envContent);
                     $updated = true;
-                    $this->success('JWT_SECRET generated');
+                    $this->success('JWT_KEY generated');
                     if ($show) {
-                        $this->line("JWT_SECRET=$jwtSecret");
+                        $this->line("JWT_KEY=$jwtKey");
                     }
                 }
             } else {
-                $this->success('JWT_SECRET added');
+                $envContent .= "\nJWT_KEY=$jwtKey\n";
+                $updated = true;
+                $this->success('JWT_KEY added');
                 if ($show) {
-                    $this->line("JWT_SECRET=$jwtSecret");
+                    $this->line("JWT_KEY=$jwtKey");
                 }
-                $this->success('JWT_SECRET added');
-                if ($show) {
-                    $this->line("JWT_SECRET=$jwtSecret");
-                }
-                return 0;
             }
         }
 
-        // Generate Encryption Key (if not JWT only)
+        // Generate App Key (if not JWT only)
         if (!$jwtOnly) {
-            $encryptionKey = RandomStringGenerator::generateHex(32); // 32 characters for encryption
+            $appKey = RandomStringGenerator::generateHex(32); // 32 characters for app key
 
-            if (preg_match('/^ENCRYPTION_KEY=(.*)$/m', $envContent, $matches)) {
-                if ($matches[1] && !$force) {
-                    $this->warning('ENCRYPTION_KEY already exists. Use --force to overwrite.');
-                    return 0;
+            if (preg_match('/^APP_KEY=(.*)$/m', $envContent, $matches)) {
+                if ($matches[1] && $matches[1] !== 'generate-secure-32-char-key-here' && !$force) {
+                    $this->warning('APP_KEY already exists. Use --force to overwrite.');
                 } else {
-                    $envContent = preg_replace('/^ENCRYPTION_KEY=.*$/m', "ENCRYPTION_KEY=$encryptionKey", $envContent);
+                    $envContent = preg_replace('/^APP_KEY=.*$/m', "APP_KEY=$appKey", $envContent);
                     $updated = true;
-                    $this->success('ENCRYPTION_KEY generated');
+                    $this->success('APP_KEY generated');
                     if ($show) {
-                        $this->line("ENCRYPTION_KEY=$encryptionKey");
+                        $this->line("APP_KEY=$appKey");
                     }
-                    return 0;
                 }
             } else {
-                $envContent .= "\nENCRYPTION_KEY=$encryptionKey\n";
+                $envContent .= "\nAPP_KEY=$appKey\n";
                 $updated = true;
-                $this->success('ENCRYPTION_KEY added');
+                $this->success('APP_KEY added');
                 if ($show) {
-                    $this->line("ENCRYPTION_KEY=$encryptionKey");
+                    $this->line("APP_KEY=$appKey");
                 }
-                return 0;
             }
         }
 
