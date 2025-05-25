@@ -28,6 +28,10 @@ class NotFoundException extends ApiException
         array|null $details = null,
         \Throwable|null $previous = null
     ) {
+        // If the message doesn't contain "not found", append it (for resource names)
+        if (!str_contains($message, 'not found') && $message !== 'Resource not found') {
+            $message = $message . ' not found';
+        }
         parent::__construct($message, $statusCode, $details, $previous);
     }
 }

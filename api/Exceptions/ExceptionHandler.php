@@ -107,7 +107,7 @@ class ExceptionHandler
             $data = $exception->getData();
         } elseif ($exception instanceof ValidationException) {
             $statusCode = 422;
-            $message = 'Validation Error';
+            $message = 'Validation failed';
             $data = $exception->getErrors();
         } elseif ($exception instanceof AuthenticationException) {
             $statusCode = 401;
@@ -184,17 +184,14 @@ class ExceptionHandler
     {
         // Build standardized response array
         $response = [
-            'success' => false,
-            'message' => $message,
-            'code' => $statusCode,  // Changed from 'status' to 'code' for consistency
-            'error' => [
-                'type' => self::getErrorType($statusCode),
-                'details' => $data,
-                'timestamp' => date('c'),
-                'request_id' => self::generateRequestId()
-            ],
-            'data' => null
+            'status' => $statusCode,
+            'message' => $message
         ];
+
+        // Add data only if it's not null
+        if ($data !== null) {
+            $response['data'] = $data;
+        }
 
         if (self::$testMode) {
             // In test mode, capture the response instead of outputting it
@@ -213,34 +210,5 @@ class ExceptionHandler
 
         // Exit
         exit;
-    }
-
-    /**
-     * Get error type based on HTTP status code
-     *
-     * @param int $statusCode HTTP status code
-     * @return string Error type
-     */
-    private static function getErrorType(int $statusCode): string
-    {
-        return match ($statusCode) {
-            400, 422 => 'VALIDATION_ERROR',
-            401 => 'AUTHENTICATION_ERROR',
-            403 => 'AUTHORIZATION_ERROR',
-            404 => 'NOT_FOUND_ERROR',
-            429 => 'RATE_LIMIT_ERROR',
-            413, 415 => 'SECURITY_ERROR',
-            default => 'SERVER_ERROR'
-        };
-    }
-
-    /**
-     * Generate a unique request ID for error tracking
-     *
-     * @return string Unique request identifier
-     */
-    private static function generateRequestId(): string
-    {
-        return 'req_' . bin2hex(random_bytes(6));
     }
 }
