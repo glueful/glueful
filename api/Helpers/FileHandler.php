@@ -269,7 +269,7 @@ class FileHandler
         }
 
         // For local storage, serve the file
-        $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
+        $path = config('app.paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
             header('Content-Type: ' . $mime);
             header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -315,7 +315,7 @@ class FileHandler
         }
 
         // For local storage, serve the file
-        $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
+        $path = config('app.paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
             header('Content-Type: ' . $mime);
             header('Content-Disposition: inline; filename="' . $filename . '"');
@@ -351,7 +351,7 @@ class FileHandler
                 'zoom' => isset($params['z']) ? (int)$params['z'] : null,
                 'memoryLimit' => '256M',
                 'allowExternal' => true,
-                'cacheDir' => config('paths.cache') . '/images'
+                'cacheDir' => config('app.paths.cache') . '/images'
             ];
 
             // Use TimThumb or appropriate image processor
@@ -510,13 +510,13 @@ class FileHandler
     private function getStorageDriver(?string $storageType = null): StorageInterface
     {
         // If no storage type is specified, use the configured default
-        $storageType = $storageType ?? config('storage.driver', 'local');
+        $storageType = $storageType ?? config('services.storage.driver', 'local');
 
         return match ($storageType) {
             's3' => new \Glueful\Uploader\Storage\S3Storage(),
             default => new \Glueful\Uploader\Storage\LocalStorage(
-                config('paths.uploads'),
-                config('paths.cdn')
+                config('app.paths.uploads'),
+                config('app.paths.cdn')
             )
         };
     }

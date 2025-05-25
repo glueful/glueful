@@ -348,7 +348,7 @@ class EmailVerification
     {
         try {
             // Try to use file-based storage as last resort
-            $storagePath = config('paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
+            $storagePath = config('app.paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
             if (!is_dir($storagePath)) {
                 mkdir($storagePath, 0755, true);
             }

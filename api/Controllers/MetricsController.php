@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\{Request, ExtensionsManager};
+use Glueful\Helpers\{Request, ExtensionsManager, DatabaseConnectionTrait};
 use Glueful\Database\Connection;
 use Glueful\Database\Schema\SchemaManager;
 
 class MetricsController
 {
+    use DatabaseConnectionTrait;
+
     private SchemaManager $schemaManager;
 
     public function __construct()
     {
-        $connection = new Connection();
+        $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
     }
 
@@ -38,8 +40,11 @@ class MetricsController
         } catch (\Exception $e) {
             error_log("Get API metrics error: " . $e->getMessage());
             return Response::error(
-                'Failed to get API metrics: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to get API metrics',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_SERVER,
+                'METRICS_FETCH_FAILED',
+                ['original_error' => $e->getMessage()]
             )->send();
         }
     }
@@ -62,14 +67,19 @@ class MetricsController
             } else {
                 return Response::error(
                     'Failed to reset API metrics',
-                    Response::HTTP_INTERNAL_SERVER_ERROR
+                    Response::HTTP_INTERNAL_SERVER_ERROR,
+                    Response::ERROR_SERVER,
+                    'METRICS_RESET_FAILED'
                 )->send();
             }
         } catch (\Exception $e) {
             error_log("Reset API metrics error: " . $e->getMessage());
             return Response::error(
-                'Failed to reset API metrics: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to reset API metrics',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_SERVER,
+                'METRICS_RESET_FAILED',
+                ['original_error' => $e->getMessage()]
             )->send();
         }
     }
@@ -233,10 +243,11 @@ class MetricsController
             foreach ($extensions as $extension) {
                 $reflection = new \ReflectionClass($extension);
                 $shortName = $reflection->getShortName();
+                $version = ExtensionsManager::getExtensionMetadata($shortName, 'version');
                 $extensionStatus[] = [
                     'name' => $shortName,
                     'status' => in_array($shortName, $enabledExtensions) ? 'enabled' : 'disabled',
-                    'version' => ExtensionsManager::getExtensionMetadata($shortName, 'version'),
+                    'version' => is_string($version) ? $version : 'unknown',
                 ];
             }
 
@@ -275,8 +286,11 @@ class MetricsController
         } catch (\Exception $e) {
             error_log("System health check error: " . $e->getMessage());
             return Response::error(
-                'Failed to retrieve system health metrics: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to retrieve system health metrics',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_SERVER,
+                'HEALTH_CHECK_FAILED',
+                ['original_error' => $e->getMessage()]
             )->send();
         }
     }
@@ -377,13 +391,24 @@ class MetricsController
     {
         try {
             if (!isset($extension['name'])) {
-                return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
+                return Response::error(
+                    'Extension name is required',
+                    Response::HTTP_BAD_REQUEST,
+                    Response::ERROR_VALIDATION,
+                    'MISSING_EXTENSION_NAME'
+                )->send();
             }
 
             $extensionName = $extension['name'];
 
             if (!ExtensionsManager::extensionExists($extensionName)) {
-                return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
+                return Response::error(
+                    'Extension not found',
+                    Response::HTTP_NOT_FOUND,
+                    Response::ERROR_NOT_FOUND,
+                    'EXTENSION_NOT_FOUND',
+                    ['extension_name' => $extensionName]
+                )->send();
             }
 
             $health = ExtensionsManager::checkExtensionHealth($extensionName);
@@ -395,8 +420,11 @@ class MetricsController
         } catch (\Exception $e) {
             error_log("Get extension health error: " . $e->getMessage());
             return Response::error(
-                'Failed to get extension health: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to get extension health',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_SERVER,
+                'EXTENSION_HEALTH_FAILED',
+                ['original_error' => $e->getMessage()]
             )->send();
         }
     }

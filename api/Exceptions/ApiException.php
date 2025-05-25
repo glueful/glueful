@@ -23,10 +23,15 @@ class ApiException extends Exception
      * @param string $message Error message
      * @param int $statusCode HTTP status code
      * @param array|null $data Additional error data
+     * @param \Throwable|null $previous Previous exception
      */
-    public function __construct(string $message, int $statusCode = 400, array|null $data = null)
-    {
-        parent::__construct($message, $statusCode);
+    public function __construct(
+        string $message,
+        int $statusCode = 400,
+        array|null $data = null,
+        \Throwable|null $previous = null
+    ) {
+        parent::__construct($message, $statusCode, $previous);
         $this->data = $data;
     }
 

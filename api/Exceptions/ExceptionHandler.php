@@ -107,7 +107,7 @@ class ExceptionHandler
             $data = $exception->getData();
         } elseif ($exception instanceof ValidationException) {
             $statusCode = 422;
-            $message = 'Validation Error';
+            $message = 'Validation failed';
             $data = $exception->getErrors();
         } elseif ($exception instanceof AuthenticationException) {
             $statusCode = 401;
@@ -182,13 +182,13 @@ class ExceptionHandler
      */
     private static function outputJsonResponse(int $statusCode, string $message, $data = null): void
     {
-        // Build response array
+        // Build standardized response array
         $response = [
             'status' => $statusCode,
-            'message' => $message,
+            'message' => $message
         ];
 
-        // Add data if provided
+        // Add data only if it's not null
         if ($data !== null) {
             $response['data'] = $data;
         }
@@ -206,7 +206,7 @@ class ExceptionHandler
         header('Content-Type: application/json');
 
         // Output JSON
-        echo json_encode($response);
+        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         // Exit
         exit;

@@ -44,6 +44,7 @@ class Kernel
         // Auto-register commands
         $this->registerCommands([
             \Glueful\Console\Commands\HelpCommand::class,
+            \Glueful\Console\Commands\InstallCommand::class,
             \Glueful\Console\Commands\GenerateJsonCommand::class,
             \Glueful\Console\Commands\MigrateCommand::class,
             \Glueful\Console\Commands\DatabaseStatusCommand::class,
@@ -55,6 +56,11 @@ class Kernel
             \Glueful\Console\Commands\EdgeCachePurgeCommand::class,
             \Glueful\Console\Commands\Notifications\ProcessNotificationRetriesCommand::class,
             \Glueful\Console\Commands\MemoryMonitorCommand::class,
+            \Glueful\Console\Commands\SystemCheckCommand::class,
+            \Glueful\Console\Commands\KeyGenerateCommand::class,
+            \Glueful\Console\Commands\ServeCommand::class,
+            \Glueful\Console\Commands\InstallCommand::class,
+            \Glueful\Console\Commands\ConfigProductionCommand::class,
         ]);
     }
 

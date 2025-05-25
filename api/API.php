@@ -9,6 +9,7 @@ use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Exceptions\{ValidationException, AuthenticationException};
 use Glueful\Logging\LogManager;
+use Glueful\Http\Cors;
 use Throwable;
 
 /**
@@ -185,8 +186,6 @@ class API
             // Initialize API
             self::init();
 
-
-
             // Let router handle the request
             $response = $router->handleRequest();
 
@@ -233,7 +232,6 @@ class API
             ]);
 
             error_log($e->getMessage());
-
 
             header('Content-Type: application/json');
             http_response_code(500);

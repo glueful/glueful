@@ -264,4 +264,58 @@ class Utils
     {
         CacheEngine::initialize($prefix);
     }
+
+    /**
+     * Parse size string to bytes
+     *
+     * @param string $size Size string like "10MB", "1GB"
+     * @return int Size in bytes
+     */
+    public static function parseSize(string $size): int
+    {
+        $size = strtoupper($size);
+        $units = ['B' => 1, 'KB' => 1024, 'MB' => 1024 * 1024, 'GB' => 1024 * 1024 * 1024];
+
+        foreach ($units as $unit => $multiplier) {
+            if (str_ends_with($size, $unit)) {
+                return (int)str_replace($unit, '', $size) * $multiplier;
+            }
+        }
+
+        return (int)$size;
+    }
+
+    /**
+     * Get client IP address with proxy support
+     *
+     * @return string Client IP address
+     */
+    public static function getClientIp(): string
+    {
+        // Check for forwarded IP from load balancer/proxy
+        $headers = [
+            'HTTP_CF_CONNECTING_IP',     // Cloudflare
+            'HTTP_X_FORWARDED_FOR',      // Standard proxy header
+            'HTTP_X_REAL_IP',            // Nginx proxy
+            'HTTP_X_FORWARDED',          // Proxy header
+            'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster
+            'HTTP_FORWARDED_FOR',        // Proxy header
+            'HTTP_FORWARDED',            // RFC 7239
+            'HTTP_CLIENT_IP',            // Proxy header
+        ];
+
+        foreach ($headers as $header) {
+            if (!empty($_SERVER[$header])) {
+                $ips = explode(',', $_SERVER[$header]);
+                $ip = trim($ips[0]);
+
+                // Validate IP format
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                    return $ip;
+                }
+            }
+        }
+
+        return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    }
 }

@@ -237,7 +237,7 @@ class DocGenerator
             'openapi' => '3.0.0',
             'info' => [
                 'title' => config('app.name'),
-                'version' => config('app.api_version'),
+                'version' => config('app.version_full'),
                 'description' => 'Auto-generated API documentation',
                 'contact' => [
                     'name' => 'API Support',
@@ -250,12 +250,13 @@ class DocGenerator
             ],
             'servers' => [
                 [
-                    'url' => config('paths.api_base_url'),
-                    'description' => 'Production API Server'
+                    'url' => rtrim(config('app.paths.api_base_url'), '/') . '/' . config('app.api_version'),
+                    'description' => 'Production API Server ' . config('app.api_version')
                 ],
                 [
-                    'url' => str_replace('api', 'staging-api', config('paths.api_base_url')),
-                    'description' => 'Staging API Server'
+                    'url' => rtrim(str_replace('api', 'staging-api', config('app.paths.api_base_url')), '/')
+                           . '/' . config('app.api_version'),
+                    'description' => 'Staging API Server ' . config('app.api_version')
                 ]
             ],
             'components' => [

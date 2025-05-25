@@ -101,8 +101,8 @@ HELP;
     {
         // Display help if requested
         if (isset($args['h']) || isset($args['help'])) {
-            echo $this->getHelp() . PHP_EOL;
-            return self::SUCCESS;
+            $this->info($this->getHelp());
+            return Command::SUCCESS;
         }
 
         // Get query from arguments or file

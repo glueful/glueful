@@ -9,23 +9,17 @@ use Glueful\Database\QueryBuilder;
 /**
  * Initial System Data Seeder
  *
- * Creates essential system data in correct order:
+ * Creates essential system roles:
  * - Core roles (superuser, standard user)
- * - Default superuser account
- * - Profile information
- * - Role assignments
- *
- * Security Configuration:
- * - Default credentials setup
  * - Role hierarchy establishment
- * - Permission structure
+ * - Permission structure foundation
  * - Access control initialization
+ *
+ * Note: Admin user creation is handled by the installation wizard
+ * for better security and customization.
  *
  * Data Dependencies:
  * - Requires roles table
- * - Requires users table
- * - Requires profiles table
- * - Requires role_lookup table
  *
  * @package Glueful\Database\Migrations
  */
@@ -35,19 +29,14 @@ class SeedInitialData implements MigrationInterface
     private QueryBuilder $db;
 
     /**
-     * Execute initial data seeding
+     * Execute initial role seeding
      *
-     * Creates system data in sequence:
-     * 1. Create superuser role
-     * 2. Create standard user role
-     * 3. Create superuser account
-     * 4. Create superuser profile
-     * 5. Link role assignments
+     * Creates essential system roles:
+     * 1. Create superuser role (full system access)
+     * 2. Create standard user role (basic access)
      *
-     * Default Superuser:
-     * - Username: superuser
-     * - Email: superuser@glueful.com
-     * - Password: superuser123
+     * Admin user creation is handled by the installation wizard
+     * for better security and customization.
      *
      * @param SchemaManager $schema Database schema manager
      * @throws \RuntimeException If seeding fails
@@ -71,100 +60,55 @@ class SeedInitialData implements MigrationInterface
                 throw new \RuntimeException('Failed to create "superuser" role');
             }
 
-            // Create user role
+            // Create standard user role
             $userRoleUuid = Utils::generateNanoID();
-            $userId=$this->db->insert('roles', [
+            $userRoleId = $this->db->insert('roles', [
                 'uuid' => $userRoleUuid,
                 'name' => 'user',
                 'description' => 'Standard user access',
                 'status' => 'active'
             ]);
 
-            if (!$userId) {
-                throw new \RuntimeException('Failed to create user role');
+            if (!$userRoleId) {
+                throw new \RuntimeException('Failed to create "user" role');
             }
-
-            // Then create "superuser" user
-            $superuserUuid = Utils::generateNanoID();
-            $superuserId = $this->db->insert('users', [
-                'uuid' => $superuserUuid,
-                'username' => 'superuser',
-                'email' => 'superuser@glueful.com',
-                'password' => password_hash('superuser123', PASSWORD_DEFAULT),
-                'status' => 'active'
-            ]);
-
-            if (!$superuserId) {
-                throw new \RuntimeException('Failed to create "superuser" user');
-            }
-
-            // Then create profile for "superuser" user
-            $profileUuid = Utils::generateNanoID();
-            $profileId = $this->db->insert('profiles', [
-                'uuid' => $profileUuid,
-                'user_uuid' => $superuserUuid,
-                'first_name' => 'Super',
-                'last_name' => 'User',
-                'status' => 'active'
-            ]);
-
-            if (!$profileId) {
-                throw new \RuntimeException('Failed to create "superuser" profile');
-            }
-
-            // Finally create role mapping
-            $mappingId = $this->db->insert('user_roles_lookup', [
-                'user_uuid' => $superuserUuid,
-                'role_uuid' => $superuserRoleUuid
-            ]);
-
-            if (!$mappingId) {
-                throw new \RuntimeException('Failed to create role mapping');
-            }
-
         } catch (\Exception $e) {
-            throw new \RuntimeException('Seeding failed: ' . $e->getMessage());
+            throw new \RuntimeException('Role seeding failed: ' . $e->getMessage());
         }
     }
 
     /**
-     * Revert seeded data
+     * Revert seeded roles
      *
-     * Removes initial data in dependency order:
-     * 1. Remove profile data first
-     * 2. Remove role assignments
-     * 3. Remove user accounts
-     * 4. Remove roles last
+     * Removes created roles:
+     * - Remove superuser role
+     * - Remove user role
      *
-     * Cleanup Process:
-     * - Maintains referential integrity
-     * - Complete removal of seed data
-     * - Preserves custom data
+     * Note: User data is managed separately by the installation wizard
      *
      * @param SchemaManager $schema Database schema manager
      */
     public function down(SchemaManager $schema): void
     {
+        $connection = new Connection();
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-        // Delete in reverse order of dependencies
-        $this->db->delete('profiles', ['first_name' => 'Super', 'last_name' => 'User']);
-        $this->db->delete('user_roles_lookup', ['user_uuid' => ['username' => 'superuser']]);
-        $this->db->delete('users', ['username' => 'superuser']);
-        $this->db->delete('roles', ['name' => ['superuser', 'user']]);
+        // Delete only the roles created by this migration
+        $this->db->delete('roles', ['name' => 'superuser'], false);
+        $this->db->delete('roles', ['name' => 'user'], false);
     }
 
     /**
      * Get seeder description
      *
      * Documents:
-     * - Initial data creation
-     * - Default accounts
-     * - System roles
+     * - System roles creation
+     * - Permission structure setup
      *
      * @return string Human-readable description
      */
     public function getDescription(): string
     {
-        return 'Seeds initial data including "superuser" user, profiles and roles';
+        return 'Seeds essential system roles (superuser, user)';
     }
 }

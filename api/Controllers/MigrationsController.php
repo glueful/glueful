@@ -5,19 +5,20 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\{Request, DatabaseConnectionTrait};
 use Glueful\Database\{Connection, QueryBuilder};
 use Glueful\Database\Migrations\MigrationManager;
 
 class MigrationsController
 {
+    use DatabaseConnectionTrait;
+
     private QueryBuilder $queryBuilder;
     private MigrationManager $migrationManager;
 
     public function __construct()
     {
-        $connection = new Connection();
-        $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->queryBuilder = $this->getQueryBuilder();
         $this->migrationManager = new MigrationManager();
     }
 

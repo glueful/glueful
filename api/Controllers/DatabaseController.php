@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\{Request, DatabaseConnectionTrait};
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{Connection, QueryBuilder};
 
@@ -25,6 +25,8 @@ use Glueful\Database\{Connection, QueryBuilder};
  */
 class DatabaseController
 {
+    use DatabaseConnectionTrait;
+
     private SchemaManager $schemaManager;
     private QueryBuilder $queryBuilder;
 
@@ -33,9 +35,9 @@ class DatabaseController
      */
     public function __construct()
     {
-        $connection = new Connection();
+        $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
-        $this->queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->queryBuilder = $this->getQueryBuilder();
     }
 
     /**

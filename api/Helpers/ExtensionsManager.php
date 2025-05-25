@@ -763,7 +763,7 @@ class ExtensionsManager
         }
 
         // Get extensions path
-        $extensionsPath = config('extensions.extensions_dir');
+        $extensionsPath = config('services.extensions.extensions_dir');
         if (empty($extensionsPath)) {
             $extensionsPath = dirname(__DIR__, 2) . '/extensions/';
         }
@@ -820,7 +820,7 @@ class ExtensionsManager
 
     public static function loadExtensionsConfig(): array
     {
-        $configFile = config('extensions.config_file');
+        $configFile = config('services.extensions.config_file');
 
         if (!file_exists($configFile)) {
             // Create default config if it doesn't exist
@@ -871,7 +871,7 @@ class ExtensionsManager
             'optional' => [],
             'enabled' => [],
             'paths' => [
-                'extensions' => config('paths.project_extensions'),
+                'extensions' => config('app.paths.project_extensions'),
             ]
         ];
         // Create the config file with default values
@@ -1392,7 +1392,7 @@ class ExtensionsManager
         }
 
         // Determine target directory
-        $extensionDir = config('paths.project_extensions') . $targetName;
+        $extensionDir = config('app.paths.project_extensions') . $targetName;
 
         if (is_dir($extensionDir)) {
             return [
@@ -2183,7 +2183,7 @@ class ExtensionsManager
             ];
         }
 
-        $extensionsPath = config('paths.project_extensions');
+        $extensionsPath = config('app.paths.project_extensions');
         $extensionDir = $extensionsPath . $extensionName;
 
         if (is_dir($extensionDir)) {
@@ -2370,7 +2370,7 @@ class ExtensionsManager
         $extensionDir = dirname($reflection->getFileName());
 
         // Verify this is a real extension directory under the extensions path
-        $extensionsPath = config('paths.project_extensions');
+        $extensionsPath = config('app.paths.project_extensions');
         if (!str_starts_with($extensionDir, $extensionsPath)) {
             return [
                 'success' => false,
@@ -2828,7 +2828,7 @@ class ExtensionsManager
         ];
 
         // Get additional sources from config
-        $configSources = config('extensions.update_sources', []);
+        $configSources = config('services.extensions.update_sources', []);
         if (!empty($configSources) && is_array($configSources)) {
             $sources = array_merge($sources, $configSources);
         }

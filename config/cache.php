@@ -25,10 +25,10 @@ return [
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'port' => env('REDIS_PORT', 6379),
             'password' => env('REDIS_PASSWORD'),
-            'database' => env('REDIS_DB', 0),        // Redis database index
-            'timeout' => env('REDIS_TIMEOUT', 2.5),  // Connection timeout in seconds
-            'retry_interval' => 100,                 // Retry interval in milliseconds
-            'read_timeout' => 2.5,                   // Read timeout in seconds
+            'database' => env('REDIS_DB', 0),
+            'timeout' => env('REDIS_TIMEOUT', 2.5),
+            'retry_interval' => 100,
+            'read_timeout' => 2.5,
         ],
 
         // Memcached configuration
@@ -36,9 +36,9 @@ return [
             'driver' => 'memcached',
             'host' => env('MEMCACHED_HOST', '127.0.0.1'),
             'port' => env('MEMCACHED_PORT', 11211),
-            'weight' => 100,                         // Server weight for consistent hashing
+            'weight' => 100,
             'persistent_id' => env('MEMCACHED_PERSISTENT_ID'),
-            'sasl' => [                             // SASL authentication
+            'sasl' => [
                 'username' => env('MEMCACHED_USERNAME'),
                 'password' => env('MEMCACHED_PASSWORD'),
             ],
@@ -47,28 +47,29 @@ return [
         // File cache configuration
         'file' => [
             'driver' => 'file',
-            'path' => env('CACHE_FILE_PATH', config('paths.cache', dirname(__DIR__) . '/storage/cache/')),
+            'path' => env('CACHE_FILE_PATH', dirname(__DIR__) . '/storage/cache/'),
         ],
     ],
 
     // Global cache settings
-    'ttl' => env('CACHE_TTL', 3600),           // Default TTL in seconds
-    'lock_ttl' => env('CACHE_LOCK_TTL', 60),   // Lock timeout in seconds
+    'ttl' => env('CACHE_TTL', 3600),
+    'lock_ttl' => env('CACHE_LOCK_TTL', 60),
 
     // Cache tag settings
-    'enable_tags' => env('CACHE_TAGS', true),  // Enable cache tags support
-    'tags_store' => 'redis',                  // Store for cache tags
+    'enable_tags' => env('CACHE_TAGS', true),
+    'tags_store' => 'redis',
 
     // Edge caching configuration
     'edge' => [
         'enabled' => env('EDGE_CACHE_ENABLED', false),
         'provider' => env('EDGE_CACHE_PROVIDER', 'cloudflare'),
-        'default_ttl' => env('EDGE_CACHE_TTL', 3600), // 1 hour
+        'default_ttl' => env('EDGE_CACHE_TTL', 3600),
         'rules' => [
             // Route-specific cache rules can be defined here
-            // or managed by extensions
         ],
     ],
+
+    // Distributed caching configuration
     'distributed' => [
         'enabled' => env('DISTRIBUTED_CACHE_ENABLED', false),
         'strategy' => env('CACHE_REPLICATION_STRATEGY', 'consistent-hashing'),
@@ -95,7 +96,6 @@ return [
                 'password' => env('REDIS_PASSWORD_2', null),
                 'weight' => 1
             ],
-            // Additional nodes
         ]
     ]
 ];

@@ -58,14 +58,17 @@ class ExtensionsController
                 $isEnabled = in_array($shortName, $enabledExtensions);
                 $tierType = in_array($shortName, $coreExtensions) ? 'core' : 'optional';
 
+                // Get metadata with safe type handling
+                $description = $metadata['description'] ??
+                    ExtensionsManager::getExtensionMetadata($shortName, 'description');
+                $version = $metadata['version'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'version');
+                $author = $metadata['author'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'author');
+
                 $extensionData[] = [
                     'name' => $extensionName,
-                    'description' => $metadata['description'] ??
-                        ExtensionsManager::getExtensionMetadata($shortName, 'description'),
-                    'version' => $metadata['version'] ??
-                        ExtensionsManager::getExtensionMetadata($shortName, 'version'),
-                    'author' => $metadata['author'] ??
-                        ExtensionsManager::getExtensionMetadata($shortName, 'author'),
+                    'description' => is_string($description) ? $description : 'No description available',
+                    'version' => is_string($version) ? $version : 'unknown',
+                    'author' => is_string($author) ? $author : 'unknown',
                     'enabled' => $isEnabled,
                     'tier' => $tierType,  // Added tier type information
                     'isCoreExtension' => in_array($shortName, $coreExtensions),  // Explicit flag
@@ -132,6 +135,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_VALIDATION,
+                        'EXTENSION_DEPENDENCY_ERROR',
                         [
                             'missing_dependencies' => $result['details']['missing_dependencies'],
                             'required_dependencies' => $result['details']['required_dependencies'] ?? [],
@@ -198,6 +203,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_VALIDATION,
+                        'EXTENSION_DEPENDENT_ERROR',
                         [
                             'dependent_extensions' => $result['details']['dependent_extensions'],
                             'tier' => $tierType,
@@ -211,6 +218,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_AUTHORIZATION,
+                        'CORE_EXTENSION_DISABLE_ERROR',
                         [
                             'is_core' => true,
                             'can_force' => $result['details']['can_force'] ?? false,
@@ -393,7 +402,6 @@ class ExtensionsController
 
             // Get extension tier information
             $coreExtensions = ExtensionsManager::getCoreExtensions();
-            $optionalExtensions = ExtensionsManager::getOptionalExtensions();
 
             // Group metrics by tier
             $coreMetrics = [];
@@ -506,6 +514,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_VALIDATION,
+                        'EXTENSION_ALREADY_ENABLED',
                         [
                             'is_enabled' => true,
                             'can_force' => $result['details']['can_force'] ?? false,
@@ -520,6 +530,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_AUTHORIZATION,
+                        'CORE_EXTENSION_ENABLE_ERROR',
                         [
                             'is_core' => true,
                             'can_force' => $result['details']['can_force'] ?? false,
@@ -534,6 +546,8 @@ class ExtensionsController
                     return Response::error(
                         $result['message'],
                         $statusCode,
+                        Response::ERROR_VALIDATION,
+                        'EXTENSION_ENABLE_DEPENDENT_ERROR',
                         [
                             'dependent_extensions' => $result['details']['dependent_extensions'],
                             'tier' => $tierType,

@@ -111,7 +111,7 @@ HELP;
     public function execute(array $args = []): int
     {
         // Show help if requested
-        if (in_array('-h', $args) || in_array('--help', $args)) {
+        if (isset($args[0]) && in_array($args[0], ['-h', '--help', 'help'])) {
             $this->info($this->getHelp());
             return Command::SUCCESS;
         }

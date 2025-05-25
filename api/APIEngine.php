@@ -42,6 +42,12 @@ class APIEngine
     /** @var string Current database resource */
     private static string $currentResource;
 
+    /** @var Connection|null Singleton database connection instance */
+    private static ?Connection $connection = null;
+
+    /** @var QueryBuilder|null Singleton query builder instance */
+    private static ?QueryBuilder $queryBuilder = null;
+
     /**
      * Initialize the API Engine
      *
@@ -55,6 +61,36 @@ class APIEngine
     public static function initialize(): void
     {
         self::initializeDatabase();
+    }
+
+    /**
+     * Get singleton database connection
+     *
+     * Returns the shared database connection instance, creating it if needed.
+     * This ensures connection reuse across all API operations.
+     *
+     * @return Connection The shared database connection
+     */
+    private static function getConnection(): Connection
+    {
+        return self::$connection ??= new Connection();
+    }
+
+    /**
+     * Get singleton query builder
+     *
+     * Returns the shared query builder instance, creating it if needed.
+     * This ensures query builder reuse across all API operations.
+     *
+     * @return QueryBuilder The shared query builder
+     */
+    private static function getQueryBuilder(): QueryBuilder
+    {
+        if (!self::$queryBuilder) {
+            $conn = self::getConnection();
+            self::$queryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
+        }
+        return self::$queryBuilder;
     }
 
     /**
@@ -72,7 +108,7 @@ class APIEngine
     {
         try {
             // Create database connection
-            $connection = new Connection();
+            $connection = self::getConnection();
 
             // Store connection and driver
             self::$db = $connection->getPDO();
@@ -147,17 +183,17 @@ class APIEngine
     private static function processData(string $function, string $action, array $param, ?array $filter = null): array
     {
         $definition = self::loadDefinition($function);
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $connection = self::getConnection();
+        $queryBuilder = self::getQueryBuilder();
 
         try {
             // Handle pagination configuration
-            $paginationEnabled = config('pagination.enabled', true);
+            $paginationEnabled = config('app.pagination.enabled', true);
             $usePagination = $param['paginate'] ?? $paginationEnabled;
             $page = max(1, (int)($param['page'] ?? 1));
             $perPage = $usePagination ? min(
-                config('pagination.max_size', 100),
-                max(1, (int)($param['per_page'] ?? config('pagination.default_size', 25)))
+                config('app.pagination.max_size', 100),
+                max(1, (int)($param['per_page'] ?? config('app.pagination.default_size', 25)))
             ) : null;
 
             // Handle sorting
@@ -284,8 +320,7 @@ class APIEngine
      */
     private static function getLastInsertedUUID(?\PDO $db, string $table): string
     {
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $queryBuilder = self::getQueryBuilder();
 
         try {
             return $queryBuilder->lastInsertId($table, 'uuid');
@@ -314,34 +349,106 @@ class APIEngine
     /**
      * Load resource definition from JSON file
      *
-     * Finds and parses JSON definition for a resource:
+     * Finds and parses JSON definition for a resource with enhanced error reporting:
      * - Resolves file path based on current resource context
-     * - Checks file existence
-     * - Parses JSON structure
-     * - Validates definition integrity
+     * - Checks file existence with helpful suggestions
+     * - Parses JSON structure with validation
+     * - Provides actionable error messages for developers
      *
      * @param string $function Resource name
      * @return array Parsed definition
-     * @throws \RuntimeException If definition cannot be loaded or is invalid
+     * @throws \Glueful\Exceptions\NotFoundException If definition file is missing
+     * @throws \Glueful\Exceptions\ValidationException If JSON is invalid
      */
     private static function loadDefinition(string $function): array
     {
         $resource = self::$currentResource;
-        $path = config('paths.json_definitions') . $resource . '.' . $function . '.json';
+        $definitionsPath = config('app.paths.json_definitions');
+        $requestedFile = $resource . '.' . $function . '.json';
+        $fullPath = $definitionsPath . $requestedFile;
 
-        if (!file_exists($path)) {
-            // Use standard HTTP code 404 instead of Response::HTTP_NOT_FOUND
-            throw new \RuntimeException(
-                "The definition $resource.$function.json does not exist",
-                404
+        if (!file_exists($fullPath)) {
+            // Get helpful context for the error
+            $availableDefinitions = self::getAvailableDefinitions($definitionsPath);
+            $similarDefinitions = self::findSimilarDefinitions($function, $availableDefinitions);
+
+            throw new \Glueful\Exceptions\NotFoundException(
+                "API definition not found: {$requestedFile}",
+                404,
+                [
+                    'requested_definition' => $requestedFile,
+                    'expected_path' => $fullPath,
+                    'available_definitions' => $availableDefinitions,
+                    'similar_definitions' => $similarDefinitions,
+                    'help' => [
+                        'documentation' => config('app.docs_url', '/docs') . '/api-definitions',
+                        'generator_endpoint' => '/api/generate/definition/' . $function,
+                        'creation_guide' => 'API definitions define the structure and validation rules for endpoints'
+                    ]
+                ]
             );
         }
 
-        $definition = json_decode(file_get_contents($path), true);
+        $definition = json_decode(file_get_contents($fullPath), true);
         if (!$definition) {
-            throw new \RuntimeException("Invalid JSON definition for $function");
+            throw new \Glueful\Exceptions\ValidationException(
+                "Invalid JSON in API definition: {$requestedFile}",
+                422,
+                [
+                    'file_path' => $fullPath,
+                    'json_error' => json_last_error_msg(),
+                    'help' => [
+                        'validator_url' => 'https://jsonlint.com/',
+                        'documentation' => config('app.docs_url', '/docs') . '/api-definition-format'
+                    ]
+                ]
+            );
         }
 
-        return $definition;
+            return $definition;
+    }
+
+    /**
+     * Get list of available API definitions
+     *
+     * @param string $definitionsPath Path to definitions directory
+     * @return array List of available definition files
+     */
+    private static function getAvailableDefinitions(string $definitionsPath): array
+    {
+        if (!is_dir($definitionsPath)) {
+            return [];
+        }
+
+        $files = glob($definitionsPath . '*.json');
+        return array_map(fn($file) => basename($file), $files);
+    }
+
+    /**
+     * Find similar definition names using fuzzy matching
+     *
+     * @param string $requested The requested function name
+     * @param array $available List of available definitions
+     * @return array List of similar definition names
+     */
+    private static function findSimilarDefinitions(string $requested, array $available): array
+    {
+        $similar = [];
+        $requestedLower = strtolower($requested);
+
+        foreach ($available as $file) {
+            $functionName = str_replace(['.json', 'primary.'], '', strtolower($file));
+
+            // Check for partial matches or close spelling
+            if (
+                strpos($functionName, $requestedLower) !== false ||
+                strpos($requestedLower, $functionName) !== false ||
+                levenshtein($requestedLower, $functionName) <= 2
+            ) {
+                $similar[] = $file;
+            }
+        }
+
+        return array_slice($similar, 0, 5); // Limit to 5 suggestions
     }
 }

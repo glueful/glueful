@@ -48,6 +48,42 @@ abstract class BaseRepository
     /** @var AuditLogger|null Audit logger instance */
     protected ?AuditLogger $auditLogger = null;
 
+    /** @var Connection|null Shared database connection across all repositories */
+    private static ?Connection $sharedConnection = null;
+
+    /** @var QueryBuilder|null Shared query builder across all repositories */
+    private static ?QueryBuilder $sharedQueryBuilder = null;
+
+    /**
+     * Get shared database connection
+     *
+     * Returns the shared connection instance across all repositories,
+     * creating it if needed. This ensures connection reuse.
+     *
+     * @return Connection The shared database connection
+     */
+    protected static function getSharedConnection(): Connection
+    {
+        return self::$sharedConnection ??= new Connection();
+    }
+
+    /**
+     * Get shared query builder
+     *
+     * Returns the shared query builder instance across all repositories,
+     * creating it if needed. This ensures query builder reuse.
+     *
+     * @return QueryBuilder The shared query builder
+     */
+    protected static function getSharedQueryBuilder(): QueryBuilder
+    {
+        if (!self::$sharedQueryBuilder) {
+            $conn = self::getSharedConnection();
+            self::$sharedQueryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
+        }
+        return self::$sharedQueryBuilder;
+    }
+
     /**
      * Initialize repository
      *
@@ -58,8 +94,7 @@ abstract class BaseRepository
      */
     public function __construct(?string $table = null)
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = self::getSharedQueryBuilder();
 
         if ($table) {
             $this->table = $table;

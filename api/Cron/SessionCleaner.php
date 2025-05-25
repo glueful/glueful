@@ -33,7 +33,7 @@ class SessionCleaner
                 'auth_sessions',
                 [
                     'status' => 'active',
-                    'access_expires_at < NOW()' => null
+                    'access_expires_at <' => date('Y-m-d H:i:s')
                 ],
                 false // Use soft delete if enabled
             );
@@ -51,7 +51,7 @@ class SessionCleaner
                 'auth_sessions',
                 [
                     'status' => 'active',
-                    'refresh_expires_at < NOW()' => null
+                    'refresh_expires_at <' => date('Y-m-d H:i:s')
                 ],
                 false // Use real delete instead of soft delete for cleanup
             );
@@ -65,16 +65,17 @@ class SessionCleaner
     public function cleanOldRevokedSessions(): void
     {
         try {
+            $cutoffDate = date('Y-m-d H:i:s', strtotime('-30 days'));
             $affected = self::$queryBuilder->delete(
                 'auth_sessions',
                 [
                    'status' => 'revoked',
-                    'updated_at < DATE_SUB(NOW(), INTERVAL 30 DAY)' => null
+                    'updated_at <' => $cutoffDate
                 ],
                 false // Use real delete instead of soft delete for cleanup
             );
 
-            $this->stats['expired_refresh'] = $affected ? 1 : 0;
+            $this->stats['old_revoked'] = $affected ? 1 : 0;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean old revoked sessions: " . $e->getMessage();
         }
@@ -98,7 +99,7 @@ class SessionCleaner
             $message .= "Errors:\n- " . implode("\n- ", $this->stats['errors']) . "\n";
         }
 
-        $logFile = __DIR__ . '/../storage/logs/session-cleanup.log';
+        $logFile = config('app.paths.logs') . 'session-cleanup.log';
         $logDir = dirname($logFile);
 
         if (!is_dir($logDir)) {

@@ -88,7 +88,7 @@ class ExtensionsCommand extends Command
     public function execute(array $args = [], array $options = []): int
     {
         if (empty($args) || in_array($args[0], ['-h', '--help', 'help'])) {
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::SUCCESS;
         }
 
@@ -97,7 +97,7 @@ class ExtensionsCommand extends Command
 
         if (!array_key_exists($action, $this->options)) {
             $this->error("Unknown action: $action");
-            $this->showHelp();
+            $this->info($this->getHelp());
             return Command::FAILURE;
         }
 
@@ -674,7 +674,7 @@ class ExtensionsCommand extends Command
 
         // Get the extension name (could be auto-generated if none was provided)
         $installedName = $result['name'] ?? $targetName;
-        $this->success("Extension installed at: " . config('paths.project_extensions') . $installedName);
+        $this->success("Extension installed at: " . config('app.paths.project_extensions') . $installedName);
 
         // If the extension was successfully installed, offer to enable it
         if ($this->confirm("Would you like to enable this extension now?")) {
@@ -951,16 +951,6 @@ Examples:
   php glueful extensions validate MyExtension
   php glueful extensions namespaces
 HELP;
-    }
-
-    /**
-     * Show command help
-     *
-     * @return void
-     */
-    protected function showHelp(): void
-    {
-        $this->line($this->getHelp());
     }
 
     /**

@@ -18,25 +18,38 @@ class Response
     public const HTTP_FORBIDDEN = 403;
     public const HTTP_NOT_FOUND = 404;
     public const HTTP_METHOD_NOT_ALLOWED = 405;
+    public const HTTP_UNPROCESSABLE_ENTITY = 422;
     public const HTTP_TOO_MANY_REQUESTS = 429;
     public const HTTP_SERVICE_UNAVAILABLE = 503;
     public const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+    // Error type constants for standardized error handling
+    public const ERROR_VALIDATION = 'VALIDATION_ERROR';
+    public const ERROR_AUTHENTICATION = 'AUTHENTICATION_ERROR';
+    public const ERROR_AUTHORIZATION = 'AUTHORIZATION_ERROR';
+    public const ERROR_NOT_FOUND = 'NOT_FOUND_ERROR';
+    public const ERROR_RATE_LIMIT = 'RATE_LIMIT_ERROR';
+    public const ERROR_SERVER = 'SERVER_ERROR';
+    public const ERROR_SECURITY = 'SECURITY_ERROR';
 
     private int $statusCode;
     private mixed $data;
     private ?string $message;
     private bool $success;
+    private ?array $errorDetails;
 
     public function __construct(
         mixed $data = null,
         int $statusCode = self::HTTP_OK,
         ?string $message = null,
-        bool $success = true
+        bool $success = true,
+        ?array $errorDetails = null
     ) {
         $this->data = $data ?? []; // Ensure data is at least an empty array
         $this->statusCode = $statusCode;
         $this->message = $message ?? ''; // Avoid null values in response
         $this->success = $success;
+        $this->errorDetails = $errorDetails;
     }
 
     /**
@@ -56,6 +69,11 @@ class Response
             'message' => $this->message,
             'code' => $this->statusCode,
         ];
+
+        // Add error details for failed responses
+        if (!$this->success && $this->errorDetails) {
+            $response['error'] = $this->errorDetails;
+        }
 
         // If a specific key is provided, use that to extract data
         if ($key !== null && is_array($this->data) && isset($this->data[$key])) {
@@ -102,9 +120,26 @@ class Response
         return new self($data, self::HTTP_CREATED, $message);
     }
 
-    public static function error(string $message, int $statusCode = self::HTTP_BAD_REQUEST, mixed $error = null): self
-    {
-        return new self($error ?? [], $statusCode, $message, false);
+    public static function error(
+        string $message,
+        int $statusCode = self::HTTP_BAD_REQUEST,
+        ?string $errorType = null,
+        ?string $errorCode = null,
+        mixed $details = null,
+        ?string $requestId = null
+    ): self {
+        $errorDetails = [
+            'type' => $errorType ?? self::getErrorTypeFromStatus($statusCode),
+            'code' => $errorCode,
+            'details' => $details,
+            'timestamp' => date('c'),
+            'request_id' => $requestId ?? self::generateRequestId()
+        ];
+
+        // Remove null values from error details
+        $errorDetails = array_filter($errorDetails, fn($value) => $value !== null);
+
+        return new self(null, $statusCode, $message, false, $errorDetails);
     }
 
     public static function notFound(string $message = 'Resource not found'): self
@@ -114,6 +149,35 @@ class Response
 
     public static function unauthorized(string $message = 'Unauthorized'): self
     {
-        return new self([], self::HTTP_UNAUTHORIZED, $message, false);
+        return self::error($message, self::HTTP_UNAUTHORIZED, self::ERROR_AUTHENTICATION);
+    }
+
+    /**
+     * Get error type based on HTTP status code
+     *
+     * @param int $statusCode HTTP status code
+     * @return string Error type constant
+     */
+    private static function getErrorTypeFromStatus(int $statusCode): string
+    {
+        return match ($statusCode) {
+            400, 422 => self::ERROR_VALIDATION,
+            401 => self::ERROR_AUTHENTICATION,
+            403 => self::ERROR_AUTHORIZATION,
+            404 => self::ERROR_NOT_FOUND,
+            429 => self::ERROR_RATE_LIMIT,
+            413, 415 => self::ERROR_SECURITY,
+            default => self::ERROR_SERVER
+        };
+    }
+
+    /**
+     * Generate a unique request ID for error tracking
+     *
+     * @return string Unique request identifier
+     */
+    private static function generateRequestId(): string
+    {
+        return 'req_' . bin2hex(random_bytes(6));
     }
 }
