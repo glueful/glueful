@@ -728,10 +728,10 @@ class QueryBuilder
             "UPDATE " . $this->driver->wrapIdentifier($table) . " SET deleted_at = CURRENT_TIMESTAMP WHERE " :
             "DELETE FROM " . $this->driver->wrapIdentifier($table) . " WHERE ";
 
-        $whereConditions = array_map(
-            fn($col) => "{$this->driver->wrapIdentifier($col)} = ?",
-            array_keys($conditions)
-        );
+        $whereConditions = [];
+        foreach (array_keys($conditions) as $condition) {
+            $whereConditions[] = $this->parseCondition($condition);
+        }
         $sql .= implode(" AND ", $whereConditions);
 
         $stmt = $this->executeQuery($sql, array_values($conditions));
@@ -739,6 +739,37 @@ class QueryBuilder
         $result = $stmt->rowCount() > 0;
 
         return $result;
+    }
+
+    /**
+     * Parse condition string to extract column name and operator
+     *
+     * Supports operators: =, <, >, <=, >=, !=, <>, LIKE, NOT LIKE
+     * Examples:
+     * - 'column' -> 'column = ?'
+     * - 'column <' -> 'column < ?'
+     * - 'column LIKE' -> 'column LIKE ?'
+     *
+     * @param string $condition Condition string
+     * @return string Parsed SQL condition
+     */
+    private function parseCondition(string $condition): string
+    {
+        // Trim the condition
+        $condition = trim($condition);
+
+        // Define supported operators (order matters - longer operators first)
+        $operators = ['<=', '>=', '<>', '!=', 'NOT LIKE', 'LIKE', '<', '>', '='];
+
+        foreach ($operators as $operator) {
+            if (str_ends_with($condition, ' ' . $operator)) {
+                $column = trim(substr($condition, 0, -strlen($operator) - 1));
+                return $this->driver->wrapIdentifier($column) . ' ' . $operator . ' ?';
+            }
+        }
+
+        // Default to equals if no operator found
+        return $this->driver->wrapIdentifier($condition) . ' = ?';
     }
 
     /**

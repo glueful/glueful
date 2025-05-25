@@ -72,6 +72,9 @@ class Router
     /** @var array Route name cache to avoid redundant MD5 calculations */
     private static array $routeNameCache = [];
 
+    /** @var string API version prefix for all routes */
+    private static string $versionPrefix = '';
+
     /**
      * Initialize the Router
      *
@@ -82,6 +85,37 @@ class Router
     {
         self::$routes = new RouteCollection();
         self::$context = new RequestContext();
+    }
+
+    /**
+     * Set API version prefix for all routes
+     *
+     * @param string $version API version (e.g., 'v1', 'v2')
+     */
+    public static function setVersion(string $version): void
+    {
+        self::$versionPrefix = '/' . trim($version, '/');
+    }
+
+    /**
+     * Get current API version prefix
+     *
+     * @return string Current version prefix
+     */
+    public static function getVersionPrefix(): string
+    {
+        return self::$versionPrefix;
+    }
+
+    /**
+     * Ensure router is initialized
+     */
+    private static function ensureInitialized(): void
+    {
+        if (!isset(self::$routes)) {
+            self::$routes = new RouteCollection();
+            self::$context = new RequestContext();
+        }
     }
 
 
@@ -211,9 +245,11 @@ class Router
         bool $requiresAuth = false,
         bool $requiresAdminAuth = false
     ) {
+        // Ensure router is initialized
+        self::ensureInitialized();
         // Get the current group context
         $groupContext = self::getCurrentGroupContext();
-        $fullPath = $groupContext['prefix'] . '/' . trim($path, '/');
+        $fullPath = self::$versionPrefix . $groupContext['prefix'] . '/' . trim($path, '/');
         $fullPath = '/' . trim($fullPath, '/');
 
         // Check if group context auth settings exist and are arrays

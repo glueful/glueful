@@ -24,8 +24,17 @@ return [
     'force_https' => env('FORCE_HTTPS', env('APP_ENV') === 'production'),
 
     // API Information
-    'version' => env('API_VERSION', '1.0.0'),
     'name' => env('APP_NAME', 'Glueful'),
+    'version_full' => env('API_VERSION_FULL', '1.0.0'),
+    'api_version' => env('API_VERSION', 'v1'),
+
+    // API Versioning Configuration
+    'versioning' => [
+        'strategy' => env('API_VERSION_STRATEGY', 'url'), // url, header, both
+        'current' => env('API_VERSION', 'v1'),
+        'supported' => explode(',', env('API_SUPPORTED_VERSIONS', 'v1')),
+        'default' => env('API_DEFAULT_VERSION', 'v1'),
+    ],
 
     // Application Paths
     'paths' => [
@@ -38,6 +47,7 @@ return [
         'uploads' => dirname(__DIR__) . '/storage/cdn/',
         'logs' => dirname(__DIR__) . '/storage/logs/',
         'cache' => dirname(__DIR__) . '/storage/cache/',
+        'backups' => dirname(__DIR__) . '/storage/backups/',
         'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
         'project_extensions' => dirname(__DIR__) . '/extensions/',
     ],

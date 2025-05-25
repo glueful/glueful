@@ -307,12 +307,10 @@ class ApiMetricsService
                 ->limit(10)
                 ->get();
 
-
             $dailyMetrics = $this->db->select($this->dailyMetricsTable, ['*'])
                 ->where(['date' => ['>=', $sevenDaysAgo]])
                 ->orderBy(['date' => 'ASC'])
                 ->get();
-
 
             // If no records from last 7 days, just get the latest records
             if (empty($dailyMetrics)) {

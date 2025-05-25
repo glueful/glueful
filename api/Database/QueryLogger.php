@@ -274,6 +274,16 @@ class QueryLogger
         // Add to recent queries for N+1 detection
         $this->addToRecentQueries($sql, $executionTime, $tables);
 
+        // Send to development query monitor if enabled
+        if (class_exists('\\Glueful\\Database\\DevelopmentQueryMonitor')) {
+            \Glueful\Database\DevelopmentQueryMonitor::logQuery(
+                $sql,
+                $params,
+                $executionTime ? $executionTime / 1000 : 0.0, // Convert ms to seconds
+                $purpose ?? ''
+            );
+        }
+
         // Prepare log context
         $context = [
             'sql' => $sql,

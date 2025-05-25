@@ -119,7 +119,7 @@ class CacheFactory
             throw new Exception("FileCacheDriver class not found");
         }
 
-        $path = config('paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
+        $path = config('app.paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
         if (!is_dir($path)) {
             mkdir($path, 0755, true);
         }

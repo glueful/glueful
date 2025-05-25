@@ -117,7 +117,6 @@ class ApiDefinitionGenerator
             $this->generateTableDefinition($specificDatabase, $tableName);
         }
 
-
         if (\config('security.permissions_enabled') === true) {
             $this->setupAdministratorRole();
         }
@@ -235,7 +234,6 @@ class ApiDefinitionGenerator
         $definitionsPath = config('app.paths.json_definitions');
         $definitionsDocPath = config('app.paths.api_docs') . 'api-doc-json-definitions/';
 
-
         // Process API doc definition files
         if (is_dir($definitionsDocPath)) {
             foreach (glob($definitionsDocPath . "*.json") as $file) {
@@ -265,7 +263,7 @@ class ApiDefinitionGenerator
 
         // Dynamically generate documentation for extensions with route files
         try {
-            $extensionDocsDir = config('paths.api_docs') . 'api-doc-json-definitions/extensions';
+            $extensionDocsDir = config('app.paths.api_docs') . 'api-doc-json-definitions/extensions';
 
             // Create the extensions documentation directory if it doesn't exist
             if (!is_dir($extensionDocsDir)) {
@@ -273,7 +271,7 @@ class ApiDefinitionGenerator
             }
 
             // Create the routes documentation directory if it doesn't exist
-            $routesDocsDir = config('paths.api_docs') . 'api-doc-json-definitions/routes';
+            $routesDocsDir = config('app.paths.api_docs') . 'api-doc-json-definitions/routes';
             if (!is_dir($routesDocsDir)) {
                 mkdir($routesDocsDir, 0755, true);
             }
@@ -336,7 +334,7 @@ class ApiDefinitionGenerator
 
         // Generate and save Swagger JSON
         $swaggerJson = $docGenerator->getSwaggerJson();
-        $outputPath = config('paths.api_docs') . 'swagger.json';
+        $outputPath = config('app.paths.api_docs') . 'swagger.json';
 
         // Ensure the docs directory exists
         if (!is_dir(dirname($outputPath))) {

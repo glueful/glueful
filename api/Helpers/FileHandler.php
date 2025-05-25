@@ -269,7 +269,7 @@ class FileHandler
         }
 
         // For local storage, serve the file
-        $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
+        $path = config('app.paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
             header('Content-Type: ' . $mime);
             header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -315,7 +315,7 @@ class FileHandler
         }
 
         // For local storage, serve the file
-        $path = config('paths.uploads') . '/' . $fileInfo['filepath'];
+        $path = config('app.paths.uploads') . '/' . $fileInfo['filepath'];
         if (file_exists($path)) {
             header('Content-Type: ' . $mime);
             header('Content-Disposition: inline; filename="' . $filename . '"');
@@ -351,7 +351,7 @@ class FileHandler
                 'zoom' => isset($params['z']) ? (int)$params['z'] : null,
                 'memoryLimit' => '256M',
                 'allowExternal' => true,
-                'cacheDir' => config('paths.cache') . '/images'
+                'cacheDir' => config('app.paths.cache') . '/images'
             ];
 
             // Use TimThumb or appropriate image processor

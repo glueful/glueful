@@ -249,11 +249,22 @@ Glueful implements a comprehensive authentication system:
 
 ## Documentation
 
+### Core Documentation
 - Swagger UI available at `/docs/index.html`
 - Database schema documentation in `/docs/SCHEMA.md`
 - Rate limiter documentation in `/docs/RATELIMITER.md`
 - Setup guide in `/docs/SETUP.md`
 - Middleware documentation in `/docs/MIDDLEWARE.md`
+
+### Production Guides
+- **[Security Hardening Guide](/docs/SECURITY.md)** - Comprehensive security checklist and best practices
+- **[Deployment Guide](/docs/DEPLOYMENT.md)** - Docker, cloud, and traditional server deployment strategies
+- **[Error Handling Guide](/docs/ERROR_HANDLING.md)** - Server-side and client-side error handling patterns
+
+### Additional Resources
+- Feature documentation in `/docs/features/`
+- Performance optimization guides in `/docs/`
+- Extension development in `/docs/`
 
 ## Backup and Restore
 ```bash

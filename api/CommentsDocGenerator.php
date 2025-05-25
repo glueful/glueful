@@ -229,7 +229,13 @@ class CommentsDocGenerator
             'info' => [
                 'title' => $formattedRouteName . ' Routes',
                 'description' => 'API documentation for ' . $formattedRouteName . ' routes',
-                'version' => '1.0.0'
+                'version' => config('app.version_full', '1.0.0')
+            ],
+            'servers' => [
+                [
+                    'url' => rtrim(config('app.paths.api_base_url'), '/') . '/' . config('app.api_version'),
+                    'description' => 'API Server ' . config('app.api_version')
+                ]
             ],
             'paths' => $paths,
             'components' => [
@@ -764,7 +770,13 @@ class CommentsDocGenerator
             'info' => [
                 'title' => $formattedExtName . ' API',
                 'description' => 'API documentation for ' . $formattedExtName . ' extension',
-                'version' => '1.0.0'
+                'version' => config('app.version_full', '1.0.0')
+            ],
+            'servers' => [
+                [
+                    'url' => rtrim(config('app.paths.api_base_url'), '/') . '/' . config('app.api_version'),
+                    'description' => 'API Server ' . config('app.api_version')
+                ]
             ],
             'paths' => $paths,
             'components' => [

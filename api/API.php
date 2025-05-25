@@ -186,8 +186,6 @@ class API
             // Initialize API
             self::init();
 
-
-
             // Let router handle the request
             $response = $router->handleRequest();
 
@@ -234,7 +232,6 @@ class API
             ]);
 
             error_log($e->getMessage());
-
 
             header('Content-Type: application/json');
             http_response_code(500);

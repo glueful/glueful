@@ -76,7 +76,6 @@ class JobScheduler
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-
         // Ensure required database tables exist before trying to use them
         $this->ensureTablesExist();
 
