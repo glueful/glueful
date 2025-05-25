@@ -7,7 +7,7 @@ This roadmap outlines Glueful's strategic path from its current state to enterpr
 - **Testing Infrastructure** (v0.22.0-v0.24.0): Building a comprehensive testing foundation for framework stability
 - **Extension Ecosystem** (v0.25.0): Building a robust marketplace and developer tools
 - **Enterprise Security** (v0.26.0): Implementing advanced authentication and compliance features
-- **Performance Optimization** (v0.27.0): Enhancing speed and efficiency at scale
+- **Performance Optimization** (v0.27.0): Enhancing speed and efficiency at scale, with comprehensive API versioning and OpenAPI documentation
 - **Production Readiness** (v0.28.0): Ensuring scalability and reliability
 - **Enterprise Release** (v1.0.0): Completing the enterprise-ready platform
 - **Glueful Go** (v1.5.0): Creating a Go language implementation of the framework
@@ -110,6 +110,19 @@ Next planned release: v0.28.0
 - [x] Optimize memory usage in core components
 - [x] Add distributed cache support
 - [x] Implement query profiling tools
+- [x] Complete API versioning system
+  - [x] ApiVersionMiddleware.php for comprehensive version handling
+  - [x] Support for URL, header, and both versioning strategies
+  - [x] Version validation against supported versions
+  - [x] Integration with Router's version prefix functionality
+  - [x] Configuration-driven versioning with app.php settings
+- [x] Enhance OpenAPI documentation generation
+  - [x] DocGenerator.php - Main OpenAPI/Swagger documentation generator
+  - [x] CommentsDocGenerator.php - Route-based documentation generation
+  - [x] ApiDefinitionGenerator.php - Documentation orchestration
+  - [x] Swagger UI implementation with live API documentation
+  - [x] Multiple output formats and automatic generation
+  - [x] Server definitions with versioning and security scheme support
 
 ### Pre-1.0 Milestones
 
@@ -124,8 +137,6 @@ Next planned release: v0.28.0
 
 #### v0.32.0 - API Platform
 
-- [ ] Complete API versioning system
-- [ ] Enhance OpenAPI documentation generation
 - [ ] Add GraphQL support
 - [ ] Implement comprehensive webhook system
 - [ ] Create API product management tools
@@ -154,7 +165,7 @@ Next planned release: v0.28.0
 
 - [ ] Freeze API contracts with backward compatibility guarantees
 - [ ] Establish deprecation policy and lifecycle management
-- [ ] Implement API versioning with multi-version support
+- [x] Implement API versioning with multi-version support
 - [ ] Publish comprehensive migration guides
 - [ ] Create API compatibility verification tools
 
