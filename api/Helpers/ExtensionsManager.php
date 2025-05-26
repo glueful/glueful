@@ -357,17 +357,25 @@ class ExtensionsManager
 
         foreach ($iterator as $file) {
             if ($file->isFile() && $file->getExtension() === 'php') {
-                $relativePath = substr($file->getPathname(), strlen($dir));
+                $relativePath = substr($file->getPathname(), strlen($dir) + 1);
                 $filename = basename($relativePath);
                 $className = str_replace('.php', '', $filename);
-                $fullClassName = $namespace . $className;
+
+                // Construct the proper namespace including subdirectories
+                $subdirectories = dirname($relativePath);
+                if ($subdirectories !== '.' && $subdirectories !== '') {
+                    $namespacePart = str_replace('/', '\\', $subdirectories);
+                    $fullClassName = $namespace . $namespacePart . '\\' . $className;
+                } else {
+                    $fullClassName = $namespace . $className;
+                }
 
                 // Only attempt to load the class if we haven't already loaded it
                 if (!class_exists($fullClassName, false)) {
                     try {
                         include_once $file->getPathname();
                     } catch (\Throwable $e) {
-                        error_log("Error including file: " . $e->getMessage());
+                        error_log("Error including file {$file->getPathname()}: " . $e->getMessage());
                     }
                 }
 
