@@ -362,36 +362,45 @@ class ExtensionsManager
                 $className = str_replace('.php', '', $filename);
 
                 // Construct the proper namespace including subdirectories
+                // Skip 'src' directory if it exists as it's typically a source container, not part of namespace
                 $subdirectories = dirname($relativePath);
                 if ($subdirectories !== '.' && $subdirectories !== '') {
+                    // Remove 'src' from the beginning of the path if present
                     $namespacePart = str_replace('/', '\\', $subdirectories);
-                    $fullClassName = $namespace . $namespacePart . '\\' . $className;
+                    if (str_starts_with($namespacePart, 'src\\')) {
+                        $namespacePart = substr($namespacePart, 4); // Remove 'src\'
+                    }
+
+                    if (!empty($namespacePart)) {
+                        $fullClassName = $namespace . $namespacePart . '\\' . $className;
+                    } else {
+                        $fullClassName = $namespace . $className;
+                    }
                 } else {
                     $fullClassName = $namespace . $className;
                 }
 
-                // Only attempt to load the class if we haven't already loaded it
-                if (!class_exists($fullClassName, false)) {
-                    try {
-                        include_once $file->getPathname();
-                    } catch (\Throwable $e) {
-                        error_log("Error including file {$file->getPathname()}: " . $e->getMessage());
-                    }
-                }
+                // Use autoloader to load the class and its dependencies
+                try {
+                    // Using class_exists with autoload=true triggers PHP's autoloader
+                    // which handles dependency resolution automatically
+                    if (class_exists($fullClassName, true)) {
+                        $reflection = new \ReflectionClass($fullClassName);
 
-                // Check if the class exists and extends the base Extensions class
-                if (class_exists($fullClassName, false)) {
-                    $reflection = new \ReflectionClass($fullClassName);
-
-                    // Only register classes that extend the Extensions base class
-                    if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                        if (!in_array($fullClassName, $loadedExtensions, true)) {
-                            $loadedExtensions[] = $fullClassName;
-                            self::debug("Loaded extension: {$fullClassName}");
-                        } else {
-                            self::debug("Skipping duplicate extension: {$fullClassName}");
+                        // Only register classes that extend the Extensions base class
+                        if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
+                            if (!in_array($fullClassName, $loadedExtensions, true)) {
+                                $loadedExtensions[] = $fullClassName;
+                                self::debug("Loaded extension: {$fullClassName}");
+                            } else {
+                                self::debug("Skipping duplicate extension: {$fullClassName}");
+                            }
                         }
                     }
+                } catch (\Throwable $e) {
+                    // Log the error but continue with other extensions
+                    error_log("Error loading class {$fullClassName} from {$file->getPathname()}: " . $e->getMessage());
+                    self::debug("Failed to load extension class: {$fullClassName}");
                 }
             }
         }
