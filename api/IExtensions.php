@@ -14,4 +14,39 @@ interface IExtensions
      * @return array<string, mixed> Response data
      */
     public static function process(array $queryParams, array $bodyParams): array;
+
+    /**
+     * Initialize extension
+     *
+     * @return void
+     */
+    public static function initialize(): void;
+
+    /**
+     * Get extension metadata
+     *
+     * @return array<string, mixed> Extension metadata
+     */
+    public static function getMetadata(): array;
+
+    /**
+     * Get extension dependencies
+     *
+     * @return array<string> List of required extensions
+     */
+    public static function getDependencies(): array;
+
+    /**
+     * Validate extension security
+     *
+     * @return array<string, mixed> Security configuration
+     */
+    public static function validateSecurity(): array;
+
+    /**
+     * Check extension health
+     *
+     * @return array<string, mixed> Health status
+     */
+    public static function checkHealth(): array;
 }

@@ -478,24 +478,14 @@ class ExtensionsManager
             ];
         }
 
-        // Get config file
-        $configFile = self::getConfigPath();
-        $config = file_exists($configFile) ? include $configFile : ['enabled' => [], 'core' => [], 'optional' => []];
-
-        // Ensure config has the required arrays for tiered structure
-        if (!isset($config['core'])) {
-            $config['core'] = [];
-        }
-        if (!isset($config['optional'])) {
-            $config['optional'] = [];
-        }
-        if (!isset($config['enabled'])) {
-            $config['enabled'] = [];
-        }
+        // Load JSON config
+        $config = self::loadExtensionsConfig();
 
         // Check if already enabled
-        if (in_array($extensionName, $config['enabled'] ?? [])) {
-            error_log("Extension '$extensionName' is already enabled");
+        if (
+            isset($config['extensions'][$extensionName]['enabled']) &&
+            $config['extensions'][$extensionName]['enabled']
+        ) {
             return [
                 'success' => true,
                 'message' => "Extension '$extensionName' is already enabled"
@@ -508,41 +498,41 @@ class ExtensionsManager
             return $dependencyResults;
         }
 
-        // Determine if the extension is core or optional if not already categorized
-        if (!in_array($extensionName, $config['core']) && !in_array($extensionName, $config['optional'])) {
-            // Get metadata to see if extension type is specified
-            $isCore = false;
-            try {
-                if (method_exists($extensionClass, 'getMetadata')) {
-                    $metadata = $extensionClass::getMetadata();
-                    $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
-
-                    // If the type isn't explicitly specified, check if other core APIs depend on it
-                    if (
-                        !isset($metadata['type'])
-                        && isset($metadata['requiredBy'])
-                        && !empty($metadata['requiredBy'])
-                    ) {
-                        $isCore = true;
-                    }
-                }
-            } catch (\Throwable $e) {
-                self::debug("Error getting metadata for $extensionName: " . $e->getMessage());
+        // Get extension metadata
+        $version = '1.0.0';
+        $installPath = "extensions/$extensionName";
+        try {
+            if (method_exists($extensionClass, 'getMetadata')) {
+                $metadata = $extensionClass::getMetadata();
+                $version = $metadata['version'] ?? $version;
+                $installPath = $metadata['installPath'] ?? $installPath;
             }
-
-            // Add to appropriate category
-            if ($isCore) {
-                $config['core'][] = $extensionName;
-                self::debug("Adding $extensionName to core extensions");
-            } else {
-                $config['optional'][] = $extensionName;
-                self::debug("Adding $extensionName to optional extensions");
-            }
+        } catch (\Throwable $e) {
+            self::debug("Error getting metadata for $extensionName: " . $e->getMessage());
         }
 
-        // All checks passed, enable the extension
-        $config['enabled'][] = $extensionName;
-        $saveSuccess = self::saveConfig($configFile, $config);
+        // Add/update extension in config
+        $config['extensions'][$extensionName] = [
+            'version' => $version,
+            'enabled' => true,
+            'installPath' => $installPath
+        ];
+
+        // Add to current environment's enabled extensions
+        $env = config('app.environment', 'production');
+        $envMapping = config('services.extensions.environments', []);
+        $mappedEnv = $envMapping[$env] ?? $env;
+
+        if (!isset($config['environments'][$mappedEnv])) {
+            $config['environments'][$mappedEnv] = ['enabledExtensions' => []];
+        }
+
+        if (!in_array($extensionName, $config['environments'][$mappedEnv]['enabledExtensions'])) {
+            $config['environments'][$mappedEnv]['enabledExtensions'][] = $extensionName;
+        }
+
+        // Save JSON config
+        $saveSuccess = self::saveExtensionsJson($config);
 
         if (!$saveSuccess) {
             return [
@@ -569,42 +559,21 @@ class ExtensionsManager
      */
     public static function disableExtension(string $extensionName, bool $force = false): array
     {
-        // Get config file
-        $configFile = self::getConfigPath();
+        // Load JSON config
+        $config = self::loadExtensionsConfig();
 
-        if (!file_exists($configFile)) {
+        // Check if extension exists and is enabled
+        if (!isset($config['extensions'][$extensionName])) {
             return [
                 'success' => true,
-                'message' => "No extensions are currently enabled"
+                'message' => "Extension '$extensionName' not found in configuration"
             ];
         }
 
-        $config = include $configFile;
-        $enabledExtensions = $config['enabled'] ?? [];
-
-        // Check if already disabled
-        if (!in_array($extensionName, $enabledExtensions)) {
+        if (!$config['extensions'][$extensionName]['enabled']) {
             return [
                 'success' => true,
                 'message' => "Extension '$extensionName' is already disabled"
-            ];
-        }
-
-        // Check if this is a core extension
-        $isCoreExtension = in_array($extensionName, $config['core'] ?? []);
-
-        if ($isCoreExtension && !$force) {
-            // This is a core extension and we're not forcing disable
-            return [
-                'success' => false,
-                'message' => "Cannot disable core extension '$extensionName'. "
-                    . "This extension is required for core functionality.",
-                'details' => [
-                    'is_core' => true,
-                    'can_force' => true,
-                    'warning' => "Disabling this extension may break core system functionality. " .
-                        "Use force=true parameter to override."
-                ]
             ];
         }
 
@@ -614,9 +583,22 @@ class ExtensionsManager
             return $dependencyResults;
         }
 
-        // All checks passed, disable the extension
-        $config['enabled'] = array_diff($enabledExtensions, [$extensionName]);
-        $saveSuccess = self::saveConfig($configFile, $config);
+        // Disable the extension in base config
+        $config['extensions'][$extensionName]['enabled'] = false;
+
+        // Remove from all environment enabled lists
+        if (isset($config['environments'])) {
+            foreach ($config['environments'] as $env => $envConfig) {
+                if (isset($envConfig['enabledExtensions'])) {
+                    $config['environments'][$env]['enabledExtensions'] = array_values(
+                        array_diff($envConfig['enabledExtensions'], [$extensionName])
+                    );
+                }
+            }
+        }
+
+        // Save JSON config
+        $saveSuccess = self::saveExtensionsJson($config);
 
         if (!$saveSuccess) {
             return [
@@ -625,17 +607,9 @@ class ExtensionsManager
             ];
         }
 
-        $message = "Extension '$extensionName' has been disabled successfully";
-
-        // Add warning for core extensions that were force-disabled
-        if ($isCoreExtension) {
-            $message .= " (WARNING: This is a core extension and some system functionality may not work properly)";
-        }
-
         return [
             'success' => true,
-            'message' => $message,
-            'is_core' => $isCoreExtension
+            'message' => "Extension '$extensionName' has been disabled successfully"
         ];
     }
 
@@ -823,11 +797,17 @@ class ExtensionsManager
         $configFile = config('services.extensions.config_file');
 
         if (!file_exists($configFile)) {
-            // Create default config if it doesn't exist
-            // return self::createDefaultConfig();
+            return self::createDefaultExtensionsJson();
         }
 
-        return json_decode(file_get_contents($configFile), true) ?: [];
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \RuntimeException('Invalid JSON in extensions config: ' . json_last_error_msg());
+        }
+
+        return $config ?: [];
     }
 
     /**
@@ -843,40 +823,55 @@ class ExtensionsManager
 
     public static function getConfigPath(): string
     {
-        $configDir = dirname(__DIR__, 2) . '/config';
-
-        // Ensure config directory exists
-        if (!is_dir($configDir)) {
-            // Only attempt to create if it doesn't exist
-            if (!mkdir($configDir, 0755, true) && !is_dir($configDir)) {
-                // This is a more robust check: try to create it, and if that fails, check again if it exists
-                throw new \RuntimeException("Failed to create config directory: $configDir");
-            }
-        }
-
-        $configFile = $configDir . '/extensions.php';
-
-        // Create the extensions.php file if it doesn't exist
-        if (!file_exists($configFile)) {
-            self::createConfigFile($configFile);
-        }
-
-        return $configFile;
+        return config('services.extensions.config_file');
     }
 
-    private static function createConfigFile(string $configFile): bool
+    /**
+     * Create default extensions.json configuration
+     *
+     * @return array Default configuration structure
+     */
+    private static function createDefaultExtensionsJson(): array
     {
         $defaultConfig = [
-            'core' => [],
-            'optional' => [],
-            'enabled' => [],
-            'paths' => [
-                'extensions' => config('app.paths.project_extensions'),
+            'extensions' => [],
+            'environments' => [
+                'development' => [
+                    'enabledExtensions' => []
+                ],
+                'production' => [
+                    'enabledExtensions' => []
+                ]
             ]
         ];
-        // Create the config file with default values
-        return self::saveConfig($configFile, $defaultConfig);
+
+        $configFile = config('services.extensions.config_file');
+        self::saveExtensionsJson($defaultConfig, $configFile);
+
+        return $defaultConfig;
     }
+
+    /**
+     * Save extensions configuration to JSON file
+     *
+     * @param array $config Configuration to save
+     * @param string|null $file Optional file path, uses default if not provided
+     * @return bool Success status
+     */
+    private static function saveExtensionsJson(array $config, ?string $file = null): bool
+    {
+        $file = $file ?: config('services.extensions.config_file');
+
+        // Ensure directory exists
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return file_put_contents($file, $json) !== false;
+    }
+
 
     /**
      * Check dependencies when enabling an extension
@@ -1135,10 +1130,23 @@ class ExtensionsManager
         $config = self::loadExtensionsConfig();
         $enabled = [];
 
-        foreach ($config['extensions'] as $name => $ext) {
-            if ($ext['enabled'] === true) {
-                $enabled[] = $name;
+        // Get base enabled extensions
+        if (isset($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if ($ext['enabled'] === true) {
+                    $enabled[] = $name;
+                }
             }
+        }
+
+        // Check for environment-specific overrides
+        $env = config('app.environment', 'production');
+        $envMapping = config('services.extensions.environments', []);
+        $mappedEnv = $envMapping[$env] ?? $env;
+
+        if (isset($config['environments'][$mappedEnv]['enabledExtensions'])) {
+            // Environment config overrides base config
+            return $config['environments'][$mappedEnv]['enabledExtensions'];
         }
 
         return $enabled;
@@ -1369,17 +1377,26 @@ class ExtensionsManager
             ];
         }
 
+        // Validate .gluex extension
+        $extension = pathinfo($source, PATHINFO_EXTENSION);
+        if ($extension !== 'gluex') {
+            return [
+                'success' => false,
+                'message' => "Invalid file format. Expected .gluex extension, got .$extension"
+            ];
+        }
+
         // If no target name provided, try to derive it from the source
         if (empty($targetName)) {
             if (filter_var($source, FILTER_VALIDATE_URL)) {
                 // Extract from URL
                 $urlPath = parse_url($source, PHP_URL_PATH);
                 $fileName = pathinfo($urlPath, PATHINFO_FILENAME);
-                $targetName = self::sanitizeExtensionName($fileName);
+                $targetName = self::extractExtensionNameFromGluex($fileName);
             } else {
                 // Extract from file path
                 $fileName = pathinfo($source, PATHINFO_FILENAME);
-                $targetName = self::sanitizeExtensionName($fileName);
+                $targetName = self::extractExtensionNameFromGluex($fileName);
             }
         }
 
@@ -1454,6 +1471,12 @@ class ExtensionsManager
             }
         }
 
+        // Verify installation and update extensions.json
+        $installResult = self::postInstallSetup($targetName, $extensionDir);
+        if (!$installResult['success']) {
+            return $installResult;
+        }
+
         // Force reload the extensions to include the newly installed one
         self::$loadedExtensions = [];
         self::loadExtensions();
@@ -1461,8 +1484,192 @@ class ExtensionsManager
         return [
             'success' => true,
             'message' => "Extension '$targetName' installed successfully",
-            'name' => $targetName
+            'name' => $targetName,
+            'version' => $installResult['version'] ?? '1.0.0'
         ];
+    }
+
+    /**
+     * Extract extension name from .gluex filename, removing version
+     *
+     * Examples:
+     * - "SocialLogin-0.18.0" -> "SocialLogin"
+     * - "EmailNotification-1.2.3" -> "EmailNotification"
+     * - "MyExtension-v2.0.0" -> "MyExtension"
+     *
+     * @param string $fileName Filename without extension
+     * @return string Clean extension name
+     */
+    private static function extractExtensionNameFromGluex(string $fileName): string
+    {
+        // Remove common version patterns:
+        // - ExtensionName-1.2.3
+        // - ExtensionName-v1.2.3
+        // - ExtensionName_1.2.3
+        $patterns = [
+            '/^(.+)-v?\d+\.\d+\.\d+.*$/',  // Remove version like -1.2.3 or -v1.2.3
+            '/^(.+)_v?\d+\.\d+\.\d+.*$/',  // Remove version like _1.2.3 or _v1.2.3
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $fileName, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        // If no version pattern found, return the original filename
+        return $fileName;
+    }
+
+    /**
+     * Post-installation setup and validation
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionDir Extension directory path
+     * @return array Result with success status and metadata
+     */
+    private static function postInstallSetup(string $extensionName, string $extensionDir): array
+    {
+        // Check for extension.json file
+        $extensionJsonPath = "$extensionDir/extension.json";
+        $version = '1.0.0';
+        $installPath = "extensions/$extensionName";
+
+        if (file_exists($extensionJsonPath)) {
+            $extensionJson = json_decode(file_get_contents($extensionJsonPath), true);
+            if ($extensionJson && isset($extensionJson['version'])) {
+                $version = $extensionJson['version'];
+            }
+        }
+
+        // Update extensions.json configuration
+        $config = self::loadExtensionsConfig();
+
+        // Add extension to configuration
+        $config['extensions'][$extensionName] = [
+            'version' => $version,
+            'enabled' => false,  // Start disabled by default
+            'installPath' => $installPath
+        ];
+
+        // Save updated configuration
+        if (!self::saveExtensionsJson($config)) {
+            return [
+                'success' => false,
+                'message' => "Extension files installed but failed to update configuration"
+            ];
+        }
+
+        return [
+            'success' => true,
+            'version' => $version
+        ];
+    }
+
+    /**
+     * Uninstall an extension
+     *
+     * @param string $extensionName Extension name to uninstall
+     * @param bool $removeFiles Whether to remove extension files (default: true)
+     * @return array Result with success status and messages
+     */
+    public static function uninstallExtension(string $extensionName, bool $removeFiles = true): array
+    {
+        // Check if extension exists
+        if (!self::extensionExists($extensionName)) {
+            return [
+                'success' => false,
+                'message' => "Extension '$extensionName' is not installed"
+            ];
+        }
+
+        // Disable extension first if it's enabled
+        if (self::isExtensionEnabled($extensionName)) {
+            $disableResult = self::disableExtension($extensionName);
+            if (!$disableResult['success']) {
+                return [
+                    'success' => false,
+                    'message' => "Failed to disable extension before uninstall: " . $disableResult['message']
+                ];
+            }
+        }
+
+        // Remove from extensions.json
+        $config = self::loadExtensionsConfig();
+        if (isset($config['extensions'][$extensionName])) {
+            unset($config['extensions'][$extensionName]);
+        }
+
+        // Remove from all environment configurations
+        if (isset($config['environments'])) {
+            foreach ($config['environments'] as $env => $envConfig) {
+                if (isset($envConfig['enabledExtensions'])) {
+                    $config['environments'][$env]['enabledExtensions'] = array_values(
+                        array_diff($envConfig['enabledExtensions'], [$extensionName])
+                    );
+                }
+            }
+        }
+
+        // Save updated configuration
+        if (!self::saveExtensionsJson($config)) {
+            return [
+                'success' => false,
+                'message' => "Failed to update configuration during uninstall"
+            ];
+        }
+
+        // Remove files if requested
+        if ($removeFiles) {
+            $extensionDir = config('app.paths.project_extensions') . $extensionName;
+            if (is_dir($extensionDir)) {
+                if (!self::removeDirectory($extensionDir)) {
+                    return [
+                        'success' => false,
+                        'message' => "Extension removed from configuration but failed to delete files from " .
+                                    $extensionDir
+                    ];
+                }
+            }
+        }
+
+        // Reload extensions
+        self::$loadedExtensions = [];
+        self::loadExtensions();
+
+        return [
+            'success' => true,
+            'message' => "Extension '$extensionName' uninstalled successfully"
+        ];
+    }
+
+    /**
+     * Recursively remove a directory and its contents
+     *
+     * @param string $dir Directory to remove
+     * @return bool Success status
+     */
+    private static function removeDirectory(string $dir): bool
+    {
+        if (!is_dir($dir)) {
+            return true;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = "$dir/$file";
+            if (is_dir($path)) {
+                if (!self::removeDirectory($path)) {
+                    return false;
+                }
+            } else {
+                if (!unlink($path)) {
+                    return false;
+                }
+            }
+        }
+
+        return rmdir($dir);
     }
 
     /**
@@ -1481,7 +1688,7 @@ class ExtensionsManager
         }
 
         // Generate a temporary file name
-        $tempFile = $tempDir . '/' . md5($source . time()) . '.zip';
+        $tempFile = $tempDir . '/' . md5($source . time()) . '.gluex';
 
         // Handle URL or local file
         if (filter_var($source, FILTER_VALIDATE_URL)) {
@@ -1563,9 +1770,16 @@ class ExtensionsManager
         if ($hasSingleRoot && $rootFolderName) {
             $extractedPath = dirname($destDir) . '/' . $rootFolderName;
             if (is_dir($extractedPath) && $extractedPath !== $destDir) {
-                if (!rename($extractedPath, $destDir)) {
-                    self::debug("Failed to rename extracted folder to target name");
-                    return false;
+                // Clean up any version numbers from the extracted folder name
+                $cleanRootName = self::extractExtensionNameFromGluex($rootFolderName);
+                $targetBaseName = basename($destDir);
+                // Only rename if the clean name doesn't match the target
+                if ($cleanRootName !== $targetBaseName || $extractedPath !== $destDir) {
+                    if (!rename($extractedPath, $destDir)) {
+                        self::debug("Failed to rename extracted folder from '$rootFolderName' to target name");
+                        return false;
+                    }
+                    self::debug("Renamed extracted folder from '$rootFolderName' to '$targetBaseName'");
                 }
             }
         }
@@ -2221,10 +2435,24 @@ class ExtensionsManager
             }
         }
 
-        // Create directories for extension assets
+        // Create directories for extension structure (matching existing extensions)
         $directories = [
+            "$extensionDir/src",
+            "$extensionDir/assets",
             "$extensionDir/screenshots",
+            "$extensionDir/migrations",
         ];
+
+        // Add additional directories for Advanced template
+        if ($templateType === 'Advanced') {
+            $directories = array_merge($directories, [
+                "$extensionDir/src/Middleware",
+                "$extensionDir/src/Services",
+                "$extensionDir/src/Providers",
+                "$extensionDir/src/Listeners",
+                "$extensionDir/src/Templates",
+            ]);
+        }
 
         foreach ($directories as $dir) {
             if (!is_dir($dir)) {
@@ -2256,6 +2484,17 @@ class ExtensionsManager
             $filesCreated[] = substr($file->getPathname(), strlen($extensionDir) + 1);
         }
 
+        // Add extension to extensions.json configuration
+        $setupResult = self::postInstallSetup($extensionName, $extensionDir);
+        if (!$setupResult['success']) {
+            // Clean up on failure
+            self::removeDirectory($extensionDir);
+            return [
+                'success' => false,
+                'message' => "Extension created but failed to update configuration: " . $setupResult['message']
+            ];
+        }
+
         return [
             'success' => true,
             'message' => "Extension '{$extensionName}' created successfully using '{$templateType}' template",
@@ -2264,6 +2503,7 @@ class ExtensionsManager
                 'path' => $extensionDir,
                 'template' => $templateType,
                 'files' => $filesCreated,
+                'version' => $setupResult['version'] ?? '1.0.0'
             ]
         ];
     }

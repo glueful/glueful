@@ -1,14 +1,25 @@
-# {{EXTENSION_NAME}} Extension for Glueful (Basic Template)
+# {{EXTENSION_NAME}} Extension for Glueful (Advanced Template)
 
 {{EXTENSION_DESCRIPTION}}
 
-**Template Type:** Basic - Simple extension template for getting started with Glueful extensions.
+**Template Type:** Advanced - Comprehensive extension template with full feature implementation.
 
 **Use this template when:**
-- Creating your first extension
-- Building simple functionality
-- Learning the Glueful extension system
-- Prototyping ideas quickly
+- Building production-ready extensions
+- Need advanced features (middleware, events, migrations)
+- Creating complex business logic
+- Building marketplace-ready extensions
+- Need API endpoints and security features
+
+**Includes:**
+- Event system integration
+- Middleware implementation
+- Database migrations
+- Service classes
+- API endpoint handlers
+- Security validation
+- Asset management
+- Configuration schema
 
 ## Installation
 
@@ -107,19 +118,24 @@ php glueful test extensions/{{EXTENSION_NAME}}
 
 ```
 {{EXTENSION_NAME}}/
-├── {{EXTENSION_NAME}}.php    # Main extension class
+├── {{EXTENSION_NAME}}.php    # Main extension class (with full implementation)
 ├── extension.json           # Extension metadata  
 ├── composer.json            # Composer dependencies
 ├── README.md               # This file
+├── build.php               # Build script for .gluex packaging
 ├── assets/                 # Static assets (CSS, JS, images)
 │   └── icon.png            # Extension icon
 ├── src/                    # Source code directory
 │   ├── config.php          # Configuration settings
-│   ├── routes.php          # Route definitions (if applicable)
+│   ├── Middleware/         # Custom middleware classes
+│   │   └── {{EXTENSION_NAME}}Middleware.php
+│   ├── Services/           # Business logic services
+│   │   └── {{EXTENSION_NAME}}Service.php
 │   ├── Providers/          # Service providers
 │   ├── Listeners/          # Event listeners
 │   └── Templates/          # Template files
 ├── migrations/             # Database migrations
+│   └── 001_Create{{EXTENSION_NAME}}Table.php
 └── screenshots/            # Extension screenshots
 ```
 
