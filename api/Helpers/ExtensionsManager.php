@@ -1139,14 +1139,15 @@ class ExtensionsManager
             }
         }
 
-        // Check for environment-specific overrides
+        // Check for environment-specific filtering
         $env = config('app.environment', 'production');
         $envMapping = config('services.extensions.environments', []);
         $mappedEnv = $envMapping[$env] ?? $env;
 
         if (isset($config['environments'][$mappedEnv]['enabledExtensions'])) {
-            // Environment config overrides base config
-            return $config['environments'][$mappedEnv]['enabledExtensions'];
+            // Only include extensions that are both individually enabled AND listed in environment config
+            $envEnabled = $config['environments'][$mappedEnv]['enabledExtensions'];
+            return array_intersect($enabled, $envEnabled);
         }
 
         return $enabled;
