@@ -100,17 +100,17 @@ class ServiceContainer
     public function registerDefaults(): void
     {
         // Register SecurityManager
-        $this->register('security_manager', function() {
+        $this->register('security_manager', function () {
             return new \Glueful\Security\SecurityManager();
         });
 
         // Register VulnerabilityScanner
-        $this->register('vulnerability_scanner', function() {
+        $this->register('vulnerability_scanner', function () {
             return new \Glueful\Security\VulnerabilityScanner();
         });
 
         // Register SystemCheckCommand
-        $this->register('system_checker', function() {
+        $this->register('system_checker', function () {
             return new \Glueful\Console\Commands\SystemCheckCommand();
         });
     }

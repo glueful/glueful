@@ -2,7 +2,7 @@
 
 /**
  * Security Lockdown Configuration
- * 
+ *
  * Configuration for emergency security lockdown system
  */
 
@@ -94,13 +94,13 @@ return [
             '/api/admin/reset',
             '/api/extensions/install',
         ],
-        
+
         'medium' => [
             '/api/admin/*',
             '/api/users/create',
             '/api/files/upload',
         ],
-        
+
         'high' => [
             '/api/admin/*',
             '/api/users/create',
@@ -108,7 +108,7 @@ return [
             '/api/extensions/*',
             '/api/config/*',
         ],
-        
+
         'critical' => [
             '*', // Disable everything except always_allowed_endpoints
         ],
@@ -126,23 +126,23 @@ return [
 
     'ip_blocking' => [
         'enabled' => env('LOCKDOWN_IP_BLOCKING', true),
-        
+
         'thresholds' => [
             'critical' => 3,   // Block after 3 failed attempts
             'high' => 5,        // Block after 5 failed attempts
             'medium' => 10,     // Block after 10 failed attempts
             'low' => 20,        // Block after 20 failed attempts
         ],
-        
+
         'time_windows' => [
             'critical' => 300,  // 5 minutes
             'high' => 900,      // 15 minutes
             'medium' => 1800,   // 30 minutes
             'low' => 3600,      // 1 hour
         ],
-        
+
         'block_duration' => env('LOCKDOWN_IP_BLOCK_DURATION', 86400), // 24 hours
-        
+
         'whitelist' => [
             '127.0.0.1',
             '::1',
@@ -182,7 +182,7 @@ return [
         'block_suspicious_ips' => true,
         'enable_enhanced_logging' => true,
         'send_admin_alerts' => true,
-        
+
         // Critical severity only
         'force_password_resets' => [
             'enabled' => env('LOCKDOWN_FORCE_PASSWORD_RESETS', false),
