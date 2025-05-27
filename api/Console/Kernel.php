@@ -62,6 +62,7 @@ class Kernel
             \Glueful\Console\Commands\ServeCommand::class,
             \Glueful\Console\Commands\InstallCommand::class,
             \Glueful\Console\Commands\ConfigProductionCommand::class,
+            \Glueful\Console\Commands\SecurityCommand::class,
         ]);
     }
 

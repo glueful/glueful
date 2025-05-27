@@ -98,7 +98,7 @@ HELP;
     }
 
 
-    private function checkPhpVersion(): array
+    public function checkPhpVersion(): array
     {
         $required = '8.2.0';
         $current = PHP_VERSION;
@@ -116,7 +116,7 @@ HELP;
         ];
     }
 
-    private function checkPhpExtensions(): array
+    public function checkPhpExtensions(): array
     {
         $required = ['pdo', 'pdo_mysql', 'json', 'mbstring', 'openssl', 'curl'];
         $missing = [];
@@ -139,7 +139,7 @@ HELP;
         ];
     }
 
-    private function checkPermissions(bool $fix = false): array
+    public function checkPermissions(bool $fix = false): array
     {
         $dirs = [
             'storage' => 0755,
@@ -185,7 +185,7 @@ HELP;
         ];
     }
 
-    private function checkConfiguration(bool $production): array
+    public function checkConfiguration(bool $production): array
     {
         $issues = [];
 
@@ -217,7 +217,7 @@ HELP;
         ];
     }
 
-    private function checkSecurity(bool $production): array
+    public function checkSecurity(bool $production): array
     {
         $issues = [];
 
@@ -253,7 +253,7 @@ HELP;
         ];
     }
 
-    private function checkDatabase(): array
+    public function checkDatabase(): array
     {
         $healthResult = HealthService::checkDatabase();
         return HealthService::convertToSystemCheckFormat($healthResult);

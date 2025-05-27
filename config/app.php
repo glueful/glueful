@@ -48,6 +48,7 @@ return [
         'logs' => dirname(__DIR__) . '/storage/logs/',
         'cache' => dirname(__DIR__) . '/storage/cache/',
         'backups' => dirname(__DIR__) . '/storage/backups/',
+        'storage' => dirname(__DIR__) . '/storage/',
         'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
         'project_extensions' => dirname(__DIR__) . '/extensions/',
     ],

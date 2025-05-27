@@ -7,7 +7,7 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Helpers\{Request, DatabaseConnectionTrait};
 use Glueful\Database\Schema\SchemaManager;
-use Glueful\Database\{Connection, QueryBuilder};
+use Glueful\Database\{QueryBuilder};
 
 /**
  * Database Controller
