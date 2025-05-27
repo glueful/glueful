@@ -9,7 +9,6 @@ use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Exceptions\{ValidationException, AuthenticationException};
 use Glueful\Logging\LogManager;
-use Glueful\Http\Cors;
 use Throwable;
 
 /**
@@ -121,6 +120,24 @@ class API
         self::getLogger()->debug("Initializing API metrics collection...");
         $apiMetricsMiddleware = new \Glueful\Http\Middleware\ApiMetricsMiddleware();
         \Glueful\Http\Router::addMiddleware($apiMetricsMiddleware);
+
+        // Initialize rate limiter middleware for API protection
+        self::getLogger()->debug("Initializing rate limiter middleware...");
+        $rateLimiterConfig = config('security.rate_limiter.defaults', []);
+        $rateLimiterMiddleware = new \Glueful\Http\Middleware\RateLimiterMiddleware(
+            $rateLimiterConfig['ip']['max_attempts'] ?? 60,
+            $rateLimiterConfig['ip']['window_seconds'] ?? 60,
+            'ip',
+            config('security.rate_limiter.enable_adaptive', true),
+            config('security.rate_limiter.enable_distributed', false)
+        );
+        \Glueful\Http\Router::addMiddleware($rateLimiterMiddleware);
+
+        // Initialize security headers middleware for web security
+        self::getLogger()->debug("Initializing security headers middleware...");
+        $securityHeadersConfig = config('security.headers', []);
+        $securityHeadersMiddleware = new \Glueful\Http\Middleware\SecurityHeadersMiddleware($securityHeadersConfig);
+        \Glueful\Http\Router::addMiddleware($securityHeadersMiddleware);
 
         // Initialize authentication providers
         self::getLogger()->debug("Initializing authentication services...");

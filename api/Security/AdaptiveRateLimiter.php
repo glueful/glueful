@@ -47,15 +47,13 @@ class AdaptiveRateLimiter extends RateLimiter
     private string $trackingId = '';
 
     /** @var string Key for identifying this rate limiter */
-    protected string $key;
+    private string $limitKey;
 
-    /** @var int Maximum number of attempts allowed */
-    protected int $maxAttempts;
+    /** @var int Maximum number of attempts allowed (copy of parent private property) */
+    private int $maxAttempts;
 
-    /** @var int Time window in seconds */
-    protected int $windowSeconds;
-
-    protected string $limitKey;
+    /** @var int Time window in seconds (copy of parent private property) */
+    private int $windowSeconds;
 
     /**
      * Constructor
@@ -75,7 +73,7 @@ class AdaptiveRateLimiter extends RateLimiter
     ) {
         parent::__construct($key, $maxAttempts, $windowSeconds);
 
-        // Store key, max attempts and window seconds locally because parent properties are private
+        // Store key and limits locally because parent properties are private
         $this->limitKey = $key;
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
@@ -115,7 +113,7 @@ class AdaptiveRateLimiter extends RateLimiter
         $adjustedLimit = $this->getAdjustedLimitFromRules();
         if ($adjustedLimit < $this->maxAttempts) {
             // Create temporary rate limiter with stricter limits
-            $tempLimiter = new RateLimiter($this->key, $adjustedLimit, $this->windowSeconds);
+            $tempLimiter = new RateLimiter($this->limitKey, $adjustedLimit, $this->windowSeconds);
             $allowed = $tempLimiter->attempt();
 
             if (!$allowed) {
@@ -135,7 +133,7 @@ class AdaptiveRateLimiter extends RateLimiter
             // High suspicion score, apply stricter limits
             $progressiveLimit = (int) round($this->maxAttempts * (1 - $this->behaviorScore * 0.5));
             if ($progressiveLimit < $this->maxAttempts) {
-                $tempLimiter = new RateLimiter($this->key, $progressiveLimit, $this->windowSeconds);
+                $tempLimiter = new RateLimiter($this->limitKey, $progressiveLimit, $this->windowSeconds);
                 $allowed = $tempLimiter->attempt();
 
                 if (!$allowed) {
@@ -154,7 +152,12 @@ class AdaptiveRateLimiter extends RateLimiter
         if ($this->distributor) {
             $key = $this->getCacheKey();
             $currentCount = CacheEngine::zcard($key);
-            $this->distributor->updateGlobalLimit($this->key, $currentCount, $this->maxAttempts, $this->windowSeconds);
+            $this->distributor->updateGlobalLimit(
+                $this->limitKey,
+                $currentCount,
+                $this->maxAttempts,
+                $this->windowSeconds
+            );
         }
 
         // Call the parent implementation for normal rate limiting
@@ -277,7 +280,7 @@ class AdaptiveRateLimiter extends RateLimiter
     private function loadRules(): void
     {
         // Try to load rules from cache first
-        $rulesKey = 'rate_limiter_rules:' . $this->key;
+        $rulesKey = 'rate_limiter_rules:' . $this->limitKey;
         $cachedRules = CacheEngine::get($rulesKey);
 
         if ($cachedRules) {
@@ -308,7 +311,7 @@ class AdaptiveRateLimiter extends RateLimiter
      */
     private function getDefaultRules(): array
     {
-        $keyType = explode(':', $this->key)[0] ?? 'generic';
+        $keyType = explode(':', $this->limitKey)[0] ?? 'generic';
 
         $rules = [];
 
@@ -372,7 +375,7 @@ class AdaptiveRateLimiter extends RateLimiter
      */
     private function saveRulesToCache(): void
     {
-        $rulesKey = 'rate_limiter_rules:' . $this->key;
+        $rulesKey = 'rate_limiter_rules:' . $this->limitKey;
         $ruleData = [];
 
         foreach ($this->rules as $rule) {
@@ -573,7 +576,7 @@ class AdaptiveRateLimiter extends RateLimiter
             'adaptive_rate_limit_' . $action,
             AuditEvent::SEVERITY_INFO,
             array_merge([
-                'key' => $this->key,
+                'key' => $this->limitKey,
                 'max_attempts' => $this->maxAttempts,
                 'window_seconds' => $this->windowSeconds,
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,

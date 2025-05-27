@@ -39,7 +39,8 @@ class RedisCacheDriver implements CacheDriverInterface
         $mergedArray = array_merge(
             ...array_map(null, array_values($scoreValues), array_keys($scoreValues))
         );
-        return $this->redis->zAdd($key, ...$mergedArray);
+        $result = $this->redis->zAdd($key, ...$mergedArray);
+        return $result !== false;
     }
 
     /**
