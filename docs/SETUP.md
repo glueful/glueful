@@ -106,8 +106,8 @@ Note: Always backup your database before running destructive commands.
 2. Update schema documentation in SCHEMA.md
 3. Test migration locally
    ```bash
-   php glueful db:migrate --dry-run
-   php glueful db:migrate
+   php glueful migrate run --dry-run
+   php glueful migrate run
    ```
 
 ### Troubleshooting

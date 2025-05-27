@@ -78,7 +78,7 @@ Arguments:
 
 Examples:
   php glueful help
-  php glueful help db:migrate
+  php glueful help migrate
   php glueful help generate:json
 HELP;
     }

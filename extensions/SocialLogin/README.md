@@ -36,7 +36,7 @@ return [
 3. Run the migrations to create the necessary database tables:
 
 ```bash
-php glueful db:migrate
+php glueful migrate run
 ```
 
 4. Generate API documentation:

@@ -242,7 +242,7 @@ networks:
 docker-compose up --build -d
 
 # Run migrations
-docker-compose exec app php glueful db:migrate
+docker-compose exec app php glueful migrate run
 
 # Monitor logs
 docker-compose logs -f app
@@ -556,7 +556,7 @@ composer install --no-dev --optimize-autoloader
 
 # Run migrations
 echo "Running database migrations..."
-php glueful db:migrate --force
+php glueful migrate run --force
 
 # Clear caches
 echo "Clearing caches..."
@@ -679,7 +679,7 @@ echo "Deploying to $NEW_ENV environment"
 deploy_to_environment $NEW_ENV
 
 # Run database migrations
-php glueful db:migrate --env=$NEW_ENV
+php glueful migrate run --env=$NEW_ENV
 
 # Run smoke tests
 run_smoke_tests $NEW_ENV
@@ -702,13 +702,13 @@ echo "Deployment complete. Traffic now on $NEW_ENV"
 echo "Starting rolling migration..."
 
 # Step 1: Deploy backward-compatible changes
-php glueful db:migrate --compatibility-mode
+php glueful migrate run --compatibility-mode
 
 # Step 2: Deploy application updates
 deploy_application_update
 
 # Step 3: Complete migration after deployment
-php glueful db:migrate --complete
+php glueful migrate run --complete
 
 echo "Rolling migration complete"
 ```

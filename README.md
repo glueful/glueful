@@ -69,7 +69,7 @@ GRANT ALL PRIVILEGES ON glueful.* TO 'glueful_user'@'localhost';
 FLUSH PRIVILEGES;
 
 # Run initialization and migrations
-php glueful db:migrate
+php glueful migrate run
 ```
 
 ## CLI Commands
@@ -79,7 +79,7 @@ Glueful comes with a powerful CLI tool for system management:
 ### Database Management
 ```bash
 # Run pending migrations
-php glueful db:migrate
+php glueful migrate run
 
 # Check database status
 php glueful db:status
@@ -133,7 +133,7 @@ php glueful cache delete <key>
 php glueful help
 
 # Show help for specific command
-php glueful help db:migrate
+php glueful help migrate run
 ```
 
 ## API Endpoints

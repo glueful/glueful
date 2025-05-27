@@ -74,7 +74,7 @@ class HealthService
                 return [
                     'status' => 'warning',
                     'message' => 'Database connected but migrations not run',
-                    'suggestion' => 'Run: php glueful db:migrate'
+                    'suggestion' => 'Run: php glueful migrate run'
                 ];
             }
 
