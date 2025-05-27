@@ -46,6 +46,7 @@ class Kernel
             \Glueful\Console\Commands\HelpCommand::class,
             \Glueful\Console\Commands\InstallCommand::class,
             \Glueful\Console\Commands\GenerateJsonCommand::class,
+            \Glueful\Console\Commands\GenerateCommand::class,
             \Glueful\Console\Commands\MigrateCommand::class,
             \Glueful\Console\Commands\DatabaseStatusCommand::class,
             \Glueful\Console\Commands\DatabaseResetCommand::class,

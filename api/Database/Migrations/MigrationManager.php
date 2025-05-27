@@ -153,6 +153,16 @@ class MigrationManager
     }
 
     /**
+     * Get list of applied migrations (public method)
+     *
+     * @return array<string> List of applied migration filenames
+     */
+    public function getAppliedMigrationsList(): array
+    {
+        return $this->getAppliedMigrations();
+    }
+
+    /**
      * Run migrations
      *
      * Executes pending migrations in order. Can run either:
