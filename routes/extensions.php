@@ -18,9 +18,10 @@ use Glueful\Http\Router;
 use Glueful\Controllers\ExtensionsController;
 use Symfony\Component\HttpFoundation\Request;
 
-$controller = new ExtensionsController();
+// Get the container from the global app() helper
+$container = app();
 
-Router::group('/extensions', function() use ($controller) {
+Router::group('/extensions', function() use ($container) {
     /**
      * @route GET /extensions
      * @tag Extensions
@@ -30,7 +31,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 200 application/json "List of extensions" {extensions:array=[{name:string="Extension name", description:string="Extension description", version:string="Extension version", author:string="Extension author", enabled:boolean="Whether extension is enabled"}]}
      * @response 403 application/json "Permission denied"
      */
-    Router::get('/', function (Request $request) use ($controller){
+    Router::get('/', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->getExtensions();
     });
 
@@ -47,7 +49,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 404 application/json "Extension not found"
      * @response 500 application/json "Failed to enable extension"
      */
-    Router::post('/enable', function (Request $request) use ($controller){
+    Router::post('/enable', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->enableExtension($request);
     });
 
@@ -64,7 +67,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 404 application/json "Extension not found"
      * @response 500 application/json "Failed to disable extension"
      */
-    Router::post('/disable', function (Request $request) use ($controller){
+    Router::post('/disable', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->disableExtension($request);
     });
     
@@ -81,7 +85,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 404 application/json "Extension not found"
      * @response 500 application/json "Failed to get extension health"
      */
-    Router::post('/{name}/health', function (array $params) use ($controller){
+    Router::post('/{name}/health', function (array $params) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->getExtensionHealth($params);
     });
     
@@ -95,7 +100,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 403 application/json "Permission denied"
      * @response 500 application/json "Failed to get extension dependencies"
      */
-    Router::get('/dependencies', function (Request $request) use ($controller){
+    Router::get('/dependencies', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->getExtensionDependencies();
     });
     
@@ -109,7 +115,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 403 application/json "Permission denied"
      * @response 500 application/json "Failed to get extension metrics"
      */
-    Router::get('/metrics', function (Request $request) use ($controller){
+    Router::get('/metrics', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->getExtensionMetrics();
     });
 
@@ -126,7 +133,8 @@ Router::group('/extensions', function() use ($controller) {
      * @response 404 application/json "Extension not found"
      * @response 500 application/json "Failed to delete extension"
      */
-    Router::post('/delete', function (Request $request) use ($controller){
+    Router::post('/delete', function (Request $request) use ($container){
+        $controller = $container->get(ExtensionsController::class);
         return $controller->deleteExtension();
     });
 });

@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Rate Limiter Middleware
@@ -44,6 +45,9 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var bool Whether to enable distributed rate limiting */
     private bool $enableDistributed;
 
+    /** @var ContainerInterface DI Container */
+    private ContainerInterface $container;
+
     /**
      * Create a new rate limiter middleware
      *
@@ -52,14 +56,17 @@ class RateLimiterMiddleware implements MiddlewareInterface
      * @param string $type Rate limiter type (ip, user, endpoint)
      * @param bool $useAdaptiveLimiter Whether to use adaptive rate limiting
      * @param bool $enableDistributed Whether to enable distributed rate limiting
+     * @param ContainerInterface|null $container DI Container instance
      */
     public function __construct(
         int $maxAttempts = 60,
         int $windowSeconds = 60,
         string $type = 'ip',
         ?bool $useAdaptiveLimiter = null,
-        ?bool $enableDistributed = null
+        ?bool $enableDistributed = null,
+        ?ContainerInterface $container = null
     ) {
+        $this->container = $container ?? app();
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
         $this->type = $type;
@@ -204,6 +211,9 @@ class RateLimiterMiddleware implements MiddlewareInterface
             $key = "ip:" . ($request->getClientIp() ?: '0.0.0.0');
         }
 
+        // Create new AdaptiveRateLimiter instance with specific parameters
+        // Note: AdaptiveRateLimiter requires specific constructor parameters per request,
+        // so we create new instances rather than using DI container
         return new AdaptiveRateLimiter(
             $key,
             $this->maxAttempts,

@@ -9,15 +9,17 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../api/bootstrap.php';
+$container = require_once __DIR__ . '/../api/bootstrap.php';
 
 use Glueful\API;
 use Glueful\Http\ServerRequestFactory;
 use Glueful\Logging\LogManager;
 use Glueful\Http\Cors;
 
-// Create global request logger
-$requestLogger = new LogManager('request');
+// Create global request logger using container if available
+$requestLogger = $container->has(LogManager::class)
+    ? $container->get(LogManager::class)
+    : new LogManager('request');
 
 // Log the incoming request
 $requestLogger->debug("Request received", [

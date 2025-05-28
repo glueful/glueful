@@ -28,6 +28,10 @@ if (PHP_SAPI !== 'cli') {
 // Load composer autoloader
 require dirname(__FILE__) . '/vendor/autoload.php';
 
-// Initialize and run console application
-$kernel = new Glueful\Console\Kernel();
+// Initialize bootstrap (includes DI container setup)
+require_once dirname(__FILE__) . '/api/bootstrap.php';
+
+// Initialize and run console application with DI container
+$container = app();
+$kernel = new Glueful\Console\Kernel($container);
 $kernel->run();

@@ -428,10 +428,16 @@ class ExtensionsManager
                     $extensionClass::initialize();
                 }
 
-                // Register services if method exists
-                if ($reflection->hasMethod('registerServices')) {
-                    $extensionClass::registerServices();
+                // Register services with DI container using service provider
+                if (!function_exists('app')) {
+                    throw new \RuntimeException(
+                        "DI container not initialized. Cannot load extension: {$extensionClass}"
+                    );
                 }
+
+                $container = app();
+                $serviceProvider = $extensionClass::getServiceProvider();
+                $container->register($serviceProvider);
 
                 // Register middleware if method exists
                 if ($reflection->hasMethod('registerMiddleware')) {

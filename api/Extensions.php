@@ -34,19 +34,14 @@ abstract class Extensions implements IExtensions
     }
 
     /**
-     * Register extension-provided services
+     * Get the extension's service provider
      *
-     * This method is called by ExtensionsManager when loading extensions.
-     * Extensions should override this method to register their services
-     * with the application's service container.
+     * Returns the service provider instance for this extension.
+     * All extensions MUST override this method to register their services.
      *
-     * @param mixed $container Service container instance (optional for backward compatibility)
-     * @return void
+     * @return \Glueful\DI\Interfaces\ServiceProviderInterface
      */
-    public static function registerServices($container = null): void
-    {
-        // Override in child classes
-    }
+    abstract public static function getServiceProvider(): \Glueful\DI\Interfaces\ServiceProviderInterface;
 
     /**
      * Register extension-provided middleware

@@ -1,0 +1,103 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Glueful\DI;
+
+use Glueful\DI\Container;
+use Glueful\DI\Interfaces\ServiceProviderInterface;
+use Glueful\DI\Providers\CoreServiceProvider;
+use Glueful\DI\Providers\RepositoryServiceProvider;
+use Glueful\DI\Providers\ControllerServiceProvider;
+
+/**
+ * Container Bootstrap
+ *
+ * Provides a centralized way to initialize and configure the DI container
+ */
+class ContainerBootstrap
+{
+    private static ?Container $container = null;
+
+    /**
+     * Initialize the container with core services
+     */
+    public static function initialize(): Container
+    {
+        if (self::$container !== null) {
+            return self::$container;
+        }
+
+        $container = new Container();
+
+        // Register core service providers
+        $container->register(new CoreServiceProvider());
+        $container->register(new RepositoryServiceProvider());
+        $container->register(new ControllerServiceProvider());
+
+        // Boot all providers
+        $container->boot();
+
+        // Don't lock the container - extensions need to register services
+        
+        self::$container = $container;
+        return $container;
+    }
+
+    /**
+     * Get the initialized container
+     */
+    public static function getContainer(): Container
+    {
+        if (self::$container === null) {
+            throw new \RuntimeException('Container not initialized. Call initialize() first.');
+        }
+
+        return self::$container;
+    }
+
+    /**
+     * Register additional service providers
+     */
+    public static function registerProvider(ServiceProviderInterface $provider): void
+    {
+        if (self::$container === null) {
+            throw new \RuntimeException('Container not initialized. Call initialize() first.');
+        }
+
+        self::$container->register($provider);
+    }
+
+    /**
+     * Add custom bindings to the container
+     */
+    public static function addBindings(array $bindings): void
+    {
+        if (self::$container === null) {
+            throw new \RuntimeException('Container not initialized. Call initialize() first.');
+        }
+
+        foreach ($bindings as $abstract => $concrete) {
+            if (is_array($concrete)) {
+                $singleton = $concrete['singleton'] ?? false;
+                $implementation = $concrete['class'] ?? $concrete['concrete'] ?? $abstract;
+
+                if ($singleton) {
+                    self::$container->singleton($abstract, $implementation);
+                } else {
+                    self::$container->bind($abstract, $implementation);
+                }
+            } else {
+                self::$container->bind($abstract, $concrete);
+            }
+        }
+    }
+
+    /**
+     * Reset the container (useful for testing)
+     */
+    public static function reset(): void
+    {
+        self::$container = null;
+    }
+}

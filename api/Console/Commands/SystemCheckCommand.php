@@ -4,6 +4,7 @@ namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
 use Glueful\Services\HealthService;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * System Check Command
@@ -13,6 +14,19 @@ use Glueful\Services\HealthService;
  */
 class SystemCheckCommand extends Command
 {
+    /** @var ContainerInterface DI Container */
+    protected ContainerInterface $container;
+
+    /**
+     * Constructor
+     *
+     * @param ContainerInterface|null $container DI Container instance
+     */
+    public function __construct(?ContainerInterface $container = null)
+    {
+        $this->container = $container ?? app();
+    }
+
     public function getName(): string
     {
         return 'system:check';
@@ -255,7 +269,9 @@ HELP;
 
     public function checkDatabase(): array
     {
-        $healthResult = HealthService::checkDatabase();
-        return HealthService::convertToSystemCheckFormat($healthResult);
+        // Get HealthService from DI container
+        $healthService = $this->container->get(HealthService::class);
+        $healthResult = $healthService->checkDatabase();
+        return $healthService->convertToSystemCheckFormat($healthResult);
     }
 }

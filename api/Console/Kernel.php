@@ -2,6 +2,8 @@
 
 namespace Glueful\Console;
 
+use Glueful\DI\Interfaces\ContainerInterface;
+
 /**
  * Console Application Kernel
  *
@@ -20,6 +22,9 @@ class Kernel
     /** @var array<string, Command> Map of registered command names to instances */
     protected array $commands = [];
 
+    /** @var ContainerInterface DI Container */
+    protected ContainerInterface $container;
+
     /**
      * Initialize Console Kernel
      *
@@ -29,9 +34,10 @@ class Kernel
      * - Initializes command registry
      * - Configures help system
      *
+     * @param ContainerInterface|null $container DI Container instance
      * @throws \RuntimeException If PHP version is below 8.2.0
      */
-    public function __construct()
+    public function __construct(?ContainerInterface $container = null)
     {
         // Check PHP version
         if (version_compare(PHP_VERSION, '8.2.0', '<')) {
@@ -40,6 +46,9 @@ class Kernel
                 PHP_VERSION
             ));
         }
+
+        // Use provided container or get global container
+        $this->container = $container ?? app();
 
         // Auto-register commands
         $this->registerCommands([
@@ -70,7 +79,7 @@ class Kernel
      * Register Command Classes
      *
      * Adds commands to registry:
-     * - Instantiates command objects
+     * - Resolves command objects via DI container
      * - Maps command names
      * - Validates command interfaces
      * - Sets up command dependencies
@@ -81,7 +90,8 @@ class Kernel
     private function registerCommands(array $commands): void
     {
         foreach ($commands as $commandClass) {
-            $command = new $commandClass();
+            // Use DI container to resolve command with its dependencies
+            $command = $this->container->get($commandClass);
             $this->commands[$command->getName()] = $command;
         }
     }

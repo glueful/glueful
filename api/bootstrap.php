@@ -10,6 +10,23 @@ $dotenv->load();
 // Load global helper functions (env, config, etc.)
 require_once __DIR__ . '/helpers.php';
 
+// Initialize Dependency Injection Container
+$container = \Glueful\DI\ContainerBootstrap::initialize();
+
+// Make container globally available
+if (!function_exists('app')) {
+    function app(?string $abstract = null)
+    {
+        global $container;
+
+        if ($abstract === null) {
+            return $container;
+        }
+
+        return $container->get($abstract);
+    }
+}
+
 // Validate security configuration in production
 if (env('APP_ENV') === 'production') {
     \Glueful\Security\SecurityManager::validateProductionConfig();
@@ -45,3 +62,6 @@ if (env('DB_STARTUP_VALIDATION', true) && !env('SKIP_DB_VALIDATION', false)) {
 
 // Initialize API Engine
 Glueful\APIEngine::initialize();
+
+// Return the container for use in index.php and other entry points
+return $container;

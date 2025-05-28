@@ -23,6 +23,13 @@ interface IExtensions
     public static function initialize(): void;
 
     /**
+     * Get the extension's service provider
+     *
+     * @return \Glueful\DI\Interfaces\ServiceProviderInterface
+     */
+    public static function getServiceProvider(): \Glueful\DI\Interfaces\ServiceProviderInterface;
+
+    /**
      * Get extension metadata
      *
      * @return array<string, mixed> Extension metadata

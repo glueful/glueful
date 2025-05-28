@@ -19,4 +19,20 @@ return [
 
     // JWT Settings
     'jwt_algorithm' => env('JWT_ALGORITHM', 'HS256'),  // JWT signing algorithm
+    'providers' => [
+        // 'jwt' => [
+        //     'class' => \Glueful\Auth\JwtAuthenticationProvider::class,
+        //     'options' => [
+        //         'token_salt' => env('TOKEN_SALT'),
+        //         'jwt_key' => env('JWT_KEY'),
+        //         'algorithm' => env('JWT_ALGORITHM', 'HS256'),
+        //     ],
+        // ],
+        // 'api_key' => [
+        //     'class' => \Glueful\Auth\ApiKeyAuthenticationProvider::class,
+        // ],
+        // 'admin' => [
+        //     'class' => \Glueful\Auth\AdminAuthenticationProvider::class,
+        // ],
+    ],
 ];

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Console\ServiceContainer;
+use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Security\SecurityManager;
 use Glueful\Helpers\{DatabaseConnectionTrait};
 
@@ -61,16 +61,16 @@ class SecurityCommand extends Command
     /**
      * Service container for dependency injection
      */
-    private ServiceContainer $container;
+    private ContainerInterface $container;
 
     /**
      * Constructor - uses dependency injection to prevent memory issues
      *
-     * @param ServiceContainer|null $container Optional service container
+     * @param ContainerInterface|null $container Optional DI container
      */
-    public function __construct(?ServiceContainer $container = null)
+    public function __construct(?ContainerInterface $container = null)
     {
-        $this->container = $container ?? $this->createDefaultContainer();
+        $this->container = $container ?? app();
     }
 
     /**
@@ -346,7 +346,8 @@ class SecurityCommand extends Command
             }
 
             // Run the vulnerability scan
-            $results = $this->container->get('vulnerability_scanner')->scan($scanTypes);
+            $scanner = $this->container->get(\Glueful\Security\VulnerabilityScanner::class);
+            $results = $scanner->scan($scanTypes);
 
             // Display results
             $this->displayScanResults($results);
@@ -383,7 +384,8 @@ class SecurityCommand extends Command
 
         try {
             // Run dependency vulnerability check
-            $results = $this->container->get('vulnerability_scanner')->checkDependencyVulnerabilities();
+            $scanner = $this->container->get(\Glueful\Security\VulnerabilityScanner::class);
+            $results = $scanner->checkDependencyVulnerabilities();
 
             $vulnerabilityCount = count($results['vulnerabilities']);
             $packagesScanned = $results['scanned_packages'];
@@ -1011,7 +1013,7 @@ HELP;
     private function processHealthChecks(bool $_fix, bool $verbose): array
     {
         // Use SystemCheckCommand's database check
-        $systemChecker = $this->container->get('system_checker');
+        $systemChecker = $this->container->get(\Glueful\Console\Commands\SystemCheckCommand::class);
         $dbResult = $systemChecker->checkDatabase();
         // Use SystemCheckCommand's PHP extensions check
         $extensionsResult = $systemChecker->checkPhpExtensions();
@@ -1070,7 +1072,8 @@ HELP;
     private function processPermissionChecks(bool $fix, bool $verbose): array
     {
         // Use SystemCheckCommand's permission check with fix capability
-        $result = $this->container->get('system_checker')->checkPermissions($fix);
+        $systemChecker = $this->container->get(\Glueful\Console\Commands\SystemCheckCommand::class);
+        $result = $systemChecker->checkPermissions($fix);
 
         $passed = $result['passed'];
 
@@ -1097,7 +1100,8 @@ HELP;
     private function processConfigurationSecurity(bool $production, bool $_fix, bool $verbose): array
     {
         // Use SystemCheckCommand's configuration check
-        $systemConfigResult = $this->container->get('system_checker')->checkConfiguration($production);
+        $systemChecker = $this->container->get(\Glueful\Console\Commands\SystemCheckCommand::class);
+        $systemConfigResult = $systemChecker->checkConfiguration($production);
 
         $issues = [];
 
@@ -1853,7 +1857,7 @@ HELP;
     private function analyzeSystemSecurity(): array
     {
         try {
-            $systemChecker = $this->container->get('system_checker');
+            $systemChecker = $this->container->get(\Glueful\Console\Commands\SystemCheckCommand::class);
 
             return [
                 'database' => $systemChecker->checkDatabase(),
@@ -1951,7 +1955,7 @@ HELP;
     private function runVulnerabilityAssessment(): array
     {
         try {
-            $scanner = $this->container->get('vulnerability_scanner');
+            $scanner = $this->container->get(\Glueful\Security\VulnerabilityScanner::class);
             $results = $scanner->scan(['code', 'dependency', 'config']);
 
             return [
@@ -3523,17 +3527,6 @@ HTML;
         }
     }
 
-    /**
-     * Create default service container
-     *
-     * @return ServiceContainer
-     */
-    private function createDefaultContainer(): ServiceContainer
-    {
-        $container = new ServiceContainer();
-        $container->registerDefaults();
-        return $container;
-    }
 
     /**
      * Clean up resources to prevent memory leaks
@@ -3542,7 +3535,7 @@ HTML;
      */
     public function cleanup(): void
     {
-        $this->container->clearInstances();
+        // Container cleanup is handled automatically by the main DI container
     }
 
     /**

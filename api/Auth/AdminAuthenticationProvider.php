@@ -210,12 +210,13 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     {
         // Get user by username
         $user = $this->userRepository->findByUsername($username);
-        $userProfile = $this->userRepository->getProfile($user['uuid']);
 
         if (!$user) {
             $this->error = "User not found";
             return null;
         }
+
+        $userProfile = $this->userRepository->getProfile($user['uuid']);
 
         // Verify password
         if (!$this->passwordHasher->verify($password, $user['password'])) {

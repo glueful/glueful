@@ -4,6 +4,7 @@ namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
 use Glueful\Database\Migrations\MigrationManager;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Comprehensive Migration Management System
@@ -25,12 +26,18 @@ class MigrateCommand extends Command
     /** @var MigrationManager Database migration handler */
     private MigrationManager $migrationManager;
 
+    /** @var ContainerInterface DI Container */
+    protected ContainerInterface $container;
+
     /**
      * Initialize Migration Command
+     *
+     * @param ContainerInterface|null $container DI Container instance
      */
-    public function __construct()
+    public function __construct(?ContainerInterface $container = null)
     {
-        $this->migrationManager = new MigrationManager();
+        $this->container = $container ?? app();
+        $this->migrationManager = $this->container->get(MigrationManager::class);
     }
 
     /**

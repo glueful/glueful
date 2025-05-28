@@ -58,7 +58,7 @@ class AuthBootstrap
     private static function registerCustomProviders(AuthenticationManager $manager): void
     {
         // Get configured providers from configuration
-        $configuredProviders = config('auth.providers', []);
+        $configuredProviders = config('session.providers', []);
 
         foreach ($configuredProviders as $name => $providerClass) {
             // Skip if already registered

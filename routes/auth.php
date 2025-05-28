@@ -4,10 +4,11 @@ use Glueful\Http\Router;
 use Glueful\Controllers\AuthController;
 use Symfony\Component\HttpFoundation\Request;
 
-$authController = new AuthController();
+// Get the container from the global app() helper
+$container = app();
 
 // Auth routes
-Router::group('/auth', function () use ($authController) {
+Router::group('/auth', function () use ($container) {
     /**
      * @route POST /auth/login
      * @summary User Login
@@ -46,7 +47,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 401 "Invalid credentials"
      * @response 400 "Missing required fields"
      */
-    Router::post('/login', function (Request $request) use ($authController) {
+    Router::post('/login', function (Request $request) use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->login();
     });
 
@@ -68,7 +70,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid email address"
      * @response 404 "Email not found"
      */
-    Router::post('/verify-email', function () use ($authController) {
+    Router::post('/verify-email', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->verifyEmail();
     });
 
@@ -91,7 +94,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid OTP"
      * @response 401 "OTP expired"
      */
-    Router::post('/verify-otp', function () use ($authController) {
+    Router::post('/verify-otp', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->verifyOtp();
     });
 
@@ -113,7 +117,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 404 "Email not found"
      * @response 400 "Invalid email format"
      */
-    Router::post('/forgot-password', function () use ($authController) {
+    Router::post('/forgot-password', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->forgotPassword();
     });
 
@@ -135,7 +140,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 400 "Invalid password format"
      * @response 404 "Email not found"
      */
-    Router::post('/reset-password', function () use ($authController) {
+    Router::post('/reset-password', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->resetPassword();
     });
 
@@ -156,7 +162,8 @@ Router::group('/auth', function () use ($authController) {
      * }
      * @response 401 "Invalid or expired token"
      */
-    Router::post('/validate-token', function () use ($authController) {
+    Router::post('/validate-token', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->validateToken();
     });
 
@@ -182,7 +189,8 @@ Router::group('/auth', function () use ($authController) {
      * @response 401 "Invalid refresh token"
      * @response 400 "Missing refresh token"
      */
-    Router::post('/refresh-token', function () use ($authController) {
+    Router::post('/refresh-token', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->refreshToken();
     });
 
@@ -199,7 +207,8 @@ Router::group('/auth', function () use ($authController) {
      * }
      * @response 401 "Unauthorized - not logged in"
      */
-    Router::post('/logout', function () use ($authController) {
+    Router::post('/logout', function () use ($container) {
+        $authController = $container->get(AuthController::class);
         return $authController->logout();
     });
 });

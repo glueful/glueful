@@ -11,6 +11,7 @@ use Glueful\Repository\RoleRepository;
 use Glueful\Auth\SessionCacheManager;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Permissions\PermissionManager;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Permission Middleware
@@ -36,23 +37,29 @@ class PermissionMiddleware implements MiddlewareInterface
     /** @var bool Whether to enable debug mode for permission checks */
     private bool $debugMode;
 
+    /** @var ContainerInterface DI Container */
+    private ContainerInterface $container;
+
     /**
      * Create a new permission middleware
      *
      * @param string $model The resource model to check permissions for
      * @param string $permission The permission required (use Permission constants)
      * @param bool $debugMode Enable detailed debug information for permission checks
+     * @param ContainerInterface|null $container DI Container instance
      */
     public function __construct(
         string $model,
         string $permission,
-        bool $debugMode = false
+        bool $debugMode = false,
+        ?ContainerInterface $container = null
     ) {
+        $this->container = $container ?? app();
         $this->model = $model;
         $this->permission = $permission;
         $this->debugMode = $debugMode;
 
-        // Initialize PermissionManager
+        // Initialize PermissionManager (could be enhanced to use DI container)
         PermissionManager::initialize();
     }
 

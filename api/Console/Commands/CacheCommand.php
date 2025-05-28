@@ -6,6 +6,7 @@ namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
 use Glueful\Cache\CacheEngine;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Cache Management Command
@@ -49,11 +50,18 @@ class CacheCommand extends Command
         'expire'   => 'Set new TTL for cached item'
     ];
 
+    /** @var ContainerInterface DI Container */
+    protected ContainerInterface $container;
+
     /**
      * Constructor
+     *
+     * @param ContainerInterface|null $container DI Container instance
      */
-    public function __construct()
+    public function __construct(?ContainerInterface $container = null)
     {
+        $this->container = $container ?? app();
+        
         // Initialize the cache engine
         CacheEngine::initialize();
     }

@@ -3,10 +3,11 @@
 use Glueful\Http\Router;
 use Glueful\Controllers\HealthController;
 
-$healthController = new HealthController();
+// Get the container from the global app() helper
+$container = app();
 
 // Health check routes
-Router::group('/health', function () use ($healthController) {
+Router::group('/health', function () use ($container) {
     /**
      * @route GET /health
      * @summary System Health Check
@@ -47,7 +48,10 @@ Router::group('/health', function () use ($healthController) {
      *   checks:object="Individual check results"
      * }
      */
-    Router::get('/', [$healthController, 'index']);
+    Router::get('/', function() use ($container) {
+        $healthController = $container->get(HealthController::class);
+        return $healthController->index();
+    });
 
     /**
      * @route GET /health/database
@@ -67,7 +71,10 @@ Router::group('/health', function () use ($healthController) {
      *   type:string="Error type"
      * }
      */
-    Router::get('/database', [$healthController, 'database']);
+    Router::get('/database', function() use ($container) {
+        $healthController = $container->get(HealthController::class);
+        return $healthController->database();
+    });
 
     /**
      * @route GET /health/cache
@@ -85,5 +92,8 @@ Router::group('/health', function () use ($healthController) {
      *   message:string="Error message"
      * }
      */
-    Router::get('/cache', [$healthController, 'cache']);
+    Router::get('/cache', function() use ($container) {
+        $healthController = $container->get(HealthController::class);
+        return $healthController->cache();
+    });
 });

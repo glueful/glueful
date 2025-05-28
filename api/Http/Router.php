@@ -306,6 +306,48 @@ class Router
     }
 
     /**
+     * Add middleware by class name (resolved through DI container)
+     *
+     * @param string $middlewareClass The middleware class name
+     * @param array $constructorArgs Additional constructor arguments
+     */
+    public static function addMiddlewareClass(string $middlewareClass, array $constructorArgs = []): void
+    {
+        // Get DI container
+        $container = app();
+
+        // Resolve middleware through DI container
+        if (empty($constructorArgs)) {
+            $middleware = $container->get($middlewareClass);
+        } else {
+            // If constructor args are provided, create instance manually
+            $middleware = new $middlewareClass(...$constructorArgs);
+        }
+
+        if ($middleware instanceof MiddlewareInterface) {
+            self::addMiddleware($middleware);
+        }
+    }
+
+    /**
+     * Add multiple middleware by class names
+     *
+     * @param array $middlewareClasses Array of middleware class names or [class => args] pairs
+     */
+    public static function addMiddlewareClasses(array $middlewareClasses): void
+    {
+        foreach ($middlewareClasses as $key => $value) {
+            if (is_string($key)) {
+                // Format: ['ClassName' => [arg1, arg2]]
+                self::addMiddlewareClass($key, $value);
+            } else {
+                // Format: ['ClassName1', 'ClassName2']
+                self::addMiddlewareClass($value);
+            }
+        }
+    }
+
+    /**
      * Convert legacy middleware functions to PSR-15 compatible middleware
      *
      * This allows for easy migration from the old middleware system to the new PSR-15 compatible one.
@@ -383,7 +425,8 @@ class Router
             $routeName = md5($request->getPathInfo() . $request->getMethod());
             $controller = $parameters['_controller'];
 
-            // Set up middleware pipeline
+            // Set up middleware pipeline with DI container
+            $container = app();
             $dispatcher = new MiddlewareDispatcher(function (Request $request) use ($controller, $parameters) {
                 // Remove internal routing parameters
                 unset($parameters['_controller']);
@@ -424,7 +467,7 @@ class Router
                     'success' => true,
                     'data' => $result
                 ], 200);
-            });
+            }, $container);
 
             // Add authentication middleware if required, using our new abstraction
             $authManager = \Glueful\Auth\AuthBootstrap::getManager();

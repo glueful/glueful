@@ -9,14 +9,19 @@
       "version": "0.18.0",
       "enabled": false,
       "installPath": "extensions/SocialLogin"
+    },
+    "Admin": {
+      "version": "0.18.0",
+      "enabled": true,
+      "installPath": "extensions/Admin"
     }
   },
   "environments": {
     "development": {
-      "enabledExtensions": ["EmailNotification", "SocialLogin"]
+      "enabledExtensions": ["EmailNotification", "SocialLogin", "Admin"]
     },
     "production": {
-      "enabledExtensions": ["EmailNotification", "SocialLogin"]
+      "enabledExtensions": ["EmailNotification", "SocialLogin", "Admin"]
     }
   }
 }

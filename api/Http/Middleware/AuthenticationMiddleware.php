@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\AuthBootstrap;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Authentication Middleware
@@ -28,22 +29,34 @@ class AuthenticationMiddleware implements MiddlewareInterface
     /** @var array Optional provider names to try */
     private array $providerNames = [];
 
+    /** @var ContainerInterface DI Container */
+    private ContainerInterface $container;
+
     /**
      * Create a new authentication middleware
      *
      * @param bool $requiresAdmin Whether to require admin privileges
      * @param AuthenticationManager|null $authManager Optional custom auth manager
      * @param array $providerNames Provider names to try in sequence
+     * @param ContainerInterface|null $container DI Container instance
      */
     public function __construct(
         bool $requiresAdmin = false,
         ?AuthenticationManager $authManager = null,
-        array $providerNames = []
+        array $providerNames = [],
+        ?ContainerInterface $container = null
     ) {
+        $this->container = $container ?? app();
         $this->requiresAdmin = $requiresAdmin;
 
-        // Use provided AuthManager or get from bootstrap for global consistency
-        $this->authManager = $authManager ?? AuthBootstrap::getManager();
+        // Use provided AuthManager, get from DI container, or fall back to AuthBootstrap
+        if ($authManager) {
+            $this->authManager = $authManager;
+        } elseif ($this->container->has(AuthenticationManager::class)) {
+            $this->authManager = $this->container->get(AuthenticationManager::class);
+        } else {
+            $this->authManager = AuthBootstrap::getManager();
+        }
 
         // Default to using JWT and API key auth if none specified
         $this->providerNames = !empty($providerNames) ? $providerNames : ['jwt', 'api_key'];

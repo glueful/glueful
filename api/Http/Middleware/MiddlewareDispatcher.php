@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Exceptions\ExceptionHandler;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * PSR-15 Compatible Middleware Dispatcher
@@ -24,13 +25,19 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /** @var callable The final request handler to use if no middleware produces a response */
     private $fallbackHandler;
 
+    /** @var ContainerInterface DI Container */
+    private ContainerInterface $container;
+
     /**
      * Create a new middleware dispatcher
      *
      * @param callable|null $fallbackHandler The fallback handler to use at the end of the middleware stack
+     * @param ContainerInterface|null $container DI Container instance
      */
-    public function __construct(?callable $fallbackHandler = null)
+    public function __construct(?callable $fallbackHandler = null, ?ContainerInterface $container = null)
     {
+        $this->container = $container ?? app();
+        
         $this->fallbackHandler = $fallbackHandler ?: function (Request $request) {
             // Default fallback handler returns a JSON 404 response
             return new JsonResponse([
@@ -64,6 +71,50 @@ class MiddlewareDispatcher implements RequestHandlerInterface
         foreach ($middlewareList as $middleware) {
             if ($middleware instanceof MiddlewareInterface) {
                 $this->pipe($middleware);
+            }
+        }
+        return $this;
+    }
+
+    /**
+     * Add middleware by class name (resolved through DI container)
+     *
+     * @param string $middlewareClass The middleware class name
+     * @param array $constructorArgs Additional constructor arguments
+     * @return self Fluent interface
+     */
+    public function pipeClass(string $middlewareClass, array $constructorArgs = []): self
+    {
+        // Resolve middleware through DI container
+        if (empty($constructorArgs)) {
+            $middleware = $this->container->get($middlewareClass);
+        } else {
+            // If constructor args are provided, create instance manually
+            $middleware = new $middlewareClass(...$constructorArgs);
+        }
+        
+        if ($middleware instanceof MiddlewareInterface) {
+            $this->pipe($middleware);
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Add multiple middleware by class names
+     *
+     * @param array $middlewareClasses Array of middleware class names or [class => args] pairs
+     * @return self Fluent interface
+     */
+    public function pipeManyClasses(array $middlewareClasses): self
+    {
+        foreach ($middlewareClasses as $key => $value) {
+            if (is_string($key)) {
+                // Format: ['ClassName' => [arg1, arg2]]
+                $this->pipeClass($key, $value);
+            } else {
+                // Format: ['ClassName1', 'ClassName2']
+                $this->pipeClass($value);
             }
         }
         return $this;

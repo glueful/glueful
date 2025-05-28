@@ -3,11 +3,11 @@
 use Glueful\Http\Router;
 use Glueful\Controllers\FilesController;
 
-
-$filesController = new FilesController();
+// Get the container from the global app() helper
+$container = app();
 
 // File routes
-Router::group('/files', function() use ($filesController) {
+Router::group('/files', function() use ($container) {
     /**
      * @route GET /files/{uuid}
      * @summary Get File
@@ -42,7 +42,8 @@ Router::group('/files', function() use ($filesController) {
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{uuid}', function($params) use ($filesController) {
+    Router::get('/{uuid}', function($params) use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->getFile($params);
     });
 
@@ -71,7 +72,8 @@ Router::group('/files', function() use ($filesController) {
      * @response 413 "File too large"
      * @response 415 "Unsupported file type"
      */
-    Router::post('/', function() use ($filesController) {
+    Router::post('/', function() use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->uploadFile();
     });
 
@@ -91,7 +93,8 @@ Router::group('/files', function() use ($filesController) {
      * @response 401 "Unauthorized access"
      * @response 403 "Permission denied"
      */
-    Router::delete('/{uuid}', function($params) use ($filesController) {
+    Router::delete('/{uuid}', function($params) use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->deleteFile($params);
     });
 }, requiresAuth: true);

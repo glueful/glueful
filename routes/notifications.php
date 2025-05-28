@@ -15,10 +15,11 @@
 use Glueful\Http\Router;
 use Glueful\Controllers\NotificationsController;
 
-$notificationsController = new NotificationsController();
+// Get the container from the global app() helper
+$container = app();
 
 // Notification routes
-Router::group('/notifications', function() use ($notificationsController) {
+Router::group('/notifications', function() use ($container) {
     
     /**
      * @route GET /notifications
@@ -41,7 +42,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::get('/', function() use ($notificationsController) {
+    Router::get('/', function() use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getNotifications();
     });
     
@@ -68,7 +70,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{id}', function(array $params) use ($notificationsController) {
+    Router::get('/{id}', function(array $params) use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getNotification($params);
     });
     
@@ -92,7 +95,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/read', function(array $params) use ($notificationsController) {
+    Router::post('/{id}/read', function(array $params) use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsRead($params);
     });
     
@@ -116,7 +120,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/unread', function(array $params) use ($notificationsController) {
+    Router::post('/{id}/unread', function(array $params) use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsUnread($params);
     });
     
@@ -137,7 +142,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::post('/mark-all-read', function() use ($notificationsController) {
+    Router::post('/mark-all-read', function() use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAllAsRead();
     });
     
@@ -164,7 +170,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::get('/preferences', function() use ($notificationsController) {
+    Router::get('/preferences', function() use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getPreferences();
     });
     
@@ -194,7 +201,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @response 400 "Invalid preferences format"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/preferences', function() use ($notificationsController) {
+    Router::post('/preferences', function() use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->updatePreferences();
     });
     
@@ -216,7 +224,8 @@ Router::group('/notifications', function() use ($notificationsController) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::delete('/{id}', function(array $params) use ($notificationsController) {
+    Router::delete('/{id}', function(array $params) use ($container) {
+        $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->deleteNotification($params);
     });
     
