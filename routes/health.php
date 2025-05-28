@@ -48,7 +48,7 @@ Router::group('/health', function () use ($container) {
      *   checks:object="Individual check results"
      * }
      */
-    Router::get('/', function() use ($container) {
+    Router::get('/', function () use ($container) {
         $healthController = $container->get(HealthController::class);
         return $healthController->index();
     });
@@ -71,7 +71,7 @@ Router::group('/health', function () use ($container) {
      *   type:string="Error type"
      * }
      */
-    Router::get('/database', function() use ($container) {
+    Router::get('/database', function () use ($container) {
         $healthController = $container->get(HealthController::class);
         return $healthController->database();
     });
@@ -92,7 +92,7 @@ Router::group('/health', function () use ($container) {
      *   message:string="Error message"
      * }
      */
-    Router::get('/cache', function() use ($container) {
+    Router::get('/cache', function () use ($container) {
         $healthController = $container->get(HealthController::class);
         return $healthController->cache();
     });

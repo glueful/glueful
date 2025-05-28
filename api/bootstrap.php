@@ -14,22 +14,11 @@ require_once __DIR__ . '/helpers.php';
 $container = \Glueful\DI\ContainerBootstrap::initialize();
 
 // Make container globally available
-if (!function_exists('app')) {
-    function app(?string $abstract = null)
-    {
-        global $container;
-
-        if ($abstract === null) {
-            return $container;
-        }
-
-        return $container->get($abstract);
-    }
-}
+$GLOBALS['container'] = $container;
 
 // Validate security configuration in production
 if (env('APP_ENV') === 'production') {
-    \Glueful\Security\SecurityManager::validateProductionConfig();
+    \Glueful\Security\SecurityManager::validateProductionEnvironment();
 }
 
 // Glueful\ExceptionHandler::register();

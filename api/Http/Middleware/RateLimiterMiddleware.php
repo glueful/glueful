@@ -45,8 +45,8 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var bool Whether to enable distributed rate limiting */
     private bool $enableDistributed;
 
-    /** @var ContainerInterface DI Container */
-    private ContainerInterface $container;
+    /** @var ContainerInterface|null DI Container */
+    private ?ContainerInterface $container;
 
     /**
      * Create a new rate limiter middleware
@@ -66,7 +66,7 @@ class RateLimiterMiddleware implements MiddlewareInterface
         ?bool $enableDistributed = null,
         ?ContainerInterface $container = null
     ) {
-        $this->container = $container ?? app();
+        $this->container = $container ?? $this->getDefaultContainer();
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
         $this->type = $type;
@@ -221,6 +221,26 @@ class RateLimiterMiddleware implements MiddlewareInterface
             $context,
             $this->enableDistributed
         );
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return ContainerInterface|null
+     */
+    private function getDefaultContainer(): ?ContainerInterface
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('app')) {
+            try {
+                return app();
+            } catch (\Exception $e) {
+                // Fall back to null if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**

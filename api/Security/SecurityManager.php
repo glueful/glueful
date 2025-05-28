@@ -184,33 +184,6 @@ class SecurityManager
                env('SUPPRESS_SECURITY_WARNINGS') === 'true';
     }
 
-    /**
-     * Legacy method for backward compatibility
-     * @deprecated Use validateProductionEnvironment() instead
-     */
-    public static function validateProductionConfig(): void
-    {
-        // Allow developers to disable security warnings
-        if (self::shouldSuppressProductionWarnings()) {
-            return;
-        }
-
-        $validation = self::validateProductionEnvironment();
-
-        if (
-            $validation['is_production'] &&
-            (!empty($validation['warnings']) || !empty($validation['recommendations']))
-        ) {
-            // Log security warnings instead of throwing exception
-            $allMessages = array_merge($validation['warnings'], $validation['recommendations']);
-            error_log('SECURITY WARNING: ' . implode(', ', $allMessages));
-
-            // Also output to stderr for visibility during deployment
-            if (php_sapi_name() === 'cli') {
-                self::displayProductionWarnings();
-            }
-        }
-    }
 
     /**
      * Get environment fix suggestions for production issues

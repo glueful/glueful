@@ -25,8 +25,8 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /** @var callable The final request handler to use if no middleware produces a response */
     private $fallbackHandler;
 
-    /** @var ContainerInterface DI Container */
-    private ContainerInterface $container;
+    /** @var ContainerInterface|null DI Container */
+    private ?ContainerInterface $container;
 
     /**
      * Create a new middleware dispatcher
@@ -36,8 +36,8 @@ class MiddlewareDispatcher implements RequestHandlerInterface
      */
     public function __construct(?callable $fallbackHandler = null, ?ContainerInterface $container = null)
     {
-        $this->container = $container ?? app();
-        
+        $this->container = $container ?? $this->getDefaultContainer();
+
         $this->fallbackHandler = $fallbackHandler ?: function (Request $request) {
             // Default fallback handler returns a JSON 404 response
             return new JsonResponse([
@@ -85,18 +85,18 @@ class MiddlewareDispatcher implements RequestHandlerInterface
      */
     public function pipeClass(string $middlewareClass, array $constructorArgs = []): self
     {
-        // Resolve middleware through DI container
-        if (empty($constructorArgs)) {
+        // Resolve middleware through DI container if available
+        if ($this->container && empty($constructorArgs)) {
             $middleware = $this->container->get($middlewareClass);
         } else {
-            // If constructor args are provided, create instance manually
+            // If constructor args are provided or no container, create instance manually
             $middleware = new $middlewareClass(...$constructorArgs);
         }
-        
+
         if ($middleware instanceof MiddlewareInterface) {
             $this->pipe($middleware);
         }
-        
+
         return $this;
     }
 
@@ -214,5 +214,25 @@ class MiddlewareDispatcher implements RequestHandlerInterface
             'success' => true,
             'data' => $result
         ], 200);
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return ContainerInterface|null
+     */
+    private function getDefaultContainer(): ?ContainerInterface
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('app')) {
+            try {
+                return app();
+            } catch (\Exception $e) {
+                // Fall back to null if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 }

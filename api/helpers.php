@@ -123,6 +123,32 @@ if (!function_exists('parseConfigString')) {
         return $config;
     }
 }
+if (!function_exists('app')) {
+    /**
+     * Get the DI container instance or resolve a service
+     *
+     * Returns the global DI container instance when called without arguments,
+     * or resolves and returns a specific service when called with a class name.
+     *
+     * @param string|null $abstract Service class name to resolve
+     * @return mixed Container instance or resolved service
+     */
+    function app(?string $abstract = null): mixed
+    {
+        $container = $GLOBALS['container'] ?? null;
+
+        if (!$container) {
+            throw new \RuntimeException('DI container not initialized. Make sure bootstrap.php is loaded.');
+        }
+
+        if ($abstract === null) {
+            return $container;
+        }
+
+        return $container->get($abstract);
+    }
+}
+
 /**
  * Additional helper functions can be added below.
  * Each function should have proper documentation and

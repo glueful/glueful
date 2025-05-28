@@ -6,7 +6,7 @@ namespace Glueful\DI\Interfaces;
 
 /**
  * Extension Interface
- * 
+ *
  * Defines the contract for extensions that integrate with the DI container.
  * Extensions can register services, define routes, and hook into the application lifecycle.
  */
@@ -29,7 +29,7 @@ interface ExtensionInterface
 
     /**
      * Register services with the container
-     * 
+     *
      * This method is called during extension loading to register
      * all services that the extension provides.
      */
@@ -37,7 +37,7 @@ interface ExtensionInterface
 
     /**
      * Boot the extension
-     * 
+     *
      * This method is called after all extensions have registered their services.
      * Use this for any initialization that depends on other services.
      */
@@ -45,14 +45,14 @@ interface ExtensionInterface
 
     /**
      * Register extension routes
-     * 
+     *
      * This method is called to register all routes that the extension provides.
      */
     public function routes(): void;
 
     /**
      * Get extension dependencies
-     * 
+     *
      * @return array List of extension names this extension depends on
      */
     public function getDependencies(): array;

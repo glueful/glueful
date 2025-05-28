@@ -2,13 +2,13 @@
 
 /**
  * Notification Routes
- * 
+ *
  * This file defines routes for notification-related functionality including:
  * - Fetching user notifications
  * - Marking notifications as read/unread
  * - Managing notification preferences
  * - Sending test notifications
- * 
+ *
  * All routes in this file are protected by authentication middleware.
  */
 
@@ -19,8 +19,8 @@ use Glueful\Controllers\NotificationsController;
 $container = app();
 
 // Notification routes
-Router::group('/notifications', function() use ($container) {
-    
+Router::group('/notifications', function () use ($container) {
+
     /**
      * @route GET /notifications
      * @summary List Notifications
@@ -42,11 +42,11 @@ Router::group('/notifications', function() use ($container) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::get('/', function() use ($container) {
+    Router::get('/', function () use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getNotifications();
     });
-    
+
     /**
      * @route GET /notifications/{id}
      * @summary Get Notification
@@ -70,11 +70,11 @@ Router::group('/notifications', function() use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{id}', function(array $params) use ($container) {
+    Router::get('/{id}', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getNotification($params);
     });
-    
+
     /**
      * @route POST /notifications/{id}/read
      * @summary Mark Notification as Read
@@ -95,11 +95,11 @@ Router::group('/notifications', function() use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/read', function(array $params) use ($container) {
+    Router::post('/{id}/read', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsRead($params);
     });
-    
+
     /**
      * @route POST /notifications/{id}/unread
      * @summary Mark Notification as Unread
@@ -120,11 +120,11 @@ Router::group('/notifications', function() use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/unread', function(array $params) use ($container) {
+    Router::post('/{id}/unread', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsUnread($params);
     });
-    
+
     /**
      * @route POST /notifications/mark-all-read
      * @summary Mark All Notifications as Read
@@ -142,11 +142,11 @@ Router::group('/notifications', function() use ($container) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::post('/mark-all-read', function() use ($container) {
+    Router::post('/mark-all-read', function () use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAllAsRead();
     });
-    
+
     /**
      * @route GET /notifications/preferences
      * @summary Get Notification Preferences
@@ -170,18 +170,23 @@ Router::group('/notifications', function() use ($container) {
      * }
      * @response 401 "Unauthorized access"
      */
-    Router::get('/preferences', function() use ($container) {
+    Router::get('/preferences', function () use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getPreferences();
     });
-    
+
     /**
      * @route POST /notifications/preferences
      * @summary Update Notification Preferences
      * @description Update notification preferences for the authenticated user
      * @tag Notification Preferences
      * @requiresAuth true
-     * @requestBody email:boolean="Enable email notifications" push:boolean="Enable push notifications" in_app:boolean="Enable in-app notifications" types:{system:boolean="Enable system notifications",security:boolean="Enable security notifications",account:boolean="Enable account notifications"}
+     * @requestBody email:boolean="Enable email notifications"
+     *             push:boolean="Enable push notifications"
+     *             in_app:boolean="Enable in-app notifications"
+     *             types:{system:boolean="Enable system notifications",
+     *                    security:boolean="Enable security notifications",
+     *                    account:boolean="Enable account notifications"}
      * @response 200 application/json "Notification preferences updated" {
      *   success:boolean="Success status",
      *   message:string="Success message",
@@ -201,11 +206,11 @@ Router::group('/notifications', function() use ($container) {
      * @response 400 "Invalid preferences format"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/preferences', function() use ($container) {
+    Router::post('/preferences', function () use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->updatePreferences();
     });
-    
+
     /**
      * @route DELETE /notifications/{id}
      * @summary Delete Notification
@@ -224,9 +229,8 @@ Router::group('/notifications', function() use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::delete('/{id}', function(array $params) use ($container) {
+    Router::delete('/{id}', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->deleteNotification($params);
     });
-    
 }, requiresAuth: true);

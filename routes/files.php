@@ -7,7 +7,7 @@ use Glueful\Controllers\FilesController;
 $container = app();
 
 // File routes
-Router::group('/files', function() use ($container) {
+Router::group('/files', function () use ($container) {
     /**
      * @route GET /files/{uuid}
      * @summary Get File
@@ -42,7 +42,7 @@ Router::group('/files', function() use ($container) {
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{uuid}', function($params) use ($container) {
+    Router::get('/{uuid}', function ($params) use ($container) {
         $filesController = $container->get(FilesController::class);
         return $filesController->getFile($params);
     });
@@ -53,7 +53,10 @@ Router::group('/files', function() use ($container) {
      * @description Uploads a new file to the system, supporting both multipart form uploads and base64 encoded content
      * @tag Files
      * @requiresAuth true
-     * @requestBody file:file="File to upload (when using multipart/form-data)" base64:string="Base64 encoded file content (when using application/json)" name:string="Custom filename (optional)" mime_type:string="MIME type of the file (optional)" {required=file|base64}
+     * @requestBody file:file="File to upload (when using multipart/form-data)"
+     *             base64:string="Base64 encoded file content (when using application/json)"
+     *             name:string="Custom filename (optional)"
+     *             mime_type:string="MIME type of the file (optional)" {required=file|base64}
      * @response 201 application/json "File uploaded successfully" {
      *   success:boolean="Success status",
      *   message:string="Success message",
@@ -72,7 +75,7 @@ Router::group('/files', function() use ($container) {
      * @response 413 "File too large"
      * @response 415 "Unsupported file type"
      */
-    Router::post('/', function() use ($container) {
+    Router::post('/', function () use ($container) {
         $filesController = $container->get(FilesController::class);
         return $filesController->uploadFile();
     });
@@ -93,7 +96,7 @@ Router::group('/files', function() use ($container) {
      * @response 401 "Unauthorized access"
      * @response 403 "Permission denied"
      */
-    Router::delete('/{uuid}', function($params) use ($container) {
+    Router::delete('/{uuid}', function ($params) use ($container) {
         $filesController = $container->get(FilesController::class);
         return $filesController->deleteFile($params);
     });

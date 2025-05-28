@@ -29,8 +29,8 @@ class AuthenticationMiddleware implements MiddlewareInterface
     /** @var array Optional provider names to try */
     private array $providerNames = [];
 
-    /** @var ContainerInterface DI Container */
-    private ContainerInterface $container;
+    /** @var ContainerInterface|null DI Container */
+    private ?ContainerInterface $container;
 
     /**
      * Create a new authentication middleware
@@ -46,13 +46,13 @@ class AuthenticationMiddleware implements MiddlewareInterface
         array $providerNames = [],
         ?ContainerInterface $container = null
     ) {
-        $this->container = $container ?? app();
+        $this->container = $container ?? $this->getDefaultContainer();
         $this->requiresAdmin = $requiresAdmin;
 
         // Use provided AuthManager, get from DI container, or fall back to AuthBootstrap
         if ($authManager) {
             $this->authManager = $authManager;
-        } elseif ($this->container->has(AuthenticationManager::class)) {
+        } elseif ($this->container && $this->container->has(AuthenticationManager::class)) {
             $this->authManager = $this->container->get(AuthenticationManager::class);
         } else {
             $this->authManager = AuthBootstrap::getManager();
@@ -119,5 +119,25 @@ class AuthenticationMiddleware implements MiddlewareInterface
 
         // Otherwise use the default provider
         return $this->authManager->authenticate($request);
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return ContainerInterface|null
+     */
+    private function getDefaultContainer(): ?ContainerInterface
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('app')) {
+            try {
+                return app();
+            } catch (\Exception $e) {
+                // Fall back to null if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 }

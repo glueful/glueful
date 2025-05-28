@@ -50,8 +50,8 @@ class CacheCommand extends Command
         'expire'   => 'Set new TTL for cached item'
     ];
 
-    /** @var ContainerInterface DI Container */
-    protected ContainerInterface $container;
+    /** @var ContainerInterface|null DI Container */
+    protected ?ContainerInterface $container;
 
     /**
      * Constructor
@@ -60,8 +60,8 @@ class CacheCommand extends Command
      */
     public function __construct(?ContainerInterface $container = null)
     {
-        $this->container = $container ?? app();
-        
+        $this->container = $container ?? $this->getDefaultContainer();
+
         // Initialize the cache engine
         CacheEngine::initialize();
     }
@@ -379,5 +379,25 @@ HELP;
     protected function showHelp(): void
     {
         $this->line($this->getHelp());
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return ContainerInterface|null
+     */
+    private function getDefaultContainer(): ?ContainerInterface
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('app')) {
+            try {
+                return app();
+            } catch (\Exception $e) {
+                // Fall back to null if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 }

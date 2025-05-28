@@ -39,7 +39,7 @@ class ContainerBootstrap
         $container->boot();
 
         // Don't lock the container - extensions need to register services
-        
+
         self::$container = $container;
         return $container;
     }
