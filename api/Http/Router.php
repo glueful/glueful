@@ -473,17 +473,17 @@ class Router
             $authManager = \Glueful\Auth\AuthBootstrap::getManager();
 
             if (in_array($routeName, self::$adminProtectedRoutes)) {
-                $dispatcher->pipe(new AuthenticationMiddleware(
+                $dispatcher->pipeClass(AuthenticationMiddleware::class, [
                     true, // requires admin
                     $authManager, // using our new authentication manager
                     ['admin', 'jwt', 'api_key'] // try each auth method in sequence until one succeeds
-                ));
+                ]);
             } elseif (in_array($routeName, self::$protectedRoutes)) {
-                $dispatcher->pipe(new AuthenticationMiddleware(
+                $dispatcher->pipeClass(AuthenticationMiddleware::class, [
                     false, // standard authentication
                     $authManager, // using our new authentication manager
                     ['jwt', 'api_key'] // try each auth method in sequence until one succeeds
-                ));
+                ]);
             }
 
             // Add PSR-15 middleware to the pipeline

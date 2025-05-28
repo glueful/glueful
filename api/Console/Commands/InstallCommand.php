@@ -7,6 +7,7 @@ use Glueful\Security\RandomStringGenerator;
 use Glueful\Helpers\Utils;
 use Glueful\Services\HealthService;
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
  * Installation and Setup Command
@@ -23,6 +24,21 @@ use Glueful\Helpers\DatabaseConnectionTrait;
 class InstallCommand extends Command
 {
     use DatabaseConnectionTrait;
+
+    /**
+     * Service container for dependency injection
+     */
+    private ContainerInterface $container;
+
+    /**
+     * Constructor - uses dependency injection
+     *
+     * @param ContainerInterface|null $container Optional DI container
+     */
+    public function __construct(?ContainerInterface $container = null)
+    {
+        $this->container = $container ?? app();
+    }
 
     /**
      * Prompt user for input with default value
@@ -232,8 +248,8 @@ HELP;
             $this->info('🔐 Step 2: Generating security keys...');
         }
 
-        // Use existing KeyGenerateCommand
-        $keyCommand = new KeyGenerateCommand();
+        // Use existing KeyGenerateCommand via container
+        $keyCommand = $this->container->get(KeyGenerateCommand::class);
         $args = $force ? ['--force'] : [];
 
         $result = $keyCommand->execute($args);
@@ -275,8 +291,8 @@ HELP;
             $this->info('📊 Step 4: Running database migrations...');
         }
 
-        // Use existing MigrateCommand
-        $migrateCommand = new MigrateCommand();
+        // Use existing MigrateCommand via container
+        $migrateCommand = $this->container->get(MigrateCommand::class);
         $result = $migrateCommand->execute([]);
 
         if ($result === self::SUCCESS) {
@@ -295,8 +311,8 @@ HELP;
             $this->info('📋 Step 5: Generating API definitions...');
         }
 
-        // Use existing GenerateJsonCommand
-        $generateCommand = new GenerateJsonCommand();
+        // Use existing GenerateJsonCommand via container
+        $generateCommand = $this->container->get(GenerateJsonCommand::class);
         $result = $generateCommand->execute(['api-definitions']);
 
         if ($result === self::SUCCESS) {
