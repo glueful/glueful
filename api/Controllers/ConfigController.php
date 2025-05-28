@@ -4,31 +4,26 @@ declare(strict_types=1);
 
 namespace Glueful\Controllers;
 
+use Glueful\Helpers\ConfigManager;
+
 class ConfigController
 {
+    public function __construct()
+    {
+        // Ensure ConfigManager is loaded
+        ConfigManager::load();
+    }
     public function getConfigs(): array
     {
-        $configPath = __DIR__ . '/../../config';
-        $configFiles = array_diff(scandir($configPath), ['.', '..', 'schedule.php']);
+        // Get all configs with caching and validation through ConfigManager
+        $allConfigs = ConfigManager::all();
 
         $groupedConfig = [];
-
-        foreach ($configFiles as $file) {
-            $filePath = $configPath . '/' . $file;
-
-            if (pathinfo($file, PATHINFO_EXTENSION) === 'php' && file_exists($filePath)) {
-                $config = require $filePath; // Load the config file
-
-                // Only add if it's an array
-                if (is_array($config)) {
-                    $groupedConfig[] = [
-                        'name' => pathinfo($file, PATHINFO_FILENAME),
-                        'config' => $config,
-                    ];
-                } else {
-                    error_log("Skipping invalid config file: $file");
-                }
-            }
+        foreach ($allConfigs as $name => $config) {
+            $groupedConfig[] = [
+                'name' => $name,
+                'config' => $config,
+            ];
         }
 
         return $groupedConfig;
@@ -36,66 +31,99 @@ class ConfigController
 
     public function getConfigByFile(string $filename): ?array
     {
-        $configPath = __DIR__ . '/../../config';
-        $filePath = $configPath . '/' . $filename;
+        // Remove .php extension if present for consistent lookup
+        $configName = str_replace('.php', '', $filename);
 
-        if (!file_exists($filePath)) {
-            return null;
-        }
+        // Use ConfigManager with validation and caching
+        $config = ConfigManager::get($configName);
 
-        $config = require $filePath;
         return is_array($config) ? $config : null;
+    }
+
+    /**
+     * Get nested config value using dot notation
+     */
+    public function getConfigValue(string $key, $default = null)
+    {
+        return ConfigManager::get($key, $default);
+    }
+
+    /**
+     * Check if config exists
+     */
+    public function hasConfig(string $key): bool
+    {
+        return ConfigManager::has($key);
     }
 
     public function updateConfig(string $filename, array $data): bool
     {
-        $configPath = __DIR__ . '/../../config';
-        $filePath = $configPath . '/' . $filename;
+        $configName = str_replace('.php', '', $filename);
 
-        if (!file_exists($filePath)) {
+        // Get existing config through ConfigManager
+        $existingConfig = ConfigManager::get($configName, []);
+
+        if (empty($existingConfig)) {
             return false;
         }
 
-        // Update config file
-        $existingConfig = require $filePath;
+        // Merge and validate
         $newConfig = array_merge($existingConfig, $data);
-        $configContent = "<?php\n\nreturn " . var_export($newConfig, true) . ";\n";
-        file_put_contents($filePath, $configContent);
 
-        // Update corresponding .env variables if they exist
-        $this->updateEnvVariables($data);
+        // Update in ConfigManager (runtime)
+        ConfigManager::set($configName, $newConfig);
 
-        return true;
+        // Persist to file
+        $success = $this->persistConfigToFile($configName, $newConfig);
+
+        if ($success) {
+            $this->updateEnvVariables($data);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Update nested config value using dot notation
+     */
+    public function updateConfigValue(string $key, $value): bool
+    {
+        ConfigManager::set($key, $value);
+
+        // Extract config file name from key (e.g., 'database.default' -> 'database')
+        $configName = explode('.', $key)[0];
+        $config = ConfigManager::get($configName);
+
+        return $this->persistConfigToFile($configName, $config);
     }
 
     public function createConfig(string $filename, array $data): bool
     {
-        $configPath = __DIR__ . '/../../config';
-        $filePath = $configPath . '/' . $filename;
+        $configName = str_replace('.php', '', $filename);
 
-        // Don't overwrite existing config files
-        if (file_exists($filePath)) {
+        // Check if config already exists in ConfigManager
+        if (ConfigManager::has($configName)) {
             return false;
         }
 
-        // Ensure filename has .php extension
-        if (!str_ends_with($filename, '.php')) {
-            $filename .= '.php';
-            $filePath = $configPath . '/' . $filename;
+        // Validate config data structure
+        $validationErrors = $this->validateConfigStructure($configName, $data);
+        if (!empty($validationErrors)) {
+            error_log('Config validation failed for ' . $configName . ': ' . implode(', ', $validationErrors));
+            // Continue anyway for flexibility, but log the issues
         }
 
-        // Create config content
-        $configContent = "<?php\n\nreturn " . var_export($data, true) . ";\n";
+        // Add to ConfigManager
+        ConfigManager::set($configName, $data);
 
-        // Create config file
-        if (!file_put_contents($filePath, $configContent)) {
-            return false;
+        // Persist to file
+        $success = $this->persistConfigToFile($configName, $data);
+
+        if ($success) {
+            $this->updateEnvVariables($data);
         }
 
-        // Update corresponding .env variables if needed
-        $this->updateEnvVariables($data);
-
-        return true;
+        return $success;
     }
 
     private function updateEnvVariables(array $data): void
@@ -142,5 +170,104 @@ class ConfigController
 
         $lines[] = $newLine;
         return $lines;
+    }
+
+    /**
+     * Persist config data to file
+     */
+    private function persistConfigToFile(string $configName, array $config): bool
+    {
+        $configPath = dirname(__DIR__, 2) . '/config';
+        $filePath = $configPath . '/' . $configName . '.php';
+
+        $configContent = "<?php\n\nreturn " . var_export($config, true) . ";\n";
+
+        return file_put_contents($filePath, $configContent) !== false;
+    }
+
+    /**
+     * Validate config structure
+     */
+    private function validateConfigStructure(string $configName, array $config): array
+    {
+        $errors = [];
+
+        switch ($configName) {
+            case 'database':
+                if (!isset($config['default'])) {
+                    $errors[] = 'Missing default database connection';
+                }
+                break;
+
+            case 'security':
+                if (!isset($config['jwt']['secret'])) {
+                    $errors[] = 'Missing JWT secret';
+                }
+                break;
+
+            case 'app':
+                if (!isset($config['key'])) {
+                    $errors[] = 'Missing application key';
+                }
+                break;
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Get default config for a given config name
+     */
+    private function getDefaultConfig(string $configName): ?array
+    {
+        $defaultConfigs = [
+            'app' => [
+                'name' => 'Glueful',
+                'env' => 'production',
+                'debug' => false,
+                'timezone' => 'UTC'
+            ],
+            'cache' => [
+                'default' => 'file',
+                'ttl' => 3600
+            ]
+        ];
+
+        return $defaultConfigs[$configName] ?? null;
+    }
+
+    /**
+     * Validate all configs or specific config
+     */
+    public function validateConfig(?string $configName = null): array
+    {
+        if ($configName) {
+            return $this->validateConfigStructure($configName, ConfigManager::get($configName));
+        }
+
+        // Validate all configs
+        $errors = [];
+        foreach (ConfigManager::all() as $name => $config) {
+            $configErrors = $this->validateConfigStructure($name, $config);
+            if (!empty($configErrors)) {
+                $errors[$name] = $configErrors;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Reset config to defaults
+     */
+    public function resetConfig(string $configName): bool
+    {
+        $defaultConfig = $this->getDefaultConfig($configName);
+        if (!$defaultConfig) {
+            return false;
+        }
+
+        ConfigManager::set($configName, $defaultConfig);
+        return $this->persistConfigToFile($configName, $defaultConfig);
     }
 }
