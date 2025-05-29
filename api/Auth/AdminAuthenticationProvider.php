@@ -288,8 +288,6 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function validateToken(string $token): bool
     {
-        $userId = null;
-
         try {
             // For admin tokens, we use the TokenManager validateAccessToken method
             $isValid = TokenManager::validateAccessToken($token, 'admin');
@@ -301,7 +299,6 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
 
             // Verify this is an admin token by checking the payload
             $payload = JWTService::decode($token);
-            $userId = $payload['uuid'] ?? null;
 
             // Check if token has admin flag
             if (!empty($payload) && !empty($payload['is_admin'])) {
@@ -331,7 +328,7 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
 
             // Check if it has admin claim
             return $canHandle;
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return false;
         }
     }
@@ -375,8 +372,6 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function refreshTokens(string $refreshToken, array $sessionData): ?array
     {
-        $userId = $sessionData['uuid'] ?? null;
-
         try {
             // We need to validate that this is an admin refresh token
             if (empty($sessionData) || empty($sessionData['uuid'])) {
@@ -392,8 +387,14 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                 return null;
             }
 
-            // Verify user still has superuser role
-            if (!$this->roleRepository->userHasRole($user['uuid'], 'superuser')) {
+            // Get user roles and verify user still has superuser role
+            $roles = $this->roleRepository->getUserRoles($user['uuid']);
+            $roleNames = [];
+            foreach ($roles as $role) {
+                $roleNames[] = $role['role_name'] ?? $role['name'] ?? '';
+            }
+            $hasSuperuserRole = in_array('superuser', $roleNames);
+            if (!$hasSuperuserRole) {
                 $this->error = "Insufficient privileges";
                 return null;
             }

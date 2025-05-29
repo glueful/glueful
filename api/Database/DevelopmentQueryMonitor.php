@@ -61,7 +61,7 @@ class DevelopmentQueryMonitor
             return;
         }
 
-        $queryHash = md5($sql);
+        $queryHash = md5($sql . serialize($params));
         $normalizedSql = self::normalizeQuery($sql);
 
         $logEntry = [
@@ -210,6 +210,11 @@ class DevelopmentQueryMonitor
         // Log summary
         error_log("QUERY SUMMARY: " . json_encode($summary));
 
+        // Log duplicate query details if any found
+        if ($stats['duplicate_queries'] > 0) {
+            self::logDuplicateQueries();
+        }
+
         // Display in browser console (only for non-API requests)
         if (!headers_sent() && env('SHOW_QUERY_SUMMARY', true) && !self::isApiRequest()) {
             echo "<script>console.group('🔍 Database Query Summary');";
@@ -248,7 +253,8 @@ class DevelopmentQueryMonitor
     {
         // Extract table and operation pattern
         // Handle queries with backticks around table names
-        if (preg_match('/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+[`"]?(\w+)[`"]?/i', $normalizedSql, $matches)) {
+        $pattern = '/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+[`"]?(\w+)[`"]?/i';
+        if (preg_match($pattern, $normalizedSql, $matches)) {
             return $matches[1] . ' ' . $matches[3];
         }
 
@@ -346,6 +352,38 @@ class DevelopmentQueryMonitor
             'slow_queries' => 0,
             'duplicate_queries' => 0
         ];
+    }
+
+    /**
+     * Log details about duplicate queries
+     */
+    private static function logDuplicateQueries(): void
+    {
+        $hashes = [];
+        foreach (self::$queryLog as $query) {
+            $hash = $query['hash'];
+            if (!isset($hashes[$hash])) {
+                $hashes[$hash] = [];
+            }
+            $hashes[$hash][] = $query;
+        }
+        foreach ($hashes as $hash => $queries) {
+            if (count($queries) > 1) {
+                $sql = $queries[0]['sql'];
+                $params = $queries[0]['params'] ?? [];
+                $message = "DUPLICATE QUERY: " . $sql . " | Params: " . json_encode($params) .
+                          " | Count: " . count($queries);
+                error_log($message);
+                // Log backtraces to identify source
+                foreach ($queries as $i => $query) {
+                    $backtrace = $query['backtrace'] ?? [];
+                    if (!empty($backtrace)) {
+                        $trace = "  Instance " . ($i + 1) . ": " . implode(' -> ', array_slice($backtrace, 0, 3));
+                        error_log($trace);
+                    }
+                }
+            }
+        }
     }
 
     /**

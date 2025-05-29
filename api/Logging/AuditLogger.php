@@ -11,7 +11,8 @@ use Monolog\Handler\RotatingFileHandler;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
 use Glueful\Database\Schema\SchemaManager;
-use Glueful\Repository\UserRepository;
+use Glueful\Auth\TokenManager;
+use Glueful\Auth\SessionCacheManager;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -309,6 +310,7 @@ class AuditLogger extends LogManager
                 'related_event_id' => 'VARCHAR(36) NULL',
                 'session_id' => 'VARCHAR(255) NULL',
                 'integrity_hash' => 'VARCHAR(64) NOT NULL',
+                'level' => 'INT NOT NULL DEFAULT 3', // Default level for audit events
                 'immutable' => 'BOOLEAN NOT NULL DEFAULT ' . ($this->immutableStorage ? 'true' : 'false'),
                 'retention_date' => 'DATETIME NULL',
                 'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
@@ -326,6 +328,7 @@ class AuditLogger extends LogManager
                 ['type' => 'INDEX', 'column' => 'related_event_id'],
                 ['type' => 'INDEX', 'column' => 'session_id'],
                 ['type' => 'INDEX', 'column' => 'integrity_hash'],
+                ['type' => 'INDEX', 'column' => 'level'],
                 ['type' => 'INDEX', 'column' => 'retention_date']
             ]);
         }
@@ -606,14 +609,18 @@ class AuditLogger extends LogManager
         // Create a new audit event
         $event = new AuditEvent($category, $action, $severity, $details);
 
-        // Try to get authenticated user from the user repository
+        // Try to get authenticated user from the token directly to avoid duplicate queries
         try {
-             self::$isLogging = true;
-            $userRepo = new UserRepository();
-            $currentUser = $userRepo->getCurrentUser();
+            self::$isLogging = true;
+            $token = TokenManager::extractTokenFromRequest();
 
-            if ($currentUser !== null && isset($currentUser['uuid'])) {
-                $event->setActor($currentUser['uuid']);
+            if ($token) {
+                // Get session data directly from cache to avoid database query
+                $sessionData = SessionCacheManager::getSession($token);
+
+                if ($sessionData && isset($sessionData['user']['uuid'])) {
+                    $event->setActor($sessionData['user']['uuid']);
+                }
             }
         } catch (\Exception $e) {
             // Silently handle auth errors - logging should continue even if auth fails

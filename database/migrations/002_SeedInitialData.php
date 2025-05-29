@@ -47,30 +47,40 @@ class SeedInitialData implements MigrationInterface
         $this->db = new QueryBuilder($conection->getPDO(), $conection->getDriver());
 
         try {
-            // First create superuser role
-            $superuserRoleUuid = Utils::generateNanoID();
-            $superuserId = $this->db->insert('roles', [
-                'uuid' => $superuserRoleUuid,
-                'name' => 'superuser',
-                'description' => 'Full system access',
-                'status' => 'active'
-            ]);
+            // Check if superuser role already exists
+            $existingRoles = $this->db->select('roles', ['name'])->where(['name' => 'superuser'])->limit(1)->get();
 
-            if (!$superuserId) {
-                throw new \RuntimeException('Failed to create "superuser" role');
+            if (empty($existingRoles)) {
+                // Create superuser role only if it doesn't exist
+                $superuserRoleUuid = Utils::generateNanoID();
+                $superuserId = $this->db->insert('roles', [
+                    'uuid' => $superuserRoleUuid,
+                    'name' => 'superuser',
+                    'description' => 'Full system access',
+                    'status' => 'active'
+                ]);
+
+                if (!$superuserId) {
+                    throw new \RuntimeException('Failed to create "superuser" role');
+                }
             }
 
-            // Create standard user role
-            $userRoleUuid = Utils::generateNanoID();
-            $userRoleId = $this->db->insert('roles', [
-                'uuid' => $userRoleUuid,
-                'name' => 'user',
-                'description' => 'Standard user access',
-                'status' => 'active'
-            ]);
+            // Check if user role already exists
+            $existingUserRoles = $this->db->select('roles', ['name'])->where(['name' => 'user'])->limit(1)->get();
 
-            if (!$userRoleId) {
-                throw new \RuntimeException('Failed to create "user" role');
+            if (empty($existingUserRoles)) {
+                // Create standard user role only if it doesn't exist
+                $userRoleUuid = Utils::generateNanoID();
+                $userRoleId = $this->db->insert('roles', [
+                    'uuid' => $userRoleUuid,
+                    'name' => 'user',
+                    'description' => 'Standard user access',
+                    'status' => 'active'
+                ]);
+
+                if (!$userRoleId) {
+                    throw new \RuntimeException('Failed to create "user" role');
+                }
             }
         } catch (\Exception $e) {
             throw new \RuntimeException('Role seeding failed: ' . $e->getMessage());

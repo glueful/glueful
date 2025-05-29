@@ -641,14 +641,11 @@ class UserRepository extends BaseRepository
             }
 
             // Get session data directly from the session cache
-            $userData = \Glueful\Auth\SessionCacheManager::getSession($token);
+            $sessionData = \Glueful\Auth\SessionCacheManager::getSession($token);
 
-            if ($userData && isset($userData['uuid'])) {
-                // If we just have a basic user record with UUID, get the full user data
-                if (count($userData) <= 2) {
-                    return $this->findByUUID($userData['uuid']);
-                }
-                return $userData;
+            if ($sessionData && isset($sessionData['user'])) {
+                // Return the user data directly from session cache to avoid DB query
+                return $sessionData['user'];
             }
         } catch (\Throwable $e) {
             // Silently handle auth errors - logging should continue to work
