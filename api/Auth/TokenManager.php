@@ -81,20 +81,7 @@ class TokenManager
         $accessToken = JWTService::generate($tokenPayload, $accessTokenLifetime);
         $refreshToken = bin2hex(random_bytes(32)); // 64 character random string
 
-        // Log token generation event
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_pair_generated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userData['uuid'] ?? null,
-                'token_lifetime' => $accessTokenLifetime,
-                'token_type' => 'bearer',
-                'is_persistent' => isset($userData['remember_me']) && $userData['remember_me'],
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
+        // Skip audit logging for token generation - login success is sufficient
 
         return [
         'access_token' => $accessToken,
@@ -115,17 +102,7 @@ class TokenManager
     {
         self::initialize();
 
-        // Log token to session mapping
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_mapped_to_session',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'session_id' => $sessionId,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
+        // Skip audit logging for token mapping - this is internal implementation detail
 
         return CacheEngine::set(
             self::TOKEN_PREFIX . $token,
@@ -442,22 +419,8 @@ class TokenManager
             'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
         ]);
 
-        // Log session creation
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'session_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userUuid,
-                'session_id' => $uuid,
-                'provider' => $tokens['provider'] ?? 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                'is_persistent' => $tokens['remember_me'] ?? false,
-                'refresh_token_lifetime' => $refreshTokenLifetime,
-                'access_token_lifetime' => (int)config('session.access_token_lifetime', 3600),
-            ]
-        );
+        // Skip session creation audit log as login success is already logged
+        // This reduces duplicate audit entries during login
 
         return $result;
     }

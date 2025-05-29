@@ -97,5 +97,31 @@ return [
         'log_file_path' => dirname(__DIR__) . '/storage/logs/',
         'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
         'log_rotation_days' => env('LOG_ROTATION_DAYS', 30),
+        // Audit logging configuration
+        'audit' => [
+            // Minimum audit level to log (1=CRITICAL, 2=IMPORTANT, 3=INFO, 4=DEBUG)
+            'minimum_level' => env('AUDIT_MINIMUM_LEVEL', match (env('APP_ENV')) {
+                'production' => 2,  // IMPORTANT and above in production
+                'staging' => 3,     // INFO and above in staging
+                default => 4        // All events in development
+            }),
+            // Enable batch audit logging for performance
+            'batch_enabled' => env('AUDIT_BATCH_ENABLED', true),
+            'batch_size' => env('AUDIT_BATCH_SIZE', 50),
+            'batch_timeout' => env('AUDIT_BATCH_TIMEOUT', 5), // seconds
+            // Skip audit logging for certain paths
+            'skip_paths' => [
+                '/health',
+                '/metrics',
+                '/favicon.ico',
+                '/robots.txt',
+            ],
+            // Skip audit logging for certain user agents
+            'skip_user_agents' => [
+                'UptimeRobot',
+                'Pingdom',
+                'StatusCake',
+            ],
+        ],
     ],
 ];

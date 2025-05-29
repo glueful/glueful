@@ -492,19 +492,19 @@ class ApiMetricsService
             // Remove detailed metrics older than the TTL
             $cutoff = date('Y-m-d H:i:s', time() - $this->metricsTTL);
             $this->db->delete($this->metricsTable, [
-                'timestamp' => ['<', $cutoff]
+                'timestamp <' => $cutoff
             ], false); // Use hard delete
 
             // Remove aggregated metrics older than their TTL
             $aggCutoff = date('Y-m-d', time() - $this->aggregatedMetricsTTL);
             $this->db->delete($this->dailyMetricsTable, [
-                'date' => ['<', $aggCutoff]
+                'date <' => $aggCutoff
             ], false); // Use hard delete
 
             // Clean up old rate limits
             $rateLimitCutoff = date('Y-m-d H:i:s', time() - 3600); // 1 hour
             $this->db->delete($this->rateLimitsTable, [
-                'reset_time' => ['<', $rateLimitCutoff]
+                'reset_time <' => $rateLimitCutoff
             ], false); // Use hard delete
         } catch (Exception $e) {
             error_log("Error purging old API metrics: " . $e->getMessage());

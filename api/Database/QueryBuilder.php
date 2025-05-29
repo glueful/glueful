@@ -265,6 +265,60 @@ class QueryBuilder
     }
 
     /**
+     * Insert multiple rows in a single query for better performance
+     *
+     * @param string $table Table name
+     * @param array $rows Array of associative arrays representing rows to insert
+     * @return int Number of affected rows
+     * @throws \InvalidArgumentException If rows array is empty or invalid
+     */
+    public function insertBatch(string $table, array $rows): int
+    {
+        if (empty($rows)) {
+            throw new \InvalidArgumentException('Cannot perform batch insert with empty rows array');
+        }
+
+        // Get columns from the first row
+        $firstRow = reset($rows);
+        if (!is_array($firstRow)) {
+            throw new \InvalidArgumentException('Each row must be an associative array');
+        }
+
+        $columns = array_keys($firstRow);
+        $columnCount = count($columns);
+
+        // Validate all rows have the same columns
+        foreach ($rows as $index => $row) {
+            if (!is_array($row) || count($row) !== $columnCount || array_keys($row) !== $columns) {
+                throw new \InvalidArgumentException("Row at index {$index} has inconsistent columns");
+            }
+        }
+
+        // Build column list
+        $columnList = implode(', ', array_map([$this->driver, 'wrapIdentifier'], $columns));
+
+        // Build placeholders for all rows
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, $columnCount, '?')) . ')';
+        $allPlaceholders = implode(', ', array_fill(0, count($rows), $rowPlaceholder));
+
+        // Build the SQL query
+        $sql = "INSERT INTO {$this->driver->wrapIdentifier($table)} ($columnList) VALUES $allPlaceholders";
+
+        // Flatten all values into a single array
+        $values = [];
+        foreach ($rows as $row) {
+            foreach ($columns as $column) {
+                $values[] = $row[$column];
+            }
+        }
+
+        // Execute the query
+        $stmt = $this->prepareAndExecute($sql, $values);
+
+        return $stmt->rowCount();
+    }
+
+    /**
      * Determine if a table is considered sensitive for audit logging
      *
      * Sensitive tables contain data that should be audited for security,
@@ -812,7 +866,7 @@ class QueryBuilder
         }
 
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($this->bindings);
+        $stmt->execute($this->flattenBindings($this->bindings));
         return (int) $stmt->fetchColumn();
     }
 
@@ -1054,7 +1108,7 @@ class QueryBuilder
                 function () {
                     // Original get() logic
                     $stmt = $this->pdo->prepare($this->query);
-                    $stmt->execute($this->bindings);
+                    $stmt->execute($this->flattenBindings($this->bindings));
                     return $stmt->fetchAll(PDO::FETCH_ASSOC);
                 },
                 $this->cacheTtl
@@ -1063,7 +1117,7 @@ class QueryBuilder
 
         // Original logic if caching is not enabled
         $stmt = $this->pdo->prepare($this->query);
-        $stmt->execute($this->bindings);
+        $stmt->execute($this->flattenBindings($this->bindings));
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -1247,6 +1301,26 @@ class QueryBuilder
     }
 
     /**
+     * Flatten bindings array to ensure no nested arrays exist
+     *
+     * @param array $bindings The bindings array to flatten
+     * @return array Flattened bindings array
+     */
+    private function flattenBindings(array $bindings): array
+    {
+        $flattened = [];
+        foreach ($bindings as $binding) {
+            if (is_array($binding)) {
+                // Convert array to JSON string to prevent array to string conversion
+                $flattened[] = json_encode($binding);
+            } else {
+                $flattened[] = $binding;
+            }
+        }
+        return $flattened;
+    }
+
+    /**
      * Centralized method for preparing and executing queries
      */
     private function prepareAndExecute(string $sql, array $params = []): \PDOStatement
@@ -1258,15 +1332,18 @@ class QueryBuilder
         $purpose = $this->queryPurpose;
         $this->queryPurpose = null;
 
+        // Flatten bindings to prevent array to string conversion warnings
+        $flattenedParams = $this->flattenBindings($params);
+
         try {
             $stmt = $this->pdo->prepare($sql);
-            $stmt->execute($params);
+            $stmt->execute($flattenedParams);
              // Log successful query with purpose
-            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, null, $this->debugMode, $purpose);
             return $stmt;
         } catch (PDOException $e) {
             // Log failed query with purpose
-            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, $e, $this->debugMode, $purpose);
             throw $e;
         }
     }
@@ -1484,7 +1561,7 @@ class QueryBuilder
         $timerId = $this->logger->startTiming('first');
         try {
             $stmt = $this->pdo->prepare($this->query);
-            $stmt->execute($this->bindings);
+            $stmt->execute($this->flattenBindings($this->bindings));
 
             // Log successful query
             $this->logger->logQuery($this->query, $this->bindings, $timerId);

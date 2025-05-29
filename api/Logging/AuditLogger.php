@@ -87,6 +87,12 @@ class AuditLogger extends LogManager
     /** @var SchemaManager Schema manager */
     protected SchemaManager $schema;
 
+    /** @var array Batch audit event queue */
+    protected static array $batchQueue = [];
+
+    /** @var float Last batch flush time */
+    protected static float $lastBatchFlush = 0;
+
     /**
      * Initialize the audit logger
      *
@@ -361,6 +367,18 @@ class AuditLogger extends LogManager
             return $event->getEventId();
         }
 
+        // Check if event meets minimum level requirement
+        $minimumLevel = (int) config('logging.audit.minimum_level', AuditEvent::LEVEL_INFO);
+        if ($event->getLevel() > $minimumLevel) {
+            // Event doesn't meet minimum level, skip logging
+            return $event->getEventId();
+        }
+
+        // Check if we should skip this request based on path or user agent
+        if ($this->shouldSkipAuditLog($event)) {
+            return $event->getEventId();
+        }
+
         try {
             $localIsLogging = true;
             // Set the class-level flag but don't rely on it exclusively for recursion detection
@@ -373,7 +391,12 @@ class AuditLogger extends LogManager
 
             // Store in database if enabled
             if ($this->storageBackends['database']) {
-                $dbResult = $this->storeAuditEventInDatabase($event);
+                // Check if batch logging is enabled
+                if (config('logging.audit.batch_enabled', false)) {
+                    $this->addToBatch($event);
+                } else {
+                    $this->storeAuditEventInDatabase($event);
+                }
             }
 
             // Log through Monolog if file backend is enabled
@@ -528,6 +551,36 @@ class AuditLogger extends LogManager
 
             return false;
         }
+    }
+
+    /**
+     * Check if audit logging should be skipped for this event
+     *
+     * @param AuditEvent $event Event to check
+     * @return bool True if should skip, false otherwise
+     */
+    protected function shouldSkipAuditLog(AuditEvent $event): bool
+    {
+        $skipPaths = config('logging.audit.skip_paths', []);
+        $skipUserAgents = config('logging.audit.skip_user_agents', []);
+
+        // Check if request URI matches any skip paths
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        foreach ($skipPaths as $path) {
+            if (strpos($requestUri, $path) === 0) {
+                return true;
+            }
+        }
+
+        // Check if user agent matches any skip patterns
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        foreach ($skipUserAgents as $agent) {
+            if (stripos($userAgent, $agent) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1219,5 +1272,96 @@ class AuditLogger extends LogManager
     public function getLogger(string $channel): LoggerInterface
     {
         return parent::getLogger($channel);
+    }
+
+    /**
+     * Add audit event to batch queue
+     *
+     * @param AuditEvent $event Event to add to batch
+     * @return void
+     */
+    protected function addToBatch(AuditEvent $event): void
+    {
+        self::$batchQueue[] = $event;
+
+        // Check if we should flush the batch
+        $batchSize = (int) config('logging.audit.batch_size', 50);
+        $batchTimeout = (int) config('logging.audit.batch_timeout', 5);
+
+        $shouldFlush = count(self::$batchQueue) >= $batchSize ||
+                       (self::$lastBatchFlush > 0 && (time() - self::$lastBatchFlush) >= $batchTimeout);
+
+        if ($shouldFlush) {
+            $this->flushBatch();
+        }
+    }
+
+    /**
+     * Flush batch queue to database
+     *
+     * @return void
+     */
+    protected function flushBatch(): void
+    {
+        if (empty(self::$batchQueue)) {
+            return;
+        }
+
+        $events = self::$batchQueue;
+        self::$batchQueue = [];
+        self::$lastBatchFlush = time();
+
+        // Prepare batch data
+        $batchData = [];
+        foreach ($events as $event) {
+            $eventData = $event->toArray();
+
+            // Generate a unique UUID for the record
+            $eventData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
+
+            // Format timestamp to MySQL DATETIME format (from ISO 8601)
+            if (isset($eventData['timestamp'])) {
+                try {
+                    $dateTime = new \DateTime($eventData['timestamp']);
+                    $eventData['timestamp'] = $dateTime->format('Y-m-d H:i:s');
+                } catch (\Exception $e) {
+                    $eventData['timestamp'] = date('Y-m-d H:i:s');
+                }
+            }
+
+            // Calculate retention date based on category
+            $retentionDays = $this->retentionPolicies[$event->getCategory()] ?? 365;
+            $retentionDate = (new \DateTimeImmutable())->modify("+{$retentionDays} days")->format('Y-m-d H:i:s');
+            $eventData['retention_date'] = $retentionDate;
+
+            // JSON encode details field
+            if (isset($eventData['details'])) {
+                $eventData['details'] = json_encode($eventData['details'], JSON_UNESCAPED_SLASHES);
+            }
+
+            $batchData[] = $eventData;
+        }
+
+        // Perform bulk insert
+        try {
+            // Use the new insertBatch method for better performance
+            $this->db->insertBatch($this->auditTable, $batchData);
+        } catch (\Exception $e) {
+            // Log error but don't throw exception
+            parent::error("Failed to flush audit batch: " . $e->getMessage(), [
+                'batch_size' => count($batchData),
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Register shutdown function to flush batch on script end
+     */
+    public function __destruct()
+    {
+        if (!empty(self::$batchQueue)) {
+            $this->flushBatch();
+        }
     }
 }

@@ -41,6 +41,12 @@ class AuditEvent implements JsonSerializable
     public const SEVERITY_ALERT = 'alert';
     public const SEVERITY_EMERGENCY = 'emergency';
 
+    // Audit importance levels for filtering
+    public const LEVEL_CRITICAL = 1;   // Security events, admin actions, breaches
+    public const LEVEL_IMPORTANT = 2;  // Login/logout, data changes, permission changes
+    public const LEVEL_INFO = 3;       // File access, routine operations
+    public const LEVEL_DEBUG = 4;      // Internal operations, token generation
+
     /**
      * @var string Event UUID
      */
@@ -122,15 +128,26 @@ class AuditEvent implements JsonSerializable
     private ?string $integrityHash;
 
     /**
+     * @var int Audit importance level for filtering
+     */
+    private int $level;
+
+    /**
      * Construct a new audit event
      *
      * @param string $category Event category (use CATEGORY_* constants)
      * @param string $action Specific action being audited
      * @param string $severity Event severity level (use SEVERITY_* constants)
      * @param array $details Event-specific details and context
+     * @param int|null $level Audit importance level (use LEVEL_* constants), auto-determined if null
      */
-    public function __construct(string $category, string $action, string $severity, array $details = [])
-    {
+    public function __construct(
+        string $category,
+        string $action,
+        string $severity,
+        array $details = [],
+        ?int $level = null
+    ) {
         $this->eventId = Utils::generateNanoID();
         $this->category = $category;
         $this->action = $action;
@@ -146,6 +163,9 @@ class AuditEvent implements JsonSerializable
         $this->requestMethod = $_SERVER['REQUEST_METHOD'] ?? null;
         $this->relatedEventId = null;
         $this->sessionId = session_id() ?: null;
+
+        // Set level or auto-determine based on action
+        $this->level = $level ?? $this->determineLevel($category, $action, $severity);
 
         // Generate integrity hash after all other fields are set
         $this->generateIntegrityHash();
@@ -385,6 +405,73 @@ class AuditEvent implements JsonSerializable
     }
 
     /**
+     * Get audit importance level
+     *
+     * @return int
+     */
+    public function getLevel(): int
+    {
+        return $this->level;
+    }
+
+    /**
+     * Determine audit level based on event characteristics
+     *
+     * @param string $category Event category
+     * @param string $action Event action
+     * @param string $severity Event severity
+     * @return int Audit level
+     */
+    private function determineLevel(string $category, string $action, string $severity): int
+    {
+        // Critical security events
+        if (in_array($severity, [self::SEVERITY_CRITICAL, self::SEVERITY_ALERT, self::SEVERITY_EMERGENCY])) {
+            return self::LEVEL_CRITICAL;
+        }
+
+        // Admin and security-critical actions
+        $criticalActions = [
+            'admin_login_success', 'admin_login_failure',
+            'rate_limit_exceeded', 'lockdown_access_blocked',
+            'privilege_escalation', 'unauthorized_access',
+            'data_breach_detected', 'security_policy_violation'
+        ];
+        if (in_array($action, $criticalActions)) {
+            return self::LEVEL_CRITICAL;
+        }
+
+        // Important operational events
+        $importantActions = [
+            'login_success', 'login_failure', 'logout_success',
+            'password_changed', 'email_verified',
+            'create_user', 'update_user', 'delete_user',
+            'create_role', 'update_role', 'delete_role',
+            'permission_granted', 'permission_revoked',
+            'file_delete', 'configuration_changed'
+        ];
+        if (
+            in_array($action, $importantActions) ||
+            strpos($action, 'create_') === 0 ||
+            strpos($action, 'update_') === 0 ||
+            strpos($action, 'delete_') === 0
+        ) {
+            return self::LEVEL_IMPORTANT;
+        }
+
+        // Info level events
+        $infoActions = [
+            'file_access', 'file_upload', 'session_destroyed',
+            'token_validation_failure', 'api_call'
+        ];
+        if (in_array($action, $infoActions)) {
+            return self::LEVEL_INFO;
+        }
+
+        // Everything else is debug level
+        return self::LEVEL_DEBUG;
+    }
+
+    /**
      * Convert to array for storage or serialization
      *
      * @return array
@@ -407,7 +494,8 @@ class AuditEvent implements JsonSerializable
             'details' => $this->details,
             'related_event_id' => $this->relatedEventId,
             'session_id' => $this->sessionId,
-            'integrity_hash' => $this->integrityHash
+            'integrity_hash' => $this->integrityHash,
+            'level' => $this->level
         ];
     }
 

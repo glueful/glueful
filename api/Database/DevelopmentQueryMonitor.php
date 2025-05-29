@@ -247,7 +247,8 @@ class DevelopmentQueryMonitor
     private static function extractQueryPattern(string $normalizedSql): string
     {
         // Extract table and operation pattern
-        if (preg_match('/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+(\w+)/i', $normalizedSql, $matches)) {
+        // Handle queries with backticks around table names
+        if (preg_match('/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+[`"]?(\w+)[`"]?/i', $normalizedSql, $matches)) {
             return $matches[1] . ' ' . $matches[3];
         }
 

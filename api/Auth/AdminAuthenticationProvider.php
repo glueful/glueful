@@ -62,17 +62,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
         }
 
         try {
-            // Log admin login attempt
-            $auditLogger->authEvent(
-                'admin_login_attempt',
-                null,
-                [
-                    'username' => $credentials['username'],
-                    'ip_address' => $request->getClientIp(),
-                    'user_agent' => $request->headers->get('User-Agent')
-                ],
-                AuditEvent::SEVERITY_INFO
-            );
+            // Skip logging login attempt to reduce audit log noise
+            // We already log success/failure which is sufficient
 
             // Validate credentials
             $user = $this->authenticateWithCredentials(
@@ -98,8 +89,16 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                 return null;
             }
 
-            // Verify user has superuser role
-            if (!$this->roleRepository->userHasRole($user['uuid'], 'superuser')) {
+            // Verify user has superuser role - check from already fetched roles
+            $hasSuperuserRole = false;
+            foreach ($user['roles'] as $roleName) {
+                if ($roleName === 'superuser') {
+                    $hasSuperuserRole = true;
+                    break;
+                }
+            }
+
+            if (!$hasSuperuserRole) {
                 $this->error = "Insufficient privileges";
                 error_log("Admin auth failed: User {$credentials['username']} lacks superuser role");
 
@@ -227,7 +226,11 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
 
         // Get user roles
         $roles = $this->roleRepository->getUserRoles($user['uuid']);
-        $user['roles'] = array_column($roles, 'name');
+        $roleNames = [];
+        foreach ($roles as $role) {
+            $roleNames[] = $role['role_name'] ?? $role['name'] ?? '';
+        }
+        $user['roles'] = $roleNames;
 
         // Add profile info if missing
         if (!isset($user['profile'])) {

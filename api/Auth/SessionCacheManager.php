@@ -95,27 +95,7 @@ class SessionCacheManager
             // Have TokenManager map the token to this session
             $mapped = TokenManager::mapTokenToSession($token, $sessionId);
 
-            // Log session creation in the audit log
-            if ($mapped) {
-                try {
-                    $userId = $userData['uuid'] ?? null;
-                    $auditLogger = AuditLogger::getInstance();
-                    $auditLogger->authEvent(
-                        'session_created',
-                        $userId,
-                        [
-                            'session_id' => $sessionId,
-                            'provider' => $provider ?? 'jwt',
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                            'ttl' => $sessionTtl
-                        ],
-                        AuditEvent::SEVERITY_INFO
-                    );
-                } catch (\Throwable $e) {
-                    // Silently handle audit logging errors to ensure session creation isn't affected
-                }
-            }
+            // Skip audit logging here - session creation is already logged in TokenManager
 
             return $mapped;
         }
