@@ -312,7 +312,13 @@ class TokenManager
             return null;
         }
 
-        return json_decode($result[0]['user_uuid'], true);
+        // Return basic session data with user UUID
+        // The calling method will handle fetching full user data
+        return [
+            'uuid' => $result[0]['user_uuid'],
+            'access_token' => $result[0]['access_token'],
+            'created_at' => $result[0]['created_at']
+        ];
     }
 
      /**

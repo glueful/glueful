@@ -240,17 +240,17 @@ class MetricsController
                 $extensionConfigFile = ExtensionsManager::getConfigPath();
                 $content = file_get_contents($extensionConfigFile);
                 $config = json_decode($content, true);
-                
+
                 $extensionStatus = [];
                 $enabledCount = 0;
-                
+
                 if (is_array($config) && isset($config['extensions'])) {
                     foreach ($config['extensions'] as $extensionName => $extensionInfo) {
                         $isEnabled = $extensionInfo['enabled'] ?? false;
                         if ($isEnabled) {
                             $enabledCount++;
                         }
-                        
+
                         $extensionStatus[] = [
                             'name' => $extensionName,
                             'status' => $isEnabled ? 'enabled' : 'disabled',

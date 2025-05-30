@@ -459,12 +459,12 @@ class AuthenticationService
             return null;
         }
 
-        $userData = $this->formatUserData($user[0]);
+        $userData = $this->formatUserData($user);
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
         $userRoles = $this->userRepository->getRoles($userData['uuid']);
 
         $userData['roles'] = $userRoles;
-        $userData['profile'][] = $userProfile;
+        $userData['profile'] = $userProfile;
 
         return $userData;
     }

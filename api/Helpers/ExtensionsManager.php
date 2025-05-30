@@ -2576,7 +2576,7 @@ class ExtensionsManager
         // Read JSON file
         $content = file_get_contents($configFile);
         $config = json_decode($content, true);
-        
+
         if (!is_array($config)) {
             return [];
         }
@@ -2618,7 +2618,7 @@ class ExtensionsManager
         // Read JSON file
         $content = file_get_contents($configFile);
         $config = json_decode($content, true);
-        
+
         if (!is_array($config)) {
             return [];
         }
@@ -2637,7 +2637,7 @@ class ExtensionsManager
                 }
             }
         }
-        
+
         return $optionalExtensions;
     }
 
