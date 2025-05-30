@@ -2573,8 +2573,30 @@ class ExtensionsManager
             return [];
         }
 
-        $config = include $configFile;
-        return $config['core'] ?? [];
+        // Read JSON file
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+        
+        if (!is_array($config)) {
+            return [];
+        }
+
+        // Check for explicit core array first
+        if (isset($config['core']) && is_array($config['core'])) {
+            return $config['core'];
+        }
+
+        // Fallback: look for extensions with type="core"
+        $coreExtensions = [];
+        if (isset($config['extensions']) && is_array($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if (isset($ext['type']) && $ext['type'] === 'core') {
+                    $coreExtensions[] = $name;
+                }
+            }
+        }
+
+        return $coreExtensions;
     }
 
     /**
@@ -2593,8 +2615,30 @@ class ExtensionsManager
             return [];
         }
 
-        $config = include $configFile;
-        return $config['optional'] ?? [];
+        // Read JSON file
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+        
+        if (!is_array($config)) {
+            return [];
+        }
+
+        // Check for explicit optional array first
+        if (isset($config['optional']) && is_array($config['optional'])) {
+            return $config['optional'];
+        }
+
+        // Fallback: look for extensions with type="optional" or no type (default to optional)
+        $optionalExtensions = [];
+        if (isset($config['extensions']) && is_array($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if (!isset($ext['type']) || $ext['type'] === 'optional') {
+                    $optionalExtensions[] = $name;
+                }
+            }
+        }
+        
+        return $optionalExtensions;
     }
 
     /**

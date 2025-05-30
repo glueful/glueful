@@ -3,25 +3,36 @@
     "EmailNotification": {
       "version": "0.21.0",
       "enabled": true,
-      "installPath": "extensions/EmailNotification"
+      "installPath": "extensions/EmailNotification",
+      "type": "core",
+      "description": "Provides email notification functionality for the application",
+      "author": "Glueful Team"
     },
     "SocialLogin": {
       "version": "0.18.0",
       "enabled": false,
-      "installPath": "extensions/SocialLogin"
+      "installPath": "extensions/SocialLogin",
+      "type": "optional",
+      "description": "Provides social authentication through Google, Facebook and GitHub",
+      "author": "Glueful Team"
     },
     "Admin": {
       "version": "0.18.0",
       "enabled": true,
-      "installPath": "extensions/Admin"
+      "installPath": "extensions/Admin",
+      "type": "optional",
+      "description": "Administrative interface for managing the application",
+      "author": "Glueful Team"
     }
   },
+  "core": ["EmailNotification"],
+  "optional": ["Admin", "SocialLogin"],
   "environments": {
     "development": {
-      "enabledExtensions": ["EmailNotification", "SocialLogin", "Admin"]
+      "enabledExtensions": ["EmailNotification", "Admin"]
     },
     "production": {
-      "enabledExtensions": ["EmailNotification", "SocialLogin", "Admin"]
+      "enabledExtensions": ["EmailNotification", "Admin"]
     }
   }
 }

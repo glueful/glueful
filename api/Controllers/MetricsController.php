@@ -235,27 +235,43 @@ class MetricsController
                 }
             }
 
-            // Extensions status
-            $extensions = ExtensionsManager::getLoadedExtensions();
-            $enabledExtensions = ExtensionsManager::getEnabledExtensions();
+            // Extensions status - get from config without loading classes
+            try {
+                $extensionConfigFile = ExtensionsManager::getConfigPath();
+                $content = file_get_contents($extensionConfigFile);
+                $config = json_decode($content, true);
+                
+                $extensionStatus = [];
+                $enabledCount = 0;
+                
+                if (is_array($config) && isset($config['extensions'])) {
+                    foreach ($config['extensions'] as $extensionName => $extensionInfo) {
+                        $isEnabled = $extensionInfo['enabled'] ?? false;
+                        if ($isEnabled) {
+                            $enabledCount++;
+                        }
+                        
+                        $extensionStatus[] = [
+                            'name' => $extensionName,
+                            'status' => $isEnabled ? 'enabled' : 'disabled',
+                            'version' => $extensionInfo['version'] ?? 'unknown',
+                        ];
+                    }
+                }
 
-            $extensionStatus = [];
-            foreach ($extensions as $extension) {
-                $reflection = new \ReflectionClass($extension);
-                $shortName = $reflection->getShortName();
-                $version = ExtensionsManager::getExtensionMetadata($shortName, 'version');
-                $extensionStatus[] = [
-                    'name' => $shortName,
-                    'status' => in_array($shortName, $enabledExtensions) ? 'enabled' : 'disabled',
-                    'version' => is_string($version) ? $version : 'unknown',
+                $metrics['extensions'] = [
+                    'total_count' => count($extensionStatus),
+                    'enabled_count' => $enabledCount,
+                    'extensions' => $extensionStatus
+                ];
+            } catch (\Exception $e) {
+                $metrics['extensions'] = [
+                    'total_count' => 0,
+                    'enabled_count' => 0,
+                    'extensions' => [],
+                    'error' => 'Failed to load extension information: ' . $e->getMessage()
                 ];
             }
-
-            $metrics['extensions'] = [
-                'total_count' => count($extensions),
-                'enabled_count' => count($enabledExtensions),
-                'extensions' => $extensionStatus
-            ];
 
             // Server load
             if (function_exists('sys_getloadavg')) {
@@ -360,7 +376,7 @@ class MetricsController
      * @param int $misses Number of cache misses
      * @return string Formatted hit rate percentage
      */
-    private function calculateHitRate(int $hits, int $misses): string
+    private function calculateHitRate(float|int $hits, float|int $misses): string
     {
         if ($hits > 0) {
             return round($hits / ($hits + $misses) * 100, 2) . '%';

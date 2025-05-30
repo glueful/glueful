@@ -31,63 +31,60 @@ class ExtensionsController
     public function getExtensions(): mixed
     {
         try {
-            $extensions = ExtensionsManager::getLoadedExtensions();
-            $extensionData = [];
+            // Get extension configuration file path
             $extensionConfigFile = ExtensionsManager::getConfigPath();
-            $enabledExtensions = ExtensionsManager::getEnabledExtensions();
-            $coreExtensions = ExtensionsManager::getCoreExtensions($extensionConfigFile);
-            $optionalExtensions = ExtensionsManager::getOptionalExtensions($extensionConfigFile);
 
-            if (empty($extensions)) {
+            // Read extensions from config file
+            $content = file_get_contents($extensionConfigFile);
+            $config = json_decode($content, true);
+
+            if (!is_array($config) || !isset($config['extensions'])) {
                 return Response::ok([], 'No extensions found')->send();
             }
 
-            foreach ($extensions as $extension) {
-                $reflection = new \ReflectionClass($extension);
-                $shortName = $reflection->getShortName();
+            // Get core and optional lists from config
+            $coreExtensions = $config['core'] ?? [];
+            $optionalExtensions = $config['optional'] ?? [];
 
-                // Get metadata from the extension class if the method exists
-                $metadata = [];
-                if (method_exists($extension, 'getMetadata')) {
-                    $metadata = $extension::getMetadata();
-                }
+            $extensionData = [];
 
-                // Use name from metadata if available, otherwise use the short class name
-                $extensionName = isset($metadata['name']) ? $metadata['name'] : $shortName;
+            // Process extensions from config without loading their classes
+            foreach ($config['extensions'] as $extensionName => $extensionInfo) {
+                $tierType = in_array($extensionName, $coreExtensions) ? 'core' : 'optional';
 
-                $isEnabled = in_array($shortName, $enabledExtensions);
-                $tierType = in_array($shortName, $coreExtensions) ? 'core' : 'optional';
-
-                // Get metadata with safe type handling
-                $description = $metadata['description'] ??
-                    ExtensionsManager::getExtensionMetadata($shortName, 'description');
-                $version = $metadata['version'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'version');
-                $author = $metadata['author'] ?? ExtensionsManager::getExtensionMetadata($shortName, 'author');
+                // Get all metadata directly from config
+                $description = $extensionInfo['description'] ?? 'No description available';
+                $version = $extensionInfo['version'] ?? 'unknown';
+                $author = $extensionInfo['author'] ?? 'unknown';
 
                 $extensionData[] = [
                     'name' => $extensionName,
-                    'description' => is_string($description) ? $description : 'No description available',
-                    'version' => is_string($version) ? $version : 'unknown',
-                    'author' => is_string($author) ? $author : 'unknown',
-                    'enabled' => $isEnabled,
+                    'description' => $description,
+                    'version' => $version,
+                    'author' => $author,
+                    'enabled' => $extensionInfo['enabled'] ?? false,
                     'tier' => $tierType,  // Added tier type information
-                    'isCoreExtension' => in_array($shortName, $coreExtensions),  // Explicit flag
-                    'extensionId' => $shortName, // Include the extension ID for actions
+                    'isCoreExtension' => in_array($extensionName, $coreExtensions),  // Explicit flag
+                    'extensionId' => $extensionName, // Include the extension ID for actions
                 ];
             }
 
             // Group extensions by tier for clearer organization
             $groupedExtensions = [
-                'core' => array_filter($extensionData, fn($ext) => $ext['tier'] === 'core'),
-                'optional' => array_filter($extensionData, fn($ext) => $ext['tier'] === 'optional'),
+                'core' => array_values(array_filter($extensionData, fn($ext) => $ext['tier'] === 'core')),
+                'optional' => array_values(array_filter($extensionData, fn($ext) => $ext['tier'] === 'optional')),
                 'all' => $extensionData
             ];
 
+            // Count enabled extensions
+            $enabledCount = count(array_filter($extensionData, fn($ext) => $ext['enabled']));
+
             return Response::ok([
-                'extensions' => $groupedExtensions,
+                'extensions' => $extensionData, // Return flat array for backward compatibility
+                'grouped' => $groupedExtensions, // Also provide grouped data if needed
                 'summary' => [
                     'total' => count($extensionData),
-                    'enabled' => count($enabledExtensions),
+                    'enabled' => $enabledCount,
                     'core' => count($coreExtensions),
                     'optional' => count($optionalExtensions)
                 ]
