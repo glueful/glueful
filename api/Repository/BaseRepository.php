@@ -51,9 +51,6 @@ abstract class BaseRepository
     /** @var Connection|null Shared database connection across all repositories */
     private static ?Connection $sharedConnection = null;
 
-    /** @var QueryBuilder|null Shared query builder across all repositories */
-    private static ?QueryBuilder $sharedQueryBuilder = null;
-
     /**
      * Get shared database connection
      *
@@ -68,20 +65,17 @@ abstract class BaseRepository
     }
 
     /**
-     * Get shared query builder
+     * Get new query builder instance
      *
-     * Returns the shared query builder instance across all repositories,
-     * creating it if needed. This ensures query builder reuse.
+     * Returns a new query builder instance for clean queries.
+     * This prevents query state from persisting between operations.
      *
-     * @return QueryBuilder The shared query builder
+     * @return QueryBuilder A new query builder instance
      */
-    protected static function getSharedQueryBuilder(): QueryBuilder
+    protected static function getNewQueryBuilder(): QueryBuilder
     {
-        if (!self::$sharedQueryBuilder) {
-            $conn = self::getSharedConnection();
-            self::$sharedQueryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
-        }
-        return self::$sharedQueryBuilder;
+        $conn = self::getSharedConnection();
+        return new QueryBuilder($conn->getPDO(), $conn->getDriver());
     }
 
     /**
@@ -94,7 +88,7 @@ abstract class BaseRepository
      */
     public function __construct(?string $table = null)
     {
-        $this->db = self::getSharedQueryBuilder();
+        $this->db = self::getNewQueryBuilder();
 
         if ($table) {
             $this->table = $table;
@@ -315,8 +309,6 @@ abstract class BaseRepository
         if ($this->auditLogger === null) {
             return;
         }
-        // Memory optimization: avoid including large datasets in audit logs
-        $auditDataLimit = 1024; // Limit data size to avoid memory issues
 
         $severity = AuditEvent::SEVERITY_INFO;
         $entityType = $this->table;

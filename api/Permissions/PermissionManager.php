@@ -70,13 +70,34 @@ class PermissionManager
             return false;
         }
 
-        // Get user from session
-        $session = SessionCacheManager::getSession($token);
-        if (!$session || !isset($session['user']['uuid'])) {
+        // Get session ID from token first
+        $sessionId = \Glueful\Auth\TokenManager::getSessionIdFromToken($token);
+        if (!$sessionId) {
+            // If no cached session ID, try using TokenStorageService directly
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $session = $tokenStorage->getSessionByAccessToken($token);
+        } else {
+            // Get user from session using session ID
+            $session = SessionCacheManager::getSession($sessionId);
+        }
+
+        if (!$session) {
             return false;
         }
 
-        $userUuid = $session['user']['uuid'];
+        // Handle different session formats
+        $userUuid = null;
+        if (isset($session['user']['uuid'])) {
+            // Standard format from SessionCacheManager
+            $userUuid = $session['user']['uuid'];
+        } elseif (isset($session['user_uuid'])) {
+            // Raw format from auth_sessions table
+            $userUuid = $session['user_uuid'];
+        }
+
+        if (!$userUuid) {
+            return false;
+        }
 
         // Use cached permissions check
         return self::$repository->hasPermission($userUuid, $model, $permission);

@@ -86,9 +86,17 @@ class PermissionRepository extends BaseRepository
             $model = $permission['model'];
             $perms = $permission['permissions'];
 
-            // Handle JSON formatted permissions
+            // Handle different permission formats
             if (is_string($perms)) {
-                $perms = json_decode($perms, true);
+                // Try JSON first
+                $decoded = json_decode($perms, true);
+                if ($decoded !== null) {
+                    $perms = $decoded;
+                } else {
+                    // If not JSON, treat as string of permission characters
+                    // Convert 'ABDC' to ['A', 'B', 'D', 'C']
+                    $perms = str_split($perms);
+                }
             }
 
             $formattedPermissions[$model] = $perms;
@@ -188,9 +196,17 @@ class PermissionRepository extends BaseRepository
             $model = $permission['model'];
             $perms = $permission['permissions'];
 
-            // Handle JSON formatted permissions
+            // Handle different permission formats
             if (is_string($perms)) {
-                $perms = json_decode($perms, true);
+                // Try JSON first
+                $decoded = json_decode($perms, true);
+                if ($decoded !== null) {
+                    $perms = $decoded;
+                } else {
+                    // If not JSON, treat as string of permission characters
+                    // Convert 'ABDC' to ['A', 'B', 'D', 'C']
+                    $perms = str_split($perms);
+                }
             }
 
             $formattedPermissions[$model] = [

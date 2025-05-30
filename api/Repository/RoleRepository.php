@@ -80,7 +80,7 @@ class RoleRepository extends BaseRepository
     public function getUserRoles(string $uuid): array
     {
         return $this->db
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
+            ->join('roles', '`user_roles_lookup`.`role_uuid` = `roles`.`uuid`', 'LEFT')
             ->select('user_roles_lookup', [
                 'user_roles_lookup.role_uuid',
                 'user_roles_lookup.user_uuid',

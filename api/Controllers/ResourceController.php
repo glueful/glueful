@@ -6,7 +6,6 @@ namespace Glueful\Controllers;
 
 use Glueful\{APIEngine, Http\Response};
 use Glueful\Auth\AuthBootstrap;
-use Glueful\Auth\SessionCacheManager;
 use Glueful\Permissions\Permission;
 use Glueful\Permissions\PermissionManager;
 use Glueful\Repository\RoleRepository;
@@ -44,27 +43,24 @@ class ResourceController
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Extract token for permission check
-            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            // Extract user UUID directly from authenticated data
+            $userUuid = $this->getUserUuid($userData);
 
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            if (!$userUuid) {
+                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
-
-            // Get session from token which contains user data
-            $session = SessionCacheManager::getSession($token);
-            if (!$session || !isset($session['user']['uuid'])) {
-                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get user UUID from session
-            $userUuid = $session['user']['uuid'];
 
             // Check if user has superuser role
             $roleRepo = new RoleRepository();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
+                // For permission check, we need the token
+                $token = $this->extractToken($request);
+                if (!$token) {
+                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+                }
+
                 // Check permissions using the PermissionManager for non-superusers
                 if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
@@ -107,27 +103,24 @@ class ResourceController
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Extract token for permission check
-            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            // Extract user UUID directly from authenticated data
+            $userUuid = $this->getUserUuid($userData);
 
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            if (!$userUuid) {
+                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
-
-            // Get session from token which contains user data
-            $session = SessionCacheManager::getSession($token);
-            if (!$session || !isset($session['user']['uuid'])) {
-                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get user UUID from session
-            $userUuid = $session['user']['uuid'];
 
             // Check if user has superuser role
             $roleRepo = new RoleRepository();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
+                // For permission check, we need the token
+                $token = $this->extractToken($request);
+                if (!$token) {
+                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+                }
+
                 // Check permissions using the PermissionManager for non-superusers
                 if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
@@ -168,27 +161,24 @@ class ResourceController
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Extract token for permission check
-            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            // Extract user UUID directly from authenticated data
+            $userUuid = $this->getUserUuid($userData);
 
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            if (!$userUuid) {
+                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
-
-            // Get session from token which contains user data
-            $session = SessionCacheManager::getSession($token);
-            if (!$session || !isset($session['user']['uuid'])) {
-                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get user UUID from session
-            $userUuid = $session['user']['uuid'];
 
             // Check if user has superuser role
             $roleRepo = new RoleRepository();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
+                // For permission check, we need the token
+                $token = $this->extractToken($request);
+                if (!$token) {
+                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+                }
+
                 // Check permissions using the PermissionManager for non-superusers
                 if (!PermissionManager::can($params['resource'], Permission::SAVE->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
@@ -228,27 +218,24 @@ class ResourceController
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Extract token for permission check
-            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            // Extract user UUID directly from authenticated data
+            $userUuid = $this->getUserUuid($userData);
 
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            if (!$userUuid) {
+                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
-
-            // Get session from token which contains user data
-            $session = SessionCacheManager::getSession($token);
-            if (!$session || !isset($session['user']['uuid'])) {
-                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get user UUID from session
-            $userUuid = $session['user']['uuid'];
 
             // Check if user has superuser role
             $roleRepo = new RoleRepository();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
+                // For permission check, we need the token
+                $token = $this->extractToken($request);
+                if (!$token) {
+                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+                }
+
                 // Check permissions using the PermissionManager for non-superusers
                 if (!PermissionManager::can($params['resource'], Permission::EDIT->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
@@ -288,27 +275,24 @@ class ResourceController
                 return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Extract token for permission check
-            $token = $userData['token'] ?? $_GET['token'] ?? null;
+            // Extract user UUID directly from authenticated data
+            $userUuid = $this->getUserUuid($userData);
 
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+            if (!$userUuid) {
+                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
-
-            // Get session from token which contains user data
-            $session = SessionCacheManager::getSession($token);
-            if (!$session || !isset($session['user']['uuid'])) {
-                return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get user UUID from session
-            $userUuid = $session['user']['uuid'];
 
             // Check if user has superuser role
             $roleRepo = new RoleRepository();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
+                // For permission check, we need the token
+                $token = $this->extractToken($request);
+                if (!$token) {
+                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+                }
+
                 // Check permissions using the PermissionManager for non-superusers
                 if (!PermissionManager::can($params['resource'], Permission::DELETE->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
@@ -340,5 +324,61 @@ class ResourceController
     {
         // Try to authenticate with all available methods
         return $this->authManager->authenticateWithProviders(['jwt', 'api_key'], $request);
+    }
+
+    /**
+     * Extract user UUID from authentication data
+     *
+     * Handles different authentication response formats
+     *
+     * @param array $authData Authentication data
+     * @return string|null User UUID
+     */
+    private function getUserUuid(array $authData): ?string
+    {
+        // For JWT auth, the returned data is the session record
+        // Check for user_uuid field first (auth_sessions table)
+        if (isset($authData['user_uuid'])) {
+            return $authData['user_uuid'];
+        }
+
+        // Direct UUID in auth data
+        if (isset($authData['uuid'])) {
+            return $authData['uuid'];
+        }
+
+        // UUID nested in user object
+        if (isset($authData['user']['uuid'])) {
+            return $authData['user']['uuid'];
+        }
+
+        // UUID in nested user data (some providers return this structure)
+        if (isset($authData['data']['user']['uuid'])) {
+            return $authData['data']['user']['uuid'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract token from request
+     *
+     * @param Request $request
+     * @return string|null
+     */
+    private function extractToken(Request $request): ?string
+    {
+        $authHeader = $request->headers->get('Authorization');
+
+        if (!$authHeader) {
+            return null;
+        }
+
+        // Remove 'Bearer ' prefix if present
+        if (strpos($authHeader, 'Bearer ') === 0) {
+            return substr($authHeader, 7);
+        }
+
+        return $authHeader;
     }
 }
