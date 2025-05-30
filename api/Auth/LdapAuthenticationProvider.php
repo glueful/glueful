@@ -11,6 +11,7 @@ use LdapRecord\Container;
 use LdapRecord\Auth\BindException;
 use LdapRecord\Models\ActiveDirectory\User as LdapUser;
 use LdapRecord\Models\ActiveDirectory\Group as LdapGroup;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * LDAP Authentication Provider

@@ -146,7 +146,8 @@ class AuthController
             }
 
             // Try to get user information for the audit log before terminating the session
-            $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $session = $tokenStorage->getSessionByAccessToken($token);
             $userId = $session['user']['uuid'] ?? $session['uuid'] ?? null;
 
             // Get audit logger instance
@@ -351,7 +352,8 @@ class AuthController
             }
 
             // Get session to extract user UUID
-            $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $session = $tokenStorage->getSessionByAccessToken($token);
             if (!$session || !isset($session['user']['uuid'])) {
                 return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
             }

@@ -8,6 +8,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
 use Symfony\Component\HttpFoundation\Request;
+use Glueful\Auth\Interfaces\TokenStorageInterface;
 
 /**
  * Authentication Service
@@ -30,17 +31,19 @@ class AuthenticationService
     private Validator $validator;
     private PasswordHasher $passwordHasher;
     private AuthenticationManager $authManager;
+    private TokenStorageInterface $tokenStorage;
 
     /**
      * Constructor
      *
      * Initializes service dependencies.
      */
-    public function __construct()
+    public function __construct(?TokenStorageInterface $tokenStorage = null)
     {
         $this->userRepository = new UserRepository();
         $this->validator = new Validator();
         $this->passwordHasher = new PasswordHasher();
+        $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
 
         // Ensure authentication system is initialized
         AuthBootstrap::initialize();
@@ -414,9 +417,13 @@ class AuthenticationService
             return null;
         }
 
-        // Update session with new tokens
-        $userData['refresh_token'] = $tokens['refresh_token'];
-        SessionCacheManager::storeSession($userData, $tokens['access_token']);
+        // Update session with new tokens using TokenStorageService
+        // This ensures both database and cache are updated atomically
+        $success = $this->tokenStorage->updateSessionTokens($refreshToken, $tokens);
+
+        if (!$success) {
+            return null;
+        }
 
         return [
             'tokens' => [

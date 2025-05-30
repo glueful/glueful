@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Glueful\Repository\UserRepository;
 use OneLogin\Saml2\Auth as SamlAuth;
 use OneLogin\Saml2\Constants as SamlConstants;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * SAML Authentication Provider

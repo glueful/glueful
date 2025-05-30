@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Auth;
+namespace Glueful\Auth\Interfaces;
 
 use Symfony\Component\HttpFoundation\Request;
 

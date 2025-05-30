@@ -6,6 +6,7 @@ namespace Glueful\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Repository\UserRepository;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * API Key Authentication Provider

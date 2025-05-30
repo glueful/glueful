@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+
 /**
  * Authentication Bootstrapper
  *

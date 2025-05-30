@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Repository\RoleRepository;
-use Glueful\Auth\SessionCacheManager;
+use Glueful\Auth\TokenStorageService;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Permissions\PermissionManager;
 use Glueful\DI\Interfaces\ContainerInterface;
@@ -84,7 +84,8 @@ class PermissionMiddleware implements MiddlewareInterface
         }
 
         // Get session data
-        $session = SessionCacheManager::getSession($token);
+        $tokenStorage = new TokenStorageService();
+        $session = $tokenStorage->getSessionByAccessToken($token);
 
         if (!$session || !isset($session['user']['uuid'])) {
             return new JsonResponse([

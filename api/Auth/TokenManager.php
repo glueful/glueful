@@ -10,6 +10,7 @@ use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * Token Management System
@@ -362,9 +363,10 @@ class TokenManager
             $tokens = self::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
         }
 
-        // Store session
+        // Store session using TokenStorageService for unified database/cache management
         $user['refresh_token'] = $tokens['refresh_token'];
-        SessionCacheManager::storeSession($user, $tokens['access_token']);
+        $tokenStorage = new TokenStorageService();
+        $tokenStorage->storeSession($user, $tokens);
 
         self::storeSession(
             $user['uuid'],

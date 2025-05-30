@@ -264,8 +264,9 @@ class RateLimiterMiddleware implements MiddlewareInterface
             // Remove 'Bearer ' prefix if present
             $token = str_replace('Bearer ', '', $token);
 
-            // Try to get user from session cache
-            $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+            // Try to get user from session using TokenStorageService
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $session = $tokenStorage->getSessionByAccessToken($token);
             return $session['uuid'] ?? null;
         }
 

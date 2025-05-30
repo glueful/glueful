@@ -7,6 +7,7 @@ namespace Glueful\Auth;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * JWT Authentication Provider
@@ -14,7 +15,7 @@ use Glueful\Logging\AuditEvent;
  * Implements authentication using JWT tokens and the existing
  * authentication infrastructure in the Glueful framework.
  *
- * This provider leverages the TokenManager and SessionCacheManager
+ * This provider leverages the TokenManager and TokenStorageService
  * while providing a standardized interface for authentication.
  */
 class JwtAuthenticationProvider implements AuthenticationProviderInterface
@@ -54,8 +55,9 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
                 return null;
             }
 
-            // Validate token and get session data
-            $sessionData = SessionCacheManager::getSession($token);
+            // Validate token and get session data using TokenStorageService
+            $tokenStorage = new TokenStorageService();
+            $sessionData = $tokenStorage->getSessionByAccessToken($token);
 
             if (!$sessionData) {
                 $this->lastError = 'Invalid or expired authentication token';

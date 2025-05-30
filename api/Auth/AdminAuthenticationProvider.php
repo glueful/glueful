@@ -9,6 +9,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\Repository\RoleRepository;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * Admin Authentication Provider
