@@ -8,7 +8,7 @@ use Glueful\Cache\CacheEngine;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Services\NotificationService;
-use Glueful\{APIEngine};
+use Glueful\Repository\UserRepository;
 
 /**
  * Email Verification System
@@ -634,8 +634,9 @@ class EmailVerification
             }
 
             // Check if email exists in users table
-            $userData = APIEngine::getData('users', 'list', ['email' => $email]);
-            if (empty($userData)) {
+            $userRepository = new UserRepository();
+            $userData = $userRepository->findByEmail($email);
+            if (!$userData) {
                 // Log the email not found to the audit system
                 if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
                     try {
@@ -745,14 +746,14 @@ class EmailVerification
                 $notifiable,
                 'Password Reset Code',
                 [
-                    'name' => $userData[0]['first_name'] ?? 'User',
+                    'name' => $userData['first_name'] ?? 'User',
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                     'app_name' => config('app.name', 'Glueful'),
                     'current_year' => date('Y'),
                     'message' => 'Your password reset code is: ' . $otp,
                     'template_data' => [  // Explicitly provide template data in the correct format
-                        'name' => $userData[0]['first_name'] ?? 'User',
+                        'name' => $userData['first_name'] ?? 'User',
                         'otp' => $otp,
                         'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                         'app_name' => config('app.name', 'Glueful'),
@@ -793,7 +794,7 @@ class EmailVerification
                             'error_code' => $parsedResult['error_code'] ?? null,
                             'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                            'user_data' => isset($userData[0]['uuid']) ? ['uuid' => $userData[0]['uuid']] : null
+                            'user_data' => isset($userData['uuid']) ? ['uuid' => $userData['uuid']] : null
                         ]
                     );
                 } catch (\Throwable $e) {

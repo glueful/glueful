@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Uploader;
 
-use Glueful\APIEngine;
+use Glueful\Repository\BlobRepository;
 use Glueful\Helpers\Utils;
 use Glueful\Uploader\Storage\{StorageInterface, S3Storage, LocalStorage};
 use Glueful\Uploader\UploadException;
@@ -24,12 +24,14 @@ final class FileUploader
     private const MAX_FILE_SIZE = 10485760; // 10MB
 
     private StorageInterface $storage;
+    private BlobRepository $blobRepository;
 
     public function __construct(
         private readonly string $uploadsDirectory = '',
         private readonly string $cdnBaseUrl = '',
         private readonly ?string $storageDriver = null
     ) {
+        $this->blobRepository = new BlobRepository();
         $driver = $this->storageDriver ?: config('services.storage.driver');
         $this->storage = match ($driver) {
             's3' => new S3Storage(),
@@ -129,7 +131,7 @@ final class FileUploader
         $user = Utils::getUser();
         $uuid = $user['uuid'] ?? null;
 
-        $params = [
+        $blobData = [
             'name' => $file['name'],
             'mime_type' => $file['type'],
             'url' => $filename,
@@ -139,10 +141,12 @@ final class FileUploader
             'created_at' => date('Y-m-d H:i:s')
         ];
 
-        $response = APIEngine::saveData('blobs', 'save', $params);
-        $response['url'] = $this->storage->getUrl($filename);
+        $blobUuid = $this->blobRepository->create($blobData);
 
-        return $response;
+        return [
+            'uuid' => $blobUuid,
+            'url' => $this->storage->getUrl($filename)
+        ];
     }
 
     public function handleBase64Upload(string $base64String): string

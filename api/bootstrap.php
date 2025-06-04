@@ -49,8 +49,5 @@ if (env('DB_STARTUP_VALIDATION', true) && !env('SKIP_DB_VALIDATION', false)) {
     );
 }
 
-// Initialize API Engine
-Glueful\APIEngine::initialize();
-
 // Return the container for use in index.php and other entry points
 return $container;

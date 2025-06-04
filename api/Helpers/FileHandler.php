@@ -6,16 +6,18 @@ namespace Glueful\Helpers;
 
 use Glueful\Uploader\FileUploader;
 use Glueful\Auth\AuthenticationService;
-use Glueful\APIEngine;
+use Glueful\Repository\BlobRepository;
 use Glueful\Uploader\Storage\StorageInterface;
 
 class FileHandler
 {
     private FileUploader $uploader;
+    private BlobRepository $blobRepository;
 
     public function __construct()
     {
         $this->uploader = new FileUploader();
+        $this->blobRepository = new BlobRepository();
     }
 
     public function handleFileUpload(array $getParams, array $fileParams): array
@@ -162,12 +164,8 @@ class FileHandler
     {
         try {
             // Get file information from files table
-            $fileData = APIEngine::getData('blobs', 'view', [
-                'fields' => 'uuid,filename,filepath,mime_type,file_size,storage_type,created_at,updated_at,status',
-                'uuid' => $uuid
-            ]);
-
-            return $fileData[0] ?? null;
+            $fields = ['uuid', 'name', 'url', 'mime_type', 'size', 'status', 'created_at', 'updated_at'];
+            return $this->blobRepository->getBlobInfo($uuid, $fields);
         } catch (\Exception $e) {
             error_log("Error retrieving file info: " . $e->getMessage());
             return null;
@@ -480,14 +478,7 @@ class FileHandler
             $fileDeleted = $storage->delete($fileInfo['filepath']);
 
             // Update the file status in the database to deleted
-            $dbUpdated = APIEngine::saveData(
-                'blobs',
-                'update',
-                [
-                    'uuid' => $uuid,
-                    'status' => 'deleted',
-                ]
-            );
+            $dbUpdated = $this->blobRepository->updateStatus($uuid, 'deleted');
 
             // Return true if either operation succeeded
             // We consider it successful if we update the DB even if physical delete fails

@@ -67,7 +67,7 @@ class CreateInitialSchema implements MigrationInterface
             'x_forwarded_for_ip_address' => 'VARCHAR(40)',
             'last_login_date' => 'TIMESTAMP',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'UNIQUE', 'column' => 'username'],
@@ -82,7 +82,7 @@ class CreateInitialSchema implements MigrationInterface
             'description' => 'TEXT NOT NULL',
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'UNIQUE', 'column' => 'name']
@@ -142,7 +142,7 @@ class CreateInitialSchema implements MigrationInterface
             'created_by' => 'CHAR(12) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'created_by']
@@ -166,7 +166,7 @@ class CreateInitialSchema implements MigrationInterface
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'user_uuid'],

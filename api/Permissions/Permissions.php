@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Permissions;
 
-use Glueful\APIEngine;
-
 /**
  * Permissions Manager
  *
@@ -42,7 +40,7 @@ class Permissions
 
         // Extract user data from session
         $userData = $session['user'];
-// Check if user has role for this model
+        // Check if user has role for this model
         if (!isset($userData['roles']) || !is_array($userData['roles']) || empty($userData['roles'])) {
             return false;
         }
