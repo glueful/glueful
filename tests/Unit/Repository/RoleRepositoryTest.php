@@ -68,6 +68,8 @@ class RoleRepositoryTest extends TestCase
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
             ->willReturnSelf();
+        $this->mockQueryBuilder->method('where')
+            ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($rolesData);
 

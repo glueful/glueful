@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Unit\Repository;
 
 use Tests\Unit\Repository\Mocks\TestNotificationRepository;
-use Tests\Unit\Repository\Mocks\TestNotification;
 use Tests\Unit\Repository\Mocks\MockNotificationConnection;
 use Tests\TestCase;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -552,13 +551,37 @@ class NotificationRepositoryTest extends TestCase
      */
     public function testDeleteNotificationByUuid(): void
     {
-        // Configure mock for successful delete
+        $testUuid = 'test-uuid-123';
+        // Mock find method to return an existing record
+        $this->mockQueryBuilder
+            ->method('select')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('where')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('limit')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('get')
+            ->willReturn([
+                [
+                    'uuid' => $testUuid,
+                    'type' => 'test_notification',
+                    'subject' => 'Test Subject',
+                    'content' => 'Test Content',
+                    'notifiable_type' => 'user',
+                    'notifiable_id' => 'user-123'
+                ]
+            ]);
+
+        // Configure mock for successful delete (QueryBuilder.delete returns bool)
         $this->mockQueryBuilder
             ->method('delete')
             ->willReturn(true);
 
         // Call method
-        $result = $this->notificationRepository->deleteNotificationByUuid('test-uuid-123');
+        $result = $this->notificationRepository->deleteNotificationByUuid($testUuid);
 
         // Assert success
         $this->assertTrue($result);

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Tests\Unit\Repository;
@@ -251,6 +252,8 @@ class PermissionRepositoryTest extends TestCase
 
         // Configure query builder to return test data
         $this->mockQueryBuilder->method('select')
+            ->willReturnSelf();
+        $this->mockQueryBuilder->method('where')
             ->willReturnSelf();
         $this->mockQueryBuilder->method('get')
             ->willReturn($permissionsData);

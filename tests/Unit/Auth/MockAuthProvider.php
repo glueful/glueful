@@ -3,7 +3,7 @@
 namespace Tests\Unit\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
-use Glueful\Auth\AuthenticationProviderInterface;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * Mock authentication provider for testing
@@ -128,8 +128,7 @@ class MockAuthProvider implements AuthenticationProviderInterface
         array $userData,
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
-    ): array
-    {
+    ): array {
         if (empty($this->generatedTokens)) {
             return [
                 'access_token' => 'mock-access-token-' . uniqid(),

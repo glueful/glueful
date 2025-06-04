@@ -263,7 +263,6 @@ class ResourceController
             $updateData = $putData['data'] ?? $putData;
             unset($updateData['uuid']); // Remove UUID from update data
 
-
             $success = $repository->update($params['uuid'], $updateData);
 
             if (!$success) {

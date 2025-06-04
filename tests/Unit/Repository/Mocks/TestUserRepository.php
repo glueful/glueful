@@ -95,14 +95,13 @@ class TestUserRepository extends UserRepository
      * Create new user - overridden for testing
      *
      * @param array $userData User data (username, email, password, etc.)
-     * @param string|null $createdByUserId UUID of user creating this user (for audit)
-     * @return string|null New user UUID or null on failure
+     * @return string New user UUID
      */
-    public function create(array $userData, ?string $createdByUserId = null): ?string
+    public function create(array $userData): string
     {
         // Ensure required fields are present
         if (!isset($userData['username']) || !isset($userData['email']) || !isset($userData['password'])) {
-            return null;
+            throw new \InvalidArgumentException('Required fields missing');
         }
 
         // Validate username and email - in test version we skip actual validation
@@ -121,9 +120,13 @@ class TestUserRepository extends UserRepository
         // We ensure we're always returning the UUID string or null as required by the method signature
         $result = $this->testDb->insert('users', $userData);
 
-        // The actual method returns the UUID if successful, null otherwise
+        // The actual method returns the UUID if successful, throws exception otherwise
         // The insert method may return int (row count) or bool depending on implementation
-        return ($result !== false && $result !== 0) ? $userData['uuid'] : null;
+        if ($result === false || $result === 0) {
+            throw new \RuntimeException('Failed to create user');
+        }
+        
+        return $userData['uuid'];
     }
 
     /**
