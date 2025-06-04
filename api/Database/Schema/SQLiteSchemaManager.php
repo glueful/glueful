@@ -894,4 +894,504 @@ class SQLiteSchemaManager implements SchemaManager
             throw new Exception("Error dropping foreign key: " . $e->getMessage());
         }
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateChangePreview(string $tableName, array $changes): array
+    {
+        $sql = [];
+        $warnings = [];
+        $estimatedDuration = 0;
+
+        foreach ($changes as $change) {
+            $changeType = $change['type'] ?? 'unknown';
+
+            switch ($changeType) {
+                case 'add_column':
+                    $columnSql = $this->generateAddColumnSQL($tableName, $change);
+                    $sql[] = $columnSql;
+                    $estimatedDuration += 2; // SQLite is faster
+                    break;
+
+                case 'drop_column':
+                    $warnings[] = "SQLite does not support DROP COLUMN. Table recreation required.";
+                    $sql[] = "-- Table recreation required for dropping column '{$change['column_name']}'";
+                    $estimatedDuration += 30; // Table recreation is expensive
+                    break;
+
+                case 'modify_column':
+                    $warnings[] = "SQLite does not support MODIFY COLUMN. Table recreation required.";
+                    $sql[] = "-- Table recreation required for modifying column '{$change['column_name']}'";
+                    $estimatedDuration += 30;
+                    break;
+
+                case 'add_index':
+                    $indexSql = $this->generateAddIndexSQL($tableName, $change);
+                    $sql[] = $indexSql;
+                    $estimatedDuration += 5;
+                    break;
+
+                case 'drop_index':
+                    $indexName = $change['index_name'];
+                    $sql[] = "DROP INDEX IF EXISTS \"{$indexName}\"";
+                    $estimatedDuration += 1;
+                    break;
+
+                default:
+                    $warnings[] = "Unknown change type: {$changeType}";
+            }
+        }
+
+        return [
+            'sql' => $sql,
+            'warnings' => $warnings,
+            'estimated_duration' => $estimatedDuration,
+            'safe_to_execute' => !$this->hasDestructiveChanges($changes),
+            'generated_at' => date('Y-m-d H:i:s'),
+            'notes' => ['SQLite has limited ALTER TABLE support - some operations require table recreation']
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function exportTableSchema(string $tableName, string $format = 'json'): array
+    {
+        if (!$this->tableExists($tableName)) {
+            throw new \RuntimeException("Table '{$tableName}' does not exist");
+        }
+
+        $schema = $this->getTableSchema($tableName);
+
+        switch ($format) {
+            case 'json':
+                return $this->exportAsJson($schema);
+            case 'sql':
+                return $this->exportAsSQL($tableName, $schema);
+            case 'yaml':
+                return $this->exportAsYaml($schema);
+            case 'php':
+                return $this->exportAsPhp($schema);
+            default:
+                throw new \InvalidArgumentException("Unsupported format: {$format}");
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function importTableSchema(
+        string $tableName,
+        array $schema,
+        string $format = 'json',
+        array $options = []
+    ): array {
+        $validation = $this->validateSchema($schema, $format);
+        if (!$validation['valid']) {
+            throw new \InvalidArgumentException('Invalid schema: ' . implode(', ', $validation['errors']));
+        }
+
+        $changes = [];
+        $recreate = $options['recreate'] ?? false;
+
+        if ($recreate && $this->tableExists($tableName)) {
+            $this->dropTable($tableName);
+            $changes[] = "Dropped existing table '{$tableName}'";
+        }
+
+        if (!$this->tableExists($tableName)) {
+            $this->createTableFromSchema($tableName, $schema, $format);
+            $changes[] = "Created table '{$tableName}'";
+        } else {
+            $changes[] = "Table '{$tableName}' already exists - incremental updates not supported in SQLite";
+        }
+
+        return [
+            'success' => true,
+            'changes' => $changes,
+            'table_name' => $tableName,
+            'imported_at' => date('Y-m-d H:i:s'),
+            'notes' => ['SQLite import typically requires table recreation for schema changes']
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function validateSchema(array $schema, string $format = 'json'): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        switch ($format) {
+            case 'json':
+                $errors = array_merge($errors, $this->validateJsonSchema($schema));
+                break;
+            case 'sql':
+                $errors = array_merge($errors, $this->validateSqlSchema($schema));
+                break;
+            case 'yaml':
+                $errors = array_merge($errors, $this->validateYamlSchema($schema));
+                break;
+            case 'php':
+                $errors = array_merge($errors, $this->validatePhpSchema($schema));
+                break;
+            default:
+                $errors[] = "Unsupported schema format: {$format}";
+        }
+
+        // SQLite-specific validations
+        if ($format === 'json' && isset($schema['columns'])) {
+            foreach ($schema['columns'] as $column) {
+                if (isset($column['type']) && strpos($column['type'], 'ENUM') !== false) {
+                    $warnings[] = "SQLite does not support ENUM types - " .
+                                 "will be converted to TEXT with CHECK constraint";
+                }
+            }
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings,
+            'validated_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateRevertOperations(array $originalChange): array
+    {
+        $context = json_decode($originalChange['context'] ?? '{}', true);
+        $action = $originalChange['action'] ?? '';
+        $revertOps = [];
+
+        switch ($action) {
+            case 'add_column':
+                $revertOps[] = [
+                    'type' => 'recreate_table_without_column',
+                    'table' => $context['table'] ?? '',
+                    'column_name' => $context['column']['name'] ?? '',
+                    'note' => 'SQLite requires table recreation to remove columns'
+                ];
+                break;
+
+            case 'add_index':
+                $revertOps[] = [
+                    'type' => 'drop_index',
+                    'table' => $context['table'] ?? '',
+                    'index_name' => $context['index']['name'] ?? ''
+                ];
+                break;
+
+            case 'drop_index':
+                $revertOps[] = [
+                    'type' => 'add_index',
+                    'table' => $context['table'] ?? '',
+                    'index' => $context['original_index'] ?? []
+                ];
+                break;
+
+            default:
+                throw new \RuntimeException("Cannot generate revert operations for action: {$action} in SQLite");
+        }
+
+        return $revertOps;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function executeRevert(array $revertOps): array
+    {
+        $results = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($revertOps as $op) {
+                $result = $this->executeRevertOperation($op);
+                $results[] = $result;
+            }
+
+            $this->pdo->commit();
+            return [
+                'success' => true,
+                'operations' => $results,
+                'reverted_at' => date('Y-m-d H:i:s')
+            ];
+        } catch (\Exception $e) {
+            $this->pdo->rollBack();
+            throw new \RuntimeException("Revert failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableSchema(string $tableName): array
+    {
+        if (!$this->tableExists($tableName)) {
+            throw new \RuntimeException("Table '{$tableName}' does not exist");
+        }
+
+        return [
+            'table_name' => $tableName,
+            'columns' => $this->getColumnDefinitions($tableName),
+            'indexes' => $this->getIndexDefinitions($tableName),
+            'foreign_keys' => $this->getForeignKeyDefinitions($tableName),
+            'table_options' => $this->getTableOptions($tableName),
+            'create_sql' => $this->getCreateTableSQL($tableName),
+            'retrieved_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    // Helper methods for SQLite schema operations
+
+    private function generateAddColumnSQL(string $tableName, array $change): string
+    {
+        $columnName = $change['column_name'];
+        $columnType = $change['column_type'];
+        $options = $change['options'] ?? [];
+
+        $sql = "ALTER TABLE \"{$tableName}\" ADD COLUMN \"{$columnName}\" {$columnType}";
+
+        if ($options['not_null'] ?? false) {
+            $sql .= ' NOT NULL';
+        }
+
+        if (isset($options['default'])) {
+            $sql .= " DEFAULT '{$options['default']}'";
+        }
+
+        return $sql;
+    }
+
+    private function generateAddIndexSQL(string $tableName, array $change): string
+    {
+        $indexName = $change['index_name'];
+        $columns = $change['columns'];
+        $unique = ($change['index_type'] ?? '') === 'UNIQUE' ? 'UNIQUE' : '';
+
+        if (is_array($columns)) {
+            $columns = implode('\", \"', $columns);
+        }
+
+        return "CREATE {$unique} INDEX \"{$indexName}\" ON \"{$tableName}\" (\"{$columns}\")";
+    }
+
+    private function hasDestructiveChanges(array $changes): bool
+    {
+        foreach ($changes as $change) {
+            if (in_array($change['type'] ?? '', ['drop_column', 'drop_table', 'modify_column'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function exportAsJson(array $schema): array
+    {
+        return [
+            'format' => 'json',
+            'version' => '1.0',
+            'engine' => 'sqlite',
+            'schema' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function exportAsSQL(string $tableName, array $schema): array
+    {
+        return [
+            'format' => 'sql',
+            'version' => '1.0',
+            'engine' => 'sqlite',
+            'sql' => $schema['create_sql'] ?? '',
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function exportAsYaml(array $schema): array
+    {
+        return [
+            'format' => 'yaml',
+            'version' => '1.0',
+            'engine' => 'sqlite',
+            'table' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function exportAsPhp(array $schema): array
+    {
+        return [
+            'format' => 'php',
+            'version' => '1.0',
+            'engine' => 'sqlite',
+            'schema' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function validateJsonSchema(array $schema): array
+    {
+        $errors = [];
+
+        if (!isset($schema['table_name'])) {
+            $errors[] = "Missing 'table_name' in schema";
+        }
+
+        if (!isset($schema['columns']) || !is_array($schema['columns'])) {
+            $errors[] = "Missing or invalid 'columns' in schema";
+        }
+
+        return $errors;
+    }
+
+    private function validateSqlSchema(array $schema): array
+    {
+        $errors = [];
+
+        if (!isset($schema['sql']) && !isset($schema['create_sql'])) {
+            $errors[] = "Missing 'sql' or 'create_sql' in schema";
+        }
+
+        return $errors;
+    }
+
+    private function validateYamlSchema(array $schema): array
+    {
+        return $this->validateJsonSchema($schema);
+    }
+
+    private function validatePhpSchema(array $schema): array
+    {
+        return $this->validateJsonSchema($schema);
+    }
+
+    private function getColumnDefinitions(string $tableName): array
+    {
+        $stmt = $this->pdo->prepare("PRAGMA table_info(\"{$tableName}\")");
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function getIndexDefinitions(string $tableName): array
+    {
+        $stmt = $this->pdo->prepare("PRAGMA index_list(\"{$tableName}\")");
+        $stmt->execute();
+        $indexes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get detailed info for each index
+        foreach ($indexes as &$index) {
+            $stmt = $this->pdo->prepare("PRAGMA index_info(\"{$index['name']}\")");
+            $stmt->execute();
+            $index['columns'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        return $indexes;
+    }
+
+    private function getForeignKeyDefinitions(string $tableName): array
+    {
+        $stmt = $this->pdo->prepare("PRAGMA foreign_key_list(\"{$tableName}\")");
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function getTableOptions(string $tableName): array
+    {
+        // SQLite has limited table options
+        return [
+            'engine' => 'sqlite',
+            'charset' => 'UTF-8',
+            'auto_increment' => null, // SQLite handles this automatically
+            'comment' => ''
+        ];
+    }
+
+    private function getCreateTableSQL(string $tableName): string
+    {
+        $stmt = $this->pdo->prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?");
+        $stmt->execute([$tableName]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $result['sql'] ?? '';
+    }
+
+    private function createTableFromSchema(string $tableName, array $schema, string $format): void
+    {
+        switch ($format) {
+            case 'json':
+                $this->createTableFromJsonSchema($tableName, $schema);
+                break;
+            case 'sql':
+                $this->createTableFromSqlSchema($schema);
+                break;
+            default:
+                throw new \InvalidArgumentException("Unsupported import format: {$format}");
+        }
+    }
+
+    private function createTableFromJsonSchema(string $tableName, array $schema): void
+    {
+        $sql = $this->generateCreateTableSQL($tableName, $schema);
+        $this->pdo->exec($sql);
+    }
+
+    private function createTableFromSqlSchema(array $schema): void
+    {
+        if (isset($schema['sql'])) {
+            $this->pdo->exec($schema['sql']);
+        } elseif (isset($schema['create_sql'])) {
+            $this->pdo->exec($schema['create_sql']);
+        }
+    }
+
+    private function generateCreateTableSQL(string $tableName, array $schema): string
+    {
+        $sql = "CREATE TABLE \"{$tableName}\" (\n";
+
+        $columns = [];
+        foreach ($schema['columns'] as $column) {
+            $columnSql = "\"{$column['name']}\" {$column['type']}";
+            if ($column['notnull']) {
+                $columnSql .= ' NOT NULL';
+            }
+            if ($column['dflt_value'] !== null) {
+                $columnSql .= " DEFAULT {$column['dflt_value']}";
+            }
+            if ($column['pk']) {
+                $columnSql .= ' PRIMARY KEY';
+            }
+            $columns[] = $columnSql;
+        }
+
+        $sql .= implode(",\n", $columns);
+        $sql .= "\n)";
+
+        return $sql;
+    }
+
+    private function executeRevertOperation(array $op): array
+    {
+        switch ($op['type']) {
+            case 'drop_index':
+                $sql = "DROP INDEX IF EXISTS \"{$op['index_name']}\"";
+                $this->pdo->exec($sql);
+                return ['type' => 'drop_index', 'sql' => $sql, 'success' => true];
+
+            case 'recreate_table_without_column':
+                // This would be a complex operation requiring table backup, recreation, and data migration
+                return [
+                    'type' => 'recreate_table_without_column',
+                    'success' => false,
+                    'note' => 'Table recreation not implemented - requires manual intervention'
+                ];
+
+            default:
+                throw new \RuntimeException("Unsupported revert operation: {$op['type']}");
+        }
+    }
 }

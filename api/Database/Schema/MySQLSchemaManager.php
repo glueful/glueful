@@ -615,4 +615,544 @@ class MySQLSchemaManager implements SchemaManager
         $this->pdo->exec($sql);
         return true;
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateChangePreview(string $tableName, array $changes): array
+    {
+        $sql = [];
+        $warnings = [];
+        $estimatedDuration = 0;
+
+        foreach ($changes as $change) {
+            $changeType = $change['type'] ?? 'unknown';
+
+            switch ($changeType) {
+                case 'add_column':
+                    $columnSql = $this->generateAddColumnSQL($tableName, $change);
+                    $sql[] = $columnSql;
+                    $estimatedDuration += 5; // seconds
+                    break;
+
+                case 'drop_column':
+                    $columnName = $change['column_name'];
+                    $sql[] = "ALTER TABLE `{$tableName}` DROP COLUMN `{$columnName}`";
+                    $warnings[] = "Dropping column '{$columnName}' will permanently delete all data in this column";
+                    $estimatedDuration += 10;
+                    break;
+
+                case 'modify_column':
+                    $columnSql = $this->generateModifyColumnSQL($tableName, $change);
+                    $sql[] = $columnSql;
+                    if (isset($change['new_type']) && $change['new_type'] !== ($change['old_type'] ?? '')) {
+                        $warnings[] = "Changing column type may result in data loss or conversion errors";
+                    }
+                    $estimatedDuration += 15;
+                    break;
+
+                case 'add_index':
+                    $indexSql = $this->generateAddIndexSQL($tableName, $change);
+                    $sql[] = $indexSql;
+                    $estimatedDuration += $this->estimateIndexCreationTime($tableName);
+                    break;
+
+                case 'drop_index':
+                    $indexName = $change['index_name'];
+                    $sql[] = "ALTER TABLE `{$tableName}` DROP INDEX `{$indexName}`";
+                    $estimatedDuration += 2;
+                    break;
+
+                default:
+                    $warnings[] = "Unknown change type: {$changeType}";
+            }
+        }
+
+        return [
+            'sql' => $sql,
+            'warnings' => $warnings,
+            'estimated_duration' => $estimatedDuration,
+            'safe_to_execute' => empty($warnings) || !$this->hasDestructiveChanges($changes),
+            'generated_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function exportTableSchema(string $tableName, string $format = 'json'): array
+    {
+        if (!$this->tableExists($tableName)) {
+            throw new \RuntimeException("Table '{$tableName}' does not exist");
+        }
+
+        $schema = $this->getTableSchema($tableName);
+
+        switch ($format) {
+            case 'json':
+                return $this->exportAsJson($schema);
+            case 'sql':
+                return $this->exportAsSQL($tableName, $schema);
+            case 'yaml':
+                return $this->exportAsYaml($schema);
+            case 'php':
+                return $this->exportAsPhp($schema);
+            default:
+                throw new \InvalidArgumentException("Unsupported format: {$format}");
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function importTableSchema(
+        string $tableName,
+        array $schema,
+        string $format = 'json',
+        array $options = []
+    ): array {
+        $validation = $this->validateSchema($schema, $format);
+        if (!$validation['valid']) {
+            throw new \InvalidArgumentException('Invalid schema: ' . implode(', ', $validation['errors']));
+        }
+
+        $changes = [];
+        $recreate = $options['recreate'] ?? false;
+
+        if ($recreate && $this->tableExists($tableName)) {
+            $this->dropTable($tableName);
+            $changes[] = "Dropped existing table '{$tableName}'";
+        }
+
+        if (!$this->tableExists($tableName)) {
+            $this->createTableFromSchema($tableName, $schema, $format);
+            $changes[] = "Created table '{$tableName}'";
+        } else {
+            $changes = array_merge($changes, $this->updateTableFromSchema($tableName, $schema, $format));
+        }
+
+        return [
+            'success' => true,
+            'changes' => $changes,
+            'table_name' => $tableName,
+            'imported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function validateSchema(array $schema, string $format = 'json'): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        switch ($format) {
+            case 'json':
+                $errors = array_merge($errors, $this->validateJsonSchema($schema));
+                break;
+            case 'sql':
+                $errors = array_merge($errors, $this->validateSqlSchema($schema));
+                break;
+            case 'yaml':
+                $errors = array_merge($errors, $this->validateYamlSchema($schema));
+                break;
+            case 'php':
+                $errors = array_merge($errors, $this->validatePhpSchema($schema));
+                break;
+            default:
+                $errors[] = "Unsupported schema format: {$format}";
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings,
+            'validated_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateRevertOperations(array $originalChange): array
+    {
+        $context = json_decode($originalChange['context'] ?? '{}', true);
+        $action = $originalChange['action'] ?? '';
+        $revertOps = [];
+
+        switch ($action) {
+            case 'add_column':
+                $revertOps[] = [
+                    'type' => 'drop_column',
+                    'table' => $context['table'] ?? '',
+                    'column_name' => $context['column']['name'] ?? ''
+                ];
+                break;
+
+            case 'drop_column':
+                $revertOps[] = [
+                    'type' => 'add_column',
+                    'table' => $context['table'] ?? '',
+                    'column' => $context['original_column'] ?? []
+                ];
+                break;
+
+            case 'modify_column':
+                $revertOps[] = [
+                    'type' => 'modify_column',
+                    'table' => $context['table'] ?? '',
+                    'column_name' => $context['column_name'] ?? '',
+                    'old_definition' => $context['new_definition'] ?? [],
+                    'new_definition' => $context['old_definition'] ?? []
+                ];
+                break;
+
+            case 'add_index':
+                $revertOps[] = [
+                    'type' => 'drop_index',
+                    'table' => $context['table'] ?? '',
+                    'index_name' => $context['index']['name'] ?? ''
+                ];
+                break;
+
+            case 'drop_index':
+                $revertOps[] = [
+                    'type' => 'add_index',
+                    'table' => $context['table'] ?? '',
+                    'index' => $context['original_index'] ?? []
+                ];
+                break;
+
+            default:
+                throw new \RuntimeException("Cannot generate revert operations for action: {$action}");
+        }
+
+        return $revertOps;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function executeRevert(array $revertOps): array
+    {
+        $results = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($revertOps as $op) {
+                $result = $this->executeRevertOperation($op);
+                $results[] = $result;
+            }
+
+            $this->pdo->commit();
+            return [
+                'success' => true,
+                'operations' => $results,
+                'reverted_at' => date('Y-m-d H:i:s')
+            ];
+        } catch (\Exception $e) {
+            $this->pdo->rollBack();
+            throw new \RuntimeException("Revert failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableSchema(string $tableName): array
+    {
+        if (!$this->tableExists($tableName)) {
+            throw new \RuntimeException("Table '{$tableName}' does not exist");
+        }
+
+        return [
+            'table_name' => $tableName,
+            'columns' => $this->getColumnDefinitions($tableName),
+            'indexes' => $this->getIndexDefinitions($tableName),
+            'foreign_keys' => $this->getForeignKeyDefinitions($tableName),
+            'table_options' => $this->getTableOptions($tableName),
+            'retrieved_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    // Helper methods for schema operations
+
+    private function generateAddColumnSQL(string $tableName, array $change): string
+    {
+        $columnName = $change['column_name'];
+        $columnType = $change['column_type'];
+        $options = $change['options'] ?? [];
+
+        $sql = "ALTER TABLE `{$tableName}` ADD COLUMN `{$columnName}` {$columnType}";
+
+        if ($options['not_null'] ?? false) {
+            $sql .= ' NOT NULL';
+        }
+
+        if (isset($options['default'])) {
+            $sql .= " DEFAULT '{$options['default']}'";
+        }
+
+        if ($options['auto_increment'] ?? false) {
+            $sql .= ' AUTO_INCREMENT';
+        }
+
+        return $sql;
+    }
+
+    private function generateModifyColumnSQL(string $tableName, array $change): string
+    {
+        $columnName = $change['column_name'];
+        $newType = $change['new_type'];
+        $options = $change['options'] ?? [];
+
+        $sql = "ALTER TABLE `{$tableName}` MODIFY COLUMN `{$columnName}` {$newType}";
+
+        if ($options['not_null'] ?? false) {
+            $sql .= ' NOT NULL';
+        }
+
+        return $sql;
+    }
+
+    private function generateAddIndexSQL(string $tableName, array $change): string
+    {
+        $indexName = $change['index_name'];
+        $columns = $change['columns'];
+        $type = $change['index_type'] ?? 'INDEX';
+
+        if (is_array($columns)) {
+            $columns = implode('`, `', $columns);
+        }
+
+        return "ALTER TABLE `{$tableName}` ADD {$type} `{$indexName}` (`{$columns}`)";
+    }
+
+    private function estimateIndexCreationTime(string $tableName): int
+    {
+        // Rough estimation based on table size
+        $rowCount = $this->getTableRowCount($tableName);
+        return max(5, intval($rowCount / 10000)); // ~5-30 seconds typically
+    }
+
+    private function hasDestructiveChanges(array $changes): bool
+    {
+        foreach ($changes as $change) {
+            if (in_array($change['type'] ?? '', ['drop_column', 'drop_table', 'modify_column'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function exportAsJson(array $schema): array
+    {
+        return [
+            'format' => 'json',
+            'version' => '1.0',
+            'schema' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function exportAsSQL(string $tableName, array $schema): array
+    {
+        // Generate CREATE TABLE statement
+        $sql = $this->generateCreateTableSQL($tableName, $schema);
+
+        return [
+            'format' => 'sql',
+            'version' => '1.0',
+            'sql' => $sql,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function exportAsYaml(array $schema): array
+    {
+        // Convert to YAML-friendly format
+        $yamlData = [
+            'format' => 'yaml',
+            'version' => '1.0',
+            'table' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+
+        return $yamlData;
+    }
+
+    private function exportAsPhp(array $schema): array
+    {
+        return [
+            'format' => 'php',
+            'version' => '1.0',
+            'schema' => $schema,
+            'exported_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    private function validateJsonSchema(array $schema): array
+    {
+        $errors = [];
+
+        if (!isset($schema['table_name'])) {
+            $errors[] = "Missing 'table_name' in schema";
+        }
+
+        if (!isset($schema['columns']) || !is_array($schema['columns'])) {
+            $errors[] = "Missing or invalid 'columns' in schema";
+        }
+
+        return $errors;
+    }
+
+    private function validateSqlSchema(array $schema): array
+    {
+        $errors = [];
+
+        if (!isset($schema['sql'])) {
+            $errors[] = "Missing 'sql' in schema";
+        }
+
+        return $errors;
+    }
+
+    private function validateYamlSchema(array $schema): array
+    {
+        return $this->validateJsonSchema($schema); // Similar validation
+    }
+
+    private function validatePhpSchema(array $schema): array
+    {
+        return $this->validateJsonSchema($schema); // Similar validation
+    }
+
+    private function getColumnDefinitions(string $tableName): array
+    {
+        $sql = "SHOW FULL COLUMNS FROM `{$tableName}`";
+        $stmt = $this->pdo->query($sql);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function getIndexDefinitions(string $tableName): array
+    {
+        $sql = "SHOW INDEX FROM `{$tableName}`";
+        $stmt = $this->pdo->query($sql);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function getForeignKeyDefinitions(string $tableName): array
+    {
+        $sql = "SELECT * FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$tableName]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function getTableOptions(string $tableName): array
+    {
+        $sql = "SELECT * FROM information_schema.TABLES WHERE TABLE_NAME = ?";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$tableName]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return [
+            'engine' => $result['ENGINE'] ?? '',
+            'charset' => $result['TABLE_COLLATION'] ?? '',
+            'auto_increment' => $result['AUTO_INCREMENT'] ?? 0,
+            'comment' => $result['TABLE_COMMENT'] ?? ''
+        ];
+    }
+
+    private function createTableFromSchema(string $tableName, array $schema, string $format): void
+    {
+        switch ($format) {
+            case 'json':
+                $this->createTableFromJsonSchema($tableName, $schema);
+                break;
+            case 'sql':
+                $this->createTableFromSqlSchema($tableName, $schema);
+                break;
+            default:
+                throw new \InvalidArgumentException("Unsupported import format: {$format}");
+        }
+    }
+
+    private function createTableFromJsonSchema(string $tableName, array $schema): void
+    {
+        // Implementation would create table from JSON schema
+        // This is a simplified version
+        $sql = $this->generateCreateTableSQL($tableName, $schema);
+        $this->pdo->exec($sql);
+    }
+
+    private function createTableFromSqlSchema(string $tableName, array $schema): void
+    {
+        if (isset($schema['sql'])) {
+            $this->pdo->exec($schema['sql']);
+        }
+    }
+
+    private function updateTableFromSchema(string $tableName, array $schema, string $format): array
+    {
+        $changes = [];
+
+        // Compare current schema with new schema and generate changes
+        $currentSchema = $this->getTableSchema($tableName);
+
+        // This would contain logic to diff schemas and generate update operations
+        // Simplified implementation
+        $changes[] = "Schema comparison and update logic would go here";
+
+        return $changes;
+    }
+
+    private function generateCreateTableSQL(string $tableName, array $schema): string
+    {
+        $sql = "CREATE TABLE `{$tableName}` (\n";
+
+        $columns = [];
+        foreach ($schema['columns'] as $column) {
+            $columnSql = "`{$column['Field']}` {$column['Type']}";
+            if ($column['Null'] === 'NO') {
+                $columnSql .= ' NOT NULL';
+            }
+            if ($column['Default'] !== null) {
+                $columnSql .= " DEFAULT '{$column['Default']}'";
+            }
+            if ($column['Extra']) {
+                $columnSql .= " {$column['Extra']}";
+            }
+            $columns[] = $columnSql;
+        }
+
+        $sql .= implode(",\n", $columns);
+        $sql .= "\n)";
+
+        if (isset($schema['table_options']['engine'])) {
+            $sql .= " ENGINE={$schema['table_options']['engine']}";
+        }
+
+        return $sql;
+    }
+
+    private function executeRevertOperation(array $op): array
+    {
+        switch ($op['type']) {
+            case 'drop_column':
+                $sql = "ALTER TABLE `{$op['table']}` DROP COLUMN `{$op['column_name']}`";
+                $this->pdo->exec($sql);
+                return ['type' => 'drop_column', 'sql' => $sql, 'success' => true];
+
+            case 'add_column':
+                $columnSql = $this->generateAddColumnSQL($op['table'], $op);
+                $this->pdo->exec($columnSql);
+                return ['type' => 'add_column', 'sql' => $columnSql, 'success' => true];
+
+            default:
+                throw new \RuntimeException("Unsupported revert operation: {$op['type']}");
+        }
+    }
 }

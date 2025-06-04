@@ -1952,4 +1952,418 @@ class DatabaseController
     }
 
     // Method formatBytes has been removed as it was unused
+
+    /**
+     * Preview schema changes before applying them
+     *
+     * Generates a preview of what changes would be made including:
+     * - SQL statements to be executed
+     * - Potential warnings and risks
+     * - Estimated execution time
+     *
+     * @return mixed HTTP response
+     */
+    public function previewSchemaChanges(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['changes'])) {
+                return Response::error('Changes array is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $changes = $data['changes'];
+
+            // Validate table exists
+            if (!$this->schemaManager->tableExists($tableName)) {
+                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Get current schema for comparison
+            $currentSchema = $this->schemaManager->getTableSchema($tableName);
+
+            // Generate preview of changes
+            $preview = $this->schemaManager->generateChangePreview($tableName, $changes);
+
+            return Response::ok([
+                'table_name' => $tableName,
+                'current_schema' => $currentSchema,
+                'proposed_changes' => $changes,
+                'preview' => $preview,
+                'generated_at' => date('Y-m-d H:i:s')
+            ])->send();
+        } catch (\Exception $e) {
+            error_log("Schema preview error: " . $e->getMessage());
+            return Response::error(
+                'Failed to generate schema preview: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Export table schema in specified format
+     *
+     * @return mixed HTTP response
+     */
+    public function exportSchema(): mixed
+    {
+        try {
+            $params = $_GET;
+            $data = Request::getPostData();
+
+            // Support both GET and POST
+            $tableName = $params['table'] ?? $data['table'] ?? null;
+            $format = $params['format'] ?? $data['format'] ?? 'json';
+
+            if (!$tableName) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Validate table exists
+            if (!$this->schemaManager->tableExists($tableName)) {
+                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Validate format
+            $supportedFormats = ['json', 'sql', 'yaml', 'php'];
+            if (!in_array($format, $supportedFormats)) {
+                return Response::error(
+                    "Unsupported format '{$format}'. Supported formats: " . implode(', ', $supportedFormats),
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            // Export schema
+            $schema = $this->schemaManager->exportTableSchema($tableName, $format);
+
+            // Log export action using existing audit system
+            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+            $auditLogger->audit(
+                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+                'schema_export',
+                \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+                [
+                    'table' => $tableName,
+                    'format' => $format,
+                    'exported_at' => date('Y-m-d H:i:s'),
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+                ]
+            );
+
+            return Response::ok([
+                'table_name' => $tableName,
+                'format' => $format,
+                'schema' => $schema,
+                'exported_at' => date('Y-m-d H:i:s'),
+                'metadata' => [
+                    'export_size' => strlen(json_encode($schema)),
+                    'format_version' => '1.0'
+                ]
+            ])->send();
+        } catch (\Exception $e) {
+            error_log("Schema export error: " . $e->getMessage());
+            return Response::error(
+                'Failed to export schema: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Import table schema from provided definition
+     *
+     * @return mixed HTTP response
+     */
+    public function importSchema(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+
+            if (!isset($data['table_name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            if (!isset($data['schema'])) {
+                return Response::error('Schema definition is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $data['table_name'];
+            $schema = $data['schema'];
+            $format = $data['format'] ?? 'json';
+            $options = $data['options'] ?? [];
+
+            // Validate schema before import
+            $validation = $this->schemaManager->validateSchema($schema, $format);
+            if (!$validation['valid']) {
+                return Response::error(
+                    'Invalid schema: ' . implode(', ', $validation['errors']),
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            // Check if validation-only mode
+            if ($options['validate_only'] ?? false) {
+                return Response::ok([
+                    'table_name' => $tableName,
+                    'validation' => $validation,
+                    'validated_at' => date('Y-m-d H:i:s')
+                ])->send();
+            }
+
+            // Import schema
+            $result = $this->schemaManager->importTableSchema($tableName, $schema, $format, $options);
+
+            // Log import action using existing audit system
+            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+            $auditLogger->audit(
+                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+                'schema_import',
+                \Glueful\Logging\AuditEvent::SEVERITY_WARNING, // Higher severity for imports
+                [
+                    'table' => $tableName,
+                    'format' => $format,
+                    'options' => $options,
+                    'changes_applied' => $result['changes'] ?? [],
+                    'imported_at' => date('Y-m-d H:i:s'),
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+                ]
+            );
+
+            return Response::ok([
+                'table_name' => $tableName,
+                'format' => $format,
+                'result' => $result,
+                'imported_at' => date('Y-m-d H:i:s')
+            ])->send();
+        } catch (\Exception $e) {
+            error_log("Schema import error: " . $e->getMessage());
+            return Response::error(
+                'Failed to import schema: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Get schema change history for a table
+     *
+     * @return mixed HTTP response
+     */
+    public function getSchemaHistory(): mixed
+    {
+        try {
+            $params = $_GET;
+            $tableName = $params['table'] ?? null;
+            $limit = (int)($params['limit'] ?? 50);
+            $offset = (int)($params['offset'] ?? 0);
+
+            if (!$tableName) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Query audit logs for schema-related events
+            $historyEvents = $this->getSchemaAuditLogs($tableName, $limit, $offset);
+
+            // Get migration history from migrations table
+            $migrationHistory = $this->getMigrationHistory($tableName);
+
+            return Response::ok([
+                'table_name' => $tableName,
+                'schema_changes' => $historyEvents,
+                'migrations' => $migrationHistory,
+                'pagination' => [
+                    'limit' => $limit,
+                    'offset' => $offset,
+                    'total' => count($historyEvents)
+                ],
+                'retrieved_at' => date('Y-m-d H:i:s')
+            ])->send();
+        } catch (\Exception $e) {
+            error_log("Schema history error: " . $e->getMessage());
+            return Response::error(
+                'Failed to retrieve schema history: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Revert a schema change
+     *
+     * @return mixed HTTP response
+     */
+    public function revertSchemaChange(): mixed
+    {
+        try {
+            $data = Request::getPostData();
+
+            if (!isset($data['change_id'])) {
+                return Response::error('Change ID is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $changeId = $data['change_id'];
+            $confirm = $data['confirm'] ?? false;
+
+            // Get the original change from audit logs
+            $originalChange = $this->getAuditLogById($changeId);
+
+            if (!$originalChange) {
+                return Response::error('Change not found', Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Generate revert operations
+            $revertOps = $this->schemaManager->generateRevertOperations($originalChange);
+
+            // If not confirmed, return preview
+            if (!$confirm) {
+                return Response::ok([
+                    'change_id' => $changeId,
+                    'original_change' => $originalChange,
+                    'revert_operations' => $revertOps,
+                    'preview_only' => true,
+                    'message' => 'Preview of revert operations. Set confirm=true to execute.'
+                ])->send();
+            }
+
+            // Execute revert operations
+            $result = $this->schemaManager->executeRevert($revertOps);
+
+            // Log revert action
+            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+            $auditLogger->audit(
+                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+                'schema_revert',
+                \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+                [
+                    'original_change_id' => $changeId,
+                    'reverted_operations' => $revertOps,
+                    'revert_result' => $result,
+                    'reverted_at' => date('Y-m-d H:i:s'),
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+                ]
+            );
+
+            return Response::ok([
+                'change_id' => $changeId,
+                'result' => $result,
+                'reverted_at' => date('Y-m-d H:i:s')
+            ])->send();
+        } catch (\Exception $e) {
+            error_log("Schema revert error: " . $e->getMessage());
+            return Response::error(
+                'Failed to revert schema change: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Get schema audit logs for a specific table
+     *
+     * @param string $tableName
+     * @param int $limit
+     * @param int $offset
+     * @return array
+     */
+    private function getSchemaAuditLogs(string $tableName, int $limit, int $offset): array
+    {
+        try {
+            // Use database-agnostic approach - fetch schema-related logs and filter in PHP
+            // This avoids database-specific JSON functions like JSON_EXTRACT (MySQL) or jsonb operators (PostgreSQL)
+            $sql = "SELECT * FROM audit_logs 
+                    WHERE category = ? 
+                    AND (action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ?)
+                    ORDER BY created_at DESC 
+                    LIMIT ? OFFSET ?";
+
+            $params = [
+                'admin',
+                'schema_%',
+                '%_column',
+                '%_index',
+                '%_foreign_key',
+                $limit,
+                $offset
+            ];
+
+            $stmt = $this->queryBuilder->executeQuery($sql, $params);
+            $allLogs = $stmt->fetchAll();
+
+            // Filter logs by table name using PHP JSON parsing (database-agnostic)
+            $filteredLogs = [];
+            foreach ($allLogs as $log) {
+                if (!empty($log['context'])) {
+                    $context = json_decode($log['context'], true);
+                    if (
+                        is_array($context) &&
+                        isset($context['table']) &&
+                        $context['table'] === $tableName
+                    ) {
+                        $filteredLogs[] = $log;
+                    }
+                }
+            }
+
+            return $filteredLogs;
+        } catch (\Exception $e) {
+            error_log("Error fetching schema audit logs: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get migration history for a table
+     *
+     * @param string $tableName
+     * @return array
+     */
+    private function getMigrationHistory(string $tableName): array
+    {
+        try {
+            // Database-agnostic query - LIKE operator works the same across MySQL, PostgreSQL, and SQLite
+            $sql = "SELECT * FROM migrations 
+                    WHERE migration LIKE ? OR migration LIKE ?
+                    ORDER BY executed_at DESC";
+
+            $patterns = [
+                "%{$tableName}%",
+                "%create_{$tableName}%"
+            ];
+
+            $stmt = $this->queryBuilder->executeQuery($sql, $patterns);
+            return $stmt->fetchAll();
+        } catch (\Exception $e) {
+            error_log("Error fetching migration history: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get audit log by ID
+     *
+     * @param string $changeId
+     * @return array|null
+     */
+    private function getAuditLogById(string $changeId): ?array
+    {
+        try {
+            // Database-agnostic query - LIMIT works the same across MySQL, PostgreSQL, and SQLite
+            $sql = "SELECT * FROM audit_logs WHERE id = ? LIMIT 1";
+            $stmt = $this->queryBuilder->executeQuery($sql, [$changeId]);
+            $result = $stmt->fetchAll();
+            return $result[0] ?? null;
+        } catch (\Exception $e) {
+            error_log("Error fetching audit log: " . $e->getMessage());
+            return null;
+        }
+    }
 }
