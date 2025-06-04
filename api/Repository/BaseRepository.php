@@ -192,9 +192,6 @@ abstract class BaseRepository implements RepositoryInterface
             $data['updated_at'] = date('Y-m-d H:i:s');
         }
 
-        // Debug logging
-        error_log("BaseRepository::update - Table: {$this->table}, PrimaryKey: {$this->primaryKey}, UUID: {$uuid}, Data: " . json_encode($data));
-
         // Execute the update
         $affectedRows = $this->db->update(
             $this->table,

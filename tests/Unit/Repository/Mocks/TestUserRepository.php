@@ -125,7 +125,7 @@ class TestUserRepository extends UserRepository
         if ($result === false || $result === 0) {
             throw new \RuntimeException('Failed to create user');
         }
-        
+
         return $userData['uuid'];
     }
 

@@ -83,8 +83,10 @@ interface DatabaseDriver
      * Used for expanding table.* wildcard patterns in SELECT statements.
      *
      * Implementation examples:
-     * - MySQL:      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE()
-     * - PostgreSQL: SELECT column_name FROM information_schema.columns WHERE table_name = ? AND table_schema = current_schema()
+     * - MySQL:      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     *               WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE()
+     * - PostgreSQL: SELECT column_name FROM information_schema.columns
+     *               WHERE table_name = ? AND table_schema = current_schema()
      * - SQLite:     PRAGMA table_info(table_name)
      *
      * @param string $table The target table name (unquoted)
