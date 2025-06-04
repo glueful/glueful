@@ -301,7 +301,22 @@ class DatabaseController
     }
 
     /**
-     * Fetch paginated data from a table
+     * Fetch paginated data from a table with search and filtering
+     *
+     * Supports:
+     * - Full-text search across multiple columns
+     * - Advanced filtering with operators
+     * - Pagination
+     * - Sorting
+     *
+     * Query parameters:
+     * - page: Page number (default: 1)
+     * - per_page: Records per page (default: 25)
+     * - search: Search term for text search
+     * - search_fields: Array of column names to search in
+     * - filters: Advanced filters object with operator support
+     * - order_by: Column to sort by (default: id)
+     * - order_dir: Sort direction ASC/DESC (default: DESC)
      *
      * @return mixed HTTP response
      */
@@ -319,15 +334,71 @@ class DatabaseController
             $page = (int)($queryParams['page'] ?? 1);
             $perPage = (int)($queryParams['per_page'] ?? 25);
 
-            // Build the query using QueryBuilder
-            $results = $this->queryBuilder->select($table['name'], ['*'])
-                ->orderBy(['id' => 'DESC'])
-                    ->paginate($page, $perPage);
+            // Search parameters
+            $searchTerm = $queryParams['search'] ?? null;
+            $searchFields = $queryParams['search_fields'] ?? [];
 
-                // Get detailed column metadata using SchemaManager
+            // Advanced filters
+            $filters = isset($queryParams['filters']) ? json_decode($queryParams['filters'], true) : [];
+
+            // Sorting parameters
+            $orderBy = $queryParams['order_by'] ?? 'id';
+            $orderDir = strtoupper($queryParams['order_dir'] ?? 'DESC');
+
+            // Get table columns for auto-detection of searchable fields
             $columns = $this->schemaManager->getTableColumns($table['name']);
 
+            // Auto-detect searchable columns if not specified
+            if ($searchTerm && empty($searchFields)) {
+                $searchFields = $this->detectSearchableColumns($columns);
+            }
+
+            // Build the query using QueryBuilder
+            $query = $this->queryBuilder->select($table['name'], ['*']);
+
+            // Apply search if provided
+            if ($searchTerm && !empty($searchFields)) {
+                // Validate search fields exist in table
+                $validSearchFields = $this->validateSearchFields($searchFields, $columns);
+                if (!empty($validSearchFields)) {
+                    $query->search($validSearchFields, $searchTerm);
+                }
+            }
+
+            // Apply advanced filters if provided
+            if (!empty($filters)) {
+                // Validate filter fields exist in table
+                $validFilters = $this->validateFilters($filters, $columns);
+                if (!empty($validFilters)) {
+                    $query->advancedWhere($validFilters);
+                }
+            }
+
+            // Apply sorting
+            $query->orderBy([$orderBy => $orderDir]);
+
+            // Execute query with pagination
+            $results = $query->paginate($page, $perPage);
+
+            // Add column metadata to results
             $results['columns'] = $columns;
+
+            // Add search metadata if search was performed
+            if ($searchTerm) {
+                $results['search'] = [
+                    'term' => $searchTerm,
+                    'fields' => $searchFields,
+                    'fields_used' => $validSearchFields ?? []
+                ];
+            }
+
+            // Add filter metadata if filters were applied
+            if (!empty($filters)) {
+                $results['filters'] = [
+                    'applied' => $validFilters ?? [],
+                    'requested' => $filters
+                ];
+            }
             return Response::ok($results, 'Data retrieved successfully')->send();
         } catch (\Exception $e) {
             error_log("Get table data error: " . $e->getMessage());
@@ -2365,5 +2436,123 @@ class DatabaseController
             error_log("Error fetching audit log: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Auto-detect searchable columns based on data types
+     *
+     * Identifies columns suitable for text search:
+     * - VARCHAR, TEXT, CHAR types
+     * - Excludes system columns (id, uuid, created_at, etc.)
+     * - Excludes password/token columns for security
+     *
+     * @param array $columns Column metadata from SchemaManager
+     * @return array Array of searchable column names
+     */
+    private function detectSearchableColumns(array $columns): array
+    {
+        $searchableTypes = ['varchar', 'text', 'char', 'tinytext', 'mediumtext', 'longtext'];
+        $excludedColumns = [
+            'id', 'uuid', 'password', 'token', 'secret', 'api_key',
+            'created_at', 'updated_at', 'deleted_at'
+        ];
+        $searchableColumns = [];
+
+        foreach ($columns as $column) {
+            $columnName = $column['name'];
+            $columnType = strtolower($column['type']);
+
+            // Skip excluded columns
+            if (in_array(strtolower($columnName), $excludedColumns)) {
+                continue;
+            }
+
+            // Skip columns that might contain sensitive data
+            if (preg_match('/(password|token|secret|key|hash)$/i', $columnName)) {
+                continue;
+            }
+
+            // Check if column type is searchable
+            foreach ($searchableTypes as $searchableType) {
+                if (strpos($columnType, $searchableType) !== false) {
+                    $searchableColumns[] = $columnName;
+                    break;
+                }
+            }
+        }
+
+        return $searchableColumns;
+    }
+
+    /**
+     * Validate search fields exist in table columns
+     *
+     * Ensures requested search fields are valid columns in the table
+     * to prevent SQL errors and injection attempts.
+     *
+     * @param array $searchFields Requested search field names
+     * @param array $columns Table column metadata
+     * @return array Valid search fields that exist in the table
+     */
+    private function validateSearchFields(array $searchFields, array $columns): array
+    {
+        $columnNames = array_column($columns, 'name');
+        $validFields = [];
+
+        foreach ($searchFields as $field) {
+            if (in_array($field, $columnNames)) {
+                $validFields[] = $field;
+            }
+        }
+
+        return $validFields;
+    }
+
+    /**
+     * Validate and sanitize advanced filters
+     *
+     * Ensures filter fields exist in table and operators are valid.
+     * Prevents SQL injection by validating column names and operators.
+     *
+     * @param array $filters Raw filter data from request
+     * @param array $columns Table column metadata
+     * @return array Validated and sanitized filters
+     */
+    private function validateFilters(array $filters, array $columns): array
+    {
+        $columnNames = array_column($columns, 'name');
+        $validFilters = [];
+
+        // Valid operators for security
+        $validOperators = [
+            '=', '!=', '<>', '>', '<', '>=', '<=',
+            'like', 'ilike', 'in', 'between',
+            'gt', 'gte', 'lt', 'lte', 'ne'
+        ];
+
+        foreach ($filters as $field => $condition) {
+            // Validate field exists in table
+            if (!in_array($field, $columnNames)) {
+                continue;
+            }
+
+            if (is_array($condition)) {
+                $validCondition = [];
+                foreach ($condition as $operator => $value) {
+                    // Validate operator
+                    if (in_array(strtolower($operator), $validOperators)) {
+                        $validCondition[$operator] = $value;
+                    }
+                }
+                if (!empty($validCondition)) {
+                    $validFilters[$field] = $validCondition;
+                }
+            } else {
+                // Simple equality condition
+                $validFilters[$field] = $condition;
+            }
+        }
+
+        return $validFilters;
     }
 }

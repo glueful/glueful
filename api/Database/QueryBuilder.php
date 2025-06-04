@@ -1640,5 +1640,87 @@ class QueryBuilder
         }
     }
 
-    // The isSensitiveTable method is already defined earlier in this class
+     /**
+   * Enhanced search with multi-column text search
+   */
+    public function search(array $searchFields, string $query, string $operator = 'OR'): self
+    {
+        if (empty($query) || empty($searchFields)) {
+            return $this;
+        }
+
+        $conditions = [];
+        $bindings = [];
+
+        foreach ($searchFields as $field) {
+            // Wrap field identifier properly
+            if (strpos($field, '.') !== false) {
+                [$table, $col] = explode('.', $field, 2);
+                $wrappedField = $this->driver->wrapIdentifier($table) . '.' . $this->driver->wrapIdentifier($col);
+            } else {
+                $wrappedField = $this->driver->wrapIdentifier($field);
+            }
+
+            $conditions[] = "{$wrappedField} LIKE ?";
+            $bindings[] = "%{$query}%";
+        }
+
+        $searchCondition = '(' . implode(" {$operator} ", $conditions) . ')';
+
+        // Always use whereRaw since we're building a raw SQL condition
+        $this->whereRaw($searchCondition, $bindings);
+
+        return $this;
+    }
+
+  /**
+   * Advanced filtering with multiple operators
+   */
+    public function advancedWhere(array $filters): self
+    {
+        foreach ($filters as $field => $condition) {
+            if (is_array($condition)) {
+                foreach ($condition as $operator => $value) {
+                    switch (strtolower($operator)) {
+                        case 'like':
+                        case 'ilike':
+                            $this->whereLike($field, $value);
+                            break;
+                        case 'in':
+                            $this->whereIn($field, (array)$value);
+                            break;
+                        case 'between':
+                            $this->whereBetween($field, $value[0], $value[1]);
+                            break;
+                        case 'gt':
+                        case '>':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' > ?', [$value]);
+                            break;
+                        case 'gte':
+                        case '>=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' >= ?', [$value]);
+                            break;
+                        case 'lt':
+                        case '<':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' < ?', [$value]);
+                            break;
+                        case 'lte':
+                        case '<=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' <= ?', [$value]);
+                            break;
+                        case 'ne':
+                        case '!=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' != ?', [$value]);
+                            break;
+                        default:
+                            $this->where([$field => $value]);
+                    }
+                }
+            } else {
+                $this->where([$field => $condition]);
+            }
+        }
+
+        return $this;
+    }
 }
