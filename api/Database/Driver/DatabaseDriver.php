@@ -75,4 +75,20 @@ interface DatabaseDriver
      * @throws \InvalidArgumentException If parameters are invalid
      */
     public function upsert(string $table, array $columns, array $updateColumns): string;
+
+    /**
+     * Get query to retrieve table column information
+     *
+     * Returns a database-specific SQL query to retrieve column names for a given table.
+     * Used for expanding table.* wildcard patterns in SELECT statements.
+     *
+     * Implementation examples:
+     * - MySQL:      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE()
+     * - PostgreSQL: SELECT column_name FROM information_schema.columns WHERE table_name = ? AND table_schema = current_schema()
+     * - SQLite:     PRAGMA table_info(table_name)
+     *
+     * @param string $table The target table name (unquoted)
+     * @return string SQL query to retrieve column information
+     */
+    public function getTableColumnsQuery(string $table): string;
 }

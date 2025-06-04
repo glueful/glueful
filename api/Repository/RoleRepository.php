@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Repository;
 
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
 
 /**
  * Role Repository
@@ -27,19 +28,25 @@ class RoleRepository extends BaseRepository
      * Sets up database connection and query builder
      * for role management operations.
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'roles';
-        $this->primaryKey = 'uuid';
-        $this->defaultFields = ['uuid', 'name', 'description'];
-
-        // Roles typically don't contain sensitive data like passwords
+        // Configure repository settings before calling parent
         $this->containsSensitiveData = false;
         $this->sensitiveFields = [];
+        $this->defaultFields = ['uuid', 'name', 'description', 'created_at', 'updated_at'];
 
         // Call parent constructor to set up database connection and audit logger
-        parent::__construct();
+        parent::__construct($connection);
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'roles';
     }
 
     /**
@@ -52,7 +59,7 @@ class RoleRepository extends BaseRepository
      */
     public function getRoles(): array
     {
-        return $this->getAll(['uuid', 'name', 'description']);
+        return $this->findAll();
     }
 
     /**
@@ -65,7 +72,7 @@ class RoleRepository extends BaseRepository
      */
     public function getRoleByUUID(string $uuid): ?array
     {
-        return $this->findBy($this->primaryKey, $uuid);
+        return $this->find($uuid);
     }
 
     /**
@@ -80,13 +87,13 @@ class RoleRepository extends BaseRepository
     public function getUserRoles(string $uuid): array
     {
         return $this->db
-            ->join('roles', '`user_roles_lookup`.`role_uuid` = `roles`.`uuid`', 'LEFT')
             ->select('user_roles_lookup', [
                 'user_roles_lookup.role_uuid',
                 'user_roles_lookup.user_uuid',
                 'roles.name AS role_name',
                 'roles.description'
             ])
+            ->join('roles', '`user_roles_lookup`.`role_uuid` = `roles`.`uuid`', 'LEFT')
             ->where(['user_roles_lookup.user_uuid' => $uuid])
             ->get();
     }
@@ -118,9 +125,12 @@ class RoleRepository extends BaseRepository
         }
 
         // Insert role record using parent create method for audit logging
-        $result = parent::create($data, $userId);
-
-        return $result ? $data['uuid'] : false;
+        try {
+            $uuid = parent::create($data);
+            return $uuid;
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**
@@ -146,7 +156,7 @@ class RoleRepository extends BaseRepository
         }
 
         // Update role using parent update method for audit logging
-        return parent::update($uuid, $updateData, $userId);
+        return parent::update($uuid, $updateData);
     }
 
     /**
@@ -163,7 +173,7 @@ class RoleRepository extends BaseRepository
     public function deleteRole(string $uuid, ?string $userId = null): bool
     {
         // Use parent delete method for audit logging
-        return parent::delete($uuid, $userId);
+        return parent::delete($uuid);
     }
 
     /**
@@ -201,7 +211,13 @@ class RoleRepository extends BaseRepository
         $this->table = 'user_roles_lookup';
 
         // Use create method to get audit logging
-        $result = parent::create($data, $assignedByUserId);
+        try {
+            $result = parent::create($data);
+        } catch (\Exception $e) {
+            // Restore the original table
+            $this->table = $originalTable;
+            return false;
+        }
 
         // Restore the original table
         $this->table = $originalTable;
@@ -284,13 +300,13 @@ class RoleRepository extends BaseRepository
     public function getUsersWithRole(string $roleUuid): array
     {
         return $this->db
-            ->join('users', 'user_roles_lookup.user_uuid = users.uuid', 'LEFT')
             ->select('user_roles_lookup', [
                 'user_roles_lookup.user_uuid',
                 'users.username',
                 'users.email',
                 'users.status'
             ])
+            ->join('users', 'user_roles_lookup.user_uuid = users.uuid', 'LEFT')
             ->where(['user_roles_lookup.role_uuid' => $roleUuid])
             ->get();
     }
@@ -307,8 +323,8 @@ class RoleRepository extends BaseRepository
     public function hasRole(string $userUuid, string $roleName): bool
     {
         $result = $this->db
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
             ->select('user_roles_lookup', ['user_roles_lookup.role_uuid'])
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
             ->where([
                 'user_roles_lookup.user_uuid' => $userUuid,
                 'roles.name' => $roleName
@@ -356,7 +372,7 @@ class RoleRepository extends BaseRepository
      */
     public function userHasRole(string $userId, string $roleName): bool
     {
-        $result = $this->db->select('user_roles_lookup', [''])
+        $result = $this->db->select('user_roles_lookup', ['user_roles_lookup.role_uuid'])
             ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid', 'LEFT')
             ->where([
                 'user_roles_lookup.user_uuid' => $userId,
@@ -391,5 +407,78 @@ class RoleRepository extends BaseRepository
     {
         $role = $this->findBy('name', $name, ['uuid']);
         return $role ? $role['uuid'] : null;
+    }
+
+    /**
+     * Find role by name
+     *
+     * @param string $name Role name
+     * @return array|null Role data or null if not found
+     */
+    public function findByName(string $name): ?array
+    {
+        return $this->findBy('name', $name);
+    }
+
+    /**
+     * Check if role name exists
+     *
+     * @param string $name The role name to check
+     * @param string|null $excludeUuid UUID to exclude from check (for updates)
+     * @return bool True if role name exists
+     */
+    public function nameExists(string $name, ?string $excludeUuid = null): bool
+    {
+        $conditions = ['name' => $name];
+
+        if ($excludeUuid) {
+            $conditions['uuid'] = ['!=', $excludeUuid];
+        }
+
+        return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Get all active roles
+     *
+     * @return array Array of active roles
+     */
+    public function findActive(): array
+    {
+        return $this->findWhere(['status' => 'active']);
+    }
+
+    /**
+     * Bulk assign roles to users
+     *
+     * @param array $userUuids Array of user UUIDs
+     * @param string $roleUuid Role UUID to assign
+     * @return int Number of assignments created
+     */
+    public function bulkAssignRole(array $userUuids, string $roleUuid): int
+    {
+        $assignments = [];
+        foreach ($userUuids as $userUuid) {
+            $assignments[] = [
+                'user_uuid' => $userUuid,
+                'role_uuid' => $roleUuid,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+        }
+
+        // Temporarily switch table for bulk operation
+        $originalTable = $this->table;
+        $this->table = 'user_roles_lookup';
+
+        try {
+            $uuids = $this->bulkCreate($assignments);
+            $count = count($uuids);
+        } catch (\Exception $e) {
+            $count = 0;
+        } finally {
+            $this->table = $originalTable;
+        }
+
+        return $count;
     }
 }

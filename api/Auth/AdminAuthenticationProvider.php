@@ -43,6 +43,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     public function authenticate(Request $request): ?array
     {
         $credentials = $this->extractCredentials($request);
+        // Get request information for tracking
+        $requestData = $request::createFromGlobals();
 
         // Get the audit logger
         $auditLogger = AuditLogger::getInstance();
@@ -82,8 +84,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                     [
                         'username' => $credentials['username'],
                         'reason' => 'invalid_credentials',
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent')
+                        'ip_address' => $requestData->getClientIp(),
+                        'user_agent' => $requestData->headers->get('User-Agent')
                     ],
                     AuditEvent::SEVERITY_WARNING
                 );
@@ -110,8 +112,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                     [
                         'username' => $credentials['username'],
                         'reason' => 'insufficient_privileges',
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent')
+                        'ip_address' => $requestData->getClientIp(),
+                        'user_agent' => $requestData->headers->get('User-Agent')
                     ],
                     AuditEvent::SEVERITY_WARNING
                 );
@@ -133,8 +135,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                     [
                         'username' => $credentials['username'],
                         'reason' => 'session_creation_failure',
-                        'ip_address' => $request->getClientIp(),
-                        'user_agent' => $request->headers->get('User-Agent')
+                        'ip_address' => $requestData->getClientIp(),
+                        'user_agent' => $requestData->headers->get('User-Agent')
                     ],
                     AuditEvent::SEVERITY_ERROR
                 );
@@ -144,18 +146,37 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
             // Add admin flag to user data
             $sessionData['user']['is_admin'] = true;
 
-            // Log successful admin login
+            // Log successful admin login with session details
             $auditLogger->authEvent(
                 'admin_login_success',
                 $user['uuid'],
                 [
                     'username' => $credentials['username'],
-                    'ip_address' => $request->getClientIp(),
-                    'user_agent' => $request->headers->get('User-Agent'),
-                    'session_id' => $sessionData['session_id'] ?? null
+                    'ip_address' => $requestData->getClientIp(),
+                    'user_agent' => $requestData->headers->get('User-Agent'),
+                    'session_id' => $sessionData['user']['session_id'] ?? null,
+                    'session_created' => true,
+                    'provider' => 'admin'
                 ],
                 AuditEvent::SEVERITY_INFO
             );
+
+            // Update user tracking fields in the database
+            try {
+                $clientIp = $requestData->getClientIp() ?? 'unknown';
+                $userAgent = $requestData->headers->get('User-Agent') ?? 'unknown';
+                $xForwardedFor = $requestData->headers->get('X-Forwarded-For') ?? null;
+
+                $this->userRepository->update($user['uuid'], [
+                    'ip_address' => $clientIp,
+                    'user_agent' => substr($userAgent, 0, 512), // Limit to field size
+                    'x_forwarded_for_ip_address' => $xForwardedFor ? substr($xForwardedFor, 0, 40) : null,
+                    'last_login_date' => date('Y-m-d H:i:s')
+                ]);
+            } catch (\Exception $e) {
+                // Log the error but don't fail authentication
+                error_log("Failed to update admin user tracking fields: " . $e->getMessage());
+            }
 
             // Return user data in the same format as regular login
             return $sessionData;
@@ -208,46 +229,19 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     private function authenticateWithCredentials(string $username, string $password): ?array
     {
-        // Get user by username
-        $user = $this->userRepository->findByUsername($username);
+        // Get user with profile and roles in one optimized query
+        $user = $this->userRepository->findByUsernameWithProfileAndRoles($username);
 
         if (!$user) {
             $this->error = "User not found";
             return null;
         }
 
-        $userProfile = $this->userRepository->getProfile($user['uuid']);
-
         // Verify password
         if (!$this->passwordHasher->verify($password, $user['password'])) {
             error_log("Admin auth failed: Password mismatch for user {$username}");
             $this->error = "Invalid credentials";
             return null;
-        }
-
-        // Get user roles
-        $roles = $this->roleRepository->getUserRoles($user['uuid']);
-        $roleNames = [];
-        foreach ($roles as $role) {
-            $roleNames[] = $role['role_name'] ?? $role['name'] ?? '';
-        }
-        $user['roles'] = $roleNames;
-
-        // Add profile info if missing
-        if (!isset($user['profile'])) {
-            $user['profile'] = [
-                'first_name' => $userProfile['first_name'] ?? null,
-                'last_name' => $userProfile['last_name'] ?? null,
-                'photo_uuid' => $userProfile['photo_uuid'] ?? null,
-                'photo_url' => $userProfile['photo_url'] ?? null
-            ];
-
-            // Remove individual profile fields if they were moved to the profile object
-            foreach (['first_name', 'last_name', 'photo_uuid', 'photo_url'] as $field) {
-                if (isset($user[$field])) {
-                    unset($user[$field]);
-                }
-            }
         }
 
         // Record last login time

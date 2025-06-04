@@ -9,6 +9,7 @@ use Glueful\Notifications\Models\Notification;
 use Glueful\Notifications\Models\NotificationPreference;
 use Glueful\Notifications\Models\NotificationTemplate;
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
 
 /**
  * Notification Repository
@@ -31,16 +32,25 @@ class NotificationRepository extends BaseRepository
      *
      * Sets up database connection and dependencies
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'notifications';
-        $this->primaryKey = 'uuid';
-        $this->defaultFields = ['*'];
+        // Configure repository settings before calling parent
         $this->containsSensitiveData = false;
+        $this->sensitiveFields = [];
+        $this->defaultFields = ['*'];
 
         // Call parent constructor to set up database connection and audit logger
-        parent::__construct();
+        parent::__construct($connection);
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'notifications';
     }
 
     /**
@@ -76,7 +86,7 @@ class NotificationRepository extends BaseRepository
             // Update existing notification using BaseRepository's update method
             // This automatically handles audit logging
             $data['id'] = $existing->getId();
-            return $this->update($data['uuid'], $data, $userId);
+            return $this->update($data['uuid'], $data);
         } else {
             // Remove the ID field if it's NULL to let the database auto-increment
             if (isset($data['id']) && $data['id'] == null) {
@@ -84,7 +94,7 @@ class NotificationRepository extends BaseRepository
             }
 
             // Create new notification using BaseRepository's create method
-            $result = $this->create($data, $userId);
+            $result = $this->create($data);
             return $result ? true : false;
         }
     }
@@ -270,10 +280,10 @@ class NotificationRepository extends BaseRepository
 
             if ($existing) {
                 // Update existing preference
-                return $this->update($data['uuid'], $data, $userId);
+                return $this->update($data['uuid'], $data);
             } else {
                 // Create new preference
-                $result = $this->create($data, $userId);
+                $result = $this->create($data);
                 return $result ? true : false;
             }
         } finally {
@@ -415,10 +425,10 @@ class NotificationRepository extends BaseRepository
 
             if ($existing) {
                 // Update existing template
-                return $this->update($data['uuid'], $data, $userId);
+                return $this->update($data['uuid'], $data);
             } else {
                 // Create new template
-                $result = $this->create($data, $userId);
+                $result = $this->create($data);
                 return $result ? true : false;
             }
         } finally {
@@ -619,7 +629,7 @@ class NotificationRepository extends BaseRepository
                 $data = $notification;
                 $data['read_at'] = $now;
 
-                if ($this->update($data['uuid'], ['read_at' => $now], $userId)) {
+                if ($this->update($data['uuid'], ['read_at' => $now])) {
                     $updated++;
                 }
             }
@@ -662,7 +672,7 @@ class NotificationRepository extends BaseRepository
 
             // Delete each notification individually to get proper audit logging
             foreach ($oldNotifications as $notification) {
-                if (!$this->delete($notification['uuid'], $userId)) {
+                if (!$this->delete($notification['uuid'])) {
                     $success = false;
                 }
             }
@@ -685,6 +695,6 @@ class NotificationRepository extends BaseRepository
     public function deleteNotificationByUuid(string $uuid, ?string $userId = null): bool
     {
         // Use BaseRepository's delete method which handles audit logging
-        return $this->delete($uuid, $userId);
+        return $this->delete($uuid);
     }
 }

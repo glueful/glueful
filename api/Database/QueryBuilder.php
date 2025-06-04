@@ -84,6 +84,9 @@ class QueryBuilder
     /** @var bool Enable debug mode */
     private bool $debugMode = false;  // Default: Off
 
+    /** @var bool Whether the final query has been built */
+    private bool $finalQueryBuilt = false;
+
     /** @var string|null Purpose of the current query for business context */
     private ?string $queryPurpose = null;
 
@@ -425,6 +428,8 @@ class QueryBuilder
         $this->groupBy = []; // Reset group by
         $this->having = []; // Reset having
         $this->whereRaw = []; // Reset raw where conditions
+        $this->joins = []; // Reset joins
+        $this->finalQueryBuilt = false; // Reset final query build flag
 
         $columnList = implode(", ", array_map(function ($column) {
             if ($column instanceof RawExpression) {
@@ -446,6 +451,10 @@ class QueryBuilder
             }
             if (strpos($column, '.') !== false) {
                 [$table, $col] = explode('.', $column, 2);
+                // Handle table.* specially - don't wrap the asterisk
+                if ($col === '*') {
+                    return $this->driver->wrapIdentifier($table) . ".*";
+                }
                 return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
             }
             return $column === '*' ? '*' : $this->driver->wrapIdentifier($column);
@@ -1098,6 +1107,9 @@ class QueryBuilder
      */
     public function get(): array
     {
+        // Build the final query with all components (JOINs, etc.)
+        $this->buildFinalQuery();
+
         // Use caching if enabled
         if ($this->cachingEnabled) {
             $cacheService = $this->getCacheService();
@@ -1588,6 +1600,44 @@ class QueryBuilder
     {
         $this->queryPurpose = $purpose;
         return $this;
+    }
+
+    /**
+     * Build the final SQL query with all components
+     *
+     * This method rebuilds the query to ensure all JOINs, WHERE clauses,
+     * and other components are included in the final SQL.
+     *
+     * @return void
+     */
+    private function buildFinalQuery(): void
+    {
+        if (empty($this->query) || $this->finalQueryBuilt) {
+            return; // Nothing to rebuild or already built
+        }
+
+        // Extract the base query parts
+        if (preg_match('/^SELECT (.+) FROM (.+?)(?:\s+(WHERE.+))?$/i', $this->query, $matches)) {
+            $selectClause = $matches[1];
+            $fromClause = $matches[2];
+            $whereClause = $matches[3] ?? '';
+
+            // Rebuild with JOINs
+            $sql = "SELECT $selectClause FROM $fromClause";
+
+            // Add JOIN clauses if any
+            if (!empty($this->joins)) {
+                $sql .= " " . implode(" ", $this->joins);
+            }
+
+            // Add back the WHERE clause if it exists
+            if (!empty($whereClause)) {
+                $sql .= " " . $whereClause;
+            }
+
+            $this->query = $sql;
+            $this->finalQueryBuilt = true;
+        }
     }
 
     // The isSensitiveTable method is already defined earlier in this class

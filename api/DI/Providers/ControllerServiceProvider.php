@@ -18,6 +18,7 @@ use Glueful\Controllers\FilesController;
 use Glueful\Controllers\HealthController;
 use Glueful\Controllers\NotificationsController;
 use Glueful\Controllers\ExtensionsController;
+use Glueful\Repository\RepositoryFactory;
 
 /**
  * Controller Service Provider
@@ -38,10 +39,16 @@ class ControllerServiceProvider implements ServiceProviderInterface
         $container->bind(DatabaseController::class);
 
         // Resource Controller
-        $container->bind(ResourceController::class);
+        $container->bind(ResourceController::class, function (ContainerInterface $container) {
+            $repositoryFactory = $container->get(RepositoryFactory::class);
+            return new ResourceController($repositoryFactory);
+        });
 
         // Permissions Controller
-        $container->bind(PermissionsController::class);
+        $container->bind(PermissionsController::class, function (ContainerInterface $container) {
+            $repositoryFactory = $container->get(RepositoryFactory::class);
+            return new PermissionsController($repositoryFactory);
+        });
 
         // Metrics Controller
         $container->bind(MetricsController::class);

@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Glueful\Controllers;
 
-use Glueful\{APIEngine, Http\Response};
+use Glueful\Http\Response;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\Permissions\Permission;
 use Glueful\Permissions\PermissionManager;
-use Glueful\Repository\RoleRepository;
+use Glueful\Repository\RepositoryFactory;
 use Symfony\Component\HttpFoundation\Request;
 
 class ResourceController
 {
     private $authManager;
+    private RepositoryFactory $repositoryFactory;
 
-    public function __construct()
+    public function __construct(?RepositoryFactory $repositoryFactory = null)
     {
         // Initialize auth system
         AuthBootstrap::initialize();
@@ -23,6 +24,9 @@ class ResourceController
 
         // Initialize the permission manager
         PermissionManager::initialize();
+
+        // Initialize repository factory
+        $this->repositoryFactory = $repositoryFactory ?? new RepositoryFactory();
     }
 
     /**
@@ -51,7 +55,7 @@ class ResourceController
             }
 
             // Check if user has superuser role
-            $roleRepo = new RoleRepository();
+            $roleRepo = $this->repositoryFactory->roles();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
@@ -67,15 +71,21 @@ class ResourceController
                 }
             }
 
-            $queryParams = array_merge($queryParams, [
-                'fields' => $queryParams['fields'] ?? '*',
-                'sort' => $queryParams['sort'] ?? 'created_at',
-                'page' => $queryParams['page'] ?? 1,
-                'per_page' => $queryParams['per_page'] ?? 25,
-                'order' => $queryParams['order'] ?? 'desc'
-            ]);
+            // Parse query parameters for repository
+            $page = max(1, (int)($queryParams['page'] ?? 1));
+            $perPage = min(100, max(1, (int)($queryParams['per_page'] ?? 25)));
+            $sort = $queryParams['sort'] ?? 'created_at';
+            $order = strtolower($queryParams['order'] ?? 'desc');
+            $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
+            $fields = $this->parseFields($queryParams['fields'] ?? '');
 
-            $result = APIEngine::getData($params['resource'], 'list', $queryParams);
+            // Build conditions and order
+            $conditions = $this->parseConditions($queryParams);
+            $orderBy = [$sort => $order];
+
+            // Get repository and paginate results
+            $repository = $this->repositoryFactory->getRepository($params['resource']);
+            $result = $repository->paginate($page, $perPage, $conditions, $orderBy, $fields);
             return Response::ok($result)->send();
         } catch (\Exception $e) {
             return Response::error(
@@ -111,7 +121,7 @@ class ResourceController
             }
 
             // Check if user has superuser role
-            $roleRepo = new RoleRepository();
+            $roleRepo = $this->repositoryFactory->roles();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
@@ -127,13 +137,13 @@ class ResourceController
                 }
             }
 
-            $queryParams = array_merge($queryParams, [
-                'fields' => $queryParams['fields'] ?? '*',
-                'uuid' => $params['uuid'],
-                'paginate' => false
-            ]);
+            // Get repository and find single record
+            $repository = $this->repositoryFactory->getRepository($params['resource']);
+            $result = $repository->find($params['uuid']);
 
-            $result = APIEngine::getData($params['resource'], 'list', $queryParams);
+            if (!$result) {
+                return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
+            }
             return Response::ok($result)->send();
         } catch (\Exception $e) {
             return Response::error(
@@ -169,7 +179,7 @@ class ResourceController
             }
 
             // Check if user has superuser role
-            $roleRepo = new RoleRepository();
+            $roleRepo = $this->repositoryFactory->roles();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
@@ -185,11 +195,15 @@ class ResourceController
                 }
             }
 
-            $result = APIEngine::saveData(
-                $params['resource'],        // resource name
-                'save',                     // action
-                $postData                   // data to save
-            );
+            // Get repository and create record
+            $repository = $this->repositoryFactory->getRepository($params['resource']);
+            $uuid = $repository->create($postData);
+
+            $result = [
+                'uuid' => $uuid,
+                'success' => true,
+                'message' => 'Record created successfully'
+            ];
 
             return Response::ok($result)->send();
         } catch (\Exception $e) {
@@ -226,7 +240,7 @@ class ResourceController
             }
 
             // Check if user has superuser role
-            $roleRepo = new RoleRepository();
+            $roleRepo = $this->repositoryFactory->roles();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
@@ -242,12 +256,25 @@ class ResourceController
                 }
             }
 
-            // Direct API call without legacy conversion
-            $result = APIEngine::saveData(
-                $params['resource'],        // resource name
-                'update',                   // action
-                $putData                    // data to save
-            );
+            // Get repository and update record
+            $repository = $this->repositoryFactory->getRepository($params['resource']);
+
+            // Extract data from nested structure if present (for compatibility)
+            $updateData = $putData['data'] ?? $putData;
+            unset($updateData['uuid']); // Remove UUID from update data
+
+
+            $success = $repository->update($params['uuid'], $updateData);
+
+            if (!$success) {
+                return Response::error('Record not found or update failed', Response::HTTP_NOT_FOUND)->send();
+            }
+
+            $result = [
+                'affected' => 1,
+                'success' => true,
+                'message' => 'Record updated successfully'
+            ];
 
             return Response::ok($result)->send();
         } catch (\Exception $e) {
@@ -283,7 +310,7 @@ class ResourceController
             }
 
             // Check if user has superuser role
-            $roleRepo = new RoleRepository();
+            $roleRepo = $this->repositoryFactory->roles();
             if ($roleRepo->hasRole($userUuid, 'superuser')) {
                 // Superuser has access to everything - skip permission check
             } else {
@@ -299,11 +326,19 @@ class ResourceController
                 }
             }
 
-            $result = APIEngine::saveData(
-                $params['resource'],
-                'delete',
-                ['uuid' => $params['uuid'], 'status' => 'D']
-            );
+            // Get repository and delete record
+            $repository = $this->repositoryFactory->getRepository($params['resource']);
+            $success = $repository->delete($params['uuid']);
+
+            if (!$success) {
+                return Response::error('Record not found or delete failed', Response::HTTP_NOT_FOUND)->send();
+            }
+
+            $result = [
+                'affected' => 1,
+                'success' => true,
+                'message' => 'Record deleted successfully'
+            ];
 
             return Response::ok($result, 'Resource deleted successfully')->send();
         } catch (\Exception $e) {
@@ -380,5 +415,38 @@ class ResourceController
         }
 
         return $authHeader;
+    }
+
+    /**
+     * Parse query conditions from request parameters
+     */
+    private function parseConditions(array $queryParams): array
+    {
+        $conditions = [];
+
+        // Add any filter conditions from query params
+        foreach ($queryParams as $key => $value) {
+            // Skip pagination and sorting parameters
+            if (in_array($key, ['page', 'per_page', 'sort', 'order', 'fields'])) {
+                continue;
+            }
+
+            // Simple equality conditions for now
+            $conditions[$key] = $value;
+        }
+
+        return $conditions;
+    }
+
+    /**
+     * Parse fields to select from request parameters
+     */
+    private function parseFields(string $fields): array
+    {
+        if (empty($fields) || $fields === '*') {
+            return [];
+        }
+
+        return array_map('trim', explode(',', $fields));
     }
 }

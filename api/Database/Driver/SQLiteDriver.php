@@ -77,4 +77,18 @@ class SQLiteDriver implements DatabaseDriver
         return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
                " ON CONFLICT(id) DO UPDATE SET $updates";
     }
+
+    /**
+     * Get SQLite table columns query
+     *
+     * Returns PRAGMA query to retrieve column information for a table.
+     * SQLite uses PRAGMA table_info instead of information_schema.
+     *
+     * @param string $table Target table name
+     * @return string SQLite query to get column information
+     */
+    public function getTableColumnsQuery(string $table): string
+    {
+        return "PRAGMA table_info({$table})";
+    }
 }

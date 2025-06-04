@@ -65,9 +65,9 @@ class API
             self::getLogger()->debug("Loading routes...");
             RoutesManager::loadRoutes();
 
-            // Initialize scheduler for appropriate request types
-            if (PHP_SAPI === 'cli' || Request::isAdminRequest()) {
-                self::getLogger()->debug("Initializing job scheduler...");
+            // Initialize scheduler only for CLI (not for admin web requests)
+            if (PHP_SAPI === 'cli') {
+                self::getLogger()->debug("Initializing job scheduler for CLI...");
                 // Initialize scheduler only when needed
                 JobScheduler::getInstance();
             }

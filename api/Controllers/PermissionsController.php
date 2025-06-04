@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Repository\{PermissionRepository, RoleRepository};
+use Glueful\Repository\{PermissionRepository, RoleRepository, RepositoryFactory};
 use Glueful\Helpers\{Request, DatabaseConnectionTrait};
-use Glueful\Database\{Connection, QueryBuilder};
+use Glueful\Database\QueryBuilder;
 
 /**
  * Permissions Controller
@@ -26,11 +26,13 @@ class PermissionsController
     private RoleRepository $roleRepo;
     private PermissionRepository $permissionRepo;
     private QueryBuilder $queryBuilder;
+    private RepositoryFactory $repositoryFactory;
 
-    public function __construct()
+    public function __construct(?RepositoryFactory $repositoryFactory = null)
     {
-        $this->roleRepo = new RoleRepository();
-        $this->permissionRepo = new PermissionRepository();
+        $this->repositoryFactory = $repositoryFactory ?? new RepositoryFactory();
+        $this->roleRepo = $this->repositoryFactory->roles();
+        $this->permissionRepo = $this->repositoryFactory->permissions();
         $this->queryBuilder = $this->getQueryBuilder();
     }
 
@@ -97,19 +99,22 @@ class PermissionsController
         try {
             $data = Request::getPostData();
 
-            if (!isset($data['model']) || !isset($data['permissions']) || !is_array($data['permissions'])) {
-                $msg = 'Model name and permissions array are required';
+            if (
+                !isset($data['model']) || !isset($data['permissions']) ||
+                !isset($data['role_uuid']) || !is_array($data['permissions'])
+            ) {
+                $msg = 'Model name, permissions array, and role_uuid are required';
                 return Response::error($msg, Response::HTTP_BAD_REQUEST)->send();
             }
 
             $model = $data['model'];
             $permissions = $data['permissions'];
-            $description = $data['description'] ?? null;
+            $roleUuid = $data['role_uuid'];
 
             $result = $this->permissionRepo->createPermission(
                 $model,
                 $permissions,
-                $description
+                $roleUuid
             );
 
             return Response::ok($result, 'Permission created successfully')->send();

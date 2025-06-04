@@ -338,7 +338,10 @@ class TokenManager
             return [];  // Return empty array that will be caught as failure
         }
 
-        $user['remember_me'] = $user['remember_me'] ?? false;
+        // Ensure remember_me is set with a default value if not present
+        if (!isset($user['remember_me'])) {
+            $user['remember_me'] = false;
+        }
         // Adjust token lifetime based on remember-me preference
         $accessTokenLifetime = $user['remember_me']
             ? (int)config('session.remember_expiration', 30 * 24 * 3600) // 30 days
@@ -365,20 +368,21 @@ class TokenManager
 
         // Store session using TokenStorageService for unified database/cache management
         $user['refresh_token'] = $tokens['refresh_token'];
+        $user['session_id'] = Utils::generateNanoID(); // Generate session ID once
+        $user['provider'] = $provider ?? 'jwt';
+        $user['remember_me'] = $user['remember_me'] ?? false;
+
         $tokenStorage = new TokenStorageService();
         $tokenStorage->storeSession($user, $tokens);
 
-        self::storeSession(
-            $user['uuid'],
-            [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'token_fingerprint' => self::generateTokenFingerprint($tokens['access_token']),
-                'remember_me' => $user['remember_me'],
-                'provider' => $provider ?? 'jwt' // Store the provider used
-            ],
-            $refreshTokenLifetime
+        // Also store in cache for quick lookup
+        SessionCacheManager::storeSession(
+            $user, // userData array
+            $tokens['access_token'], // token string
+            $provider ?? 'jwt', // provider
+            $tokens['expires_in'] // ttl
         );
+
         unset($user['refresh_token']);
         return [
             'tokens' => [

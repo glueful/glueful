@@ -94,14 +94,16 @@ class AuthenticationService
             return null;
         }
 
-        // Process credentials based on type (username or email)
+        // Process credentials based on type (username or email) using optimized query
         $user = null;
 
         if (isset($credentials['username'])) {
             if (filter_var($credentials['username'], FILTER_VALIDATE_EMAIL)) {
-                $user = $this->userRepository->findByEmail($credentials['username']);
+                // For email login, use optimized method (reduces queries from 3 to 1)
+                $user = $this->userRepository->findByEmailWithProfileAndRoles($credentials['username']);
             } else {
-                $user = $this->userRepository->findByUsername($credentials['username']);
+                // For username login, use optimized method (reduces queries from 3 to 1)
+                $user = $this->userRepository->findByUsernameWithProfileAndRoles($credentials['username']);
             }
         }
 
@@ -123,21 +125,31 @@ class AuthenticationService
             return null;
         }
 
-        // Format user data
+        // Format user data (profile and roles already included from optimized query)
         $userData = $this->formatUserData($user);
-        $userProfile = $this->userRepository->getProfile($userData['uuid']);
-        $userRoles = $this->userRepository->getRoles($userData['uuid']);
-
-        // Initialize roles array
-        $userData['roles'] = [];
-
-        // Add each role to the roles array
-        foreach ($userRoles as $userRole) {
-            $userData['roles'][] = $userRole['role_name'];
-        }
-
-        $userData['profile'] = $userProfile;
+        $userData['profile'] = $user['profile'] ?? null;
+        $userData['roles'] = $user['roles'] ?? [];
         $userData['last_login'] = date('Y-m-d H:i:s');
+
+        // Update user tracking fields in the database
+        try {
+            // Get request information for tracking
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+            $clientIp = $request->getClientIp() ?? 'unknown';
+            $userAgent = $request->headers->get('User-Agent') ?? 'unknown';
+            $xForwardedFor = $request->headers->get('X-Forwarded-For') ?? null;
+            // Update user record with tracking information
+            $userRepo = new UserRepository();
+            $userRepo->update($userData['uuid'], [
+                'ip_address' => $clientIp,
+                'user_agent' => substr($userAgent, 0, 512), // Limit to field size
+                'x_forwarded_for_ip_address' => $xForwardedFor ? substr($xForwardedFor, 0, 40) : null,
+                'last_login_date' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Exception $e) {
+            // Log the error but don't fail authentication
+            error_log("Failed to update user tracking fields: " . $e->getMessage());
+        }
 
         // Add any custom provider preference from credentials
         $preferredProvider = $providerName ?? ($credentials['provider'] ?? 'jwt');

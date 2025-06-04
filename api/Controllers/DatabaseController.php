@@ -228,6 +228,79 @@ class DatabaseController
     }
 
     /**
+     * Get comprehensive table metadata
+     *
+     * Returns detailed information about a table including:
+     * - Row count
+     * - Table size
+     * - Column count
+     * - Index count
+     * - Storage engine
+     * - Creation time
+     * - Last update time
+     *
+     * @param array|null $table Table data with 'name' key
+     * @return mixed HTTP response
+     */
+    public function getTableMetadata(?array $table): mixed
+    {
+        try {
+            if (!isset($table['name'])) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $table['name'];
+
+            // Get basic table information
+            $tableSize = $this->schemaManager->getTableSize($tableName);
+            $columns = $this->schemaManager->getTableColumns($tableName);
+
+            // Get indexes using raw query
+            $indexes = $this->queryBuilder->rawQuery(
+                "SHOW INDEX FROM `{$tableName}`"
+            );
+
+            // Get table status information (engine, creation time, etc.)
+            $tableStatus = $this->queryBuilder->rawQuery(
+                "SHOW TABLE STATUS WHERE Name = ?",
+                [$tableName]
+            );
+
+            $status = !empty($tableStatus) ? $tableStatus[0] : [];
+
+            // Format the metadata response
+            $metadata = [
+                'name' => $tableName,
+                'rows' => $status['Rows'] ?? 0,
+                'size' => $tableSize,
+                'columns' => count($columns),
+                'indexes' => count($indexes),
+                'engine' => $status['Engine'] ?? 'Unknown',
+                'created' => $status['Create_time'] ?? null,
+                'updated' => $status['Update_time'] ?? null,
+                'collation' => $status['Collation'] ?? null,
+                'comment' => $status['Comment'] ?? '',
+                'auto_increment' => $status['Auto_increment'] ?? null,
+                'avg_row_length' => $status['Avg_row_length'] ?? 0,
+                'data_length' => $status['Data_length'] ?? 0,
+                'index_length' => $status['Index_length'] ?? 0,
+                'data_free' => $status['Data_free'] ?? 0
+            ];
+
+            return Response::ok(
+                $metadata,
+                'Table metadata retrieved successfully'
+            )->send();
+        } catch (\Exception $e) {
+            error_log("Get table metadata error: " . $e->getMessage());
+            return Response::error(
+                'Failed to get table metadata: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
      * Fetch paginated data from a table
      *
      * @return mixed HTTP response
@@ -238,19 +311,20 @@ class DatabaseController
             if (!isset($table['name'])) {
                 return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
             }
+            $request = new Request();
 
             // Get request data
-            $requestData = Request::getPostData();
+            $queryParams = $request->getQueryParams();
             // Set default values for pagination and filtering
-            $page = (int)($requestData['page'] ?? 1);
-            $perPage = (int)($requestData['per_page'] ?? 25);
+            $page = (int)($queryParams['page'] ?? 1);
+            $perPage = (int)($queryParams['per_page'] ?? 25);
 
             // Build the query using QueryBuilder
             $results = $this->queryBuilder->select($table['name'], ['*'])
                 ->orderBy(['id' => 'DESC'])
-                ->paginate($page, $perPage);
+                    ->paginate($page, $perPage);
 
-            // Get detailed column metadata using SchemaManager
+                // Get detailed column metadata using SchemaManager
             $columns = $this->schemaManager->getTableColumns($table['name']);
 
             $results['columns'] = $columns;
@@ -1187,6 +1261,694 @@ class DatabaseController
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
+    }
+
+    /**
+     * Import data into a database table
+     *
+     * Handles bulk import of data into the specified table with options for:
+     * - Skipping first row if it contains headers
+     * - Updating existing records by matching ID
+     * - Skipping rows with errors and continuing
+     *
+     * @param array $params Route parameters containing table name
+     * @return mixed HTTP response
+     */
+    public function importTableData($params): mixed
+    {
+        try {
+            if (!is_array($params)) {
+                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            }
+            $tableName = $params['name'] ?? null;
+            if (!$tableName) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Get request data
+            $data = Request::getPostData();
+
+            if (!is_array($data)) {
+                return Response::error(
+                    'Invalid request format. Expected JSON object.',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            if (!isset($data['data']) || !is_array($data['data'])) {
+                return Response::error(
+                    'Import data is required and must be an array',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            $importData = $data['data'];
+            $options = $data['options'] ?? [];
+
+            // Import options with defaults
+            $skipFirstRow = $options['skipFirstRow'] ?? false;
+            $updateExisting = $options['updateExisting'] ?? false;
+            $skipErrors = $options['skipErrors'] ?? true;
+
+            // Check if table exists
+            if (!$this->schemaManager->tableExists($tableName)) {
+                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Get table columns to validate import data
+            $tableColumns = $this->schemaManager->getTableColumns($tableName);
+            $columnNames = array_column($tableColumns, 'name');
+
+            // Skip first row if it contains headers and option is enabled
+            if ($skipFirstRow && !empty($importData)) {
+                array_shift($importData);
+            }
+
+            // Check if we should use background processing for large imports
+            if (count($importData) > 500) {
+                return $this->processLargeImport($tableName, $importData, $options, $columnNames);
+            }
+
+            // Process with optimized batch transactions for smaller imports
+            return $this->processBatchImport($tableName, $importData, $options, $columnNames);
+        } catch (\Exception $e) {
+            error_log("Import table data error: " . $e->getMessage());
+            return Response::error(
+                'Failed to import data: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Process batch import with transactions for optimal performance
+     *
+     * @param string $tableName
+     * @param array $importData
+     * @param array $options
+     * @param array $columnNames
+     * @return mixed
+     */
+    private function processBatchImport(string $tableName, array $importData, array $options, array $columnNames): mixed
+    {
+        $updateExisting = $options['updateExisting'] ?? false;
+        $skipErrors = $options['skipErrors'] ?? true;
+        $batchSize = 100; // Optimal batch size for most databases
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+
+        // Process data in batches with transactions
+        $batches = array_chunk($importData, $batchSize);
+        $totalBatches = count($batches);
+
+        foreach ($batches as $batchIndex => $batch) {
+            try {
+                // Start transaction for this batch
+                $this->queryBuilder->beginTransaction();
+
+                $batchImported = 0;
+                $batchFailed = 0;
+
+                foreach ($batch as $globalIndex => $row) {
+                    $rowNumber = ($batchIndex * $batchSize) + $globalIndex + 1;
+
+                    try {
+                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
+                        if ($filteredRow === null) {
+                            $batchFailed++;
+                            $failed++;
+                            if (!$skipErrors) {
+                                $errors[] = "Row {$rowNumber}: Invalid row data";
+                            }
+                            continue;
+                        }
+
+                        // Handle update existing records
+                        if ($updateExisting && isset($filteredRow['id'])) {
+                            $this->upsertRecord($tableName, $filteredRow);
+                        } else {
+                            $this->queryBuilder->insert($tableName, $filteredRow);
+                        }
+
+                        $batchImported++;
+                    } catch (\Exception $e) {
+                        $batchFailed++;
+                        $failed++;
+                        $error = "Row {$rowNumber}: " . $e->getMessage();
+                        $errors[] = $error;
+
+                        if (!$skipErrors) {
+                            // Rollback transaction and stop processing
+                            $this->queryBuilder->rollback();
+                            return Response::error(
+                                "Import failed at row {$rowNumber}: " . $e->getMessage(),
+                                Response::HTTP_BAD_REQUEST
+                            )->send();
+                        }
+                    }
+                }
+
+                // Commit transaction for this batch
+                $this->queryBuilder->commit();
+                $imported += $batchImported;
+            } catch (\Exception $e) {
+                // Rollback transaction on batch failure
+                try {
+                    $this->queryBuilder->rollback();
+                } catch (\Exception $rollbackError) {
+                    error_log("Rollback failed: " . $rollbackError->getMessage());
+                }
+
+                $failed += count($batch);
+                $batchError = "Batch " . ($batchIndex + 1) . " failed: " . $e->getMessage();
+                $errors[] = $batchError;
+
+                if (!$skipErrors) {
+                    return Response::error(
+                        "Import failed at batch " . ($batchIndex + 1) . ": " . $e->getMessage(),
+                        Response::HTTP_BAD_REQUEST
+                    )->send();
+                }
+            }
+        }
+
+        $result = [
+            'imported' => $imported,
+            'failed' => $failed,
+            'batches_processed' => $totalBatches
+        ];
+
+        if (!empty($errors)) {
+            $result['errors'] = array_slice($errors, 0, 50); // Limit error messages
+        }
+
+        $message = "Import completed. {$imported} records imported";
+        if ($failed > 0) {
+            $message .= ", {$failed} failed";
+        }
+
+        return Response::ok($result, $message)->send();
+    }
+
+    /**
+     * Process large imports (placeholder for background job implementation)
+     *
+     * @param string $tableName
+     * @param array $importData
+     * @param array $options
+     * @param array $columnNames
+     * @return mixed
+     */
+    private function processLargeImport(string $tableName, array $importData, array $options, array $columnNames): mixed
+    {
+        // For now, process large imports with larger batch sizes and optimizations
+        $updateExisting = $options['updateExisting'] ?? false;
+        $skipErrors = $options['skipErrors'] ?? true;
+        $batchSize = 250; // Larger batch size for large imports
+
+        // Increase PHP execution time for large imports
+        set_time_limit(300); // 5 minutes
+
+        // Use memory-efficient processing
+        ini_set('memory_limit', '512M');
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+
+        $batches = array_chunk($importData, $batchSize);
+        $totalBatches = count($batches);
+        $totalRecords = count($importData);
+
+        foreach ($batches as $batchIndex => $batch) {
+            try {
+                $this->queryBuilder->beginTransaction();
+
+                // Build bulk insert for better performance
+                $validRows = [];
+                foreach ($batch as $globalIndex => $row) {
+                    $rowNumber = ($batchIndex * $batchSize) + $globalIndex + 1;
+
+                    try {
+                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
+
+                        if ($filteredRow !== null) {
+                            if ($updateExisting && isset($filteredRow['id'])) {
+                                // Handle updates individually for now
+                                $this->upsertRecord($tableName, $filteredRow);
+                                $imported++;
+                            } else {
+                                $validRows[] = $filteredRow;
+                            }
+                        } else {
+                            $failed++;
+                            if (!$skipErrors) {
+                                $errors[] = "Row {$rowNumber}: Invalid row data";
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        $failed++;
+                        $error = "Row {$rowNumber}: " . $e->getMessage();
+                        $errors[] = $error;
+
+                        if (!$skipErrors) {
+                            $this->queryBuilder->rawQuery('ROLLBACK');
+                            return Response::error(
+                                "Import failed at row {$rowNumber}: " . $e->getMessage(),
+                                Response::HTTP_BAD_REQUEST
+                            )->send();
+                        }
+                    }
+                }
+
+                // Bulk insert valid rows
+                if (!empty($validRows)) {
+                    $this->bulkInsert($tableName, $validRows);
+                    $imported += count($validRows);
+                }
+
+                $this->queryBuilder->commit();
+
+                // Memory cleanup
+                unset($batch, $validRows);
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+            } catch (\Exception $e) {
+                try {
+                    $this->queryBuilder->rawQuery('ROLLBACK');
+                } catch (\Exception $rollbackError) {
+                    error_log("Rollback failed: " . $rollbackError->getMessage());
+                }
+
+                $failed += isset($batch) ? count($batch) : $batchSize;
+                $batchError = "Batch " . ($batchIndex + 1) . " failed: " . $e->getMessage();
+                $errors[] = $batchError;
+
+                if (!$skipErrors) {
+                    return Response::error(
+                        "Import failed at batch " . ($batchIndex + 1) . ": " . $e->getMessage(),
+                        Response::HTTP_BAD_REQUEST
+                    )->send();
+                }
+            }
+        }
+
+        $result = [
+            'imported' => $imported,
+            'failed' => $failed,
+            'total_records' => $totalRecords,
+            'batches_processed' => $totalBatches,
+            'processing_method' => 'large_import_optimized'
+        ];
+
+        if (!empty($errors)) {
+            $result['errors'] = array_slice($errors, 0, 100); // More errors for large imports
+        }
+
+        $message = "Large import completed. {$imported} records imported";
+        if ($failed > 0) {
+            $message .= ", {$failed} failed";
+        }
+
+        return Response::ok($result, $message)->send();
+    }
+
+    /**
+     * Validate and filter row data
+     *
+     * @param mixed $row
+     * @param array $columnNames
+     * @return array|null
+     */
+    private function validateAndFilterRow($row, array $columnNames): ?array
+    {
+        if (empty($row) || !is_array($row)) {
+            return null;
+        }
+
+        $filteredRow = [];
+        foreach ($row as $column => $value) {
+            if (!is_string($column)) {
+                continue;
+            }
+            if (in_array($column, $columnNames)) {
+                $filteredRow[$column] = $value;
+            }
+        }
+
+        return empty($filteredRow) ? null : $filteredRow;
+    }
+
+    /**
+     * Insert or update record using database-agnostic upsert
+     *
+     * @param string $tableName
+     * @param array $data
+     * @return void
+     */
+    private function upsertRecord(string $tableName, array $data): void
+    {
+        // Get all columns except 'id' for update on duplicate
+        $updateColumns = array_filter(array_keys($data), function ($column) {
+            return $column !== 'id';
+        });
+
+        $this->queryBuilder->upsert($tableName, [$data], $updateColumns);
+    }
+
+    /**
+     * Bulk insert multiple records using database-agnostic method
+     *
+     * @param string $tableName
+     * @param array $rows
+     * @return void
+     */
+    private function bulkInsert(string $tableName, array $rows): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+
+        $this->queryBuilder->insertBatch($tableName, $rows);
+    }
+
+    /**
+     * Bulk delete records from a table
+     *
+     * @param array $params Route parameters containing table name
+     * @return mixed HTTP response
+     */
+    public function bulkDelete(array $params): mixed
+    {
+        try {
+            if (!is_array($params)) {
+                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $params['name'] ?? null;
+            if (!$tableName) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Get request data
+            $data = Request::getPostData();
+
+            if (!is_array($data)) {
+                return Response::error(
+                    'Invalid request format. Expected JSON object.',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
+                return Response::error(
+                    'IDs array is required and cannot be empty',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            $ids = $data['ids'];
+
+            // Soft delete parameters
+            $softDelete = $data['soft_delete'] ?? false;
+            $statusColumn = $data['status_column'] ?? 'status';
+            $deletedValue = $data['deleted_value'] ?? 'deleted';
+
+            // Validate that all IDs are scalar values
+            foreach ($ids as $id) {
+                if (!is_scalar($id)) {
+                    return Response::error(
+                        'All IDs must be scalar values',
+                        Response::HTTP_BAD_REQUEST
+                    )->send();
+                }
+            }
+
+            // Check if table exists
+            if (!$this->schemaManager->tableExists($tableName)) {
+                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // If soft delete is requested, validate that the status column exists
+            if ($softDelete) {
+                $tableColumns = $this->schemaManager->getTableColumns($tableName);
+                $columnNames = array_column($tableColumns, 'name');
+
+                if (!in_array($statusColumn, $columnNames)) {
+                    return Response::error(
+                        "Column '{$statusColumn}' does not exist in table '{$tableName}'. Cannot perform soft delete.",
+                        Response::HTTP_BAD_REQUEST
+                    )->send();
+                }
+            }
+
+            // Perform bulk delete/update using transaction
+            $this->queryBuilder->beginTransaction();
+
+            try {
+                $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+
+                if ($softDelete) {
+                    // Perform soft delete by updating status column
+                    $sql = $this->buildBulkSoftDeleteQuery($tableName, $statusColumn, $placeholders);
+                    $values = array_merge([$deletedValue], $ids);
+                    $stmt = $this->queryBuilder->executeQuery($sql, $values);
+                    $affectedCount = $stmt->rowCount();
+
+                    $this->queryBuilder->commit();
+
+                    return Response::ok([
+                        'soft_deleted' => $affectedCount,
+                        'ids' => $ids,
+                        'status_column' => $statusColumn,
+                        'deleted_value' => $deletedValue
+                    ], "Successfully soft deleted {$affectedCount} record(s)")->send();
+                } else {
+                    // Perform hard delete
+                    $sql = $this->buildBulkDeleteQuery($tableName, $placeholders);
+                    $stmt = $this->queryBuilder->executeQuery($sql, $ids);
+                    $deletedCount = $stmt->rowCount();
+
+                    $this->queryBuilder->commit();
+
+                    return Response::ok([
+                        'deleted' => $deletedCount,
+                        'ids' => $ids
+                    ], "Successfully deleted {$deletedCount} record(s)")->send();
+                }
+            } catch (\Exception $e) {
+                $this->queryBuilder->rollback();
+                throw $e;
+            }
+        } catch (\Exception $e) {
+            return Response::error(
+                'Bulk delete failed: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Bulk update records in a table
+     *
+     * @param array $params Route parameters containing table name
+     * @return mixed HTTP response
+     */
+    public function bulkUpdate(array $params): mixed
+    {
+        try {
+            if (!is_array($params)) {
+                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $tableName = $params['name'] ?? null;
+            if (!$tableName) {
+                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // Get request data
+            $data = Request::getPostData();
+
+            if (!is_array($data)) {
+                return Response::error(
+                    'Invalid request format. Expected JSON object.',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
+                return Response::error(
+                    'IDs array is required and cannot be empty',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            if (!isset($data['data']) || !is_array($data['data']) || empty($data['data'])) {
+                return Response::error(
+                    'Update data is required and cannot be empty',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            $ids = $data['ids'];
+            $updateData = $data['data'];
+
+            // Validate that all IDs are scalar values
+            foreach ($ids as $id) {
+                if (!is_scalar($id)) {
+                    return Response::error(
+                        'All IDs must be scalar values',
+                        Response::HTTP_BAD_REQUEST
+                    )->send();
+                }
+            }
+
+            // Check if table exists
+            if (!$this->schemaManager->tableExists($tableName)) {
+                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            }
+
+            // Get table columns to validate update data
+            $tableColumns = $this->schemaManager->getTableColumns($tableName);
+            $columnNames = array_column($tableColumns, 'name');
+
+            // Filter update data to only include valid columns
+            $filteredUpdateData = [];
+            foreach ($updateData as $column => $value) {
+                if (in_array($column, $columnNames)) {
+                    $filteredUpdateData[$column] = $value;
+                }
+            }
+
+            if (empty($filteredUpdateData)) {
+                return Response::error(
+                    'No valid columns found in update data',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+
+            // Perform bulk update using transaction
+            $this->queryBuilder->beginTransaction();
+
+            try {
+                // Build SET clause and WHERE IN clause using database-agnostic identifiers
+                $setClauses = [];
+                $values = [];
+                foreach ($filteredUpdateData as $column => $value) {
+                    $setClauses[] = $column . ' = ?';
+                    $values[] = $value;
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+                $sql = $this->buildBulkUpdateQuery($tableName, $setClauses, $placeholders);
+
+                // Combine values and ids for the query
+                $allValues = array_merge($values, $ids);
+
+                $stmt = $this->queryBuilder->executeQuery($sql, $allValues);
+                $updatedCount = $stmt->rowCount();
+
+                $this->queryBuilder->commit();
+
+                return Response::ok([
+                    'updated' => $updatedCount,
+                    'ids' => $ids,
+                    'data' => $filteredUpdateData
+                ], "Successfully updated {$updatedCount} record(s)")->send();
+            } catch (\Exception $e) {
+                $this->queryBuilder->rollback();
+                throw $e;
+            }
+        } catch (\Exception $e) {
+            return Response::error(
+                'Bulk update failed: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            )->send();
+        }
+    }
+
+    /**
+     * Wrap identifier using the DatabaseDriver's wrapIdentifier method
+     *
+     * @param string $identifier
+     * @return string
+     */
+    private function wrapIdentifier(string $identifier): string
+    {
+        // Use the actual DatabaseDriver's wrapIdentifier method
+        // This ensures we use the same logic as QueryBuilder
+        $connection = $this->getConnection();
+        $driver = $connection->getDriver();
+
+        return $driver->wrapIdentifier($identifier);
+    }
+
+    /**
+     * Build database-agnostic bulk delete query
+     *
+     * @param string $tableName
+     * @param string $placeholders
+     * @return string
+     */
+    private function buildBulkDeleteQuery(string $tableName, string $placeholders): string
+    {
+        // Get database-agnostic identifier wrapping
+        $wrappedTableName = $this->wrapIdentifier($tableName);
+        $wrappedIdColumn = $this->wrapIdentifier('id');
+
+        return "DELETE FROM {$wrappedTableName} WHERE {$wrappedIdColumn} IN ({$placeholders})";
+    }
+
+    /**
+     * Build database-agnostic bulk update query
+     *
+     * @param string $tableName
+     * @param array $setClauses
+     * @param string $placeholders
+     * @return string
+     */
+    private function buildBulkUpdateQuery(string $tableName, array $setClauses, string $placeholders): string
+    {
+        // Get database-agnostic identifier wrapping
+        $wrappedTableName = $this->wrapIdentifier($tableName);
+        $wrappedIdColumn = $this->wrapIdentifier('id');
+
+        // Wrap column names in SET clauses
+        $wrappedSetClauses = [];
+        foreach ($setClauses as $clause) {
+            // Extract column name from "column = ?" format
+            if (preg_match('/^(\w+)\s*=\s*\?$/', $clause, $matches)) {
+                $columnName = $matches[1];
+                $wrappedSetClauses[] = $this->wrapIdentifier($columnName) . ' = ?';
+            } else {
+                $wrappedSetClauses[] = $clause; // Fallback for complex clauses
+            }
+        }
+
+        return "UPDATE {$wrappedTableName} SET " . implode(', ', $wrappedSetClauses) .
+               " WHERE {$wrappedIdColumn} IN ({$placeholders})";
+    }
+
+    /**
+     * Build database-agnostic bulk soft delete query
+     *
+     * @param string $tableName
+     * @param string $statusColumn
+     * @param string $placeholders
+     * @return string
+     */
+    private function buildBulkSoftDeleteQuery(string $tableName, string $statusColumn, string $placeholders): string
+    {
+        // Get database-agnostic identifier wrapping
+        $wrappedTableName = $this->wrapIdentifier($tableName);
+        $wrappedStatusColumn = $this->wrapIdentifier($statusColumn);
+        $wrappedIdColumn = $this->wrapIdentifier('id');
+
+        return "UPDATE {$wrappedTableName} SET {$wrappedStatusColumn} = ? " .
+               "WHERE {$wrappedIdColumn} IN ({$placeholders})";
     }
 
     // Method formatBytes has been removed as it was unused

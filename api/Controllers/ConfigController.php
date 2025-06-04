@@ -11,15 +11,35 @@ class ConfigController
     public function __construct()
     {
         // Ensure ConfigManager is loaded
-        ConfigManager::load();
+        // ConfigManager::load();
     }
     public function getConfigs(): array
     {
-        // Get all configs with caching and validation through ConfigManager
-        $allConfigs = ConfigManager::all();
+        // Load config files directly from the config directory
+        $configPath = dirname(__DIR__, 2) . '/config';
+        $configFiles = glob($configPath . '/*.php');
+
+        if ($configFiles === false) {
+            return [];
+        }
 
         $groupedConfig = [];
-        foreach ($allConfigs as $name => $config) {
+        foreach ($configFiles as $file) {
+            // Skip if not a file or not readable
+            if (!is_file($file) || !is_readable($file)) {
+                continue;
+            }
+
+            $name = basename($file, '.php');
+
+            // Load the config file
+            $config = require $file;
+
+            // Validate that config file returns an array
+            if (!is_array($config)) {
+                continue;
+            }
+
             $groupedConfig[] = [
                 'name' => $name,
                 'config' => $config,
@@ -34,10 +54,24 @@ class ConfigController
         // Remove .php extension if present for consistent lookup
         $configName = str_replace('.php', '', $filename);
 
-        // Use ConfigManager with validation and caching
-        $config = ConfigManager::get($configName);
+        // Build the full path to the config file
+        $configPath = dirname(__DIR__, 2) . '/config';
+        $filePath = $configPath . '/' . $configName . '.php';
 
-        return is_array($config) ? $config : null;
+        // Check if the file exists and is readable
+        if (!file_exists($filePath) || !is_readable($filePath)) {
+            return null;
+        }
+
+        // Load the config file directly
+        $config = require $filePath;
+
+        // Validate that config file returns an array
+        if (!is_array($config)) {
+            return null;
+        }
+
+        return $config;
     }
 
     /**

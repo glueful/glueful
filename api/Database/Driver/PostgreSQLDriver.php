@@ -75,4 +75,20 @@ class PostgreSQLDriver implements DatabaseDriver
         return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
                " ON CONFLICT (id) DO UPDATE SET $updates";
     }
+
+    /**
+     * Get PostgreSQL table columns query
+     *
+     * Returns information_schema query to retrieve column names for a table.
+     * Uses current_schema() to work with the active schema.
+     *
+     * @param string $table Target table name
+     * @return string PostgreSQL query to get column information
+     */
+    public function getTableColumnsQuery(string $table): string
+    {
+        return "SELECT column_name FROM information_schema.columns " .
+               "WHERE table_name = ? AND table_schema = current_schema() " .
+               "ORDER BY ordinal_position";
+    }
 }

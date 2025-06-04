@@ -67,14 +67,32 @@ class UsersController
             $sortOrder = strtoupper($request->query->get('order', 'DESC'));
             $includeDeleted = filter_var($request->query->get('include_deleted', false), FILTER_VALIDATE_BOOLEAN);
 
-            // Add basic conditions (but avoid null conditions for now)
+            // Build conditions for filtering
             $conditions = [];
             if ($status) {
                 $conditions['status'] = $status;
             }
-            // TODO: Handle soft deletes properly - skipping for now to avoid null binding issues
 
-            $paginatedResult = $this->userRepository->paginate($page, $perPage, null, $conditions);
+            // Handle search across username and email
+            if ($search) {
+                // For complex search, we might need to use findWhere or implement search in repository
+                // For now, we'll keep it simple and let the repository handle it if it supports it
+                $conditions['search'] = $search;
+            }
+
+            // Handle role filtering
+            if ($roleId) {
+                $conditions['role_id'] = $roleId;
+            }
+
+            // Handle soft deletes
+            if (!$includeDeleted) {
+                // Only show active records (not soft deleted)
+                $conditions['deleted_at'] = null;
+            }
+
+            $orderBy = [$sortBy => $sortOrder];
+            $paginatedResult = $this->userRepository->paginate($page, $perPage, $conditions, $orderBy);
 
             // Attach roles to the users from the pagination result
             $users = $paginatedResult['data'] ?? [];

@@ -53,17 +53,6 @@ class TokenStorageService implements TokenStorageInterface
      */
     public function storeSession(array $sessionData, array $tokens): bool
     {
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_storage_attempt',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $sessionData['uuid'] ?? null,
-                'session_action' => 'store_new_session',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
-
         try {
             if ($this->useTransactions) {
                 $this->connection->getPDO()->beginTransaction();
@@ -74,8 +63,9 @@ class TokenStorageService implements TokenStorageInterface
             $refreshExpiresAt = date('Y-m-d H:i:s', time() + (int)config('session.refresh_token_lifetime', 604800));
 
             // Prepare session data for database
+            $sessionUuid = $sessionData['session_id'] ?? Utils::generateNanoID();
             $dbSessionData = [
-                'session_id' => $sessionData['session_id'] ?? Utils::generateNanoID(),
+                'uuid' => $sessionUuid,
                 'user_uuid' => $sessionData['uuid'],
                 'access_token' => $tokens['access_token'],
                 'refresh_token' => $tokens['refresh_token'],
@@ -86,7 +76,7 @@ class TokenStorageService implements TokenStorageInterface
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                 'status' => 'active',
                 'created_at' => date('Y-m-d H:i:s'),
-                'last_activity' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
                 'last_token_refresh' => date('Y-m-d H:i:s'),
                 'token_fingerprint' => hash('sha256', $tokens['access_token'])
             ];
@@ -99,24 +89,14 @@ class TokenStorageService implements TokenStorageInterface
 
             // Store in cache if enabled
             if ($this->cacheEnabled) {
-                $this->storeSessionInCache($sessionData, $tokens, $dbSessionData['session_id']);
+                $this->storeSessionInCache($sessionData, $tokens, $sessionUuid);
             }
 
             if ($this->useTransactions) {
                 $this->connection->getPDO()->commit();
             }
 
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_storage_success',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_id' => $sessionData['uuid'],
-                    'session_id' => $dbSessionData['session_id'],
-                    'session_action' => 'store_new_session',
-                ]
-            );
-
+            // Skip audit logging here - login success is already logged by the auth provider
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {

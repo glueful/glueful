@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Repository;
 
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
 
 /**
  * Permission Repository
@@ -28,15 +29,25 @@ class PermissionRepository extends BaseRepository
      * Sets up database connection and query builder
      * for permission management operations.
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'role_permissions';
-        $this->primaryKey = 'uuid';
+        // Configure repository settings before calling parent
+        $this->containsSensitiveData = false;
+        $this->sensitiveFields = [];
         $this->defaultFields = ['uuid', 'role_uuid', 'model', 'permissions', 'created_at', 'updated_at'];
 
         // Call parent constructor to set up database connection
-        parent::__construct();
+        parent::__construct($connection);
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'role_permissions';
     }
 
     /**
@@ -441,7 +452,7 @@ class PermissionRepository extends BaseRepository
      */
     public function getAllPermissions(): array
     {
-        return $this->getAll();
+        return $this->findAll();
     }
 
     /**

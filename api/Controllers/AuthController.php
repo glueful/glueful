@@ -430,7 +430,7 @@ class AuthController
 
             // Send verification email
             $result = $this->verifier->sendPasswordResetEmail($postData['email']);
-
+            error_log("[DEBUG] Password reset email result: " . json_encode($result));
             if (!$result['success']) {
                 $errorMsg = $result['message'] ?? 'Failed to send reset email';
                 return Response::error($errorMsg, Response::HTTP_BAD_REQUEST)->send();
@@ -461,8 +461,7 @@ class AuthController
     {
         try {
             $postData = Request::getPostData();
-
-            if (!isset($postData['email']) || !isset($postData['new_password'])) {
+            if (!isset($postData['email']) || !isset($postData['password'])) {
                 return Response::error('Email and new password are required', Response::HTTP_BAD_REQUEST)->send();
             }
 
@@ -472,13 +471,11 @@ class AuthController
                 return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
             }
 
-            // Hash the new password
-            $hashedPassword = password_hash($postData['new_password'], PASSWORD_DEFAULT);
-
-            // Use the service method to update the password
+            // Use the service method to update the password (this handles hashing internally)
             $success = $this->authService->updatePassword(
                 $postData['email'],
-                $hashedPassword
+                $postData['password'],
+                'email'
             );
 
             if (!$success) {

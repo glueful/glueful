@@ -7,6 +7,7 @@ namespace Glueful\Repository;
 use Glueful\DTOs\{UsernameDTO, EmailDTO};
 use Glueful\Validation\Validator;
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
 
 /**
  * User Repository
@@ -38,21 +39,30 @@ class UserRepository extends BaseRepository
      *
      * Sets up database connection and dependencies
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'users';
-        $this->primaryKey = 'uuid';
-        $this->defaultFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
+        // Configure repository settings before calling parent
         $this->containsSensitiveData = true;
         $this->sensitiveFields = ['password', 'api_key', 'remember_token', 'reset_token'];
+        $this->defaultFields = ['*'];
+        $this->hasUpdatedAt = false; // users table doesn't have updated_at column
 
         // Call parent constructor to set up database connection
-        parent::__construct();
+        parent::__construct($connection);
 
         // Initialize additional dependencies
         $this->validator = new Validator();
         $this->roleRepository = new RoleRepository();
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'users';
     }
 
     /**
@@ -75,6 +85,126 @@ class UserRepository extends BaseRepository
 
         // Use BaseRepository's findBy method
         return $this->findBy('username', $username);
+    }
+
+    /**
+     * Find user by username with profile and roles
+     *
+     * Retrieves complete user data including profile and roles in a single query.
+     * This is optimized for authentication to reduce database queries.
+     *
+     * @param string $username Username to search for
+     * @return array|null User data with profile and roles, or null if not found
+     */
+    public function findByUsernameWithProfileAndRoles(string $username): ?array
+    {
+        // Validate username format
+        $usernameDTO = new UsernameDTO($username);
+        $usernameDTO->username = $username;
+        if (!$this->validator->validate($usernameDTO)) {
+            return null;
+        }
+
+        // Build query with joins for profile and roles using wildcard pattern
+        $query = $this->db->select('users', [
+            'users.*',
+            'profiles.first_name',
+            'profiles.last_name',
+            'profiles.photo_uuid',
+            'profiles.photo_url'
+        ])
+        ->join('profiles', 'users.uuid = profiles.user_uuid', 'LEFT')
+        ->where(['users.username' => $username])
+        ->limit(1)
+        ->get();
+
+        if (empty($query)) {
+            return null;
+        }
+
+        $user = $query[0];
+
+        // Get roles in a separate query (can't easily join many-to-many in same query)
+        $roles = $this->db->select('user_roles_lookup', ['roles.name AS role_name'])
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
+            ->where(['user_roles_lookup.user_uuid' => $user['uuid']])
+            ->get();
+
+        // Format user data
+        $user['profile'] = [
+            'first_name' => $user['first_name'] ?? null,
+            'last_name' => $user['last_name'] ?? null,
+            'photo_uuid' => $user['photo_uuid'] ?? null,
+            'photo_url' => $user['photo_url'] ?? null
+        ];
+
+        // Remove profile fields from main user object
+        unset($user['first_name'], $user['last_name'], $user['photo_uuid'], $user['photo_url']);
+
+        // Add roles
+        $user['roles'] = array_column($roles, 'role_name');
+
+        return $user;
+    }
+
+    /**
+     * Find user by email with profile and roles
+     *
+     * Retrieves complete user data including profile and roles in a single query.
+     * This is optimized for authentication to reduce database queries.
+     *
+     * @param string $email Email address to search for
+     * @return array|null User data with profile and roles, or null if not found
+     */
+    public function findByEmailWithProfileAndRoles(string $email): ?array
+    {
+        // Validate email format
+        $emailDTO = new EmailDTO();
+        $emailDTO->email = $email;
+        if (!$this->validator->validate($emailDTO)) {
+            return null;
+        }
+
+        // Build query with joins for profile using wildcard pattern
+        $query = $this->db->select('users', [
+            'users.*',
+            'profiles.first_name',
+            'profiles.last_name',
+            'profiles.photo_uuid',
+            'profiles.photo_url'
+        ])
+        ->join('profiles', 'users.uuid = profiles.user_uuid', 'LEFT')
+        ->where(['users.email' => $email])
+        ->limit(1)
+        ->get();
+
+        if (empty($query)) {
+            return null;
+        }
+
+        $user = $query[0];
+
+        // Get roles in a separate query (can't easily join many-to-many in same query)
+        $roles = $this->db->select('user_roles_lookup', ['roles.name AS role_name'])
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
+            ->where(['user_roles_lookup.user_uuid' => $user['uuid']])
+            ->get();
+
+        // Format user data
+        $user['profile'] = [
+            'first_name' => $user['first_name'] ?? null,
+            'last_name' => $user['last_name'] ?? null,
+            'photo_uuid' => $user['photo_uuid'] ?? null,
+            'photo_url' => $user['photo_url'] ?? null
+        ];
+
+        // Remove profile fields from main user object
+        unset($user['first_name'], $user['last_name'], $user['photo_uuid'], $user['photo_url']);
+
+        // Add roles
+        $user['roles'] = array_column($roles, 'role_name');
+
+        return $user;
     }
 
     /**
@@ -146,13 +276,13 @@ class UserRepository extends BaseRepository
     public function getRoles(string $uuid): ?array
     {
         $query = $this->db
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN first
             ->select('user_roles_lookup', [
                 'user_roles_lookup.user_uuid',
                 'user_roles_lookup.role_uuid',
                 'roles.uuid AS role_id',
                 'roles.name AS role_name'
             ])
+            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN after select
             ->where(['user_uuid' => $uuid]) // Ensure column exists
             ->get();
 
@@ -189,7 +319,6 @@ class UserRepository extends BaseRepository
         } else {
             $user = $this->findByUUID($identifier);
         }
-
         if (!$user) {
             return false; // User not found
         }
@@ -200,10 +329,9 @@ class UserRepository extends BaseRepository
 
         // Update just the password field using the parent update method
         // The BaseRepository.auditDataAction method will automatically handle audit logging
-        $success = $this->update($user['uuid'], [
+        $success = parent::update($user['uuid'], [
             'password' => $password
-        ], $userId);
-
+        ]);
         return $success;
     }
 
@@ -214,14 +342,17 @@ class UserRepository extends BaseRepository
      * Additional profile data should be added separately.
      *
      * @param array $userData User data (username, email, password, etc.)
-     * @param string|null $createdByUserId UUID of user creating this user (for audit)
-     * @return string|null New user UUID or null on failure
+     * @return string New user UUID
+     * @throws \InvalidArgumentException If validation fails
      */
-    public function create(array $userData, ?string $createdByUserId = null): ?string
+    public function create(array $userData): string
     {
-        // Ensure required fields are present
-        if (!isset($userData['username']) || !isset($userData['email']) || !isset($userData['password'])) {
-            return null;
+        // Validate required fields
+        $required = ['username', 'email', 'password'];
+        foreach ($required as $field) {
+            if (empty($userData[$field])) {
+                throw new \InvalidArgumentException("Field '{$field}' is required");
+            }
         }
 
         // Validate username and email
@@ -231,28 +362,30 @@ class UserRepository extends BaseRepository
         $emailDTO = new EmailDTO();
         $emailDTO->email = $userData['email'];
 
-        if (!$this->validator->validate($usernameDTO) || !$this->validator->validate($emailDTO)) {
-            return null;
+        if (!$this->validator->validate($usernameDTO)) {
+            throw new \InvalidArgumentException('Invalid username format');
         }
 
-        // Set default values for optional fields
-        $userData['status'] = $userData['status'] ?? 'active';
-
-        // Generate UUID if not provided
-        if (!isset($userData['uuid'])) {
-            $userData['uuid'] = Utils::generateNanoID();
+        if (!$this->validator->validate($emailDTO)) {
+            throw new \InvalidArgumentException('Invalid email format');
         }
 
-        // Get current user ID for audit if not provided
-        if (!$createdByUserId) {
-            $currentUser = $this->getCurrentUser();
-            $createdByUserId = $currentUser['uuid'] ?? null;
+        // Check for duplicates
+        if ($this->emailExists($userData['email'])) {
+            throw new \InvalidArgumentException("Email '{$userData['email']}' already exists");
         }
 
-        // Use parent create method which handles insertion and audit logging
-        $result = parent::create($userData, $createdByUserId);
+        if ($this->usernameExists($userData['username'])) {
+            throw new \InvalidArgumentException("Username '{$userData['username']}' already exists");
+        }
 
-        return $result ? (string)$userData['uuid'] : null;
+        // Set default status if not provided
+        if (!isset($userData['status'])) {
+            $userData['status'] = 'active';
+        }
+
+        // Use parent create method which handles UUID generation and audit logging
+        return parent::create($userData);
     }
 
     /**
@@ -269,12 +402,6 @@ class UserRepository extends BaseRepository
      */
     public function update($id, array $userData, ?string $updatedByUserId = null): bool
     {
-        // Ensure user exists
-        $user = $this->findByUUID($id);
-        if (!$user) {
-            return false;
-        }
-
         // Remove fields that shouldn't be updated directly
         unset($userData['password']); // Use setNewPassword for password changes
         unset($userData['uuid']);     // Primary key shouldn't be changed
@@ -285,8 +412,8 @@ class UserRepository extends BaseRepository
             $updatedByUserId = $currentUser['uuid'] ?? null;
         }
 
-        // Use parent update method which handles update and audit logging
-        return parent::update($id, $userData, $updatedByUserId);
+        // Use parent update method which handles existence check and audit logging
+        return parent::update($id, $userData);
     }
 
     /**
@@ -331,10 +458,10 @@ class UserRepository extends BaseRepository
 
             if ($existingProfile) {
                 // Update existing profile
-                $success = parent::update($uuid, $profileData, $updatedByUserId);
+                $success = parent::update($uuid, $profileData);
             } else {
                 // Create new profile
-                $success = parent::create($profileData, $updatedByUserId) !== null;
+                $success = parent::create($profileData) !== null;
             }
         } finally {
             // Restore the original table and primary key
@@ -652,5 +779,78 @@ class UserRepository extends BaseRepository
             // even if authentication fails
         }
         return null;
+    }
+
+
+    /**
+     * Find active users
+     *
+     * @param array $orderBy Sorting criteria
+     * @param int|null $limit Maximum number of records
+     * @return array Array of active users
+     */
+    public function findActive(array $orderBy = [], ?int $limit = null): array
+    {
+        return $this->findWhere(['status' => 'active'], $orderBy, $limit);
+    }
+
+    /**
+     * Check if email exists
+     *
+     * @param string $email The email to check
+     * @param string|null $excludeUuid UUID to exclude from check (for updates)
+     * @return bool True if email exists
+     */
+    public function emailExists(string $email, ?string $excludeUuid = null): bool
+    {
+        $conditions = ['email' => $email];
+
+        if ($excludeUuid) {
+            $conditions['uuid'] = ['!=', $excludeUuid];
+        }
+
+        return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Check if username exists
+     *
+     * @param string $username The username to check
+     * @param string|null $excludeUuid UUID to exclude from check (for updates)
+     * @return bool True if username exists
+     */
+    public function usernameExists(string $username, ?string $excludeUuid = null): bool
+    {
+        $conditions = ['username' => $username];
+
+        if ($excludeUuid) {
+            $conditions['uuid'] = ['!=', $excludeUuid];
+        }
+
+        return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Update user last login timestamp
+     *
+     * @param string $uuid User UUID
+     * @return bool True if successful
+     */
+    public function updateLastLogin(string $uuid): bool
+    {
+        return $this->update($uuid, [
+            'last_login_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    /**
+     * Deactivate users by UUIDs
+     *
+     * @param array $uuids Array of user UUIDs
+     * @return int Number of affected records
+     */
+    public function deactivateUsers(array $uuids): int
+    {
+        return $this->bulkUpdate($uuids, ['status' => 'inactive']);
     }
 }

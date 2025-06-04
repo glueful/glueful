@@ -72,4 +72,21 @@ class MySQLDriver implements DatabaseDriver
         return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
                " ON DUPLICATE KEY UPDATE $updates";
     }
+
+    /**
+     * Get MySQL table columns query
+     *
+     * Returns INFORMATION_SCHEMA query to retrieve column names for a table.
+     * This query works with the current database and properly handles MySQL's
+     * INFORMATION_SCHEMA structure.
+     *
+     * @param string $table Target table name
+     * @return string MySQL query to get column information
+     */
+    public function getTableColumnsQuery(string $table): string
+    {
+        return "SELECT COLUMN_NAME as column_name FROM INFORMATION_SCHEMA.COLUMNS " .
+               "WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE() " .
+               "ORDER BY ORDINAL_POSITION";
+    }
 }

@@ -8,24 +8,22 @@ use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
+use Glueful\Repository\Interfaces\RepositoryInterface;
+use Glueful\Helpers\Utils;
 
 /**
  * Base Repository
  *
- * Abstract base class for all repositories implementing common database operations
- * with integrated audit logging. This class provides standard CRUD operations with
- * security event tracking for data manipulation actions.
- *
- * Features:
- * - Standardized database operations (create, read, update, delete)
- * - Integrated audit logging for all data modifications
- * - Transaction support for atomic operations
- * - Query builder access for custom operations
- * - Support for entity tracking and relationship management
+ * Unified repository base class combining the best features:
+ * - Modern interface implementation with type safety
+ * - Rich audit logging and security features
+ * - Transaction support and connection management
+ * - Pagination and advanced querying
+ * - UUID-first approach with fallback support
  *
  * @package Glueful\Repository
  */
-abstract class BaseRepository
+abstract class BaseRepository implements RepositoryInterface
 {
     /** @var QueryBuilder Database query builder instance */
     protected QueryBuilder $db;
@@ -33,7 +31,7 @@ abstract class BaseRepository
     /** @var string Name of the primary database table for this repository */
     protected string $table;
 
-    /** @var string Primary key field name, defaults to 'id' */
+    /** @var string Primary key field name, defaults to 'uuid' */
     protected string $primaryKey = 'uuid';
 
     /** @var bool Whether this repository handles sensitive data requiring stricter auditing */
@@ -47,6 +45,9 @@ abstract class BaseRepository
 
     /** @var AuditLogger|null Audit logger instance */
     protected ?AuditLogger $auditLogger = null;
+
+    /** @var bool Whether this table has updated_at timestamp column */
+    protected bool $hasUpdatedAt = true;
 
     /** @var Connection|null Shared database connection across all repositories */
     private static ?Connection $sharedConnection = null;
@@ -75,31 +76,340 @@ abstract class BaseRepository
     protected static function getNewQueryBuilder(): QueryBuilder
     {
         $conn = self::getSharedConnection();
-        return new QueryBuilder($conn->getPDO(), $conn->getDriver());
+        $queryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
+
+        // Enable debug mode if app is in debug mode
+        if (config('app.debug')) {
+            $queryBuilder->getLogger()->configure(enableDebug: true, enableTiming: true);
+        }
+
+        return $queryBuilder;
     }
 
     /**
      * Initialize repository
      *
-     * Sets up database connection and query builder
-     * for common database operations.
+     * Sets up database connection and query builder for common database operations.
      *
-     * @param string|null $table Optional table name override
+     * @param Connection|null $connection Optional connection override
      */
-    public function __construct(?string $table = null)
+    public function __construct(?Connection $connection = null)
     {
-        $this->db = self::getNewQueryBuilder();
-
-        if ($table) {
-            $this->table = $table;
+        if ($connection) {
+            self::$sharedConnection = $connection;
         }
+
+        $this->db = self::getNewQueryBuilder();
+        $this->table = $this->getTableName();
 
         // Get the audit logger instance
         $this->auditLogger = AuditLogger::getInstance();
     }
 
     /**
-     * Find a record by a specific field value
+     * Get the table name for this repository
+     * Must be implemented by concrete repositories
+     *
+     * @return string The table name
+     */
+    abstract public function getTableName(): string;
+
+    /**
+     * {@inheritdoc}
+     */
+    public function find(string $uuid): ?array
+    {
+        $results = $this->db->select($this->table, $this->defaultFields)
+            ->where([$this->primaryKey => $uuid])
+            ->limit(1)
+            ->get();
+
+        return !empty($results) ? $results[0] : null;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function findAll(array $conditions = [], array $orderBy = [], ?int $limit = null, ?int $offset = null): array
+    {
+        $query = $this->db->select($this->table, $this->defaultFields)
+            ->where($conditions);
+
+        if (!empty($orderBy)) {
+            $query->orderBy($orderBy);
+        }
+
+        if ($limit !== null) {
+            $query->limit($limit);
+            if ($offset !== null) {
+                $query->offset($offset);
+            }
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function create(array $data): string
+    {
+        // Generate UUID if not provided
+        if (!isset($data[$this->primaryKey])) {
+            $data[$this->primaryKey] = Utils::generateNanoID();
+        }
+
+        // Add timestamps if not present
+        if (!isset($data['created_at'])) {
+            $data['created_at'] = date('Y-m-d H:i:s');
+        }
+        if ($this->hasUpdatedAt && !isset($data['updated_at'])) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+
+        // Execute the insert
+        $success = $this->db->insert($this->table, $data);
+
+        if (!$success) {
+            throw new \RuntimeException('Failed to create record');
+        }
+
+        $uuid = $data[$this->primaryKey];
+
+        // Audit log the creation
+        $this->auditDataAction('create', $uuid, $data);
+
+        return $uuid;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function update(string $uuid, array $data): bool
+    {
+        // Add updated timestamp if table has this column
+        if ($this->hasUpdatedAt) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+
+        // Debug logging
+        error_log("BaseRepository::update - Table: {$this->table}, PrimaryKey: {$this->primaryKey}, UUID: {$uuid}, Data: " . json_encode($data));
+
+        // Execute the update
+        $affectedRows = $this->db->update(
+            $this->table,
+            $data,
+            [$this->primaryKey => $uuid]
+        );
+
+        error_log("BaseRepository::update - Affected rows: {$affectedRows}");
+
+        $success = $affectedRows > 0;
+
+        if ($success) {
+            // Audit log the update (without original data comparison)
+            $this->auditDataAction('update', $uuid, $data);
+        }
+
+        return $success;
+    }
+
+
+    /**
+     * {@inheritdoc}
+     */
+    public function delete(string $uuid): bool
+    {
+        // Get the record before deleting (for audit log)
+        $originalData = $this->find($uuid);
+
+        if (!$originalData) {
+            return false;
+        }
+
+        // Execute the delete
+        $affectedRows = $this->db->delete(
+            $this->table,
+            [$this->primaryKey => $uuid]
+        );
+
+        $success = $affectedRows > 0;
+
+        if ($success) {
+            // Audit log the deletion
+            $this->auditDataAction('delete', $uuid, [], null, $originalData);
+        }
+
+        return $success;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function count(array $conditions = []): int
+    {
+        return $this->db->count($this->table, $conditions);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function exists(string $uuid): bool
+    {
+        return $this->count([$this->primaryKey => $uuid]) > 0;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function paginate(
+        int $page,
+        int $perPage,
+        array $conditions = [],
+        array $orderBy = [],
+        array $fields = []
+    ): array {
+        // Use QueryBuilder's built-in pagination
+        $query = $this->db->select(
+            $this->table,
+            !empty($fields) ? $fields : $this->defaultFields
+        )->where($conditions);
+
+        // Add ordering if specified
+        if (!empty($orderBy)) {
+            $query->orderBy($orderBy);
+        }
+
+        // Execute paginate on the query builder
+        return $query->paginate($page, $perPage);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function findWhere(array $where, array $orderBy = [], ?int $limit = null): array
+    {
+        $query = $this->db->select($this->table, $this->defaultFields)
+            ->where($where);
+
+        if (!empty($orderBy)) {
+            $query->orderBy($orderBy);
+        }
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function bulkCreate(array $records): array
+    {
+        $uuids = [];
+
+        $this->beginTransaction();
+        try {
+            foreach ($records as $record) {
+                $uuids[] = $this->create($record);
+            }
+            $this->commit();
+        } catch (\Exception $e) {
+            $this->rollBack();
+            throw $e;
+        }
+
+        return $uuids;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function bulkUpdate(array $uuids, array $data): int
+    {
+        if (empty($uuids)) {
+            return 0;
+        }
+
+        if ($this->hasUpdatedAt && !isset($data['updated_at'])) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+
+        $affectedRows = $this->db->update(
+            $this->table,
+            $data,
+            [$this->primaryKey => ['IN', $uuids]]
+        );
+
+        // Audit log bulk update
+        $this->auditDataAction('bulk_update', implode(',', $uuids), $data);
+
+        return $affectedRows;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function bulkDelete(array $uuids): int
+    {
+        if (empty($uuids)) {
+            return 0;
+        }
+
+        $affectedRows = $this->db->delete(
+            $this->table,
+            [$this->primaryKey => ['IN', $uuids]]
+        );
+
+        // Ensure we return an integer count
+        $count = is_bool($affectedRows) ? ($affectedRows ? count($uuids) : 0) : $affectedRows;
+
+        // Audit log bulk delete
+        $this->auditDataAction('bulk_delete', implode(',', $uuids), []);
+
+        return $count;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function softDelete(string $uuid, string $statusColumn = 'status', $deletedValue = 'deleted'): bool
+    {
+        $updateData = [$statusColumn => $deletedValue];
+        if ($this->hasUpdatedAt) {
+            $updateData['updated_at'] = date('Y-m-d H:i:s');
+        }
+        $success = $this->update($uuid, $updateData);
+
+        if ($success) {
+            // Audit log soft delete
+            $this->auditDataAction('soft_delete', $uuid, [$statusColumn => $deletedValue]);
+        }
+
+        return $success;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function bulkSoftDelete(array $uuids, string $statusColumn = 'status', $deletedValue = 'deleted'): int
+    {
+        $affectedRows = $this->bulkUpdate($uuids, [
+            $statusColumn => $deletedValue
+        ]);
+
+        // Audit log bulk soft delete
+        $this->auditDataAction('bulk_soft_delete', implode(',', $uuids), [$statusColumn => $deletedValue]);
+
+        return $affectedRows;
+    }
+
+    // Legacy methods for backward compatibility
+
+    /**
+     * Find a record by a specific field value (legacy support)
      *
      * @param string $field Field name
      * @param mixed $value Field value
@@ -117,7 +427,7 @@ abstract class BaseRepository
     }
 
     /**
-     * Find all records matching a specific field value
+     * Find all records matching a specific field value (legacy support)
      *
      * @param string $field Field name
      * @param mixed $value Field value
@@ -129,79 +439,6 @@ abstract class BaseRepository
         return $this->db->select($this->table, $fields ?? $this->defaultFields)
             ->where([$field => $value])
             ->get();
-    }
-
-    /**
-     * Get all records
-     *
-     * @param array|null $fields Fields to retrieve
-     * @return array All records
-     */
-    public function getAll(?array $fields = null): array
-    {
-        return $this->db->select($this->table, $fields ?? $this->defaultFields)
-            ->get();
-    }
-
-    /**
-     * Create a new record
-     *
-     * @param array $data Record data
-     * @param string|null $userId ID of user performing the action
-     * @return string|int ID of created record
-     */
-    public function create(array $data, ?string $userId = null)
-    {
-        // Execute the insert
-        $id = $this->db->insert($this->table, $data);
-
-        // Audit log the creation
-        $this->auditDataAction('create', $id, $data, $userId);
-
-        return $id;
-    }
-
-    /**
-     * Update an existing record
-     *
-     * @param string|int $id Record identifier
-     * @param array $data Updated data
-     * @param string|null $userId ID of user performing the action
-     * @return bool Success status
-     */
-    public function update($id, array $data, ?string $userId = null): bool
-    {
-        // Get the original record before updating (for audit comparison)
-        $originalData = $this->findBy($this->primaryKey, $id);
-
-        // Execute the update
-        $result = $this->db->update($this->table, $data, [$this->primaryKey => $id]);
-
-        // Audit log the update with the changes
-        $this->auditDataAction('update', $id, $data, $userId, $originalData);
-
-        return $result > 0;
-    }
-
-    /**
-     * Delete a record
-     *
-     * @param string|int $id Record identifier
-     * @param string|null $userId ID of user performing the action
-     * @return bool Success status
-     */
-    public function delete($id, ?string $userId = null): bool
-    {
-        // Get the record before deleting (for audit log)
-        $originalData = $this->findBy($this->primaryKey, $id);
-
-        // Execute the delete
-        $result = $this->db->delete($this->table, [$this->primaryKey => $id]);
-
-        // Audit log the deletion
-        $this->auditDataAction('delete', $id, [], $userId, $originalData);
-
-        return $result > 0;
     }
 
     /**
@@ -222,8 +459,6 @@ abstract class BaseRepository
 
     /**
      * Roll back a database transaction
-     *
-     * @return bool Success status
      */
     public function rollBack(): bool
     {
@@ -256,52 +491,17 @@ abstract class BaseRepository
     }
 
     /**
-     * Perform a paginated query
-     *
-     * @param int $page Page number (1-based)
-     * @param int $perPage Items per page
-     * @param array|null $fields Fields to retrieve
-     * @param array $conditions WHERE conditions
-     * @param array $orderBy Order by specification
-     * @return array Paginated results with metadata
-     */
-    public function paginate(
-        int $page = 1,
-        int $perPage = 15,
-        ?array $fields = null,
-        array $conditions = [],
-        array $orderBy = []
-    ): array {
-        // Select with the table, fields and conditions
-        $query = $this->db->select(
-            $this->table,
-            $fields ?? $this->defaultFields,
-            $conditions
-        );
-
-        // Add ordering if specified
-        if (!empty($orderBy)) {
-            $query->orderBy($orderBy);
-        }
-
-        // Execute paginate on the query builder
-        $result = $query->paginate($page, $perPage);
-        return $result;
-    }
-
-    /**
      * Audit log a data action
      *
      * @param string $action The action being performed (create, update, delete, etc.)
-     * @param string|int $resourceId ID of the affected resource
+     * @param string $resourceId ID of the affected resource
      * @param array $newData New data being applied
      * @param string|null $userId ID of user performing the action (if available)
      * @param array|null $originalData Original data before changes (for updates/deletes)
-     * @return void
      */
     protected function auditDataAction(
         string $action,
-        $resourceId,
+        string $resourceId,
         array $newData,
         ?string $userId = null,
         ?array $originalData = null
@@ -347,7 +547,6 @@ abstract class BaseRepository
                                 }
                             }
                         }
-
                         $context['changes'] = $changes;
                     }
                     break;
@@ -372,7 +571,7 @@ abstract class BaseRepository
         if (isset($backtrace[1])) {
             $caller = $backtrace[1];
             $context['source'] = [
-                'class' => isset($caller['class']) ? $caller['class'] : null,
+                'class' => $caller['class'] ?? null,
                 'function' => $caller['function'],
             ];
         }
