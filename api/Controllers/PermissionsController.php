@@ -52,11 +52,9 @@ class PermissionsController
 
             // Build query for permissions
             $results = $this->queryBuilder
-            ->join('roles', 'role_permissions.role_uuid = roles.uuid', 'INNER') // Ensure the JOIN is applied
             ->select('role_permissions', [
-                'role_permissions.model',
-                'role_permissions.permissions',
-                'roles.name'
+                $this->queryBuilder->raw('DISTINCT model'),
+                'permissions',
             ])
             ->paginate($page, $perPage);
 

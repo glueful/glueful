@@ -85,14 +85,29 @@ class UsersController
                 $conditions['role_id'] = $roleId;
             }
 
-            // Handle soft deletes
-            if (!$includeDeleted) {
-                // Only show active records (not soft deleted)
-                $conditions['deleted_at'] = null;
+            $orderBy = [$sortBy => $sortOrder];
+
+            // Use the query builder directly to handle soft deletes properly
+            $query = $this->getQueryBuilder()->select('users', [
+                'uuid', 'username', 'email', 'status', 'created_at', 'last_login_date'
+            ]);
+
+            // Add standard WHERE conditions
+            if (!empty($conditions)) {
+                $query->where($conditions);
             }
 
-            $orderBy = [$sortBy => $sortOrder];
-            $paginatedResult = $this->userRepository->paginate($page, $perPage, $conditions, $orderBy);
+            // Handle soft deletes with proper NULL checking
+            if (!$includeDeleted) {
+                $query->whereNull('deleted_at');
+            }
+
+            // Add ordering
+            if (count($orderBy) > 0) {
+                $query->orderBy($orderBy);
+            }
+
+            $paginatedResult = $query->paginate($page, $perPage);
 
             // Attach roles to the users from the pagination result
             $users = $paginatedResult['data'] ?? [];

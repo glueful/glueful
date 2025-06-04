@@ -270,7 +270,12 @@ abstract class BaseRepository implements RepositoryInterface
         $query = $this->db->select(
             $this->table,
             !empty($fields) ? $fields : $this->defaultFields
-        )->where($conditions);
+        );
+
+        // Only add conditions if they exist
+        if (!empty($conditions)) {
+            $query->where($conditions);
+        }
 
         // Add ordering if specified
         if (!empty($orderBy)) {
