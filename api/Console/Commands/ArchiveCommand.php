@@ -622,7 +622,6 @@ class ArchiveCommand extends Command
             }
 
             return $report['healthy'] ? Command::SUCCESS : Command::FAILURE;
-
         } catch (\Exception $e) {
             $this->error("Health check failed: " . $e->getMessage());
             return Command::FAILURE;
