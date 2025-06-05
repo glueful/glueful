@@ -70,8 +70,10 @@ class CreateArchiveSystemTables implements MigrationInterface
             ['type' => 'INDEX', 'column' => 'table_name'],
             ['type' => 'INDEX', 'column' => 'archive_date'],
             ['type' => 'INDEX', 'column' => 'status'],
-            ['type' => 'INDEX', 'columns' => ['table_name', 'archive_date']],
-            ['type' => 'INDEX', 'columns' => ['period_start', 'period_end']]
+            ['type' => 'INDEX', 'column' => 'table_name'],
+            ['type' => 'INDEX', 'column' => 'archive_date'],
+            ['type' => 'INDEX', 'column' => 'period_start'],
+            ['type' => 'INDEX', 'column' => 'period_end']
         ]);
 
         // Create Archive Search Index Table
@@ -86,8 +88,10 @@ class CreateArchiveSystemTables implements MigrationInterface
             'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
         ])->addIndex([
             ['type' => 'INDEX', 'column' => 'archive_uuid'],
-            ['type' => 'INDEX', 'columns' => ['entity_type', 'entity_value']],
-            ['type' => 'INDEX', 'columns' => ['first_occurrence', 'last_occurrence']]
+            ['type' => 'INDEX', 'column' => 'entity_type'],
+            ['type' => 'INDEX', 'column' => 'entity_value'],
+            ['type' => 'INDEX', 'column' => 'first_occurrence'],
+            ['type' => 'INDEX', 'column' => 'last_occurrence']
         ])->addForeignKey([
             [
                 'column' => 'archive_uuid',
