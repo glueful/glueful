@@ -6,7 +6,6 @@ namespace Glueful\Repository;
 
 use Glueful\DTOs\{UsernameDTO, EmailDTO};
 use Glueful\Validation\Validator;
-use Glueful\Helpers\Utils;
 use Glueful\Database\Connection;
 
 /**

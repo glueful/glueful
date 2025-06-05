@@ -10,7 +10,6 @@ use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
-use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 
 /**
  * Token Management System

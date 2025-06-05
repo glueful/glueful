@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Auth\AuthBootstrap;
+use Glueful\Auth\{AuthBootstrap, PasswordHasher};
 use Glueful\Permissions\Permission;
 use Glueful\Permissions\PermissionManager;
 use Glueful\Repository\RepositoryFactory;
@@ -193,6 +193,16 @@ class ResourceController
                 if (!PermissionManager::can($params['resource'], Permission::SAVE->value, $token)) {
                     return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
                 }
+            }
+
+            if (empty($postData)) {
+                return Response::error('No data provided', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            // check if postData conatains 'password' and hash it
+            $passwordHasher = new PasswordHasher();
+            if (isset($postData['password'])) {
+                $postData['password'] = $passwordHasher->hash($postData['password']);
             }
 
             // Get repository and create record
