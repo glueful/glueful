@@ -273,6 +273,12 @@ class ResourceController
             $updateData = $putData['data'] ?? $putData;
             unset($updateData['uuid']); // Remove UUID from update data
 
+            // check if postData conatains 'password' and hash it
+            $passwordHasher = new PasswordHasher();
+            if (isset($updateData['password'])) {
+                $updateData['password'] = $passwordHasher->hash($updateData['password']);
+            }
+
             $success = $repository->update($params['uuid'], $updateData);
 
             if (!$success) {
