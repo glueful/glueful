@@ -8,11 +8,13 @@ use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\DI\Interfaces\ServiceProviderInterface;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
+use Glueful\Database\Schema\SchemaManager;
 use Glueful\Cache\CacheFactory;
 use Glueful\Cache\Drivers\CacheDriverInterface;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\TokenManager;
 use Glueful\Helpers\ConfigManager;
+use Glueful\Security\RandomStringGenerator;
 
 /**
  * Core Service Provider
@@ -31,6 +33,16 @@ class CoreServiceProvider implements ServiceProviderInterface
         $container->bind(QueryBuilder::class, function ($container) {
             $connection = $container->get(Connection::class);
             return new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        });
+
+        $container->singleton(SchemaManager::class, function ($container) {
+            $connection = $container->get(Connection::class);
+            return $connection->getSchemaManager();
+        });
+
+        // Security services
+        $container->singleton(RandomStringGenerator::class, function ($container) {
+            return new RandomStringGenerator();
         });
 
         // Cache services

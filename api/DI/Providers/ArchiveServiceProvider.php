@@ -66,14 +66,14 @@ class ArchiveServiceProvider implements ServiceProviderInterface
     {
 
         return [
-            'storage_path' => config(('archive.storage.path')),
-            'encryption_key' => config(('archive.encryption.key')),
-            'compression' => config(('archive.compression.algorithm')),
-            'chunk_size' => config(('archive.processing.chunk_size')),
-            'verify_checksums' => config(('archive.processing.verify_checksums')),
-            'auto_cleanup_failed' => config(('archive.processing.auto_cleanup_failed')),
-            'max_archive_size' => config(('archive.storage.max_archive_size')),
-            'retention_policies' => config(('archive.retention_policies'))
+            'storage_path' => config('archive.storage.path'),
+            'encryption_key' => config('archive.encryption.key'),
+            'compression' => config('archive.compression.algorithm'),
+            'chunk_size' => config('archive.processing.chunk_size'),
+            'verify_checksums' => config('archive.processing.verify_checksums'),
+            'auto_cleanup_failed' => config('archive.processing.auto_cleanup_failed'),
+            'max_archive_size' => config('archive.storage.max_archive_size'),
+            'retention_policies' => config('archive.retention_policies')
         ];
     }
 }

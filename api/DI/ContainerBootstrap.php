@@ -9,6 +9,7 @@ use Glueful\DI\Interfaces\ServiceProviderInterface;
 use Glueful\DI\Providers\CoreServiceProvider;
 use Glueful\DI\Providers\RepositoryServiceProvider;
 use Glueful\DI\Providers\ControllerServiceProvider;
+use Glueful\DI\Providers\ArchiveServiceProvider;
 
 /**
  * Container Bootstrap
@@ -34,6 +35,7 @@ class ContainerBootstrap
         $container->register(new CoreServiceProvider());
         $container->register(new RepositoryServiceProvider());
         $container->register(new ControllerServiceProvider());
+        $container->register(new ArchiveServiceProvider());
 
         // Boot all providers
         $container->boot();
