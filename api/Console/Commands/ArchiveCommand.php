@@ -8,6 +8,7 @@ use Glueful\Console\Command;
 use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Services\Archive\ArchiveServiceInterface;
 use Glueful\Services\Archive\DTOs\ArchiveSearchQuery;
+use Glueful\Services\Archive\ArchiveHealthChecker;
 
 /**
  * Archive Management Command
@@ -52,7 +53,8 @@ class ArchiveCommand extends Command
         'track'       => 'Track table growth: track <table>',
         'list'        => 'List archives for table: list <table>',
         'cleanup'     => 'Clean up failed archives',
-        'auto'        => 'Run automatic archiving for all eligible tables'
+        'auto'        => 'Run automatic archiving for all eligible tables',
+        'health'      => 'Run comprehensive health check on archive system'
     ];
 
     /** @var ContainerInterface|null DI Container */
@@ -114,6 +116,7 @@ class ArchiveCommand extends Command
 
         $help .= "\nExamples:\n";
         $help .= "  php glueful archive status          - Show system status\n";
+        $help .= "  php glueful archive health           - Run comprehensive health check\n";
         $help .= "  php glueful archive audit_logs 90   - Archive audit logs older than 90 days\n";
         $help .= "  php glueful archive search --user=123 --start=2024-01-01\n";
         $help .= "  php glueful archive verify abc123   - Verify specific archive\n";
@@ -175,6 +178,9 @@ class ArchiveCommand extends Command
 
                 case 'auto':
                     return $this->runAutoArchiving();
+
+                case 'health':
+                    return $this->runHealthCheck();
 
                 default:
                     $this->error("Action not implemented: $action");
@@ -538,6 +544,89 @@ class ArchiveCommand extends Command
         $pow = min($pow, count($units) - 1);
 
         return round($bytes / (1024 ** $pow), 2) . ' ' . $units[$pow];
+    }
+
+    /**
+     * Run comprehensive health check
+     */
+    private function runHealthCheck(): int
+    {
+        $this->info("Running archive system health check...\n");
+
+        try {
+            $healthChecker = new ArchiveHealthChecker(
+                $this->container->get(\Glueful\Database\QueryBuilder::class)
+            );
+
+            $report = $healthChecker->getDetailedHealthReport();
+
+            // Display health status
+            $status = $report['healthy'] ? '✓ HEALTHY' : '✗ CRITICAL';
+            $statusColor = $report['healthy'] ? "\033[32m" : "\033[31m"; // Green or Red
+            $this->info("{$statusColor}System Status: {$status}\033[0m");
+            $this->info("Checked at: " . $report['timestamp']);
+
+            // Display issues if any
+            if (!empty($report['issues'])) {
+                $this->info("\n🚨 Critical Issues:");
+                foreach ($report['issues'] as $issue) {
+                    $this->error("  - {$issue}");
+                }
+            }
+
+            // Display warnings if any
+            if (!empty($report['warnings'])) {
+                $this->info("\n⚠️  Warnings:");
+                foreach ($report['warnings'] as $warning) {
+                    $this->info("  - {$warning}");
+                }
+            }
+
+            // Display metrics
+            if (!empty($report['metrics'])) {
+                $this->info("\n📊 Metrics:");
+
+                // Storage metrics
+                if (isset($report['metrics']['storage'])) {
+                    $storage = $report['metrics']['storage'];
+                    $this->info("  Storage:");
+                    $this->info("    - Total: " . $this->formatBytes($storage['total_space']));
+                    $this->info("    - Used: " . $this->formatBytes($storage['used_space']) .
+                               sprintf(" (%.1f%%)", $storage['usage_percent']));
+                    $this->info("    - Archives: " . $this->formatBytes($storage['archive_size']) .
+                               sprintf(" (%.1f%%)", $storage['archive_percent']));
+                }
+
+                // Archive distribution
+                if (isset($report['metrics']['age_distribution'])) {
+                    $dist = $report['metrics']['age_distribution'];
+                    $this->info("  Archive Age Distribution:");
+                    $this->info("    - Last week: " . number_format($dist['last_week']));
+                    $this->info("    - Last month: " . number_format($dist['last_month']));
+                    $this->info("    - Last quarter: " . number_format($dist['last_quarter']));
+                    $this->info("    - Total: " . number_format($dist['total']));
+                }
+
+                // Failed archives
+                if (isset($report['metrics']['failed_archives'])) {
+                    $this->info("  Failed Archives: " . $report['metrics']['failed_archives']);
+                }
+            }
+
+            // Display recommendations
+            if (!empty($report['recommendations'])) {
+                $this->info("\n💡 Recommendations:");
+                foreach ($report['recommendations'] as $recommendation) {
+                    $this->info("  - {$recommendation}");
+                }
+            }
+
+            return $report['healthy'] ? Command::SUCCESS : Command::FAILURE;
+
+        } catch (\Exception $e) {
+            $this->error("Health check failed: " . $e->getMessage());
+            return Command::FAILURE;
+        }
     }
 
     /**
