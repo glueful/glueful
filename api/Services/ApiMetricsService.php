@@ -6,6 +6,7 @@ use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Cache\CacheEngine;
 use Glueful\Database\Schema\SchemaManager;
+use Glueful\Helpers\Utils;
 use Exception;
 
 /**
@@ -153,6 +154,7 @@ class ApiMetricsService
             foreach ($pendingMetrics as $metric) {
                 try {
                     $this->db->insert($this->metricsTable, [
+                        'uuid' => Utils::generateNanoID(),
                         'endpoint' => $metric['endpoint'],
                         'method' => $metric['method'],
                         'response_time' => $metric['response_time'],
@@ -207,6 +209,7 @@ class ApiMetricsService
         } else {
             // Create new aggregate
             $this->db->insert($this->dailyMetricsTable, [
+                'uuid' => Utils::generateNanoID(),
                 'date' => $date,
                 'endpoint' => $metric['endpoint'],
                 'method' => $metric['method'],
@@ -264,6 +267,7 @@ class ApiMetricsService
             ], false);
 
             $this->db->insert($this->rateLimitsTable, [
+                'uuid' => Utils::generateNanoID(),
                 'ip' => $ip,
                 'endpoint' => $endpoint,
                 'remaining' => $rateLimit['limit'] - $rateLimit['count'],
@@ -521,6 +525,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->metricsTable)) {
                 $this->schemaManager->createTable($this->metricsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'method' => 'VARCHAR(10) NOT NULL',
                     'response_time' => 'FLOAT NOT NULL',
@@ -546,6 +551,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->dailyMetricsTable)) {
                 $this->schemaManager->createTable($this->dailyMetricsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'date' => 'DATE NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'method' => 'VARCHAR(10) NOT NULL',
@@ -572,6 +578,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->rateLimitsTable)) {
                 $this->schemaManager->createTable($this->rateLimitsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'ip' => 'VARCHAR(45) NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'remaining' => 'INT NOT NULL',
