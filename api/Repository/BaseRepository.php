@@ -199,8 +199,6 @@ abstract class BaseRepository implements RepositoryInterface
             [$this->primaryKey => $uuid]
         );
 
-        error_log("BaseRepository::update - Affected rows: {$affectedRows}");
-
         $success = $affectedRows > 0;
 
         if ($success) {

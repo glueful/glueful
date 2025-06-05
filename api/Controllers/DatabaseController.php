@@ -380,6 +380,11 @@ class DatabaseController
             // Execute query with pagination
             $results = $query->paginate($page, $perPage);
 
+            // Resolve foreign key display labels
+            if (!empty($results['data'])) {
+                $results['data'] = $this->resolveForeignKeyDisplayLabels($results['data'], $columns);
+            }
+
             // Add column metadata to results
             $results['columns'] = $columns;
 
@@ -2554,5 +2559,235 @@ class DatabaseController
         }
 
         return $validFilters;
+    }
+
+    /**
+     * Resolve foreign key fields to include human-readable display labels
+     *
+     * @param array $records The data records from the query
+     * @param array $columns Column metadata from SchemaManager
+     * @return array Records with added foreign key display labels
+     */
+    private function resolveForeignKeyDisplayLabels(array $records, array $columns): array
+    {
+        // Get foreign key columns
+        $foreignKeyColumns = array_filter($columns, function ($col) {
+            return !empty($col['relationships']);
+        });
+
+        if (empty($foreignKeyColumns)) {
+            return $records; // No foreign keys to resolve
+        }
+
+        // Group foreign keys by referenced table for efficient querying
+        $foreignKeyGroups = [];
+        foreach ($foreignKeyColumns as $column) {
+            $relationship = $column['relationships'][0]; // Use first relationship
+            $referencedTable = $relationship['references_table'];
+
+            if (!isset($foreignKeyGroups[$referencedTable])) {
+                $foreignKeyGroups[$referencedTable] = [
+                    'columns' => [],
+                    'values' => []
+                ];
+            }
+
+            $foreignKeyGroups[$referencedTable]['columns'][] = [
+                'local_column' => $column['name'],
+                'referenced_column' => $relationship['references_column']
+            ];
+        }
+
+        // Collect all foreign key values
+        foreach ($records as $record) {
+            foreach ($foreignKeyGroups as $table => &$group) {
+                foreach ($group['columns'] as $columnMap) {
+                    $value = $record[$columnMap['local_column']];
+                    if ($value !== null && !in_array($value, $group['values'])) {
+                        $group['values'][] = $value;
+                    }
+                }
+            }
+        }
+
+        // Fetch display labels for each referenced table
+        $displayLabels = [];
+        foreach ($foreignKeyGroups as $referencedTable => $group) {
+            if (count($group['values']) === 0) {
+                continue;
+            }
+
+            try {
+                // Get referenced table columns for smart labeling
+                $referencedColumns = $this->schemaManager->getTableColumns($referencedTable);
+
+                // Fetch records from referenced table
+                $placeholders = implode(',', array_fill(0, count($group['values']), '?'));
+                $referencedColumn = $group['columns'][0]['referenced_column'];
+
+                $sql = "SELECT * FROM `{$referencedTable}` WHERE `{$referencedColumn}` IN ({$placeholders})";
+                $stmt = $this->queryBuilder->executeQuery($sql, $group['values']);
+                $referencedRecords = $stmt->fetchAll();
+
+                // Generate smart labels for each record
+                foreach ($referencedRecords as $referencedRecord) {
+                    $label = $this->generateSmartLabel($referencedRecord, $referencedColumns);
+                    $displayLabels[$referencedTable][$referencedRecord[$referencedColumn]] = $label;
+                }
+            } catch (\Exception $e) {
+                error_log("Error resolving foreign key labels for {$referencedTable}: " . $e->getMessage());
+            }
+        }
+
+        // Add display labels to records
+        foreach ($records as &$record) {
+            foreach ($foreignKeyColumns as $column) {
+                $relationship = $column['relationships'][0];
+                $referencedTable = $relationship['references_table'];
+                $referencedColumn = $relationship['references_column'];
+                $localColumn = $column['name'];
+
+                $value = $record[$localColumn];
+                if ($value !== null && isset($displayLabels[$referencedTable][$value])) {
+                    $record[$localColumn . '_display'] = $displayLabels[$referencedTable][$value];
+                }
+            }
+        }
+
+        return $records;
+    }
+
+    /**
+     * Generate smart display label using the same logic as frontend
+     *
+     * @param array $record The database record
+     * @param array $columns Column metadata for the table
+     * @return string Human-readable display label
+     */
+    private function generateSmartLabel(array $record, array $columns): string
+    {
+        $displayableColumns = $this->getDisplayableColumnsForLabels($columns);
+        $bestFields = $this->selectBestDisplayFields($displayableColumns, $record);
+
+        if (count($bestFields) === 1) {
+            return (string)$bestFields[0]['value'];
+        } elseif (count($bestFields) >= 2) {
+            return implode(' - ', array_map(function ($f) {
+                return $f['value'];
+            }, $bestFields));
+        }
+
+        // Fallback: First two non-system fields
+        $nonSystemValues = [];
+        foreach ($record as $key => $value) {
+            if (
+                !in_array($key, ['id', 'created_at', 'updated_at', 'deleted_at']) &&
+                !str_contains($key, 'password') &&
+                $value !== null && $value !== ''
+            ) {
+                $nonSystemValues[] = $value;
+                if (count($nonSystemValues) >= 2) {
+                    break;
+                }
+            }
+        }
+
+        return implode(' - ', $nonSystemValues) ?: 'Record #' . ($record['id'] ?? 'Unknown');
+    }
+
+    /**
+     * Filter columns suitable for display (same logic as frontend)
+     *
+     * @param array $columns Column metadata
+     * @return array Filtered columns suitable for display
+     */
+    private function getDisplayableColumnsForLabels(array $columns): array
+    {
+        return array_filter($columns, function ($col) {
+            // Exclude system/technical fields
+            if (
+                str_contains($col['name'], '_at') ||
+                str_contains($col['name'], 'password') ||
+                str_contains($col['name'], 'token') ||
+                str_contains($col['name'], 'user_agent') ||
+                str_contains($col['name'], 'ip_address') ||
+                $col['extra'] === 'auto_increment'
+            ) {
+                return false;
+            }
+
+            // Prefer text fields for display
+            if (str_contains($col['type'], 'varchar') || str_contains($col['type'], 'text')) {
+                return true;
+            }
+
+            // Include unique identifiers
+            if ($col['is_unique'] && !$col['is_primary']) {
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Score and select best fields for display (same logic as frontend)
+     *
+     * @param array $columns Filtered displayable columns
+     * @param array $record The database record
+     * @return array Top scored fields for display
+     */
+    private function selectBestDisplayFields(array $columns, array $record): array
+    {
+        $scoredFields = [];
+
+        foreach ($columns as $col) {
+            $score = 0;
+
+            // High scores for name-like fields
+            if (preg_match('/^(name|title|label|display_name)$/i', $col['name'])) {
+                $score += 100;
+            }
+            if (preg_match('/name$/i', $col['name'])) {
+                $score += 80;
+            }
+
+            // Medium scores for unique identifiers
+            if ($col['is_unique']) {
+                $score += 60;
+            }
+            if (preg_match('/^(username|email|code|slug)$/i', $col['name'])) {
+                $score += 50;
+            }
+
+            // Bonus for varchar fields
+            if (str_contains($col['type'], 'varchar')) {
+                $score += 20;
+            }
+
+            // Penalties
+            if (str_contains($col['type'], '512') || str_contains($col['type'], '1000')) {
+                $score -= 10;
+            }
+            if (preg_match('/^(uuid|guid|hash)$/i', $col['name'])) {
+                $score -= 30;
+            }
+
+            // Check if field has meaningful data
+            $value = $record[$col['name']] ?? null;
+            if (empty($value) || (is_string($value) && trim($value) === '')) {
+                $score = 0;
+            }
+
+            if ($score > 0) {
+                $scoredFields[] = ['column' => $col, 'score' => $score, 'value' => $value];
+            }
+        }
+
+        // Sort by score and return top 2
+        usort($scoredFields, function ($a, $b) {
+            return $b['score'] <=> $a['score'];
+        });
+        return array_slice($scoredFields, 0, 2);
     }
 }
