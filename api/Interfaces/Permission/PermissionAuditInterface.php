@@ -45,7 +45,13 @@ interface PermissionAuditInterface
      * @param array $context Additional context (IP, reason, etc.)
      * @return bool True if logged successfully
      */
-    public function logPermissionGranted(string $userUuid, string $permission, string $resource, string $grantedBy, array $context = []): bool;
+    public function logPermissionGranted(
+        string $userUuid,
+        string $permission,
+        string $resource,
+        string $grantedBy,
+        array $context = []
+    ): bool;
 
     /**
      * Log permission revoked event
@@ -59,7 +65,13 @@ interface PermissionAuditInterface
      * @param array $context Additional context (IP, reason, etc.)
      * @return bool True if logged successfully
      */
-    public function logPermissionRevoked(string $userUuid, string $permission, string $resource, string $revokedBy, array $context = []): bool;
+    public function logPermissionRevoked(
+        string $userUuid,
+        string $permission,
+        string $resource,
+        string $revokedBy,
+        array $context = []
+    ): bool;
 
     /**
      * Log access attempt
@@ -74,7 +86,13 @@ interface PermissionAuditInterface
      * @param array $context Additional context (IP, user agent, etc.)
      * @return bool True if logged successfully
      */
-    public function logAccessAttempt(string $userUuid, string $permission, string $resource, bool $granted, array $context = []): bool;
+    public function logAccessAttempt(
+        string $userUuid,
+        string $permission,
+        string $resource,
+        bool $granted,
+        array $context = []
+    ): bool;
 
     /**
      * Log role assignment
@@ -139,7 +157,12 @@ interface PermissionAuditInterface
      * @param int $offset Offset for pagination
      * @return array Audit trail records
      */
-    public function getResourceAuditTrail(string $resource, array $filters = [], int $limit = 100, int $offset = 0): array;
+    public function getResourceAuditTrail(
+        string $resource,
+        array $filters = [],
+        int $limit = 100,
+        int $offset = 0
+    ): array;
 
     /**
      * Get audit trail for time period
@@ -153,7 +176,13 @@ interface PermissionAuditInterface
      * @param int $offset Offset for pagination
      * @return array Audit trail records
      */
-    public function getAuditTrailByPeriod(\DateTime $startDate, \DateTime $endDate, array $filters = [], int $limit = 100, int $offset = 0): array;
+    public function getAuditTrailByPeriod(
+        \DateTime $startDate,
+        \DateTime $endDate,
+        array $filters = [],
+        int $limit = 100,
+        int $offset = 0
+    ): array;
 
     /**
      * Search audit logs

@@ -236,10 +236,10 @@ class JwtAuthenticationProviderTest extends TestCase
         $adminData['is_admin'] = true;
         $this->assertTrue($this->provider->isAdmin($adminData));
 
-        // Admin user with roles array containing superuser
+        // Admin user with roles array containing superuser (no longer supported - use RBAC extension)
         $adminData = $this->testUserData;
         $adminData['roles'] = [['name' => 'superuser']];
-        $this->assertTrue($this->provider->isAdmin($adminData));
+        $this->assertFalse($this->provider->isAdmin($adminData)); // Role-based admin checking moved to RBAC extension
 
         // Admin user with roles but not superuser
         $adminData = $this->testUserData;

@@ -80,17 +80,13 @@ class ApiKeyAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
-        // Check if user has the superuser role
-        if (!isset($userData['roles']) || !is_array($userData['roles'])) {
-            return false;
+        // Check if there's an explicit is_admin flag in the user data
+        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
+            return true;
         }
 
-        foreach ($userData['roles'] as $role) {
-            if (isset($role['name']) && $role['name'] === 'superuser') {
-                return true;
-            }
-        }
-
+        // Note: Role-based admin checking moved to RBAC extension
+        // Use RBAC extension APIs for role-based permission checking
         return false;
     }
 

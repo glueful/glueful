@@ -6,7 +6,6 @@ namespace Glueful\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Repository\UserRepository;
-use Glueful\Repository\RoleRepository;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
@@ -20,7 +19,7 @@ use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 class AdminAuthenticationProvider implements AuthenticationProviderInterface
 {
     private UserRepository $userRepository;
-    private RoleRepository $roleRepository;
+    // Note: Role functionality migrated to RBAC extension
     private PasswordHasher $passwordHasher;
     private ?string $error = null;
 
@@ -30,7 +29,7 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     public function __construct()
     {
         $this->userRepository = new UserRepository();
-        $this->roleRepository = new RoleRepository();
+        // Role repository functionality moved to RBAC extension
         $this->passwordHasher = new PasswordHasher();
     }
 
@@ -92,33 +91,9 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                 return null;
             }
 
-            // Verify user has superuser role - check from already fetched roles
-            $hasSuperuserRole = false;
-            foreach ($user['roles'] as $roleName) {
-                if ($roleName === 'superuser') {
-                    $hasSuperuserRole = true;
-                    break;
-                }
-            }
-
-            if (!$hasSuperuserRole) {
-                $this->error = "Insufficient privileges";
-                error_log("Admin auth failed: User {$credentials['username']} lacks superuser role");
-
-                // Log failed admin login due to insufficient privileges
-                $auditLogger->authEvent(
-                    'admin_login_failure',
-                    $user['uuid'],
-                    [
-                        'username' => $credentials['username'],
-                        'reason' => 'insufficient_privileges',
-                        'ip_address' => $requestData->getClientIp(),
-                        'user_agent' => $requestData->headers->get('User-Agent')
-                    ],
-                    AuditEvent::SEVERITY_WARNING
-                );
-                return null;
-            }
+            // Note: Admin role check disabled - implement with RBAC extension
+            // For now, allow any authenticated user admin access
+            // TODO: Implement proper admin permission check with RBAC
 
             // Create admin session
             $user['is_admin'] = true;
@@ -229,8 +204,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
      */
     private function authenticateWithCredentials(string $username, string $password): ?array
     {
-        // Get user with profile and roles in one optimized query
-        $user = $this->userRepository->findByUsernameWithProfileAndRoles($username);
+        // Get user (role fetching disabled - use RBAC extension)
+        $user = $this->userRepository->findByUsername($username);
 
         if (!$user) {
             $this->error = "User not found";
@@ -382,17 +357,8 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
                 return null;
             }
 
-            // Get user roles and verify user still has superuser role
-            $roles = $this->roleRepository->getUserRoles($user['uuid']);
-            $roleNames = [];
-            foreach ($roles as $role) {
-                $roleNames[] = $role['role_name'] ?? $role['name'] ?? '';
-            }
-            $hasSuperuserRole = in_array('superuser', $roleNames);
-            if (!$hasSuperuserRole) {
-                $this->error = "Insufficient privileges";
-                return null;
-            }
+            // Note: Admin role verification disabled - implement with RBAC extension
+            // TODO: Verify user has admin permissions using RBAC
 
             // Use TokenManager to refresh the tokens
             $user['is_admin'] = true;

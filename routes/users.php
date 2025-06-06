@@ -5,7 +5,7 @@
  *
  * Administrative routes for user management functionality including:
  * - User CRUD operations
- * - Role assignment
+ * - User management (role assignment moved to RBAC extension)
  * - Bulk operations
  * - User statistics
  * - Import/Export
@@ -27,8 +27,8 @@ Router::group('/admin/users', function () use ($container) {
     /**
      * @route GET /admin/users
      * @tag Users
-     * @summary List all users with roles
-     * @description Retrieves a paginated list of users with their associated roles
+     * @summary List all users
+     * @description Retrieves a paginated list of users (role functionality moved to RBAC extension)
      * @requiresAuth true
      * @query page integer "Page number (default: 1)"
      * @query per_page integer "Items per page (default: 25)"
@@ -133,9 +133,9 @@ Router::group('/admin/users', function () use ($container) {
      * @summary Bulk operations
      * @description Perform bulk operations on multiple users
      * @requiresAuth true
-     * @requestBody action:string="Action (delete/restore/activate/deactivate/suspend/assign_role/remove_role)"
+     * @requestBody action:string="Action (delete/restore/activate/deactivate/suspend)"
      *              user_ids:array="Array of user UUIDs"
-     *              role_id:string="Role UUID (for role operations)"
+     *              note:string="Role operations moved to RBAC extension"
      *              {required=action,user_ids}
      * @response 200 application/json "Operation results"
      */
@@ -163,7 +163,7 @@ Router::group('/admin/users', function () use ($container) {
      * @route POST /admin/users
      * @tag Users
      * @summary Create new user
-     * @description Creates a new user with optional role assignment
+     * @description Creates a new user (role assignment via RBAC extension)
      * @requiresAuth true
      * @requestBody username:string="Username" email:string="Email address"
      *              password:string="Password" status:string="Status (active/inactive)"
@@ -181,7 +181,7 @@ Router::group('/admin/users', function () use ($container) {
      * @route PUT /admin/users/{uuid}
      * @tag Users
      * @summary Update user
-     * @description Updates user information and roles
+     * @description Updates user information (roles managed by RBAC extension)
      * @requiresAuth true
      * @param uuid path string true "User UUID"
      * @requestBody username:string="Username" email:string="Email address"

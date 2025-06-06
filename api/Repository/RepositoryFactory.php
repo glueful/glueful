@@ -83,18 +83,6 @@ class RepositoryFactory
     }
 
     /**
-     * Get the roles repository
-     *
-     * @return RoleRepository
-     */
-    public function roles(): RoleRepository
-    {
-        /** @var RoleRepository */
-        return $this->get(RoleRepository::class);
-    }
-
-
-    /**
      * Get the notifications repository
      *
      * @return NotificationRepository

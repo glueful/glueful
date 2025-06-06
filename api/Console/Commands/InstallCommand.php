@@ -380,23 +380,15 @@ HELP;
                 return false;
             }
 
-            // Ensure superuser role exists (should be created by migration)
-            $superuserRole = $queryBuilder->select('roles', ['uuid'])
-                ->where(['name' => 'superuser'])
-                ->get();
-
-            if (empty($superuserRole)) {
-                throw new \RuntimeException('Superuser role not found. Please run migrations first.');
-            }
-
-            $superuserRoleUuid = $superuserRole[0]['uuid'];
+            // Note: Role assignment moved to RBAC extension
+            // For now, create admin user without role assignment
+            // Use RBAC extension to assign admin permissions after installation
 
             // Clean up existing user if force mode
             if ($force && !empty($existingUser)) {
                 $existingUuid = $existingUser[0]['uuid'];
 
-                // Delete in dependency order
-                $queryBuilder->delete('user_roles_lookup', ['user_uuid' => $existingUuid], false);
+                // Delete in dependency order (removed user_roles_lookup - now handled by RBAC)
                 $queryBuilder->delete('profiles', ['user_uuid' => $existingUuid], false);
                 $queryBuilder->delete('users', ['uuid' => $existingUuid], false);
 
@@ -434,15 +426,8 @@ HELP;
                 throw new \RuntimeException('Failed to create admin profile');
             }
 
-            // Assign superuser role to admin
-            $mappingId = $queryBuilder->insert('user_roles_lookup', [
-                'user_uuid' => $adminUuid,
-                'role_uuid' => $superuserRoleUuid
-            ]);
-
-            if (!$mappingId) {
-                throw new \RuntimeException('Failed to assign superuser role');
-            }
+            // Note: Role assignment moved to RBAC extension
+            // Admin permissions should be assigned using RBAC extension after installation
 
             if (!$quiet) {
                 $this->success('✓ Admin user created successfully!');
@@ -451,9 +436,11 @@ HELP;
                 $this->line('  Username: ' . $username);
                 $this->line('  Email: ' . $email);
                 $this->line('  Password: ' . $password);
-                $this->line('  Role: superuser');
                 $this->line('');
                 $this->warning('Please save these credentials securely and change the password after first login!');
+                $this->line('');
+                $this->info('📋 Note: Admin permissions are managed by the RBAC extension.');
+                $this->line('   After installation, use RBAC APIs to assign admin permissions.');
             }
 
             return true;

@@ -69,7 +69,12 @@ interface PermissionCacheInterface
      * @param array $context Permission context
      * @return bool|null Cached result or null if not found
      */
-    public function getPermissionCheck(string $userUuid, string $permission, string $resource, array $context = []): ?bool;
+    public function getPermissionCheck(
+        string $userUuid,
+        string $permission,
+        string $resource,
+        array $context = []
+    ): ?bool;
 
     /**
      * Cache permission check result
@@ -84,7 +89,14 @@ interface PermissionCacheInterface
      * @param int $ttl Time to live in seconds
      * @return bool True if caching successful
      */
-    public function setPermissionCheck(string $userUuid, string $permission, string $resource, bool $result, array $context = [], int $ttl = 1800): bool;
+    public function setPermissionCheck(
+        string $userUuid,
+        string $permission,
+        string $resource,
+        bool $result,
+        array $context = [],
+        int $ttl = 1800
+    ): bool;
 
     /**
      * Invalidate all cached data for a user

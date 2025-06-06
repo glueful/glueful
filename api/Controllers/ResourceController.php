@@ -51,16 +51,11 @@ class ResourceController
                 return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Check if user has superuser role
-            $roleRepo = $this->repositoryFactory->roles();
-            if ($roleRepo->hasRole($userUuid, 'superuser')) {
-                // Superuser has access to everything - skip permission check
-            } else {
-                // For permission check, we need the token
-                $token = $this->extractToken($request);
-                if (!$token) {
-                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
+            // Note: Role-based authorization disabled - implement with RBAC extension
+            // For now, require valid token for all operations
+            $token = $this->extractToken($request);
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
 
             // Parse query parameters for repository
@@ -112,16 +107,11 @@ class ResourceController
                 return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Check if user has superuser role
-            $roleRepo = $this->repositoryFactory->roles();
-            if ($roleRepo->hasRole($userUuid, 'superuser')) {
-                // Superuser has access to everything - skip permission check
-            } else {
-                // For permission check, we need the token
-                $token = $this->extractToken($request);
-                if (!$token) {
-                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
+            // Note: Role-based authorization disabled - implement with RBAC extension
+            // For now, require valid token for all operations
+            $token = $this->extractToken($request);
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
 
             // Get repository and find single record
@@ -165,16 +155,11 @@ class ResourceController
                 return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Check if user has superuser role
-            $roleRepo = $this->repositoryFactory->roles();
-            if ($roleRepo->hasRole($userUuid, 'superuser')) {
-                // Superuser has access to everything - skip permission check
-            } else {
-                // For permission check, we need the token
-                $token = $this->extractToken($request);
-                if (!$token) {
-                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
+            // Note: Role-based authorization disabled - implement with RBAC extension
+            // For now, require valid token for all operations
+            $token = $this->extractToken($request);
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
 
             if (empty($postData)) {
@@ -231,16 +216,11 @@ class ResourceController
                 return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Check if user has superuser role
-            $roleRepo = $this->repositoryFactory->roles();
-            if ($roleRepo->hasRole($userUuid, 'superuser')) {
-                // Superuser has access to everything - skip permission check
-            } else {
-                // For permission check, we need the token
-                $token = $this->extractToken($request);
-                if (!$token) {
-                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
+            // Note: Role-based authorization disabled - implement with RBAC extension
+            // For now, require valid token for all operations
+            $token = $this->extractToken($request);
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
 
             // Get repository and update record
@@ -301,16 +281,11 @@ class ResourceController
                 return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Check if user has superuser role
-            $roleRepo = $this->repositoryFactory->roles();
-            if ($roleRepo->hasRole($userUuid, 'superuser')) {
-                // Superuser has access to everything - skip permission check
-            } else {
-                // For permission check, we need the token
-                $token = $this->extractToken($request);
-                if (!$token) {
-                    return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
+            // Note: Role-based authorization disabled - implement with RBAC extension
+            // For now, require valid token for all operations
+            $token = $this->extractToken($request);
+            if (!$token) {
+                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
             }
 
             // Get repository and delete record

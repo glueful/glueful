@@ -42,7 +42,6 @@ class CreateInitialSchema implements MigrationInterface
      *
      * Tables created:
      * - users: User accounts and authentication
-     * - roles: Role definitions and hierarchy
      * - profiles: User profile information
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
@@ -70,20 +69,6 @@ class CreateInitialSchema implements MigrationInterface
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'UNIQUE', 'column' => 'username'],
             ['type' => 'UNIQUE', 'column' => 'email']
-        ]);
-
-        // Create Roles Table
-        $schema->createTable('roles', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'description' => 'TEXT NOT NULL',
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'name']
         ]);
 
 
@@ -145,26 +130,6 @@ class CreateInitialSchema implements MigrationInterface
             ]
         ]);
 
-        // Create User Roles Lookup Table
-        $schema->createTable('user_roles_lookup', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL'
-        ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-            ],
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-            ]
-        ]);
 
         // Create Auth Sessions Table
         $schema->createTable('auth_sessions', [
@@ -232,10 +197,8 @@ class CreateInitialSchema implements MigrationInterface
     {
         $schema->dropTable('app_logs');
         $schema->dropTable('auth_sessions');
-        $schema->dropTable('user_roles_lookup');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');
-        $schema->dropTable('roles');
         $schema->dropTable('users');
     }
 
@@ -251,6 +214,6 @@ class CreateInitialSchema implements MigrationInterface
      */
     public function getDescription(): string
     {
-        return 'Creates initial database schema including users, roles, and permissions tables';
+        return 'Creates initial database schema including users, profiles, and core system tables';
     }
 }

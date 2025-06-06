@@ -14,7 +14,7 @@ use Glueful\Database\Connection;
  * Handles all database operations related to users:
  * - User retrieval by various identifiers
  * - Profile data management
- * - Role association lookups
+ * - User data management (role functionality moved to RBAC extension)
  * - Password management
  *
  * This repository extends BaseRepository to leverage common CRUD operations
@@ -24,8 +24,7 @@ use Glueful\Database\Connection;
  */
 class UserRepository extends BaseRepository
 {
-    /** @var RoleRepository Role repository instance */
-    private RoleRepository $roleRepository;
+    // Note: Role functionality migrated to RBAC extension
 
     /** @var Validator Data validator instance */
     private Validator $validator;
@@ -51,7 +50,7 @@ class UserRepository extends BaseRepository
 
         // Initialize additional dependencies
         $this->validator = new Validator();
-        $this->roleRepository = new RoleRepository();
+        // Role repository functionality moved to RBAC extension
     }
 
     /**
@@ -86,125 +85,7 @@ class UserRepository extends BaseRepository
         return $this->findBy('username', $username);
     }
 
-    /**
-     * Find user by username with profile and roles
-     *
-     * Retrieves complete user data including profile and roles in a single query.
-     * This is optimized for authentication to reduce database queries.
-     *
-     * @param string $username Username to search for
-     * @return array|null User data with profile and roles, or null if not found
-     */
-    public function findByUsernameWithProfileAndRoles(string $username): ?array
-    {
-        // Validate username format
-        $usernameDTO = new UsernameDTO($username);
-        $usernameDTO->username = $username;
-        if (!$this->validator->validate($usernameDTO)) {
-            return null;
-        }
 
-        // Build query with joins for profile and roles using wildcard pattern
-        $query = $this->db->select('users', [
-            'users.*',
-            'profiles.first_name',
-            'profiles.last_name',
-            'profiles.photo_uuid',
-            'profiles.photo_url'
-        ])
-        ->join('profiles', 'users.uuid = profiles.user_uuid', 'LEFT')
-        ->where(['users.username' => $username])
-        ->limit(1)
-        ->get();
-
-        if (empty($query)) {
-            return null;
-        }
-
-        $user = $query[0];
-
-        // Get roles in a separate query (can't easily join many-to-many in same query)
-        $roles = $this->db->select('user_roles_lookup', ['roles.name AS role_name'])
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
-            ->where(['user_roles_lookup.user_uuid' => $user['uuid']])
-            ->get();
-
-        // Format user data
-        $user['profile'] = [
-            'first_name' => $user['first_name'] ?? null,
-            'last_name' => $user['last_name'] ?? null,
-            'photo_uuid' => $user['photo_uuid'] ?? null,
-            'photo_url' => $user['photo_url'] ?? null
-        ];
-
-        // Remove profile fields from main user object
-        unset($user['first_name'], $user['last_name'], $user['photo_uuid'], $user['photo_url']);
-
-        // Add roles
-        $user['roles'] = array_column($roles, 'role_name');
-
-        return $user;
-    }
-
-    /**
-     * Find user by email with profile and roles
-     *
-     * Retrieves complete user data including profile and roles in a single query.
-     * This is optimized for authentication to reduce database queries.
-     *
-     * @param string $email Email address to search for
-     * @return array|null User data with profile and roles, or null if not found
-     */
-    public function findByEmailWithProfileAndRoles(string $email): ?array
-    {
-        // Validate email format
-        $emailDTO = new EmailDTO();
-        $emailDTO->email = $email;
-        if (!$this->validator->validate($emailDTO)) {
-            return null;
-        }
-
-        // Build query with joins for profile using wildcard pattern
-        $query = $this->db->select('users', [
-            'users.*',
-            'profiles.first_name',
-            'profiles.last_name',
-            'profiles.photo_uuid',
-            'profiles.photo_url'
-        ])
-        ->join('profiles', 'users.uuid = profiles.user_uuid', 'LEFT')
-        ->where(['users.email' => $email])
-        ->limit(1)
-        ->get();
-
-        if (empty($query)) {
-            return null;
-        }
-
-        $user = $query[0];
-
-        // Get roles in a separate query (can't easily join many-to-many in same query)
-        $roles = $this->db->select('user_roles_lookup', ['roles.name AS role_name'])
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
-            ->where(['user_roles_lookup.user_uuid' => $user['uuid']])
-            ->get();
-
-        // Format user data
-        $user['profile'] = [
-            'first_name' => $user['first_name'] ?? null,
-            'last_name' => $user['last_name'] ?? null,
-            'photo_uuid' => $user['photo_uuid'] ?? null,
-            'photo_url' => $user['photo_url'] ?? null
-        ];
-
-        // Remove profile fields from main user object
-        unset($user['first_name'], $user['last_name'], $user['photo_uuid'], $user['photo_url']);
-
-        // Add roles
-        $user['roles'] = array_column($roles, 'role_name');
-
-        return $user;
-    }
 
     /**
      * Find user by email address
@@ -263,30 +144,6 @@ class UserRepository extends BaseRepository
         return $query ? $query[0] : null;
     }
 
-    /**
-     * Get user roles
-     *
-     * Retrieves all roles assigned to a user.
-     * Used for authorization and permission checks.
-     *
-     * @param string $uuid User UUID to get roles for
-     * @return array|null Role data or null if none found
-     */
-    public function getRoles(string $uuid): ?array
-    {
-        $query = $this->db
-            ->select('user_roles_lookup', [
-                'user_roles_lookup.user_uuid',
-                'user_roles_lookup.role_uuid',
-                'roles.uuid AS role_id',
-                'roles.name AS role_name'
-            ])
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN after select
-            ->where(['user_uuid' => $uuid]) // Ensure column exists
-            ->get();
-
-        return $query ?: null;
-    }
 
    /**
      * Update user password
@@ -531,10 +388,8 @@ class UserRepository extends BaseRepository
                 // Reload the user to get updated data
                 $user = $this->findByUUId($user['uuid']);
 
-                // Sync roles if available
-                if (!empty($userData['roles'])) {
-                    $this->syncUserRoles($user['uuid'], $userData['roles']);
-                }
+                // Note: Role synchronization moved to RBAC extension
+                // Use RBAC extension APIs for role assignment
                 return $user;
             }
             // User doesn't exist, create a new one
@@ -560,9 +415,8 @@ class UserRepository extends BaseRepository
                 return null;
             }
 
-            // Assign default roles for new SAML users
-            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
-            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+            // Note: Role assignment moved to RBAC extension
+            // Use RBAC extension APIs for default role assignment
 
             // Return the newly created user
             return $this->findByUUId($newUser['uuid']);
@@ -574,61 +428,6 @@ class UserRepository extends BaseRepository
         }
     }
 
-    /**
-     * Sync user roles with the provided role array
-     *
-     * @param string $userUuid User UUID
-     * @param array $roles Array of role data
-     * @return bool Success
-     */
-    private function syncUserRoles(string $userUuid, array $roles): bool
-    {
-        try {
-            $connection = new \Glueful\Database\Connection();
-            $queryBuilder = new \Glueful\Database\QueryBuilder($connection->getPDO(), $connection->getDriver());
-            // Delete existing roles for this user
-            $queryBuilder->delete('user_roles_lookup', ['user_uuid' => $userUuid]);
-
-            // Prepare role data for insertion
-            $rolesToInsert = [];
-            $roleNames = [];
-
-            foreach ($roles as $role) {
-                if (!isset($role['name'])) {
-                    continue;
-                }
-
-                // Get role UUID from role name
-                $roleUuid = $this->roleRepository->getRoleUuidByName($role['name']);
-                if (!$roleUuid) {
-                    continue;
-                }
-
-                $roleNames[] = $role['name'];
-
-                // Create a record for insertion
-                $rolesToInsert[] = [
-                    'user_uuid' => $userUuid,
-                    'role_uuid' => $roleUuid,
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-            }
-
-            if (empty($rolesToInsert)) {
-                return true;
-            }
-
-            // Use batch insert for better performance
-            $result = $queryBuilder->insert('user_roles_lookup', $rolesToInsert);
-            $success = $result > 0;
-
-            return $success;
-        } catch (\Throwable $e) {
-            error_log('Error in syncUserRoles: ' . $e->getMessage());
-
-            return false;
-        }
-    }
 
     /**
      * Find or create a user from LDAP authentication data
@@ -685,13 +484,8 @@ class UserRepository extends BaseRepository
                 // Reload the user to get updated data
                 $user = $this->findByUUID($user['uuid']);
 
-                // Sync roles if available
-                if (!empty($userData['roles'])) {
-                    $this->syncUserRoles($user['uuid'], $userData['roles']);
-
-                    // Reload roles for the user
-                    $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
-                }
+                // Note: Role synchronization moved to RBAC extension
+                // Use RBAC extension APIs for role assignment
 
                 return $user;
             }
@@ -723,13 +517,12 @@ class UserRepository extends BaseRepository
                 return $value !== null;
             }));
 
-            // Assign default roles for new LDAP users
-            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
-            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+            // Note: Role assignment moved to RBAC extension
+            // Use RBAC extension APIs for default role assignment
 
             // Return the newly created user with roles
             $user = $this->findByUUID($newUser['uuid']);
-            $user['roles'] = $this->roleRepository->getUserRoles($newUser['uuid']);
+            $user['roles'] = []; // Roles managed by RBAC extension
 
             return $user;
         } catch (\Throwable $e) {

@@ -127,23 +127,16 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
         // Get the actual user data from the nested structure if available
         $user = $userData['user'] ?? $userData;
 
-        // First check if there's an explicit is_admin flag in the user data
+        // Check if there's an explicit is_admin flag in the user data
         if (isset($user['is_admin']) && $user['is_admin'] === true) {
             error_log("Admin access granted through is_admin flag for user: " . ($user['username'] ?? 'unknown'));
             return true;
         }
 
-        // Also check for superuser role as before
-        if (isset($user['roles']) && is_array($user['roles'])) {
-            foreach ($user['roles'] as $role) {
-                if (isset($role['name']) && $role['name'] === 'superuser') {
-                    return true;
-                }
-            }
-        }
-
+        // Note: Role-based admin checking moved to RBAC extension
+        // Use RBAC extension APIs for role-based permission checking
         error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') .
-                  ", roles: " . (isset($user['roles']) ? json_encode($user['roles']) : 'none'));
+                  " - use RBAC extension for role-based admin permissions");
 
         return false;
     }

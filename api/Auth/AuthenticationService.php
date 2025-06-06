@@ -99,11 +99,11 @@ class AuthenticationService
 
         if (isset($credentials['username'])) {
             if (filter_var($credentials['username'], FILTER_VALIDATE_EMAIL)) {
-                // For email login, use optimized method (reduces queries from 3 to 1)
-                $user = $this->userRepository->findByEmailWithProfileAndRoles($credentials['username']);
+                // For email login
+                $user = $this->userRepository->findByEmail($credentials['username']);
             } else {
-                // For username login, use optimized method (reduces queries from 3 to 1)
-                $user = $this->userRepository->findByUsernameWithProfileAndRoles($credentials['username']);
+                // For username login
+                $user = $this->userRepository->findByUsername($credentials['username']);
             }
         }
 
@@ -125,10 +125,10 @@ class AuthenticationService
             return null;
         }
 
-        // Format user data (profile and roles already included from optimized query)
+        // Format user data and get profile
         $userData = $this->formatUserData($user);
-        $userData['profile'] = $user['profile'] ?? null;
-        $userData['roles'] = $user['roles'] ?? [];
+        $userData['profile'] = $this->userRepository->getProfile($user['uuid']) ?? null;
+        $userData['roles'] = []; // Roles managed by RBAC extension
         $userData['last_login'] = date('Y-m-d H:i:s');
 
         // Update user tracking fields in the database
@@ -283,8 +283,8 @@ class AuthenticationService
             return null;
         }
 
-        // Get fresh user roles
-        $userRoles = $this->userRepository->getRoles($userUuid);
+        // Note: Role functionality moved to RBAC extension
+        $userRoles = []; // Use RBAC extension APIs for role management
 
         // Update session with new roles
         $session['user']['roles'] = $userRoles;
@@ -480,7 +480,8 @@ class AuthenticationService
 
         $userData = $this->formatUserData($user);
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
-        $userRoles = $this->userRepository->getRoles($userData['uuid']);
+        // Note: Role functionality moved to RBAC extension
+        $userRoles = []; // Use RBAC extension APIs for role management
 
         $userData['roles'] = $userRoles;
         $userData['profile'] = $userProfile;

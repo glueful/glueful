@@ -6,12 +6,10 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Repository\UserRepository;
-use Glueful\Repository\RoleRepository;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Auth\TokenStorageService;
 use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\Database\RawExpression;
-use Glueful\Database\QueryBuilder;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -31,16 +29,14 @@ class UsersController
     use DatabaseConnectionTrait;
 
     private UserRepository $userRepository;
-    private RoleRepository $roleRepository;
+    // Note: Role functionality migrated to RBAC extension
     private TokenStorageService $tokenStorage;
 
     public function __construct(
         UserRepository $userRepository,
-        RoleRepository $roleRepository,
         TokenStorageService $tokenStorage
     ) {
         $this->userRepository = $userRepository;
-        $this->roleRepository = $roleRepository;
         $this->tokenStorage = $tokenStorage;
     }
 
@@ -105,10 +101,10 @@ class UsersController
 
             $paginatedResult = $query->paginate($page, $perPage);
 
-            // Attach roles to the users from the pagination result
+            // Note: Role attachment disabled - use RBAC extension
             $users = $paginatedResult['data'] ?? [];
             foreach ($users as &$user) {
-                $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+                $user['roles'] = []; // Roles managed by RBAC extension
             }
 
             // Update the data in the pagination result and return it directly
@@ -137,8 +133,8 @@ class UsersController
                 throw new NotFoundException('User not found');
             }
 
-            // Get user roles using UUID
-            $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+            // Note: Roles managed by RBAC extension
+            $user['roles'] = [];
 
             // Get user profile
             $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
@@ -204,11 +200,10 @@ class UsersController
                 return Response::error('Failed to create user', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
             }
 
-            // Assign roles if provided
+            // Note: Role assignment disabled - use RBAC extension API
             if (!empty($roleUuids)) {
-                foreach ($roleUuids as $roleUuid) {
-                    $this->roleRepository->assignRole($userUuid, $roleUuid);
-                }
+                // Role assignment is now handled by the RBAC extension
+                // Use the RBAC API endpoints for role management
             }
 
             // Create profile if data provided
@@ -216,9 +211,9 @@ class UsersController
                 $this->userRepository->updateProfile($userUuid, $profileData);
             }
 
-            // Fetch created user with roles
+            // Fetch created user
             $user = $this->userRepository->findByUUID($userUuid);
-            $user['roles'] = $this->roleRepository->getUserRoles($userUuid);
+            $user['roles'] = []; // Roles managed by RBAC extension
             unset($user['password']);
 
             return Response::created($user, 'User created successfully')->send();
@@ -278,25 +273,10 @@ class UsersController
                 $this->userRepository->update($user['uuid'], $data);
             }
 
-            // Update roles if provided
+            // Note: Role updates disabled - use RBAC extension API
             if ($roleUuids !== null) {
-                // Get current roles
-                $currentRoles = $this->roleRepository->getUserRoles($user['uuid']);
-                $currentRoleUuids = array_column($currentRoles, 'role_uuid');
-
-                // Remove roles that are no longer assigned
-                foreach ($currentRoleUuids as $currentRoleUuid) {
-                    if (!in_array($currentRoleUuid, $roleUuids)) {
-                        $this->roleRepository->unassignRole($user['uuid'], $currentRoleUuid);
-                    }
-                }
-
-                // Add new roles
-                foreach ($roleUuids as $roleUuid) {
-                    if (!in_array($roleUuid, $currentRoleUuids)) {
-                        $this->roleRepository->assignRole($user['uuid'], $roleUuid);
-                    }
-                }
+                // Role management is now handled by the RBAC extension
+                // Use the RBAC API endpoints for role assignment/removal
             }
 
             // Update profile if provided
@@ -306,7 +286,7 @@ class UsersController
 
             // Fetch updated user
             $updatedUser = $this->userRepository->findByUUID($user['uuid']);
-            $updatedUser['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+            $updatedUser['roles'] = []; // Roles managed by RBAC extension
             unset($updatedUser['password']);
 
             return Response::ok($updatedUser, 'User updated successfully')->send();
@@ -334,14 +314,8 @@ class UsersController
                 throw new NotFoundException('User not found');
             }
 
-            // Prevent deletion of superuser
-            $roles = $this->roleRepository->getUserRoles($user['uuid']);
-            if (in_array('superuser', array_column($roles, 'role_name'))) {
-                return Response::error(
-                    'Cannot delete superuser',
-                    Response::HTTP_FORBIDDEN
-                )->send();
-            }
+            // Note: Superuser protection disabled - implement in RBAC extension
+            // Superuser protection should be implemented using RBAC permissions
 
             // Soft delete user (use BaseRepository delete method)
             $this->userRepository->delete($user['uuid']);
@@ -438,15 +412,11 @@ class UsersController
                             $this->tokenStorage->revokeAllUserSessions($user['uuid']);
                             break;
                         case 'assign_role':
-                            if (!empty($data['role_id'])) {
-                                $this->roleRepository->assignRole($user['uuid'], $data['role_id']);
-                            }
-                            break;
                         case 'remove_role':
-                            if (!empty($data['role_id'])) {
-                                $this->roleRepository->unassignRole($user['uuid'], $data['role_id']);
-                            }
-                            break;
+                            // Note: Role operations disabled - use RBAC extension API
+                            $results['failed']++;
+                            $results['errors'][] = "Role operations moved to RBAC extension for user {$userUuid}";
+                            continue 2;
                     }
 
                     $results['success']++;
@@ -583,11 +553,13 @@ class UsersController
 
             $searchQuery->where($whereConditions);
 
-            // Add role filter if specified
+            // Note: Role filtering disabled - implement with RBAC extension
             if ($filters['role']) {
-                $searchQuery->join('user_roles_lookup', 'users.uuid = user_roles_lookup.user_uuid')
-                           ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
-                           ->where(['roles.name' => $filters['role']]);
+                // Role filtering is now handled by the RBAC extension
+                return Response::error(
+                    'Role filtering requires RBAC extension',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
             }
 
             // Apply pagination
@@ -595,9 +567,9 @@ class UsersController
 
             $users = $searchQuery->get();
 
-            // Get roles for each user
+            // Note: Roles managed by RBAC extension
             foreach ($users as &$user) {
-                $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+                $user['roles'] = [];
             }
 
             $results = [
@@ -654,18 +626,19 @@ class UsersController
                 $exportQuery->where($whereConditions);
             }
 
-            // Add role filter if specified
+            // Note: Role filtering disabled - implement with RBAC extension
             if ($filters['role']) {
-                $exportQuery->join('user_roles_lookup', 'users.uuid = user_roles_lookup.user_uuid')
-                           ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid')
-                           ->where(['roles.name' => $filters['role']]);
+                return Response::error(
+                    'Role filtering requires RBAC extension',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
             }
 
             $users = $exportQuery->get();
 
-            // Get roles and profiles for each user
+            // Get profiles for each user
             foreach ($users as &$user) {
-                $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
+                $user['roles'] = []; // Roles managed by RBAC extension
                 $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
             }
 
