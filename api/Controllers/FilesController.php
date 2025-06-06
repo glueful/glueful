@@ -7,10 +7,6 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Helpers\{Request, FileHandler};
 use Glueful\Logging\{AuditLogger, AuditEvent};
-use Glueful\Permissions\Helpers\PermissionHelper;
-use Glueful\Interfaces\Permission\PermissionStandards;
-use Glueful\Exceptions\SecurityException;
-use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /**
  * Files Controller
@@ -35,35 +31,6 @@ class FilesController
     }
 
     /**
-     * Check if current user has permission for file operations
-     *
-     * @param SymfonyRequest $request HTTP request object
-     * @param string $permission Permission to check
-     * @param array $context Additional context
-     * @return void
-     * @throws SecurityException If permission check fails
-     */
-    private function checkPermission(SymfonyRequest $request, string $permission, array $context = []): void
-    {
-        $userUuid = $request->attributes->get('user_uuid');
-
-        if (!$userUuid) {
-            throw new SecurityException('User authentication required for this operation');
-        }
-
-        // Check if permission system is available
-        if (!PermissionHelper::isAvailable()) {
-            // Fallback: Allow any authenticated user when permission system unavailable
-            error_log("FALLBACK: Permission system unavailable, allowing authenticated access for: {$permission}");
-            return;
-        }
-
-        if (!PermissionHelper::hasPermission($userUuid, $permission, PermissionStandards::CATEGORY_CONTENT, $context)) {
-            throw new SecurityException("Insufficient permissions: {$permission} required");
-        }
-    }
-
-    /**
      * Retrieve a file by UUID
      *
      * Gets a file and can return different formats based on type parameter:
@@ -80,14 +47,6 @@ class FilesController
             $this->authController->validateToken();
             $request = new Request();
             $requestData = $request->getQueryParams();
-
-            // Check permission to view files
-            $symfonyRequest = SymfonyRequest::createFromGlobals();
-            $this->checkPermission($symfonyRequest, PermissionStandards::ACTION_VIEW, [
-                'action' => 'view_file',
-                'endpoint' => '/files',
-                'file_uuid' => $requestData['uuid'] ?? null
-            ]);
 
             // Get parameters from request
             $uuid = $requestData['uuid'] ?? null;
@@ -163,14 +122,6 @@ class FilesController
         $request = new Request();
         try {
             $this->authController->validateToken();
-
-            // Check permission to upload files
-            $symfonyRequest = SymfonyRequest::createFromGlobals();
-            $this->checkPermission($symfonyRequest, PermissionStandards::ACTION_CREATE, [
-                'action' => 'upload_file',
-                'endpoint' => '/files/upload'
-            ]);
-
             $contentType = $request->getContentType();
 
             // Handle multipart form data (regular file upload)
@@ -232,7 +183,7 @@ class FilesController
                 AuditEvent::SEVERITY_WARNING,
                 [
                     'error' => $e->getMessage(),
-                    'content_type' => $request->getContentType() ?: 'unknown',
+                    'content_type' => isset($contentType) ? $contentType : 'unknown',
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]
             );
@@ -257,14 +208,6 @@ class FilesController
         try {
             $this->authController->validateToken();
             $uuid = $params['uuid'] ?? null;
-
-            // Check permission to delete files
-            $symfonyRequest = SymfonyRequest::createFromGlobals();
-            $this->checkPermission($symfonyRequest, PermissionStandards::ACTION_DELETE, [
-                'action' => 'delete_file',
-                'endpoint' => '/files/{uuid}',
-                'file_uuid' => $uuid
-            ]);
 
             if (!$uuid) {
                 return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
