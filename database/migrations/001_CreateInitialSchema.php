@@ -10,7 +10,7 @@ use Glueful\Database\Schema\SchemaManager;
  *
  * Creates core system tables and relationships:
  * - Users and authentication
- * - Roles and permissions
+ * - Roles
  * - File storage and blobs
  * - User profiles
  * - Audit logging
@@ -25,7 +25,6 @@ use Glueful\Database\Schema\SchemaManager;
  * Security Features:
  * - Password hashing
  * - Token management
- * - Permission tracking
  * - Activity logging
  *
  * @package Glueful\Database\Migrations
@@ -44,7 +43,6 @@ class CreateInitialSchema implements MigrationInterface
      * Tables created:
      * - users: User accounts and authentication
      * - roles: Role definitions and hierarchy
-     * - role_permissions, user_permissions: Access control rules
      * - profiles: User profile information
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
@@ -88,45 +86,6 @@ class CreateInitialSchema implements MigrationInterface
             ['type' => 'UNIQUE', 'column' => 'name']
         ]);
 
-        // Create Role Permissions Table
-        $schema->createTable('role_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL',
-            'model' => 'VARCHAR(255) NOT NULL',
-            'permissions' => 'VARCHAR(10) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-            ]
-        ]);
-
-        // Create User Permissions Table
-        $schema->createTable('user_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'model' => 'VARCHAR(255) NOT NULL',
-            'permissions' => 'VARCHAR(10) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-            ]
-        ]);
 
         // Create Blobs Table
         $schema->createTable('blobs', [
@@ -276,8 +235,6 @@ class CreateInitialSchema implements MigrationInterface
         $schema->dropTable('user_roles_lookup');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');
-        $schema->dropTable('role_permissions');
-        $schema->dropTable('user_permissions');
         $schema->dropTable('roles');
         $schema->dropTable('users');
     }

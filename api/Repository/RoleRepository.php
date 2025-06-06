@@ -13,7 +13,6 @@ use Glueful\Database\Connection;
  * Handles all database operations related to roles and role assignments:
  * - Role creation, retrieval, update and deletion
  * - User-role association management
- * - Role permission mapping
  *
  * This repository extends BaseRepository to leverage common CRUD operations
  * and audit logging functionality for role-related activities.
@@ -181,7 +180,6 @@ class RoleRepository extends BaseRepository
      *
      * Creates an association between a user and a role.
      * Checks for existing assignments to prevent duplicates.
-     * Also invalidates the user's permission cache.
      *
      * @param string $userUuid User UUID to assign role to
      * @param string $roleUuid Role UUID to assign
@@ -222,10 +220,6 @@ class RoleRepository extends BaseRepository
         // Restore the original table
         $this->table = $originalTable;
 
-        // Invalidate the user's permission cache
-        if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
-            \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
-        }
 
         return $result ? true : false;
     }
@@ -276,10 +270,6 @@ class RoleRepository extends BaseRepository
                 );
             }
 
-            // Invalidate the user's permission cache
-            if ($result && class_exists('\\Glueful\\Permissions\\PermissionManager')) {
-                \Glueful\Permissions\PermissionManager::invalidateCache($userUuid);
-            }
 
             return $result;
         } finally {
@@ -335,33 +325,6 @@ class RoleRepository extends BaseRepository
         return !empty($result);
     }
 
-    /**
-     * Get role permissions
-     *
-     * Retrieves all permissions associated with a specific role.
-     *
-     * @param string $roleUuid Role UUID to get permissions for
-     * @return array List of permissions for the role
-     */
-    public function getRolePermissions(string $roleUuid): array
-    {
-        $permissions = $this->db->select('role_permissions', ['model', 'permissions'])
-            ->where(['role_uuid' => $roleUuid])
-            ->get();
-
-        // Format permissions
-        $formattedPermissions = [];
-        foreach ($permissions as $permission) {
-            $model = $permission['model'];
-            $perms = is_string($permission['permissions']) ?
-                json_decode($permission['permissions'], true) :
-                $permission['permissions'];
-
-            $formattedPermissions[$model] = $perms;
-        }
-
-        return $formattedPermissions;
-    }
 
     /**
      * Check if user has specific role

@@ -93,16 +93,6 @@ class RepositoryFactory
         return $this->get(RoleRepository::class);
     }
 
-    /**
-     * Get the permissions repository
-     *
-     * @return PermissionRepository
-     */
-    public function permissions(): PermissionRepository
-    {
-        /** @var PermissionRepository */
-        return $this->get(PermissionRepository::class);
-    }
 
     /**
      * Get the notifications repository

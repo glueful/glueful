@@ -358,9 +358,6 @@ class AuthController
                 return Response::error('Invalid session', Response::HTTP_UNAUTHORIZED)->send();
             }
 
-            // Invalidate the permission cache for this user
-            \Glueful\Permissions\PermissionManager::invalidateCache($session['user']['uuid']);
-
             // Refresh permissions in the session
             $result = $this->authService->refreshPermissions($token);
 

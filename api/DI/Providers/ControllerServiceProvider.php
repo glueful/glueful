@@ -10,7 +10,6 @@ use Glueful\Controllers\AuthController;
 use Glueful\Controllers\ConfigController;
 use Glueful\Controllers\DatabaseController;
 use Glueful\Controllers\ResourceController;
-use Glueful\Controllers\PermissionsController;
 use Glueful\Controllers\MetricsController;
 use Glueful\Controllers\MigrationsController;
 use Glueful\Controllers\JobsController;
@@ -44,11 +43,6 @@ class ControllerServiceProvider implements ServiceProviderInterface
             return new ResourceController($repositoryFactory);
         });
 
-        // Permissions Controller
-        $container->bind(PermissionsController::class, function (ContainerInterface $container) {
-            $repositoryFactory = $container->get(RepositoryFactory::class);
-            return new PermissionsController($repositoryFactory);
-        });
 
         // Metrics Controller
         $container->bind(MetricsController::class);

@@ -7,7 +7,6 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Repository\UserRepository;
 use Glueful\Repository\RoleRepository;
-use Glueful\Repository\PermissionRepository;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Auth\TokenStorageService;
 use Glueful\Helpers\DatabaseConnectionTrait;
@@ -33,18 +32,15 @@ class UsersController
 
     private UserRepository $userRepository;
     private RoleRepository $roleRepository;
-    private PermissionRepository $permissionRepository;
     private TokenStorageService $tokenStorage;
 
     public function __construct(
         UserRepository $userRepository,
         RoleRepository $roleRepository,
-        PermissionRepository $permissionRepository,
         TokenStorageService $tokenStorage
     ) {
         $this->userRepository = $userRepository;
         $this->roleRepository = $roleRepository;
-        $this->permissionRepository = $permissionRepository;
         $this->tokenStorage = $tokenStorage;
     }
 
@@ -144,8 +140,6 @@ class UsersController
             // Get user roles using UUID
             $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
 
-            // Get user permissions (aggregated from all roles)
-            $user['permissions'] = $this->permissionRepository->getEffectivePermissions($user['uuid']);
 
             // Get user profile
             $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];

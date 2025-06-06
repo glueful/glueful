@@ -6,8 +6,6 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Auth\{AuthBootstrap, PasswordHasher};
-use Glueful\Permissions\Permission;
-use Glueful\Permissions\PermissionManager;
 use Glueful\Repository\RepositoryFactory;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -23,7 +21,6 @@ class ResourceController
         $this->authManager = AuthBootstrap::getManager();
 
         // Initialize the permission manager
-        PermissionManager::initialize();
 
         // Initialize repository factory
         $this->repositoryFactory = $repositoryFactory ?? new RepositoryFactory();
@@ -63,11 +60,6 @@ class ResourceController
                 $token = $this->extractToken($request);
                 if (!$token) {
                     return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
-
-                // Check permissions using the PermissionManager for non-superusers
-                if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
                 }
             }
 
@@ -130,11 +122,6 @@ class ResourceController
                 if (!$token) {
                     return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
                 }
-
-                // Check permissions using the PermissionManager for non-superusers
-                if (!PermissionManager::can($params['resource'], Permission::VIEW->value, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-                }
             }
 
             // Get repository and find single record
@@ -187,11 +174,6 @@ class ResourceController
                 $token = $this->extractToken($request);
                 if (!$token) {
                     return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
-
-                // Check permissions using the PermissionManager for non-superusers
-                if (!PermissionManager::can($params['resource'], Permission::SAVE->value, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
                 }
             }
 
@@ -258,11 +240,6 @@ class ResourceController
                 $token = $this->extractToken($request);
                 if (!$token) {
                     return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
-
-                // Check permissions using the PermissionManager for non-superusers
-                if (!PermissionManager::can($params['resource'], Permission::EDIT->value, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
                 }
             }
 
@@ -333,11 +310,6 @@ class ResourceController
                 $token = $this->extractToken($request);
                 if (!$token) {
                     return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-                }
-
-                // Check permissions using the PermissionManager for non-superusers
-                if (!PermissionManager::can($params['resource'], Permission::DELETE->value, $token)) {
-                    return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
                 }
             }
 

@@ -464,10 +464,6 @@ class NotificationsController
             // Extract token for permission check
             $token = $userData['token'] ?? null;
 
-            // Check if user has admin permissions using PermissionManager
-            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-            }
 
             // Get metrics from the notification service
             $metrics = $this->notificationService->getPerformanceMetrics();
@@ -503,10 +499,6 @@ class NotificationsController
             // Extract token for permission check
             $token = $userData['token'] ?? null;
 
-            // Check if user has admin permissions using PermissionManager
-            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-            }
 
             if (!isset($params['channel'])) {
                 return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
@@ -560,10 +552,6 @@ class NotificationsController
             // Extract token for permission check
             $token = $userData['token'] ?? null;
 
-            // Check if user has admin permissions using PermissionManager
-            if (!\Glueful\Permissions\PermissionManager::can('notifications', 'manage', $token)) {
-                return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
-            }
 
             if (!isset($params['channel'])) {
                 return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();

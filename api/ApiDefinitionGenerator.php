@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful;
 
-use Glueful\Permissions\Permission;
 use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Connection;
@@ -452,7 +451,6 @@ class ApiDefinitionGenerator
         $this->log("--- Creating Superuser Role ---");
 
         $roleUuid = $this->getOrCreateAdminRole();
-        $this->updateAdminPermissions($roleUuid);
     }
 
     /**
@@ -571,172 +569,6 @@ class ApiDefinitionGenerator
         }
     }
 
-    /**
-     * Update administrator permissions
-     *
-     * @param string $roleUuid Administrator role UUID
-     */
-    private function updateAdminPermissions(string $roleUuid): void
-    {
-        $this->log("--- Assigning/Updating Superuser Permissions ---");
-
-        try {
-            // Collect all permissions using separate functions
-            $allPermissions = array_merge(
-                $this->collectCorePermissions($roleUuid),
-                $this->collectExtensionPermissions($roleUuid),
-                $this->collectUIModelPermissions($roleUuid)
-            );
-
-            // echo "Permissions: ";
-            // print_r($allPermissions);
-            // exit;
-
-            if (!empty($allPermissions)) {
-                $this->log("Found " . count($allPermissions) . " permissions to assign");
-
-                // Use transaction through QueryBuilder
-                $this->db->transaction(function ($qb) use ($allPermissions) {
-                    $insertCount = 0;
-                    foreach ($allPermissions as $permission) {
-                        $this->log($permission['model']);
-
-                        // Use upsert to handle potential duplicates
-                        if (
-                            $qb->upsert(
-                                'role_permissions',
-                                [$permission],
-                                ['permissions'] // Update permissions if record exists
-                            ) > 0
-                        ) {
-                            $insertCount++;
-                        }
-                    }
-
-                    if ($insertCount > 0) {
-                        $this->log("Successfully assigned $insertCount permissions");
-                        return true;
-                    } else {
-                        $this->log("No permissions were inserted");
-                        return false;
-                    }
-                });
-            } else {
-                $this->log("No new permissions to assign");
-            }
-        } catch (\Exception $e) {
-            $this->log("Error updating permissions: " . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Collect core permissions for JSON definition files
-     */
-    private function collectCorePermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        foreach (glob(config('app.paths.json_definitions') . "*.json") as $file) {
-            $parts = explode('.', basename($file));
-            if (count($parts) !== 3) {
-                continue;
-            }
-
-            $model = "api.{$parts[0]}.{$parts[1]}";
-            if (!$this->permissionExists($roleUuid, $model)) {
-                $permissions[] = [
-                    'uuid' => Utils::generateNanoID(),
-                    'role_uuid' => $roleUuid,
-                    'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                ];
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Collect extension-based permissions
-     */
-    private function collectExtensionPermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        foreach ($this->getExtensionPaths() as $path) {
-            $path = str_replace("\\", "/", $path);
-            $parts = explode('/', $path);
-            $filename = end($parts);
-            $function = current(explode('.', $filename));
-            $action = prev($parts);
-
-            if (!file_exists($path)) {
-                continue;
-            }
-
-            $extension = file_get_contents($path);
-            if (!str_contains($extension, 'extends') || !str_contains($extension, 'Extensions')) {
-                continue;
-            }
-
-            $model = "api.ext.$action.$function";
-            if (!$this->permissionExists($roleUuid, $model)) {
-                $permissions[] = [
-                    'uuid' => Utils::generateNanoID(),
-                    'role_uuid' => $roleUuid,
-                    'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                ];
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Collect UI model permissions
-     */
-    private function collectUIModelPermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        global $uiModels;
-
-        if (!empty($uiModels)) {
-            foreach ($uiModels as $view) {
-                $model = "ui.$view";
-                if (!$this->permissionExists($roleUuid, $model)) {
-                    $permissions[] = [
-                        'uuid' => Utils::generateNanoID(),
-                        'role_uuid' => $roleUuid,
-                        'model' => $model,
-                        'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                    ];
-                }
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Check if permission exists
-     *
-     * @param string $roleUuid Role UUID
-     * @param string $model Model to check
-     * @return bool True if permission exists
-     * @throws \Exception On database errors
-     */
-    private function permissionExists(string $roleUuid, string $model): bool
-    {
-        try {
-            // Check permissions using role UUID directly
-            $permissions = $this->db->select(
-                'role_permissions',
-                ['id'],
-            )->where(['role_uuid' => $roleUuid, 'model' => $model])->limit(1)->get();
-
-            return !empty($permissions);
-        } catch (\Exception $e) {
-            $this->log("Error checking permissions: " . $e->getMessage());
-            throw $e;
-        }
-    }
 
     /**
      * Get extension file paths

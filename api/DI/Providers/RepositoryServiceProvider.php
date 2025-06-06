@@ -11,7 +11,6 @@ use Glueful\Repository\RepositoryFactory;
 use Glueful\Repository\ResourceRepository;
 use Glueful\Repository\UserRepository;
 use Glueful\Repository\RoleRepository;
-use Glueful\Repository\PermissionRepository;
 use Glueful\Repository\NotificationRepository;
 use Glueful\Repository\BlobRepository;
 
@@ -69,10 +68,6 @@ class RepositoryServiceProvider implements ServiceProviderInterface
             return new RoleRepository($connection);
         });
 
-        $container->bind(PermissionRepository::class, function (ContainerInterface $container) {
-            $connection = $container->get(Connection::class);
-            return new PermissionRepository($connection);
-        });
 
         $container->bind(NotificationRepository::class, function (ContainerInterface $container) {
             $connection = $container->get(Connection::class);
