@@ -10,6 +10,9 @@ use Glueful\Exceptions\NotFoundException;
 use Glueful\Auth\TokenStorageService;
 use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\Database\RawExpression;
+use Glueful\Permissions\Helpers\PermissionHelper;
+use Glueful\Interfaces\Permission\PermissionStandards;
+use Glueful\Exceptions\SecurityException;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -41,6 +44,37 @@ class UsersController
     }
 
     /**
+     * Check if current user has permission
+     *
+     * @param Request $request
+     * @param string $permission Permission to check
+     * @param array $context Additional context
+     * @return void
+     * @throws SecurityException If permission check fails
+     */
+    private function checkPermission(Request $request, string $permission, array $context = []): void
+    {
+        // Get user UUID from request attributes (set by middleware)
+        $userUuid = $request->attributes->get('user_uuid');
+
+        if (!$userUuid) {
+            throw new SecurityException('User authentication required for this operation');
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fallback: Allow any authenticated user when permission system unavailable
+            error_log("FALLBACK: Permission system unavailable, allowing authenticated access for: {$permission}");
+            return;
+        }
+
+        // Check permission using PermissionHelper
+        if (!PermissionHelper::hasPermission($userUuid, $permission, PermissionStandards::CATEGORY_USERS, $context)) {
+            throw new SecurityException("Insufficient permissions: {$permission} required");
+        }
+    }
+
+    /**
      * Get all users with their roles
      *
      * @route GET /api/users
@@ -49,6 +83,12 @@ class UsersController
      */
     public function index(Request $request): Response
     {
+        // Check permission to view users
+        $this->checkPermission($request, PermissionStandards::PERMISSION_USERS_VIEW, [
+            'action' => 'list_users',
+            'endpoint' => '/users'
+        ]);
+
         try {
             $page = (int) $request->query->get('page', 1);
             $perPage = (int) $request->query->get('per_page', 25);
@@ -121,10 +161,20 @@ class UsersController
      *
      * @route GET /api/users/{uuid}
      * @param array $params
+     * @param Request|null $request
      * @return Response
      */
-    public function show(array $params): Response
+    public function show(array $params, ?Request $request = null): Response
     {
+        $request = $request ?? Request::createFromGlobals();
+
+        // Check permission to view users
+        $this->checkPermission($request, PermissionStandards::PERMISSION_USERS_VIEW, [
+            'action' => 'view_user',
+            'resource_id' => $params['uuid'] ?? null,
+            'endpoint' => '/users/{uuid}'
+        ]);
+
         try {
             $uuid = $params['uuid'] ?? '';
 
@@ -159,6 +209,12 @@ class UsersController
      */
     public function create(Request $request): Response
     {
+        // Check permission to create users
+        $this->checkPermission($request, PermissionStandards::PERMISSION_USERS_CREATE, [
+            'action' => 'create_user',
+            'endpoint' => '/users'
+        ]);
+
         try {
             $data = $request->toArray();
 
@@ -232,6 +288,13 @@ class UsersController
      */
     public function update(array $params, Request $request): Response
     {
+        // Check permission to edit users
+        $this->checkPermission($request, PermissionStandards::PERMISSION_USERS_EDIT, [
+            'action' => 'update_user',
+            'resource_id' => $params['uuid'] ?? null,
+            'endpoint' => '/api/users/{uuid}'
+        ]);
+
         try {
             $uuid = $params['uuid'] ?? '';
             $data = $request->toArray();
@@ -302,10 +365,20 @@ class UsersController
      *
      * @route DELETE /api/users/{uuid}
      * @param array $params
+     * @param Request|null $request
      * @return Response
      */
-    public function delete(array $params): Response
+    public function delete(array $params, ?Request $request = null): Response
     {
+        $request = $request ?? Request::createFromGlobals();
+
+        // Check permission to delete users
+        $this->checkPermission($request, PermissionStandards::PERMISSION_USERS_DELETE, [
+            'action' => 'delete_user',
+            'resource_id' => $params['uuid'] ?? null,
+            'endpoint' => '/api/users/{uuid}'
+        ]);
+
         try {
             $uuid = $params['uuid'] ?? '';
 
@@ -371,6 +444,20 @@ class UsersController
     {
         try {
             $data = $request->toArray();
+
+            // Check permission based on the bulk action
+            $action = $data['action'] ?? '';
+            $permission = match ($action) {
+                'delete' => PermissionStandards::PERMISSION_USERS_DELETE,
+                'activate', 'deactivate', 'update' => PermissionStandards::PERMISSION_USERS_EDIT,
+                default => PermissionStandards::PERMISSION_USERS_EDIT
+            };
+
+            $this->checkPermission($request, $permission, [
+                'action' => 'bulk_operation',
+                'bulk_action' => $action,
+                'endpoint' => '/api/users/bulk'
+            ]);
 
             if (empty($data['action']) || empty($data['user_ids'])) {
                 return Response::error(

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Helpers\ConfigManager;
+use Glueful\Permissions\Helpers\PermissionHelper;
+use Glueful\Interfaces\Permission\PermissionStandards;
+use Glueful\Exceptions\SecurityException;
+use Symfony\Component\HttpFoundation\Request;
 
 class ConfigController
 {
@@ -13,8 +17,45 @@ class ConfigController
         // Ensure ConfigManager is loaded
         // ConfigManager::load();
     }
-    public function getConfigs(): array
+
+    /**
+     * Check if current user has permission
+     *
+     * @param Request $request
+     * @param string $permission Permission to check
+     * @param array $context Additional context
+     * @return void
+     * @throws SecurityException If permission check fails
+     */
+    private function checkPermission(Request $request, string $permission, array $context = []): void
     {
+        $userUuid = $request->attributes->get('user_uuid');
+
+        if (!$userUuid) {
+            throw new SecurityException('User authentication required for this operation');
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fallback: Allow any authenticated user when permission system unavailable
+            error_log("FALLBACK: Permission system unavailable, allowing authenticated access for: {$permission}");
+            return;
+        }
+
+        if (!PermissionHelper::hasPermission($userUuid, $permission, 'system', $context)) {
+            throw new SecurityException("Insufficient permissions: {$permission} required");
+        }
+    }
+
+    public function getConfigs(?Request $request = null): array
+    {
+        $request = $request ?? Request::createFromGlobals();
+
+        // Check permission to view system configuration
+        $this->checkPermission($request, PermissionStandards::PERMISSION_SYSTEM_ACCESS, [
+            'action' => 'view_config',
+            'endpoint' => '/config'
+        ]);
         // Load config files directly from the config directory
         $configPath = dirname(__DIR__, 2) . '/config';
         $configFiles = glob($configPath . '/*.php');
