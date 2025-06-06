@@ -140,7 +140,6 @@ class UsersController
             // Get user roles using UUID
             $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
 
-
             // Get user profile
             $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
 

@@ -184,4 +184,129 @@ class MemcachedCacheDriver implements CacheDriverInterface
     {
         return $this->memcached->flush();
     }
+
+    /**
+     * Delete keys matching a pattern
+     *
+     * Note: Memcached doesn't support pattern-based deletion natively.
+     * This is a limited implementation that cannot efficiently handle patterns.
+     *
+     * @param string $pattern Pattern to match (supports wildcards *)
+     * @return bool True if deletion successful
+     */
+    public function deletePattern(string $pattern): bool
+    {
+        // Memcached doesn't support pattern-based operations
+        // This operation is not feasible without key enumeration
+        return false;
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Note: Memcached doesn't support key enumeration natively.
+     * This method returns an empty array as keys cannot be retrieved.
+     *
+     * @param string $pattern Optional pattern to filter keys
+     * @return array List of cache keys (always empty for Memcached)
+     */
+    public function getKeys(string $pattern = '*'): array
+    {
+        // Memcached doesn't support key enumeration
+        return [];
+    }
+
+    /**
+     * Get cache statistics and information
+     *
+     * Returns Memcached server statistics.
+     *
+     * @return array Cache statistics
+     */
+    public function getStats(): array
+    {
+        try {
+            $stats = $this->memcached->getStats();
+
+            if (empty($stats)) {
+                return [
+                    'driver' => 'memcached',
+                    'error' => 'No server statistics available'
+                ];
+            }
+
+            // Get stats from first server
+            $serverStats = reset($stats);
+
+            return [
+                'driver' => 'memcached',
+                'version' => $serverStats['version'] ?? 'unknown',
+                'uptime' => $serverStats['uptime'] ?? 0,
+                'memory' => [
+                    'limit' => $serverStats['limit_maxbytes'] ?? 0,
+                    'used' => $serverStats['bytes'] ?? 0,
+                    'available' => ($serverStats['limit_maxbytes'] ?? 0) - ($serverStats['bytes'] ?? 0),
+                ],
+                'performance' => [
+                    'total_connections' => $serverStats['total_connections'] ?? 0,
+                    'current_connections' => $serverStats['curr_connections'] ?? 0,
+                    'get_hits' => $serverStats['get_hits'] ?? 0,
+                    'get_misses' => $serverStats['get_misses'] ?? 0,
+                    'hit_rate' => $this->calculateHitRate($serverStats),
+                ],
+                'operations' => [
+                    'cmd_get' => $serverStats['cmd_get'] ?? 0,
+                    'cmd_set' => $serverStats['cmd_set'] ?? 0,
+                    'get_hits' => $serverStats['get_hits'] ?? 0,
+                    'get_misses' => $serverStats['get_misses'] ?? 0,
+                ],
+                'items' => [
+                    'current_items' => $serverStats['curr_items'] ?? 0,
+                    'total_items' => $serverStats['total_items'] ?? 0,
+                ],
+                'limitations' => [
+                    'pattern_deletion' => false,
+                    'key_enumeration' => false,
+                    'note' => 'Memcached does not support pattern operations or key enumeration'
+                ]
+            ];
+        } catch (\Exception $e) {
+            return [
+                'driver' => 'memcached',
+                'error' => 'Failed to get stats: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Note: Memcached doesn't support key enumeration natively.
+     * This method returns an empty array as keys cannot be retrieved.
+     *
+     * @return array List of all cache keys (always empty for Memcached)
+     */
+    public function getAllKeys(): array
+    {
+        return [];
+    }
+
+    /**
+     * Calculate cache hit rate from Memcached stats
+     *
+     * @param array $stats Server statistics
+     * @return float Hit rate as percentage
+     */
+    private function calculateHitRate(array $stats): float
+    {
+        $hits = $stats['get_hits'] ?? 0;
+        $misses = $stats['get_misses'] ?? 0;
+        $total = $hits + $misses;
+
+        if ($total === 0) {
+            return 0.0;
+        }
+
+        return round(($hits / $total) * 100, 2);
+    }
 }

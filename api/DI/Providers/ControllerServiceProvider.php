@@ -43,7 +43,6 @@ class ControllerServiceProvider implements ServiceProviderInterface
             return new ResourceController($repositoryFactory);
         });
 
-
         // Metrics Controller
         $container->bind(MetricsController::class);
 

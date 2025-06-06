@@ -68,7 +68,6 @@ class RepositoryServiceProvider implements ServiceProviderInterface
             return new RoleRepository($connection);
         });
 
-
         $container->bind(NotificationRepository::class, function (ContainerInterface $container) {
             $connection = $container->get(Connection::class);
             return new NotificationRepository($connection);

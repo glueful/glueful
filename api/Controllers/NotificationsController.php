@@ -464,7 +464,6 @@ class NotificationsController
             // Extract token for permission check
             $token = $userData['token'] ?? null;
 
-
             // Get metrics from the notification service
             $metrics = $this->notificationService->getPerformanceMetrics();
 
@@ -498,7 +497,6 @@ class NotificationsController
 
             // Extract token for permission check
             $token = $userData['token'] ?? null;
-
 
             if (!isset($params['channel'])) {
                 return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
@@ -551,7 +549,6 @@ class NotificationsController
 
             // Extract token for permission check
             $token = $userData['token'] ?? null;
-
 
             if (!isset($params['channel'])) {
                 return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();

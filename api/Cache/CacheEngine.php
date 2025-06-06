@@ -301,4 +301,199 @@ class CacheEngine
 
         return $success;
     }
+
+    /**
+     * Delete cache keys matching a pattern
+     *
+     * Deletes all cache keys that match the given pattern.
+     * Uses wildcard (*) matching for flexibility.
+     *
+     * @param string $pattern Pattern to match (e.g., 'user:*', '*:permissions')
+     * @return bool True if deletion successful
+     */
+    public static function deletePattern(string $pattern): bool
+    {
+        if (!self::ensureEnabled()) {
+            return false;
+        }
+
+        try {
+            $fullPattern = self::$prefix . $pattern;
+
+            // For Redis driver, use SCAN and DEL
+            if (method_exists(self::$driver, 'deletePattern')) {
+                return self::$driver->deletePattern($fullPattern);
+            }
+
+            // Fallback: Get all keys and filter (less efficient but works)
+            if (method_exists(self::$driver, 'getAllKeys')) {
+                $allKeys = self::$driver->getAllKeys();
+                $matchingKeys = [];
+
+                // Convert pattern to regex
+                $regex = '/^' . str_replace('*', '.*', preg_quote($fullPattern, '/')) . '$/';
+
+                foreach ($allKeys as $key) {
+                    if (preg_match($regex, $key)) {
+                        $matchingKeys[] = str_replace(self::$prefix, '', $key);
+                    }
+                }
+
+                $success = true;
+                foreach ($matchingKeys as $key) {
+                    $success = $success && self::delete($key);
+                }
+
+                return $success;
+            }
+
+            return false;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get cache statistics
+     *
+     * Returns statistics about cache usage and performance.
+     *
+     * @return array Cache statistics
+     */
+    public static function getStats(): array
+    {
+        if (!self::ensureEnabled()) {
+            return [
+                'enabled' => false,
+                'error' => 'Cache not enabled or initialized'
+            ];
+        }
+
+        try {
+            $stats = [
+                'enabled' => true,
+                'driver' => get_class(self::$driver),
+                'prefix' => self::$prefix,
+            ];
+
+            // Get driver-specific stats if available
+            if (method_exists(self::$driver, 'getStats')) {
+                $stats['driver_stats'] = self::$driver->getStats();
+            }
+
+            // Add basic health check
+            $testKey = 'health_check_' . time();
+            $testValue = 'test';
+
+            $writeSuccess = self::set($testKey, $testValue, 60);
+            $readSuccess = self::get($testKey) === $testValue;
+            self::delete($testKey);
+
+            $stats['health'] = [
+                'write' => $writeSuccess,
+                'read' => $readSuccess,
+                'overall' => $writeSuccess && $readSuccess
+            ];
+
+            return $stats;
+        } catch (\Exception $e) {
+            return [
+                'enabled' => true,
+                'error' => 'Failed to get stats: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Get all cache keys with optional pattern filtering
+     *
+     * Returns all cache keys, optionally filtered by pattern.
+     *
+     * @param string $pattern Optional pattern to filter keys
+     * @return array List of cache keys
+     */
+    public static function getKeys(string $pattern = '*'): array
+    {
+        if (!self::ensureEnabled()) {
+            return [];
+        }
+
+        try {
+            $fullPattern = self::$prefix . $pattern;
+
+            // If driver supports pattern-based key retrieval
+            if (method_exists(self::$driver, 'getKeys')) {
+                $keys = self::$driver->getKeys($fullPattern);
+
+                // Remove prefix from keys
+                return array_map(function ($key) {
+                    return str_replace(self::$prefix, '', $key);
+                }, $keys);
+            }
+
+            // Fallback: Get all keys and filter
+            if (method_exists(self::$driver, 'getAllKeys')) {
+                $allKeys = self::$driver->getAllKeys();
+                $matchingKeys = [];
+
+                // Convert pattern to regex
+                $regex = '/^' . str_replace('*', '.*', preg_quote($fullPattern, '/')) . '$/';
+
+                foreach ($allKeys as $key) {
+                    if (preg_match($regex, $key)) {
+                        $matchingKeys[] = str_replace(self::$prefix, '', $key);
+                    }
+                }
+
+                return $matchingKeys;
+            }
+
+            return [];
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get cache key count
+     *
+     * Returns the total number of cache keys.
+     *
+     * @param string $pattern Optional pattern to count specific keys
+     * @return int Number of cache keys
+     */
+    public static function getKeyCount(string $pattern = '*'): int
+    {
+        return count(self::getKeys($pattern));
+    }
+
+    /**
+     * Check if cache driver supports advanced operations
+     *
+     * Returns information about which advanced operations
+     * the current cache driver supports.
+     *
+     * @return array Supported operations
+     */
+    public static function getCapabilities(): array
+    {
+        if (!self::ensureEnabled()) {
+            return [];
+        }
+
+        $capabilities = [
+            'basic_operations' => true,
+            'pattern_deletion' => method_exists(self::$driver, 'deletePattern') ||
+                                  method_exists(self::$driver, 'getAllKeys'),
+            'key_enumeration' => method_exists(self::$driver, 'getKeys') || method_exists(self::$driver, 'getAllKeys'),
+            'statistics' => method_exists(self::$driver, 'getStats'),
+            'tagging' => true, // Basic tagging is always supported via our implementation
+            'atomic_operations' => method_exists(self::$driver, 'multi') || method_exists(self::$driver, 'pipeline'),
+            'expiration' => true, // TTL is always supported
+            'increment' => method_exists(self::$driver, 'increment'),
+            'sorted_sets' => method_exists(self::$driver, 'zadd'),
+        ];
+
+        return $capabilities;
+    }
 }

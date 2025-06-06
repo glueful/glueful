@@ -175,4 +175,140 @@ class RedisCacheDriver implements CacheDriverInterface
     {
         return $this->redis->flushDB();
     }
+
+    /**
+     * Delete keys matching a pattern
+     *
+     * Uses Redis SCAN and DEL commands for efficient pattern-based deletion.
+     *
+     * @param string $pattern Pattern to match (supports wildcards *)
+     * @return bool True if deletion successful
+     */
+    public function deletePattern(string $pattern): bool
+    {
+        try {
+            $iterator = null;
+            $deletedCount = 0;
+
+            // Use SCAN to iterate through keys matching the pattern
+            do {
+                $keys = $this->redis->scan($iterator, $pattern, 100);
+                if ($keys !== false && !empty($keys)) {
+                    $result = $this->redis->del($keys);
+                    $deletedCount += $result;
+                }
+            } while ($iterator > 0);
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Uses Redis SCAN command to efficiently retrieve keys.
+     *
+     * @param string $pattern Optional pattern to filter keys
+     * @return array List of cache keys
+     */
+    public function getKeys(string $pattern = '*'): array
+    {
+        try {
+            $keys = [];
+            $iterator = null;
+
+            // Use SCAN to iterate through all keys
+            do {
+                $scanResult = $this->redis->scan($iterator, $pattern, 1000);
+                if ($scanResult !== false) {
+                    $keys = array_merge($keys, $scanResult);
+                }
+            } while ($iterator > 0);
+
+            return $keys;
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get cache statistics and information
+     *
+     * Returns Redis server information and statistics.
+     *
+     * @return array Cache statistics
+     */
+    public function getStats(): array
+    {
+        try {
+            $info = $this->redis->info();
+            $stats = [
+                'driver' => 'redis',
+                'connection' => [
+                    'host' => $this->redis->getHost(),
+                    'port' => $this->redis->getPort(),
+                    'database' => $this->redis->getDBNum(),
+                ],
+                'memory' => [
+                    'used' => $info['used_memory_human'] ?? 'unknown',
+                    'peak' => $info['used_memory_peak_human'] ?? 'unknown',
+                    'fragmentation_ratio' => $info['mem_fragmentation_ratio'] ?? 'unknown',
+                ],
+                'performance' => [
+                    'total_connections' => $info['total_connections_received'] ?? 0,
+                    'total_commands' => $info['total_commands_processed'] ?? 0,
+                    'ops_per_sec' => $info['instantaneous_ops_per_sec'] ?? 0,
+                    'hit_rate' => $this->calculateHitRate($info),
+                ],
+                'keyspace' => [],
+            ];
+
+            // Add keyspace information
+            foreach ($info as $key => $value) {
+                if (strpos($key, 'db') === 0) {
+                    $stats['keyspace'][$key] = $value;
+                }
+            }
+
+            return $stats;
+        } catch (\Exception $e) {
+            return [
+                'driver' => 'redis',
+                'error' => 'Failed to get stats: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Uses Redis SCAN command to efficiently retrieve all keys.
+     *
+     * @return array List of all cache keys
+     */
+    public function getAllKeys(): array
+    {
+        return $this->getKeys('*');
+    }
+
+    /**
+     * Calculate cache hit rate from Redis info
+     *
+     * @param array $info Redis info array
+     * @return float Hit rate as percentage
+     */
+    private function calculateHitRate(array $info): float
+    {
+        $hits = $info['keyspace_hits'] ?? 0;
+        $misses = $info['keyspace_misses'] ?? 0;
+        $total = $hits + $misses;
+
+        if ($total === 0) {
+            return 0.0;
+        }
+
+        return round(($hits / $total) * 100, 2);
+    }
 }

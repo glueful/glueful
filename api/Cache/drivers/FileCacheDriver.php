@@ -410,4 +410,149 @@ class FileCacheDriver implements CacheDriverInterface
 
         return $success;
     }
+
+    /**
+     * Delete keys matching a pattern
+     *
+     * Scans the cache directory for files matching the pattern.
+     *
+     * @param string $pattern Pattern to match (supports wildcards *)
+     * @return bool True if deletion successful
+     */
+    public function deletePattern(string $pattern): bool
+    {
+        try {
+            // Convert cache key pattern to file pattern
+            $filePattern = $this->directory . str_replace(['*', '/', '\\'], ['*', '_', '_'], $pattern) . '.*';
+            $files = glob($filePattern);
+
+            if ($files === false) {
+                return false;
+            }
+
+            $success = true;
+            foreach ($files as $file) {
+                if (is_file($file)) {
+                    $success = $success && unlink($file);
+                }
+            }
+
+            return $success;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Scans the cache directory for cache files.
+     *
+     * @param string $pattern Optional pattern to filter keys
+     * @return array List of cache keys
+     */
+    public function getKeys(string $pattern = '*'): array
+    {
+        try {
+            $filePattern = $this->directory . str_replace(['*', '/', '\\'], ['*', '_', '_'], $pattern) . '.cache';
+            $files = glob($filePattern);
+
+            if ($files === false) {
+                return [];
+            }
+
+            $keys = [];
+            foreach ($files as $file) {
+                $basename = basename($file, '.cache');
+                // Convert file name back to cache key
+                $key = str_replace('_', '/', $basename);
+                $keys[] = $key;
+            }
+
+            return $keys;
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get cache statistics and information
+     *
+     * Returns file cache statistics.
+     *
+     * @return array Cache statistics
+     */
+    public function getStats(): array
+    {
+        try {
+            $files = glob($this->directory . '*.cache');
+            $totalFiles = $files !== false ? count($files) : 0;
+
+            $totalSize = 0;
+            $expiredCount = 0;
+            $currentTime = time();
+
+            if ($files !== false) {
+                foreach ($files as $file) {
+                    $totalSize += filesize($file);
+
+                    // Check if file is expired
+                    $key = basename($file, '.cache');
+                    $key = str_replace('_', '/', $key);
+
+                    if ($this->ttl($key) === -2) {
+                        $expiredCount++;
+                    }
+                }
+            }
+
+            return [
+                'driver' => 'file',
+                'directory' => $this->directory,
+                'permissions' => substr(sprintf('%o', fileperms($this->directory)), -4),
+                'total_keys' => $totalFiles,
+                'expired_keys' => $expiredCount,
+                'active_keys' => $totalFiles - $expiredCount,
+                'total_size' => $totalSize,
+                'total_size_human' => $this->formatBytes($totalSize),
+                'disk_free_space' => disk_free_space($this->directory),
+                'disk_free_space_human' => $this->formatBytes((int)(disk_free_space($this->directory) ?: 0)),
+            ];
+        } catch (\Exception $e) {
+            return [
+                'driver' => 'file',
+                'error' => 'Failed to get stats: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Get all cache keys
+     *
+     * Scans the cache directory for all cache files.
+     *
+     * @return array List of all cache keys
+     */
+    public function getAllKeys(): array
+    {
+        return $this->getKeys('*');
+    }
+
+    /**
+     * Format bytes to human readable format
+     *
+     * @param int $size Size in bytes
+     * @return string Formatted size
+     */
+    private function formatBytes(int $size): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $power = $size > 0 ? floor(log($size, 1024)) : 0;
+
+        if ($power >= count($units)) {
+            $power = count($units) - 1;
+        }
+
+        return round($size / (1024 ** $power), 2) . ' ' . $units[$power];
+    }
 }

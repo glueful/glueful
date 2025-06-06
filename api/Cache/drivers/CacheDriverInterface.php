@@ -114,4 +114,34 @@ interface CacheDriverInterface
      * @return bool True if deleted successfully
      */
     public function del(string $key): bool;
+
+    /**
+     * Delete keys matching a pattern
+     *
+     * @param string $pattern Pattern to match (supports wildcards *)
+     * @return bool True if deletion successful
+     */
+    public function deletePattern(string $pattern): bool;
+
+    /**
+     * Get all cache keys
+     *
+     * @param string $pattern Optional pattern to filter keys
+     * @return array List of cache keys
+     */
+    public function getKeys(string $pattern = '*'): array;
+
+    /**
+     * Get cache statistics and information
+     *
+     * @return array Cache statistics
+     */
+    public function getStats(): array;
+
+    /**
+     * Get all cache keys
+     *
+     * @return array List of all cache keys
+     */
+    public function getAllKeys(): array;
 }

@@ -220,7 +220,6 @@ class RoleRepository extends BaseRepository
         // Restore the original table
         $this->table = $originalTable;
 
-
         return $result ? true : false;
     }
 
@@ -269,7 +268,6 @@ class RoleRepository extends BaseRepository
                     $originalData
                 );
             }
-
 
             return $result;
         } finally {
