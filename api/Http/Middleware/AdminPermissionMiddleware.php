@@ -7,6 +7,7 @@ namespace Glueful\Http\Middleware;
 use Glueful\Permissions\PermissionManager;
 use Glueful\Permissions\Exceptions\PermissionException;
 use Glueful\Permissions\Exceptions\ProviderNotFoundException;
+use Glueful\Interfaces\Permission\PermissionStandards;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\TokenManager;
 use Glueful\Repository\UserRepository;
@@ -58,14 +59,14 @@ class AdminPermissionMiddleware implements MiddlewareInterface
     /**
      * Constructor
      *
-     * @param string $adminPermission Admin permission required (e.g., 'admin', 'superadmin')
+     * @param string $adminPermission Admin permission required (defaults to system.access)
      * @param string $resource Resource identifier (e.g., 'users', 'system', 'settings')
      * @param array $context Additional context for permission checking
      * @param array $allowedIps Allowed IP addresses (empty = allow all)
      * @param bool $requireElevated Whether to require elevated authentication
      */
     public function __construct(
-        string $adminPermission = 'admin',
+        string $adminPermission = PermissionStandards::PERMISSION_SYSTEM_ACCESS,
         string $resource = 'system',
         array $context = [],
         array $allowedIps = [],
@@ -497,7 +498,7 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function superuser(string $resource = 'system', array $allowedIps = []): self
     {
-        return new self('superuser', $resource, ['level' => 'super'], $allowedIps, true);
+        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, $resource, ['level' => 'super'], $allowedIps, true);
     }
 
     /**
@@ -509,7 +510,7 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function systemAdmin(string $resource = 'system', array $allowedIps = []): self
     {
-        return new self('system_admin', $resource, ['level' => 'system'], $allowedIps, true);
+        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, $resource, ['level' => 'system'], $allowedIps, true);
     }
 
     /**
@@ -520,7 +521,7 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function userAdmin(array $allowedIps = []): self
     {
-        return new self('user_admin', 'users', ['level' => 'user_management'], $allowedIps, false);
+        return new self(PermissionStandards::PERMISSION_USERS_VIEW, 'users', ['level' => 'user_management'], $allowedIps, false);
     }
 
     /**
@@ -531,6 +532,6 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function contentAdmin(array $allowedIps = []): self
     {
-        return new self('content_admin', 'content', ['level' => 'content_management'], $allowedIps, false);
+        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, 'content', ['level' => 'content_management'], $allowedIps, false);
     }
 }

@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+use Glueful\Permissions\Helpers\PermissionHelper;
 
 /**
  * JWT Authentication Provider
@@ -124,21 +125,32 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
-        // Get the actual user data from the nested structure if available
         $user = $userData['user'] ?? $userData;
 
-        // Check if there's an explicit is_admin flag in the user data
-        if (isset($user['is_admin']) && $user['is_admin'] === true) {
-            error_log("Admin access granted through is_admin flag for user: " . ($user['username'] ?? 'unknown'));
+        // Fallback to is_admin flag if no UUID available
+        if (!isset($user['uuid'])) {
+            return !empty($user['is_admin']);
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fall back to is_admin flag
+            return !empty($user['is_admin']);
+        }
+
+        // Check if user has admin access using PermissionHelper
+        $hasAdminAccess = PermissionHelper::canAccessAdmin(
+            $user['uuid'],
+            ['auth_check' => true, 'provider' => 'jwt']
+        );
+
+        // If permission check fails, fall back to is_admin flag as safety net
+        if (!$hasAdminAccess && !empty($user['is_admin'])) {
+            error_log("Admin permission check failed for user {$user['uuid']}, falling back to is_admin flag");
             return true;
         }
 
-        // Note: Role-based admin checking moved to RBAC extension
-        // Use RBAC extension APIs for role-based permission checking
-        error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') .
-                  " - use RBAC extension for role-based admin permissions");
-
-        return false;
+        return $hasAdminAccess;
     }
 
     /**

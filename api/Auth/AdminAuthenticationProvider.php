@@ -9,6 +9,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+use Glueful\Permissions\Helpers\PermissionHelper;
 
 /**
  * Admin Authentication Provider
@@ -230,12 +231,40 @@ class AdminAuthenticationProvider implements AuthenticationProviderInterface
     /**
      * Check if a user has admin privileges
      *
+     * Uses PermissionHelper to determine admin status. Falls back to is_admin flag
+     * if permission system is unavailable.
+     *
      * @param array $userData User data
      * @return bool True if user is an admin
      */
     public function isAdmin(array $userData): bool
     {
-        return !empty($userData['is_admin']);
+        $user = $userData['user'] ?? $userData;
+
+        // Fallback to is_admin flag if no UUID available
+        if (!isset($user['uuid'])) {
+            return !empty($user['is_admin']);
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fall back to is_admin flag
+            return !empty($user['is_admin']);
+        }
+
+        // Check if user has admin access using PermissionHelper
+        $hasAdminAccess = PermissionHelper::canAccessAdmin(
+            $user['uuid'],
+            ['auth_check' => true, 'provider' => 'admin']
+        );
+
+        // If permission check fails, fall back to is_admin flag as safety net
+        if (!$hasAdminAccess && !empty($user['is_admin'])) {
+            error_log("Admin permission check failed for user {$user['uuid']}, falling back to is_admin flag");
+            return true;
+        }
+
+        return $hasAdminAccess;
     }
 
     /**

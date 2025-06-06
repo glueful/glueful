@@ -12,6 +12,7 @@ use LdapRecord\Auth\BindException;
 use LdapRecord\Models\ActiveDirectory\User as LdapUser;
 use LdapRecord\Models\ActiveDirectory\Group as LdapGroup;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+use Glueful\Permissions\Helpers\PermissionHelper;
 
 /**
  * LDAP Authentication Provider
@@ -135,14 +136,32 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
-        // Check if there's an explicit is_admin flag in the user data
-        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
+        $user = $userData['user'] ?? $userData;
+
+        // Fallback to is_admin flag if no UUID available
+        if (!isset($user['uuid'])) {
+            return !empty($user['is_admin']);
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fall back to is_admin flag
+            return !empty($user['is_admin']);
+        }
+
+        // Check if user has admin access using PermissionHelper
+        $hasAdminAccess = PermissionHelper::canAccessAdmin(
+            $user['uuid'],
+            ['auth_check' => true, 'provider' => 'ldap']
+        );
+
+        // If permission check fails, fall back to is_admin flag as safety net
+        if (!$hasAdminAccess && !empty($user['is_admin'])) {
+            error_log("Admin permission check failed for user {$user['uuid']}, falling back to is_admin flag");
             return true;
         }
 
-        // Note: Role-based admin checking moved to RBAC extension
-        // Use RBAC extension APIs for role-based permission checking
-        return false;
+        return $hasAdminAccess;
     }
 
     /**

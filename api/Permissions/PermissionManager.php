@@ -6,6 +6,7 @@ namespace Glueful\Permissions;
 
 use Glueful\Interfaces\Permission\PermissionManagerInterface;
 use Glueful\Interfaces\Permission\PermissionProviderInterface;
+use Glueful\Interfaces\Permission\PermissionStandards;
 use Glueful\Permissions\Exceptions\PermissionException;
 use Glueful\Permissions\Exceptions\ProviderNotFoundException;
 use Glueful\Auth\AuthenticationService;
@@ -46,13 +47,16 @@ class PermissionManager implements PermissionManagerInterface
      * @param PermissionProviderInterface $provider The provider to activate
      * @param array $config Configuration for the provider
      * @return void
-     * @throws PermissionException If provider initialization fails
+     * @throws PermissionException If provider initialization fails or doesn't implement core permissions
      */
     public function setProvider(PermissionProviderInterface $provider, array $config = []): void
     {
         try {
             // Initialize the provider with configuration
             $provider->initialize($config);
+
+            // Validate that provider implements core permissions
+            $this->validateCorePermissions($provider);
 
             // Set as active provider
             self::$activeProvider = $provider;
@@ -67,7 +71,8 @@ class PermissionManager implements PermissionManagerInterface
                     'action' => 'provider_set',
                     'provider' => $providerInfo['name'] ?? 'unknown',
                     'timestamp' => time(),
-                    'config' => $config
+                    'config' => $config,
+                    'core_permissions_validated' => true
                 ];
             }
         } catch (\Exception $e) {
@@ -469,5 +474,97 @@ class PermissionManager implements PermissionManagerInterface
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Validate that a provider implements all core permissions
+     *
+     * @param PermissionProviderInterface $provider The provider to validate
+     * @return void
+     * @throws PermissionException If provider doesn't implement required permissions
+     */
+    private function validateCorePermissions(PermissionProviderInterface $provider): void
+    {
+        $providerInfo = $provider->getProviderInfo();
+        $providerName = $providerInfo['name'] ?? 'Unknown Provider';
+
+        // Get available permissions from the provider
+        $availablePermissions = $provider->getAvailablePermissions();
+
+        // Extract permission slugs from the available permissions
+        $availablePermissionSlugs = array_keys($availablePermissions);
+
+        // Check each core permission
+        $missingPermissions = [];
+        foreach (PermissionStandards::CORE_PERMISSIONS as $corePermission) {
+            if (!in_array($corePermission, $availablePermissionSlugs, true)) {
+                $missingPermissions[] = $corePermission;
+            }
+        }
+
+        // If any core permissions are missing, throw exception
+        if (!empty($missingPermissions)) {
+            $missingList = implode(', ', $missingPermissions);
+            throw new PermissionException(
+                "Permission provider '{$providerName}' does not implement required core permissions: {$missingList}. " .
+                "All permission providers must implement the following permissions: " .
+                implode(', ', PermissionStandards::CORE_PERMISSIONS)
+            );
+        }
+
+        // Log successful validation if in debug mode
+        if (self::$debugMode) {
+            self::$debugInfo[] = [
+                'action' => 'core_permissions_validated',
+                'provider' => $providerName,
+                'core_permissions' => PermissionStandards::CORE_PERMISSIONS,
+                'provider_permissions' => $availablePermissionSlugs,
+                'timestamp' => time()
+            ];
+        }
+    }
+
+    /**
+     * Check if active provider has a specific permission
+     *
+     * @param string $permission Permission to check for
+     * @return bool True if permission exists in provider
+     */
+    public function hasPermission(string $permission): bool
+    {
+        if (!self::$activeProvider) {
+            return false;
+        }
+
+        try {
+            $availablePermissions = self::$activeProvider->getAvailablePermissions();
+            return isset($availablePermissions[$permission]);
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if the permission system has an active provider
+     *
+     * @return bool True if an active provider is set
+     */
+    public function hasActiveProvider(): bool
+    {
+        return self::$activeProvider !== null;
+    }
+
+    /**
+     * Get singleton instance of PermissionManager
+     *
+     * @return self
+     */
+    public static function getInstance(): self
+    {
+        static $instance = null;
+        if ($instance === null) {
+            $instance = new self();
+        }
+        return $instance;
     }
 }

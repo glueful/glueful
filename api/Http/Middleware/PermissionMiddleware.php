@@ -7,6 +7,7 @@ namespace Glueful\Http\Middleware;
 use Glueful\Permissions\PermissionManager;
 use Glueful\Permissions\Exceptions\PermissionException;
 use Glueful\Permissions\Exceptions\ProviderNotFoundException;
+use Glueful\Interfaces\Permission\PermissionStandards;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\TokenManager;
 use Glueful\Exceptions\SecurityException;
@@ -77,15 +78,6 @@ class PermissionMiddleware implements MiddlewareInterface
     public function process(Request $request, RequestHandlerInterface $handler): Response
     {
         try {
-            // Check if permission system is available
-            if (!$this->permissionManager->isAvailable()) {
-                return $this->createErrorResponse(
-                    'Permission system not available',
-                    503,
-                    'PERMISSION_SYSTEM_UNAVAILABLE'
-                );
-            }
-
             // Get user identification
             $userUuid = $this->getUserUuid($request);
 
@@ -100,6 +92,20 @@ class PermissionMiddleware implements MiddlewareInterface
 
             // If we have a user, check permissions
             if ($userUuid) {
+                // Check if permission system is available
+                if (!$this->permissionManager->isAvailable()) {
+                    // Fallback: Allow any authenticated user when permission system unavailable
+                    error_log("FALLBACK: Permission system unavailable in middleware, " .
+                              "allowing authenticated access for: {$this->permission} on {$this->resource}");
+
+                    // Add user context to request for downstream middleware/controllers
+                    $request->attributes->set('user_uuid', $userUuid);
+                    $request->attributes->set('permission_context', $this->context);
+
+                    // Continue to next middleware/handler
+                    return $handler->handle($request);
+                }
+
                 $hasPermission = $this->checkPermission($userUuid, $request);
 
                 if (!$hasPermission) {
@@ -122,6 +128,26 @@ class PermissionMiddleware implements MiddlewareInterface
             // Permission check passed, continue to next middleware/handler
             return $handler->handle($request);
         } catch (ProviderNotFoundException $e) {
+            // If provider not found, apply fallback logic
+            $userUuid = $this->getUserUuid($request);
+
+            if ($this->requireAuth && !$userUuid) {
+                return $this->createErrorResponse(
+                    'Authentication required',
+                    401,
+                    'AUTHENTICATION_REQUIRED'
+                );
+            }
+
+            if ($userUuid) {
+                // Fallback: Allow authenticated user when provider not found
+                error_log("FALLBACK: Provider not found exception, allowing authenticated access for: " .
+                          "{$this->permission}");
+                $request->attributes->set('user_uuid', $userUuid);
+                $request->attributes->set('permission_context', $this->context);
+                return $handler->handle($request);
+            }
+
             return $this->createErrorResponse(
                 'Permission provider not configured',
                 503,
@@ -309,7 +335,7 @@ class PermissionMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Create middleware for read access
+     * Create middleware for read/view access
      *
      * @param string $resource Resource identifier
      * @param array $context Additional context
@@ -317,7 +343,7 @@ class PermissionMiddleware implements MiddlewareInterface
      */
     public static function read(string $resource, array $context = []): self
     {
-        return new self('read', $resource, $context);
+        return new self(PermissionStandards::ACTION_VIEW, $resource, $context);
     }
 
     /**
@@ -329,7 +355,7 @@ class PermissionMiddleware implements MiddlewareInterface
      */
     public static function write(string $resource, array $context = []): self
     {
-        return new self('write', $resource, $context);
+        return new self(PermissionStandards::ACTION_EDIT, $resource, $context);
     }
 
     /**
@@ -341,7 +367,7 @@ class PermissionMiddleware implements MiddlewareInterface
      */
     public static function delete(string $resource, array $context = []): self
     {
-        return new self('delete', $resource, $context);
+        return new self(PermissionStandards::ACTION_DELETE, $resource, $context);
     }
 
     /**
@@ -353,6 +379,26 @@ class PermissionMiddleware implements MiddlewareInterface
      */
     public static function admin(string $resource, array $context = []): self
     {
-        return new self('admin', $resource, $context);
+        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, $resource, $context);
+    }
+
+    /**
+     * Create middleware for user management access
+     *
+     * @param string $action User action (view, create, edit, delete)
+     * @param array $context Additional context
+     * @return self Middleware instance
+     */
+    public static function users(string $action = PermissionStandards::ACTION_VIEW, array $context = []): self
+    {
+        $permission = match ($action) {
+            PermissionStandards::ACTION_VIEW => PermissionStandards::PERMISSION_USERS_VIEW,
+            PermissionStandards::ACTION_CREATE => PermissionStandards::PERMISSION_USERS_CREATE,
+            PermissionStandards::ACTION_EDIT => PermissionStandards::PERMISSION_USERS_EDIT,
+            PermissionStandards::ACTION_DELETE => PermissionStandards::PERMISSION_USERS_DELETE,
+            default => PermissionStandards::PERMISSION_USERS_VIEW
+        };
+
+        return new self($permission, PermissionStandards::CATEGORY_USERS, $context);
     }
 }
