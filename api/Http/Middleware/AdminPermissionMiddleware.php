@@ -498,7 +498,13 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function superuser(string $resource = 'system', array $allowedIps = []): self
     {
-        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, $resource, ['level' => 'super'], $allowedIps, true);
+        return new self(
+            PermissionStandards::PERMISSION_SYSTEM_ACCESS,
+            $resource,
+            ['level' => 'super'],
+            $allowedIps,
+            true
+        );
     }
 
     /**
@@ -510,7 +516,13 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function systemAdmin(string $resource = 'system', array $allowedIps = []): self
     {
-        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, $resource, ['level' => 'system'], $allowedIps, true);
+        return new self(
+            PermissionStandards::PERMISSION_SYSTEM_ACCESS,
+            $resource,
+            ['level' => 'system'],
+            $allowedIps,
+            true
+        );
     }
 
     /**
@@ -521,7 +533,13 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function userAdmin(array $allowedIps = []): self
     {
-        return new self(PermissionStandards::PERMISSION_USERS_VIEW, 'users', ['level' => 'user_management'], $allowedIps, false);
+        return new self(
+            PermissionStandards::PERMISSION_USERS_VIEW,
+            'users',
+            ['level' => 'user_management'],
+            $allowedIps,
+            false
+        );
     }
 
     /**
@@ -532,6 +550,12 @@ class AdminPermissionMiddleware implements MiddlewareInterface
      */
     public static function contentAdmin(array $allowedIps = []): self
     {
-        return new self(PermissionStandards::PERMISSION_SYSTEM_ACCESS, 'content', ['level' => 'content_management'], $allowedIps, false);
+        return new self(
+            PermissionStandards::PERMISSION_SYSTEM_ACCESS,
+            'content',
+            ['level' => 'content_management'],
+            $allowedIps,
+            false
+        );
     }
 }
