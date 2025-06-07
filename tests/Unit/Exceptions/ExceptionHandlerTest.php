@@ -4,10 +4,7 @@ namespace Tests\Unit\Exceptions;
 
 use Tests\TestCase;
 use Glueful\Exceptions\ExceptionHandler;
-use Glueful\Exceptions\ApiException;
 use Glueful\Exceptions\ValidationException;
-use Glueful\Exceptions\AuthenticationException;
-use Glueful\Exceptions\NotFoundException;
 use Glueful\Logging\LogManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -46,12 +43,12 @@ class ExceptionHandlerTest extends TestCase
 
         // Configure getLogger to return different loggers based on the channel
         $this->mockLogManager->method('getLogger')
-            ->will($this->returnCallback(function ($channel) {
+            ->willReturnCallback(function ($channel) {
                 if (!isset($this->mockLoggers[$channel])) {
                     $this->mockLoggers[$channel] = $this->createMock(LoggerInterface::class);
                 }
                 return $this->mockLoggers[$channel];
-            }));
+            });
 
         // Inject the mock log manager
         ExceptionHandler::setLogManager($this->mockLogManager);
@@ -77,61 +74,56 @@ class ExceptionHandlerTest extends TestCase
     /**
      * Test handling of ValidationException
      */
-    /**
- * Test handling of ValidationException
- */
-public function testHandleValidationException(): void
-{
-    // Arrange
-    $errors = [
-        'name' => ['The name field is required'],
-        'email' => ['The email must be a valid email address']
-    ];
-    $exception = new ValidationException($errors);
+    public function testHandleValidationException(): void
+    {
+        // Arrange
+        $errors = [
+            'name' => ['The name field is required'],
+            'email' => ['The email must be a valid email address']
+        ];
+        $exception = new ValidationException($errors);
 
-    // Configure the validation logger to expect an error call
-    // The mockLogManager will create it when getLogger('validation') is called
-    $this->mockLoggers['validation'] = $this->createMock(LoggerInterface::class);
-    $this->mockLoggers['validation']->expects($this->once())
-        ->method('error')
-        ->with(
-            $this->equalTo($exception->getMessage()),
-            $this->callback(function ($context) {
-                return isset($context['file']) &&
-                       isset($context['line']) &&
-                       isset($context['trace']) &&
-                       isset($context['type']);
-            })
-        );
+        // Configure the validation logger to expect an error call
+        // The mockLogManager will create it when getLogger('validation') is called
+        $this->mockLoggers['validation'] = $this->createMock(LoggerInterface::class);
+        $this->mockLoggers['validation']->expects($this->once())
+            ->method('error')
+            ->with(
+                $this->equalTo($exception->getMessage()),
+                $this->callback(function ($context) {
+                    return isset($context['file']) &&
+                           isset($context['line']) &&
+                           isset($context['trace']) &&
+                           isset($context['type']);
+                })
+            );
 
-    // Enable test mode
-    ExceptionHandler::setTestMode(true);
+        // Enable test mode
+        ExceptionHandler::setTestMode(true);
 
-    // Act - Call the handleException method
-    ExceptionHandler::handleException($exception);
+        // Act - Call the handleException method
+        ExceptionHandler::handleException($exception);
 
-    // Get the captured response
-    $responseData = ExceptionHandler::getTestResponse();
+        // Get the captured response
+        $responseData = ExceptionHandler::getTestResponse();
 
-    // Assert - Check channel mapping and exception properties
-    $reflection = new \ReflectionClass(ExceptionHandler::class);
-    $channelMapProperty = $reflection->getProperty('channelMap');
-    $channelMapProperty->setAccessible(true);
-    $channelMap = $channelMapProperty->getValue();
+        // Assert - Check channel mapping and exception properties
+        $reflection = new \ReflectionClass(ExceptionHandler::class);
+        $channelMapProperty = $reflection->getProperty('channelMap');
+        $channelMapProperty->setAccessible(true);
+        $channelMap = $channelMapProperty->getValue();
 
-    // Assert the channel mapping
-    $this->assertEquals('validation', $channelMap[ValidationException::class]);
+        // Assert the channel mapping
+        $this->assertEquals('validation', $channelMap[ValidationException::class]);
 
-    // Assert exception properties
-    $this->assertEquals($errors, $exception->getErrors());
-    $this->assertEquals(422, $exception->getStatusCode());
+        // Assert exception properties
+        $this->assertEquals($errors, $exception->getErrors());
+        $this->assertEquals(422, $exception->getStatusCode());
 
-    // Assert response format
-    $this->assertNotNull($responseData);
-    $this->assertEquals(422, $responseData['status']);
-    $this->assertEquals('Validation failed', $responseData['message']); // Note: The message in the handler is "Validation failed", not "Validation failed"
-    $this->assertEquals($errors, $responseData['data']);
-}
-
-    // Update other test methods similarly...
+        // Assert response format
+        $this->assertNotNull($responseData);
+        $this->assertEquals(422, $responseData['code']);
+        $this->assertEquals('Validation failed', $responseData['message']);
+        $this->assertEquals($errors, $responseData['data']);
+    }
 }

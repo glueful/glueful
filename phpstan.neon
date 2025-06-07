@@ -5,9 +5,6 @@ parameters:
     treatPhpDocTypesAsCertain: false
     ignoreErrors:
         - '#Instanceof between .* and Glueful\\Database\\RawExpression will always evaluate to false\.#'
-        - '#Instanceof between Throwable and Glueful\\Exceptions\\ValidationException will always evaluate to false\.#'
-        - '#Instanceof between Throwable and Glueful\\Exceptions\\AuthenticationException will always evaluate to false\.#'
-        - '#Instanceof between Throwable and Glueful\\Exceptions\\NotFoundException will always evaluate to false\.#'
         - '#Call to function array_key_exists\(\) with .* will always evaluate to false\.#'
         - '#Instanceof between mixed and Monolog\\Handler\\AbstractProcessingHandler will always evaluate to false\.#'
 
