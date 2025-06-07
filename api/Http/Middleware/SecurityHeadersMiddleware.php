@@ -34,7 +34,7 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
     public function __construct(array $config = [])
     {
         // Default security header configuration
-        $this->config = array_merge([
+        $defaultConfig = [
             'content_security_policy' => [
                 'enabled' => true,
                 'report_only' => false,
@@ -68,7 +68,83 @@ class SecurityHeadersMiddleware implements MiddlewareInterface
                     'payment' => ['self'],
                 ],
             ],
-        ], $config);
+        ];
+
+        // Handle legacy config format from security.php
+        $this->config = $this->normalizeConfig($defaultConfig, $config);
+    }
+
+    /**
+     * Normalize config to handle both legacy and new formats
+     *
+     * @param array $defaultConfig Default configuration
+     * @param array $userConfig User-provided configuration
+     * @return array Normalized configuration
+     */
+    private function normalizeConfig(array $defaultConfig, array $userConfig): array
+    {
+        // Start with default config
+        $config = $defaultConfig;
+
+        // Handle legacy format from security.php config
+        if (isset($userConfig['content_security_policy']) && is_string($userConfig['content_security_policy'])) {
+            // Parse CSP string into directives
+            $cspString = $userConfig['content_security_policy'];
+            $config['content_security_policy']['enabled'] = !empty($cspString);
+            if (!empty($cspString)) {
+                // Simple parsing - for more complex CSP strings, this could be enhanced
+                $config['content_security_policy']['directives']['default-src'] = [$cspString];
+            }
+        } elseif (isset($userConfig['content_security_policy']) && is_array($userConfig['content_security_policy'])) {
+            $config['content_security_policy'] = array_merge(
+                $config['content_security_policy'],
+                $userConfig['content_security_policy']
+            );
+        }
+
+        // Handle other header settings
+        if (isset($userConfig['x_frame_options'])) {
+            $config['x_frame_options'] = $userConfig['x_frame_options'];
+        }
+
+        if (isset($userConfig['x_content_type_options'])) {
+            $config['x_content_type_options'] = !empty($userConfig['x_content_type_options']);
+        }
+
+        if (isset($userConfig['x_xss_protection'])) {
+            $config['x_xss_protection'] = $userConfig['x_xss_protection'];
+        }
+
+        if (isset($userConfig['strict_transport_security'])) {
+            if (is_string($userConfig['strict_transport_security'])) {
+                $config['strict_transport_security']['enabled'] = !empty($userConfig['strict_transport_security']);
+            } elseif (is_array($userConfig['strict_transport_security'])) {
+                $config['strict_transport_security'] = array_merge(
+                    $config['strict_transport_security'],
+                    $userConfig['strict_transport_security']
+                );
+            }
+        }
+
+        if (isset($userConfig['referrer_policy'])) {
+            $config['referrer_policy'] = $userConfig['referrer_policy'];
+        }
+
+        if (isset($userConfig['permissions_policy']) && is_array($userConfig['permissions_policy'])) {
+            $config['permissions_policy'] = array_merge(
+                $config['permissions_policy'],
+                $userConfig['permissions_policy']
+            );
+        }
+
+        // Merge any other settings that follow the new format
+        foreach ($userConfig as $key => $value) {
+            if (!isset($config[$key]) && is_array($value)) {
+                $config[$key] = $value;
+            }
+        }
+
+        return $config;
     }
 
     /**

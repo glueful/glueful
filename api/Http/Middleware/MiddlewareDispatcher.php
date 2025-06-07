@@ -173,18 +173,9 @@ class MiddlewareDispatcher implements RequestHandlerInterface
             // Process the request through the middleware
             return $middleware->process($request, $next);
         } catch (\Throwable $exception) {
-            // Log the exception
-            if (class_exists('\\Glueful\\Exceptions\\ExceptionHandler')) {
-                ExceptionHandler::logError($exception);
-            }
-
-            // Return an error response
-            return new JsonResponse([
-                'success' => false,
-                'message' => 'Internal server error: ' . $exception->getMessage(),
-                'code' => $exception->getCode() ?: 500,
-                'type' => get_class($exception)
-            ], 500);
+            // Let the global exception handler deal with this
+            // Don't wrap the exception message with "Internal server error:"
+            throw $exception;
         }
     }
 

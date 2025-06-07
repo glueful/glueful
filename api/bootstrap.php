@@ -21,7 +21,7 @@ if (env('APP_ENV') === 'production') {
     \Glueful\Security\SecurityManager::validateProductionEnvironment();
 }
 
-// Glueful\ExceptionHandler::register();
+Glueful\Exceptions\ExceptionHandler::register();
 
 // Initialize Cache Engine
 Glueful\Helpers\Utils::initializeCacheEngine('glueful:');
