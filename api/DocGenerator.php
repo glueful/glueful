@@ -271,9 +271,6 @@ class DocGenerator
                 'schemas' => array_merge($this->getDefaultSchemas(), $this->schemas)
             ],
             'paths' => $this->paths,
-            'security' => [
-                ['BearerAuth' => []]
-            ],
             'tags' => $this->generateTags()
         ];
 
@@ -316,6 +313,7 @@ class DocGenerator
                 'tags' => [$resource],
                 'summary' => "List {$tableName}",
                 'description' => "Retrieve a list of {$tableName} records",
+                'security' => [['BearerAuth' => []]],
                 'parameters' => [
                     ...$this->getCommonParameters(),
                     ...$this->getFilterParameters()
@@ -357,6 +355,7 @@ class DocGenerator
                 'tags' => [$resource],
                 'summary' => "Update {$tableName}",
                 'description' => "Update an existing {$tableName} record",
+                'security' => [['BearerAuth' => []]],
                 'parameters' => [
                     [
                         'name' => 'id',
@@ -391,6 +390,7 @@ class DocGenerator
                 'tags' => [$resource],
                 'summary' => "Delete {$tableName}",
                 'description' => "Delete a {$tableName} record",
+                'security' => [['BearerAuth' => []]],
                 'parameters' => [
                     [
                         'name' => 'id',
