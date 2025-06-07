@@ -6,7 +6,6 @@ namespace Glueful\Http\Middleware;
 
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\DI\Interfaces\ContainerInterface;

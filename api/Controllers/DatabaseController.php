@@ -47,97 +47,96 @@ class DatabaseController
      */
     public function createTable(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name']) || !isset($data['columns'])) {
-                return Response::error('Table name and columns are required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name']) || !isset($data['columns'])) {
+            return Response::error('Table name and columns are required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
             $tableName = $data['table_name'];
             $columnsData = $data['columns'];
 
             // Convert columns array to the format expected by SchemaManager
             $columns = [];
-            foreach ($columnsData as $column) {
-                if (!isset($column['name']) || !isset($column['type'])) {
-                    continue;
-                }
-
-                $columnName = $column['name'];
-                $columnType = $column['type'];
-                $options = $column['options'] ?? [];
-
-                // Build column definition using the type directly from frontend
-                $columnDef = $columnType;
-
-                // Add PRIMARY KEY if specified
-                if (isset($options['primary']) && $options['primary']) {
-                    $columnDef .= " " . (is_string($options['primary']) ? $options['primary'] : "PRIMARY KEY");
-                }
-
-                // Add AUTO_INCREMENT if specified
-                if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
-                    $autoIncValue = is_string($options['autoIncrement'])
-                        ? $options['autoIncrement']
-                        : "AUTO_INCREMENT";
-                    $columnDef .= " " . $autoIncValue;
-                }
-
-                // Handle nullable property - now accepting direct SQL constraints
-                if (isset($options['nullable'])) {
-                    if (is_string($options['nullable'])) {
-                        // If it's a string like "NULL" or "NOT NULL", use it directly
-                        $columnDef .= " " . $options['nullable'];
-                    } else {
-                        // If it's a boolean, convert to appropriate SQL
-                        $columnDef .= $options['nullable'] ? " NULL" : " NOT NULL";
-                    }
-                }
-                // Add DEFAULT if provided
-                if (isset($options['default']) && $options['default'] !== null && $options['default'] !== '') {
-                    // Handle special DEFAULT value CURRENT_TIMESTAMP
-                    if ($options['default'] === 'CURRENT_TIMESTAMP') {
-                        $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
-                    } else {
-                        $defaultValue = is_numeric($options['default'])
-                            ? $options['default']
-                            : "'{$options['default']}'";
-                        $columnDef .= " DEFAULT " . $defaultValue;
-                    }
-                }
-
-                $columns[$columnName] = $columnDef;
+        foreach ($columnsData as $column) {
+            if (!isset($column['name']) || !isset($column['type'])) {
+                continue;
             }
+
+            $columnName = $column['name'];
+            $columnType = $column['type'];
+            $options = $column['options'] ?? [];
+
+            // Build column definition using the type directly from frontend
+            $columnDef = $columnType;
+
+            // Add PRIMARY KEY if specified
+            if (isset($options['primary']) && $options['primary']) {
+                $columnDef .= " " . (is_string($options['primary']) ? $options['primary'] : "PRIMARY KEY");
+            }
+
+            // Add AUTO_INCREMENT if specified
+            if (isset($options['autoIncrement']) && !empty($options['autoIncrement'])) {
+                $autoIncValue = is_string($options['autoIncrement'])
+                    ? $options['autoIncrement']
+                    : "AUTO_INCREMENT";
+                $columnDef .= " " . $autoIncValue;
+            }
+
+            // Handle nullable property - now accepting direct SQL constraints
+            if (isset($options['nullable'])) {
+                if (is_string($options['nullable'])) {
+                    // If it's a string like "NULL" or "NOT NULL", use it directly
+                    $columnDef .= " " . $options['nullable'];
+                } else {
+                    // If it's a boolean, convert to appropriate SQL
+                    $columnDef .= $options['nullable'] ? " NULL" : " NOT NULL";
+                }
+            }
+            // Add DEFAULT if provided
+            if (isset($options['default']) && $options['default'] !== null && $options['default'] !== '') {
+                // Handle special DEFAULT value CURRENT_TIMESTAMP
+                if ($options['default'] === 'CURRENT_TIMESTAMP') {
+                    $columnDef .= " DEFAULT CURRENT_TIMESTAMP";
+                } else {
+                    $defaultValue = is_numeric($options['default'])
+                        ? $options['default']
+                        : "'{$options['default']}'";
+                    $columnDef .= " DEFAULT " . $defaultValue;
+                }
+            }
+
+            $columns[$columnName] = $columnDef;
+        }
 
             // Build the schema operation with proper method chaining
             $schemaManager = $this->schemaManager->createTable($tableName, $columns);
 
             // Add indexes if provided
-            if (isset($data['indexes']) && !empty($data['indexes'])) {
-                // Make sure each index has the table property set
-                $indexes = array_map(function ($index) use ($tableName) {
-                    if (!isset($index['table'])) {
-                        $index['table'] = $tableName;
-                    }
-                    return $index;
-                }, $data['indexes']);
+        if (isset($data['indexes']) && !empty($data['indexes'])) {
+            // Make sure each index has the table property set
+            $indexes = array_map(function ($index) use ($tableName) {
+                if (!isset($index['table'])) {
+                    $index['table'] = $tableName;
+                }
+                return $index;
+            }, $data['indexes']);
 
-                $schemaManager = $schemaManager->addIndex($indexes);
-            }
+            $schemaManager = $schemaManager->addIndex($indexes);
+        }
 
             // Add foreign keys if provided
-            if (isset($data['foreign_keys']) && !empty($data['foreign_keys'])) {
-                // Make sure each foreign key has the table property set
-                $foreignKeys = array_map(function ($fk) use ($tableName) {
-                    if (!isset($fk['table'])) {
-                        $fk['table'] = $tableName;
-                    }
-                    return $fk;
-                }, $data['foreign_keys']);
+        if (isset($data['foreign_keys']) && !empty($data['foreign_keys'])) {
+            // Make sure each foreign key has the table property set
+            $foreignKeys = array_map(function ($fk) use ($tableName) {
+                if (!isset($fk['table'])) {
+                    $fk['table'] = $tableName;
+                }
+                return $fk;
+            }, $data['foreign_keys']);
 
-                $schemaManager->addForeignKey($foreignKeys);
-            }
+            $schemaManager->addForeignKey($foreignKeys);
+        }
 
             return Response::ok([
                 'table' => $tableName,
@@ -145,13 +144,6 @@ class DatabaseController
                 'indexes' => $data['indexes'] ?? [],
                 'foreign_keys' => $data['foreign_keys'] ?? []
             ], 'Table created successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Create table error: " . $e->getMessage());
-            return Response::error(
-                'Failed to create table: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
     }
 
     /**
@@ -159,30 +151,18 @@ class DatabaseController
      */
     public function dropTable(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            try {
-                $result = $this->schemaManager->dropTable($data['table_name']);
-                if (!$result) {
-                    return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                return Response::ok(null, 'Table dropped successfully')->send();
-            } catch (\Exception $e) {
-                return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
-            }
-        } catch (\Exception $e) {
-            error_log("Drop table error: " . $e->getMessage());
-            return Response::error(
-                'Failed to drop table: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        $result = $this->schemaManager->dropTable($data['table_name']);
+        if (!$result) {
+            return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        return Response::ok(null, 'Table dropped successfully')->send();
     }
 
     /**
@@ -190,16 +170,8 @@ class DatabaseController
      */
     public function getTables(?bool $includeSchema = false): mixed
     {
-        try {
-            $tables = $this->schemaManager->getTables();
-            return Response::ok($tables, 'Tables retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get tables error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get tables: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
+        $tables = $this->schemaManager->getTables();
+        return Response::ok($tables, 'Tables retrieved successfully')->send();
     }
 
     /**
@@ -207,24 +179,16 @@ class DatabaseController
      */
     public function getTableSize(?array $table): mixed
     {
-        try {
-            if (!isset($table['name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            $size = $this->schemaManager->getTableSize($table['name']);
-
-            return Response::ok([
-                'table' => $table['name'],
-                'size' => $size
-            ], 'Table size retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get table size error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get table size: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!isset($table['name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        $size = $this->schemaManager->getTableSize($table['name']);
+
+        return Response::ok([
+            'table' => $table['name'],
+            'size' => $size
+        ], 'Table size retrieved successfully')->send();
     }
 
     /**
@@ -244,10 +208,9 @@ class DatabaseController
      */
     public function getTableMetadata(?array $table): mixed
     {
-        try {
-            if (!isset($table['name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($table['name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
             $tableName = $table['name'];
 
@@ -287,17 +250,7 @@ class DatabaseController
                 'data_free' => $status['Data_free'] ?? 0
             ];
 
-            return Response::ok(
-                $metadata,
-                'Table metadata retrieved successfully'
-            )->send();
-        } catch (\Exception $e) {
-            error_log("Get table metadata error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get table metadata: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
+            return Response::ok($metadata, 'Table metadata retrieved successfully')->send();
     }
 
     /**
@@ -322,10 +275,9 @@ class DatabaseController
      */
     public function getTableData(?array $table): mixed
     {
-        try {
-            if (!isset($table['name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($table['name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
             $request = new Request();
 
             // Get request data
@@ -349,30 +301,30 @@ class DatabaseController
             $columns = $this->schemaManager->getTableColumns($table['name']);
 
             // Auto-detect searchable columns if not specified
-            if ($searchTerm && empty($searchFields)) {
-                $searchFields = $this->detectSearchableColumns($columns);
-            }
+        if ($searchTerm && empty($searchFields)) {
+            $searchFields = $this->detectSearchableColumns($columns);
+        }
 
             // Build the query using QueryBuilder
             $query = $this->queryBuilder->select($table['name'], ['*']);
 
             // Apply search if provided
-            if ($searchTerm && !empty($searchFields)) {
-                // Validate search fields exist in table
-                $validSearchFields = $this->validateSearchFields($searchFields, $columns);
-                if (!empty($validSearchFields)) {
-                    $query->search($validSearchFields, $searchTerm);
-                }
+        if ($searchTerm && !empty($searchFields)) {
+            // Validate search fields exist in table
+            $validSearchFields = $this->validateSearchFields($searchFields, $columns);
+            if (!empty($validSearchFields)) {
+                $query->search($validSearchFields, $searchTerm);
             }
+        }
 
             // Apply advanced filters if provided
-            if (!empty($filters)) {
-                // Validate filter fields exist in table
-                $validFilters = $this->validateFilters($filters, $columns);
-                if (!empty($validFilters)) {
-                    $query->advancedWhere($validFilters);
-                }
+        if (!empty($filters)) {
+            // Validate filter fields exist in table
+            $validFilters = $this->validateFilters($filters, $columns);
+            if (!empty($validFilters)) {
+                $query->advancedWhere($validFilters);
             }
+        }
 
             // Apply sorting
             $query->orderBy([$orderBy => $orderDir]);
@@ -381,37 +333,30 @@ class DatabaseController
             $results = $query->paginate($page, $perPage);
 
             // Resolve foreign key display labels
-            if (!empty($results['data'])) {
-                $results['data'] = $this->resolveForeignKeyDisplayLabels($results['data'], $columns);
-            }
+        if (!empty($results['data'])) {
+            $results['data'] = $this->resolveForeignKeyDisplayLabels($results['data'], $columns);
+        }
 
             // Add column metadata to results
             $results['columns'] = $columns;
 
             // Add search metadata if search was performed
-            if ($searchTerm) {
-                $results['search'] = [
-                    'term' => $searchTerm,
-                    'fields' => $searchFields,
-                    'fields_used' => $validSearchFields ?? []
-                ];
-            }
+        if ($searchTerm) {
+            $results['search'] = [
+                'term' => $searchTerm,
+                'fields' => $searchFields,
+                'fields_used' => $validSearchFields ?? []
+            ];
+        }
 
             // Add filter metadata if filters were applied
-            if (!empty($filters)) {
-                $results['filters'] = [
-                    'applied' => $validFilters ?? [],
-                    'requested' => $filters
-                ];
-            }
-            return Response::ok($results, 'Data retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get table data error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get table data: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!empty($filters)) {
+            $results['filters'] = [
+                'applied' => $validFilters ?? [],
+                'requested' => $filters
+            ];
         }
+        return Response::ok($results, 'Data retrieved successfully')->send();
     }
 
     /**
@@ -422,32 +367,24 @@ class DatabaseController
      */
     public function getColumns(array $params): mixed
     {
-        try {
-            if (!isset($params['name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($params['name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
             $tableName = $params['name'];
 
             // Get detailed column metadata using SchemaManager
             $columns = $this->schemaManager->getTableColumns($tableName);
 
-            if (empty($columns)) {
-                $errorMsg = "No columns found or table '$tableName' does not exist";
-                return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
-            }
+        if (empty($columns)) {
+            $errorMsg = "No columns found or table '$tableName' does not exist";
+            return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
+        }
 
             return Response::ok([
                 'table' => $tableName,
                 'columns' => $columns
             ], 'Table columns retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get columns error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get table columns: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
     }
 
     /**
@@ -459,87 +396,74 @@ class DatabaseController
      */
     public function addColumn(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        if (!isset($data['column']) && !isset($data['columns'])) {
+            return Response::error('Column details are required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
+
+        // Handle both single column and array of columns
+        $columns = isset($data['columns']) ? $data['columns'] : [$data['column']];
+
+        // Ensure we have an array
+        if (!is_array($columns)) {
+            $columns = [$columns];
+        }
+
+        // Add each column
+        foreach ($columns as $column) {
+            if (!isset($column['name']) || !isset($column['type'])) {
+                $failed[] = $column['name'] ?? 'unnamed column';
+                continue;
             }
 
-            if (!isset($data['column']) && !isset($data['columns'])) {
-                return Response::error('Column details are required', Response::HTTP_BAD_REQUEST)->send();
+            // Create column definition array with merged options
+            $columnDef = ['type' => $column['type']];
+            if (isset($column['options']) && is_array($column['options'])) {
+                $columnDef = array_merge($columnDef, $column['options']);
             }
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
+            $result = $this->schemaManager->addColumn(
+                $tableName,
+                $column['name'],
+                $columnDef
+            );
 
-            // Handle both single column and array of columns
-            $columns = isset($data['columns']) ? $data['columns'] : [$data['column']];
-
-            // Ensure we have an array
-            if (!is_array($columns)) {
-                $columns = [$columns];
-            }
-
-            // Add each column
-            foreach ($columns as $column) {
-                if (!isset($column['name']) || !isset($column['type'])) {
-                    $failed[] = $column['name'] ?? 'unnamed column';
-                    continue;
-                }
-
-                try {
-                    // Create column definition array with merged options
-                    $columnDef = ['type' => $column['type']];
-                    if (isset($column['options']) && is_array($column['options'])) {
-                        $columnDef = array_merge($columnDef, $column['options']);
-                    }
-
-                    $result = $this->schemaManager->addColumn(
-                        $tableName,
-                        $column['name'],
-                        $columnDef
-                    );
-
-                    if ($result['success'] ?? false) {
-                        $results[] = $column['name'];
-                    } else {
-                        $failed[] = $column['name'];
-                    }
-                } catch (\Exception $e) {
-                    error_log("Failed to add column '{$column['name']}': " . $e->getMessage());
-                    $failed[] = $column['name'];
-                }
-            }
-
-            // Check if all columns were added successfully
-            if (empty($failed)) {
-                // All columns were added successfully
-                return Response::ok([
-                    'table' => $tableName,
-                    'columns_added' => $results
-                ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully')->send();
-            } elseif (empty($results)) {
-                // All columns failed to add
-                return Response::error(
-                    'Failed to add column(s): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            if ($result['success'] ?? false) {
+                $results[] = $column['name'];
             } else {
-                // Some columns were added, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'columns_added' => $results,
-                    'columns_failed' => $failed
-                ], 'Some columns were added successfully, but others failed')->send();
+                $failed[] = $column['name'];
             }
-        } catch (\Exception $e) {
-            error_log("Add column error: " . $e->getMessage());
+        }
+
+        // Check if all columns were added successfully
+        if (empty($failed)) {
+            // All columns were added successfully
+            return Response::ok([
+                'table' => $tableName,
+                'columns_added' => $results
+            ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully')->send();
+        } elseif (empty($results)) {
+            // All columns failed to add
             return Response::error(
-                'Failed to add column(s): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to add column(s): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
             )->send();
+        } else {
+            // Some columns were added, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'columns_added' => $results,
+                'columns_failed' => $failed
+            ], 'Some columns were added successfully, but others failed')->send();
         }
     }
 
@@ -552,73 +476,60 @@ class DatabaseController
      */
     public function dropColumn(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            if (!isset($data['column_name']) && !isset($data['column_names'])) {
-                return Response::error('Column name(s) are required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['column_name']) && !isset($data['column_names'])) {
+            return Response::error('Column name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
 
-            // Handle both single column and array of columns
-            $columnNames = isset($data['column_names']) ? $data['column_names'] : [$data['column_name']];
+        // Handle both single column and array of columns
+        $columnNames = isset($data['column_names']) ? $data['column_names'] : [$data['column_name']];
 
-            // Ensure we have an array
-            if (!is_array($columnNames)) {
-                $columnNames = [$columnNames];
-            }
+        // Ensure we have an array
+        if (!is_array($columnNames)) {
+            $columnNames = [$columnNames];
+        }
 
-            // Drop each column
-            foreach ($columnNames as $columnName) {
-                try {
-                    // Use the SchemaManager's dropColumn method
-                    $result = $this->schemaManager->dropColumn($tableName, $columnName);
+        // Drop each column
+        foreach ($columnNames as $columnName) {
+            // Use the SchemaManager's dropColumn method
+            $result = $this->schemaManager->dropColumn($tableName, $columnName);
 
-                    if ($result['success'] ?? false) {
-                        $results[] = $columnName;
-                    } else {
-                        $failed[] = $columnName;
-                    }
-                } catch (\Exception $e) {
-                    error_log("Failed to drop column '$columnName': " . $e->getMessage());
-                    $failed[] = $columnName;
-                }
-            }
-
-            // Check if all columns were dropped successfully
-            if (empty($failed)) {
-                // All columns were dropped successfully
-                return Response::ok([
-                    'table' => $tableName,
-                    'columns_dropped' => $results
-                ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully')->send();
-            } elseif (empty($results)) {
-                // All columns failed to drop
-                return Response::error(
-                    'Failed to drop column(s): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            if ($result['success'] ?? false) {
+                $results[] = $columnName;
             } else {
-                // Some columns were dropped, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'columns_dropped' => $results,
-                    'columns_failed' => $failed
-                ], 'Some columns were dropped successfully, but others failed')->send();
+                $failed[] = $columnName;
             }
-        } catch (\Exception $e) {
-            error_log("Drop column error: " . $e->getMessage());
+        }
+
+        // Check if all columns were dropped successfully
+        if (empty($failed)) {
+            // All columns were dropped successfully
+            return Response::ok([
+                'table' => $tableName,
+                'columns_dropped' => $results
+            ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully')->send();
+        } elseif (empty($results)) {
+            // All columns failed to drop
             return Response::error(
-                'Failed to drop column(s): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to drop column(s): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
             )->send();
+        } else {
+            // Some columns were dropped, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'columns_dropped' => $results,
+                'columns_failed' => $failed
+            ], 'Some columns were dropped successfully, but others failed')->send();
         }
     }
 
@@ -631,93 +542,80 @@ class DatabaseController
      */
     public function addIndex(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        if (!isset($data['index']) && !isset($data['indexes'])) {
+            return Response::error('Index definition is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
+
+        // Handle both single index and array of indexes
+        $indexes = isset($data['indexes']) ? $data['indexes'] : [$data['index']];
+
+        // Ensure we have an array
+        if (!is_array($indexes)) {
+            $indexes = [$indexes];
+        }
+
+        // Convert the simple index format to the format expected by SchemaManager
+        $formattedIndexes = [];
+        foreach ($indexes as $index) {
+            if (!isset($index['column']) || !isset($index['type'])) {
+                $failed[] = $index['column'] ?? 'unnamed column';
+                continue;
             }
 
-            if (!isset($data['index']) && !isset($data['indexes'])) {
-                return Response::error('Index definition is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+            // Create a properly formatted index definition that the SchemaManager expects
+            $formattedIndex = [
+                'table' => $tableName,
+                'column' => $index['column'],
+                'type' => strtolower($index['type']) == 'unique' ? 'unique' : 'index'
+            ];
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
-
-            // Handle both single index and array of indexes
-            $indexes = isset($data['indexes']) ? $data['indexes'] : [$data['index']];
-
-            // Ensure we have an array
-            if (!is_array($indexes)) {
-                $indexes = [$indexes];
-            }
-
-            // Convert the simple index format to the format expected by SchemaManager
-            $formattedIndexes = [];
-            foreach ($indexes as $index) {
-                if (!isset($index['column']) || !isset($index['type'])) {
-                    $failed[] = $index['column'] ?? 'unnamed column';
-                    continue;
-                }
-
-                // Create a properly formatted index definition that the SchemaManager expects
-                $formattedIndex = [
-                    'table' => $tableName,
-                    'column' => $index['column'],
-                    'type' => strtolower($index['type']) == 'unique' ? 'unique' : 'index'
-                ];
-
-                // Generate an index name if not provided
-                if (!isset($index['name'])) {
-                    $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
-                    $indexType = strtolower($index['type']) === 'unique' ? 'unq' : 'idx';
-                    $formattedIndex['name'] = "{$tableName}_{$columnStr}_{$indexType}";
-                } else {
-                    $formattedIndex['name'] = $index['name'];
-                }
-
-                $formattedIndexes[] = $formattedIndex;
-
-                try {
-                      // Add the index
-                    $this->schemaManager->addIndex([$formattedIndex]);
-                    // If we get here, no exception was thrown, so it succeeded
-                    $results[] = $formattedIndex['name'];
-                } catch (\Exception $e) {
-                    error_log("Failed to add index on column '{$index['column']}': " . $e->getMessage());
-                    $failed[] = $formattedIndex['name'];
-                }
-            }
-
-            // Check if all indexes were added successfully
-            if (empty($failed)) {
-                // All indexes were added successfully
-                return Response::ok([
-                    'table' => $tableName,
-                    'indexes_added' => $results
-                ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully')->send();
-            } elseif (empty($results)) {
-                // All indexes failed to add
-                return Response::error(
-                    'Failed to add index(es): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            // Generate an index name if not provided
+            if (!isset($index['name'])) {
+                $columnStr = is_array($index['column']) ? implode('_', $index['column']) : $index['column'];
+                $indexType = strtolower($index['type']) === 'unique' ? 'unq' : 'idx';
+                $formattedIndex['name'] = "{$tableName}_{$columnStr}_{$indexType}";
             } else {
-                // Some indexes were added, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'indexes_added' => $results,
-                    'indexes_failed' => $failed
-                ], 'Some indexes were added successfully, but others failed')->send();
+                $formattedIndex['name'] = $index['name'];
             }
-        } catch (\Exception $e) {
-            error_log("Add index error: " . $e->getMessage());
+
+            $formattedIndexes[] = $formattedIndex;
+
+            // Add the index
+            $this->schemaManager->addIndex([$formattedIndex]);
+            // If we get here, no exception was thrown, so it succeeded
+            $results[] = $formattedIndex['name'];
+        }
+
+        // Check if all indexes were added successfully
+        if (empty($failed)) {
+            // All indexes were added successfully
+            return Response::ok([
+                'table' => $tableName,
+                'indexes_added' => $results
+            ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully')->send();
+        } elseif (empty($results)) {
+            // All indexes failed to add
             return Response::error(
-                'Failed to add index(es): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to add index(es): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
             )->send();
+        } else {
+            // Some indexes were added, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'indexes_added' => $results,
+                'indexes_failed' => $failed
+            ], 'Some indexes were added successfully, but others failed')->send();
         }
     }
 
@@ -730,73 +628,60 @@ class DatabaseController
      */
     public function dropIndex(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            if (!isset($data['index_name']) && !isset($data['index_names'])) {
-                return Response::error('Index name(s) are required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['index_name']) && !isset($data['index_names'])) {
+            return Response::error('Index name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
 
-            // Handle both single index and array of indexes
-            $indexNames = isset($data['index_names']) ? $data['index_names'] : [$data['index_name']];
+        // Handle both single index and array of indexes
+        $indexNames = isset($data['index_names']) ? $data['index_names'] : [$data['index_name']];
 
-            // Ensure we have an array
-            if (!is_array($indexNames)) {
-                $indexNames = [$indexNames];
-            }
+        // Ensure we have an array
+        if (!is_array($indexNames)) {
+            $indexNames = [$indexNames];
+        }
 
-            // Drop each index
-            foreach ($indexNames as $indexName) {
-                try {
-                    // Use the SchemaManager's dropIndex method
-                    $success = $this->schemaManager->dropIndex($tableName, $indexName);
+        // Drop each index
+        foreach ($indexNames as $indexName) {
+            // Use the SchemaManager's dropIndex method
+            $success = $this->schemaManager->dropIndex($tableName, $indexName);
 
-                    if ($success) {
-                        $results[] = $indexName;
-                    } else {
-                        $failed[] = $indexName;
-                    }
-                } catch (\Exception $e) {
-                    error_log("Failed to drop index '$indexName': " . $e->getMessage());
-                    $failed[] = $indexName;
-                }
-            }
-
-            // Check if all indexes were dropped successfully
-            if (empty($failed)) {
-                // All indexes were dropped successfully
-                return Response::ok([
-                    'table' => $tableName,
-                    'indexes_dropped' => $results
-                ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully')->send();
-            } elseif (empty($results)) {
-                // All indexes failed to drop
-                return Response::error(
-                    'Failed to drop index(es): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            if ($success) {
+                $results[] = $indexName;
             } else {
-                // Some indexes were dropped, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'indexes_dropped' => $results,
-                    'indexes_failed' => $failed
-                ], 'Some indexes were dropped successfully, but others failed')->send();
+                $failed[] = $indexName;
             }
-        } catch (\Exception $e) {
-            error_log("Drop index error: " . $e->getMessage());
+        }
+
+        // Check if all indexes were dropped successfully
+        if (empty($failed)) {
+            // All indexes were dropped successfully
+            return Response::ok([
+                'table' => $tableName,
+                'indexes_dropped' => $results
+            ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully')->send();
+        } elseif (empty($results)) {
+            // All indexes failed to drop
             return Response::error(
-                'Failed to drop index(es): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Failed to drop index(es): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
             )->send();
+        } else {
+            // Some indexes were dropped, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'indexes_dropped' => $results,
+                'indexes_failed' => $failed
+            ], 'Some indexes were dropped successfully, but others failed')->send();
         }
     }
 
@@ -815,94 +700,81 @@ class DatabaseController
      */
     public function addForeignKey(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        if (!isset($data['foreign_key']) && !isset($data['foreign_keys'])) {
+            return Response::error('Foreign key definition is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
+
+        // Handle both single foreign key and array of foreign keys
+        $foreignKeys = isset($data['foreign_keys']) ? $data['foreign_keys'] : [$data['foreign_key']];
+
+        // Ensure we have an array
+        if (!is_array($foreignKeys)) {
+            $foreignKeys = [$foreignKeys];
+        }
+
+        // Process each foreign key
+        foreach ($foreignKeys as $fk) {
+            if (!isset($fk['column']) || !isset($fk['references']) || !isset($fk['on'])) {
+                $failed[] = $fk['column'] ?? 'unnamed foreign key';
+                continue;
             }
 
-            if (!isset($data['foreign_key']) && !isset($data['foreign_keys'])) {
-                return Response::error('Foreign key definition is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+            // Convert the simple format to the format expected by SchemaManager
+            $formattedFk = [
+                'table' => $tableName,
+                'column' => $fk['column'],
+                'reference_table' => $fk['on'],
+                'reference_column' => $fk['references'],
+            ];
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
-
-            // Handle both single foreign key and array of foreign keys
-            $foreignKeys = isset($data['foreign_keys']) ? $data['foreign_keys'] : [$data['foreign_key']];
-
-            // Ensure we have an array
-            if (!is_array($foreignKeys)) {
-                $foreignKeys = [$foreignKeys];
-            }
-
-            // Process each foreign key
-            foreach ($foreignKeys as $fk) {
-                if (!isset($fk['column']) || !isset($fk['references']) || !isset($fk['on'])) {
-                    $failed[] = $fk['column'] ?? 'unnamed foreign key';
-                    continue;
-                }
-
-                try {
-                    // Convert the simple format to the format expected by SchemaManager
-                    $formattedFk = [
-                        'table' => $tableName,
-                        'column' => $fk['column'],
-                        'reference_table' => $fk['on'],
-                        'reference_column' => $fk['references'],
-                    ];
-
-                    // Generate a constraint name if not provided
-                    if (!isset($fk['name'])) {
-                        $formattedFk['name'] = "fk_{$tableName}_{$fk['column']}";
-                    } else {
-                        $formattedFk['name'] = $fk['name'];
-                    }
-
-                    // Use the SchemaManager's addForeignKey method
-                     $this->schemaManager->addForeignKey([$formattedFk]);
-
-                    $results[] = $formattedFk['name'];
-                } catch (\Exception $e) {
-                    error_log("Failed to add foreign key for column '{$fk['column']}': " . $e->getMessage());
-                    $failed[] = $fk['column'];
-                }
-            }
-
-            // Check if all foreign keys were added successfully
-            if (empty($failed)) {
-                // All foreign keys were added successfully
-                return Response::ok(
-                    [
-                    'table' => $tableName,
-                    'constraints_added' => $results
-                    ],
-                    count($results) > 1
-                        ? 'Foreign key constraints added successfully'
-                        : 'Foreign key constraint added successfully'
-                )->send();
-            } elseif (empty($results)) {
-                // All foreign keys failed to add
-                return Response::error(
-                    'Failed to add foreign key(s): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            // Generate a constraint name if not provided
+            if (!isset($fk['name'])) {
+                $formattedFk['name'] = "fk_{$tableName}_{$fk['column']}";
             } else {
-                // Some foreign keys were added, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'constraints_added' => $results,
-                    'constraints_failed' => $failed
-                ], 'Some foreign key constraints were added successfully, but others failed')->send();
+                $formattedFk['name'] = $fk['name'];
             }
-        } catch (\Exception $e) {
-            error_log("Add foreign key error: " . $e->getMessage());
-            return Response::error(
-                'Failed to add foreign key(s): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+
+            // Use the SchemaManager's addForeignKey method
+            $this->schemaManager->addForeignKey([$formattedFk]);
+
+            $results[] = $formattedFk['name'];
+        }
+
+        // Check if all foreign keys were added successfully
+        if (empty($failed)) {
+            // All foreign keys were added successfully
+            return Response::ok(
+                [
+                'table' => $tableName,
+                'constraints_added' => $results
+                ],
+                count($results) > 1
+                    ? 'Foreign key constraints added successfully'
+                    : 'Foreign key constraint added successfully'
             )->send();
+        } elseif (empty($results)) {
+            // All foreign keys failed to add
+            return Response::error(
+                'Failed to add foreign key(s): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        } else {
+            // Some foreign keys were added, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'constraints_added' => $results,
+                'constraints_failed' => $failed
+            ], 'Some foreign key constraints were added successfully, but others failed')->send();
         }
     }
 
@@ -915,81 +787,68 @@ class DatabaseController
      */
     public function dropForeignKey(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            if (!isset($data['constraint_name']) && !isset($data['constraint_names'])) {
-                return Response::error('Constraint name(s) are required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['constraint_name']) && !isset($data['constraint_names'])) {
+            return Response::error('Constraint name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $data['table_name'];
-            $results = [];
-            $failed = [];
+        $tableName = $data['table_name'];
+        $results = [];
+        $failed = [];
 
-            // Handle both single constraint and array of constraints
-            $hasMultipleConstraints = isset($data['constraint_names']);
-            $constraintNames = $hasMultipleConstraints
-                ? $data['constraint_names']
-                : [$data['constraint_name']];
+        // Handle both single constraint and array of constraints
+        $hasMultipleConstraints = isset($data['constraint_names']);
+        $constraintNames = $hasMultipleConstraints
+            ? $data['constraint_names']
+            : [$data['constraint_name']];
 
-            // Ensure we have an array
-            if (!is_array($constraintNames)) {
-                $constraintNames = [$constraintNames];
-            }
+        // Ensure we have an array
+        if (!is_array($constraintNames)) {
+            $constraintNames = [$constraintNames];
+        }
 
-            // Drop each constraint
-            foreach ($constraintNames as $constraintName) {
-                try {
-                    // Use the SchemaManager's dropForeignKey method
-                    $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
+        // Drop each constraint
+        foreach ($constraintNames as $constraintName) {
+            // Use the SchemaManager's dropForeignKey method
+            $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
 
-                    if ($success) {
-                        $results[] = $constraintName;
-                    } else {
-                        $failed[] = $constraintName;
-                    }
-                } catch (\Exception $e) {
-                    error_log("Failed to drop foreign key '$constraintName': " . $e->getMessage());
-                    $failed[] = $constraintName;
-                }
-            }
-
-            // Check if all constraints were dropped successfully
-            if (empty($failed)) {
-                // All constraints were dropped successfully
-                return Response::ok(
-                    [
-                    'table' => $tableName,
-                    'constraints_dropped' => $results
-                    ],
-                    count($results) > 1
-                        ? 'Foreign key constraints dropped successfully'
-                        : 'Foreign key constraint dropped successfully'
-                )->send();
-            } elseif (empty($results)) {
-                // All constraints failed to drop
-                return Response::error(
-                    'Failed to drop foreign key constraint(s): ' . implode(', ', $failed),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
+            if ($success) {
+                $results[] = $constraintName;
             } else {
-                // Some constraints were dropped, but some failed
-                return Response::ok([
-                    'table' => $tableName,
-                    'constraints_dropped' => $results,
-                    'constraints_failed' => $failed
-                ], 'Some foreign key constraints were dropped successfully, but others failed')->send();
+                $failed[] = $constraintName;
             }
-        } catch (\Exception $e) {
-            error_log("Drop foreign key error: " . $e->getMessage());
-            return Response::error(
-                'Failed to drop foreign key constraint(s): ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+        }
+
+        // Check if all constraints were dropped successfully
+        if (empty($failed)) {
+            // All constraints were dropped successfully
+            return Response::ok(
+                [
+                'table' => $tableName,
+                'constraints_dropped' => $results
+                ],
+                count($results) > 1
+                    ? 'Foreign key constraints dropped successfully'
+                    : 'Foreign key constraint dropped successfully'
             )->send();
+        } elseif (empty($results)) {
+            // All constraints failed to drop
+            return Response::error(
+                'Failed to drop foreign key constraint(s): ' . implode(', ', $failed),
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        } else {
+            // Some constraints were dropped, but some failed
+            return Response::ok([
+                'table' => $tableName,
+                'constraints_dropped' => $results,
+                'constraints_failed' => $failed
+            ], 'Some foreign key constraints were dropped successfully, but others failed')->send();
         }
     }
 
@@ -1003,64 +862,47 @@ class DatabaseController
      */
     public function executeQuery(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['query'])) {
-                return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['query'])) {
+            return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Get the SQL query from the request
-            $sql = trim($data['query']);
-            $params = $data['params'] ?? [];
+        // Get the SQL query from the request
+        $sql = trim($data['query']);
+        $params = $data['params'] ?? [];
 
-            // Safety checks
-            if (empty($sql)) {
-                return Response::error('SQL query cannot be empty', Response::HTTP_BAD_REQUEST)->send();
-            }
+        // Safety checks
+        if (empty($sql)) {
+            return Response::error('SQL query cannot be empty', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Prevent destructive operations if the safety flag is not set
-            $isSafeQuery = $data['allow_write'] ?? false;
-            $firstWord = strtoupper(explode(' ', $sql)[0]);
-            if (!$isSafeQuery && in_array($firstWord, ['DELETE', 'TRUNCATE', 'DROP', 'ALTER', 'UPDATE', 'INSERT'])) {
-                return Response::error(
-                    'Write operations require explicit allow_write flag for safety',
-                    Response::HTTP_FORBIDDEN
-                )->send();
-            }
-
-            // Log the query attempt for security purposes
-            error_log("Admin SQL query execution: " . substr($sql, 0, 200) . (strlen($sql) > 200 ? '...' : ''));
-
-            // Execute the query and get results
-            $results = $this->queryBuilder->rawQuery($sql, $params);
-
-            // For write operations, get the affected rows count
-            $isReadOperation = in_array($firstWord, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN']);
-            $message = $isReadOperation
-                ? 'Query executed successfully'
-                : 'Query executed successfully, ' . count($results) . ' rows affected';
-
-            $responseData = [
-                'query' => $sql,
-                'results' => $results,
-                'count' => count($results)
-            ];
-
-            return Response::ok($responseData, $message)->send();
-        } catch (\PDOException $e) {
-            error_log("SQL Error: " . $e->getMessage());
+        // Prevent destructive operations if the safety flag is not set
+        $isSafeQuery = $data['allow_write'] ?? false;
+        $firstWord = strtoupper(explode(' ', $sql)[0]);
+        if (!$isSafeQuery && in_array($firstWord, ['DELETE', 'TRUNCATE', 'DROP', 'ALTER', 'UPDATE', 'INSERT'])) {
             return Response::error(
-                'SQL Error: ' . $e->getMessage(),
-                Response::HTTP_BAD_REQUEST
-            )->send();
-        } catch (\Exception $e) {
-            error_log("Execute query error: " . $e->getMessage());
-            return Response::error(
-                'Failed to execute query: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Write operations require explicit allow_write flag for safety',
+                Response::HTTP_FORBIDDEN
             )->send();
         }
+
+        // Execute the query and get results
+        $results = $this->queryBuilder->rawQuery($sql, $params);
+
+        // For write operations, get the affected rows count
+        $isReadOperation = in_array($firstWord, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN']);
+        $message = $isReadOperation
+            ? 'Query executed successfully'
+            : 'Query executed successfully, ' . count($results) . ' rows affected';
+
+        $responseData = [
+            'query' => $sql,
+            'results' => $results,
+            'count' => count($results)
+        ];
+
+        return Response::ok($responseData, $message)->send();
     }
 
     /**
@@ -1075,12 +917,11 @@ class DatabaseController
      */
     public function updateTableSchema(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
             $tableName = $data['table_name'];
             $results = [
@@ -1093,19 +934,14 @@ class DatabaseController
                 'failed_operations' => []
             ];
 
-            // Process column deletions first to avoid constraint conflicts
+        // Process column deletions first to avoid constraint conflicts
             if (!empty($data['deleted_columns'])) {
                 foreach ($data['deleted_columns'] as $column) {
-                    try {
-                        $success = $this->schemaManager->dropColumn($tableName, $column);
-                        if ($success) {
-                            $results['deleted_columns'][] = $column;
-                        } else {
-                            $results['failed_operations'][] = "Failed to delete column: $column";
-                        }
-                    } catch (\Exception $e) {
-                        error_log("Failed to delete column '$column': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to delete column: $column - " . $e->getMessage();
+                    $success = $this->schemaManager->dropColumn($tableName, $column);
+                    if ($success) {
+                        $results['deleted_columns'][] = $column;
+                    } else {
+                        $results['failed_operations'][] = "Failed to delete column: $column";
                     }
                 }
             }
@@ -1113,16 +949,11 @@ class DatabaseController
             // Process index deletions
             if (!empty($data['deleted_indexes'])) {
                 foreach ($data['deleted_indexes'] as $index) {
-                    try {
-                        $success = $this->schemaManager->dropIndex($tableName, $index);
-                        if ($success) {
-                            $results['deleted_indexes'][] = $index;
-                        } else {
-                            $results['failed_operations'][] = "Failed to delete index: $index";
-                        }
-                    } catch (\Exception $e) {
-                        error_log("Failed to delete index '$index': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to delete index: $index - " . $e->getMessage();
+                    $success = $this->schemaManager->dropIndex($tableName, $index);
+                    if ($success) {
+                        $results['deleted_indexes'][] = $index;
+                    } else {
+                        $results['failed_operations'][] = "Failed to delete index: $index";
                     }
                 }
             }
@@ -1130,18 +961,11 @@ class DatabaseController
             // Process foreign key deletions
             if (!empty($data['deleted_foreign_keys'])) {
                 foreach ($data['deleted_foreign_keys'] as $constraintName) {
-                    try {
-                        $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
-                        if ($success) {
-                            $results['deleted_foreign_keys'][] = $constraintName;
-                        } else {
-                            $results['failed_operations'][] = "Failed to delete foreign key: $constraintName";
-                        }
-                    } catch (\Exception $e) {
-                        $errorMsg = "Failed to delete foreign key '$constraintName': " . $e->getMessage();
-                        error_log($errorMsg);
-                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName - " .
-                            $e->getMessage();
+                    $success = $this->schemaManager->dropForeignKey($tableName, $constraintName);
+                    if ($success) {
+                        $results['deleted_foreign_keys'][] = $constraintName;
+                    } else {
+                        $results['failed_operations'][] = "Failed to delete foreign key: $constraintName";
                     }
                 }
             }
@@ -1154,30 +978,24 @@ class DatabaseController
                         continue;
                     }
 
-                    try {
-                        $columnDef = ['type' => $column['type']];
+                    $columnDef = ['type' => $column['type']];
 
-                        // Handle column options
-                        if (isset($column['options'])) {
-                            if (isset($column['options']['nullable'])) {
-                                $columnDef['nullable'] = $column['options']['nullable'] === 'NULL';
-                            }
-                            if (isset($column['options']['default'])) {
-                                $columnDef['default'] = $column['options']['default'];
-                            }
+                    // Handle column options
+                    if (isset($column['options'])) {
+                        if (isset($column['options']['nullable'])) {
+                            $columnDef['nullable'] = $column['options']['nullable'] === 'NULL';
                         }
-
-                        $success = $this->schemaManager->addColumn($tableName, $column['name'], $columnDef);
-
-                        if ($success) {
-                            $results['added_columns'][] = $column['name'];
-                        } else {
-                            $results['failed_operations'][] = "Failed to add column: " . $column['name'];
+                        if (isset($column['options']['default'])) {
+                            $columnDef['default'] = $column['options']['default'];
                         }
-                    } catch (\Exception $e) {
-                        $columnName = $column['name'];
-                        error_log("Failed to add column '$columnName': " . $e->getMessage());
-                        $results['failed_operations'][] = "Failed to add column: $columnName - " . $e->getMessage();
+                    }
+
+                    $success = $this->schemaManager->addColumn($tableName, $column['name'], $columnDef);
+
+                    if ($success) {
+                        $results['added_columns'][] = $column['name'];
+                    } else {
+                        $results['failed_operations'][] = "Failed to add column: " . $column['name'];
                     }
                 }
             }
@@ -1253,13 +1071,6 @@ class DatabaseController
                     'Some schema update operations completed with warnings'
                 )->send();
             }
-        } catch (\Exception $e) {
-            error_log("Update table schema error: " . $e->getMessage());
-            return Response::error(
-                'Failed to update table schema: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
-        }
     }
 
     /**
@@ -1272,71 +1083,50 @@ class DatabaseController
      */
     public function getDatabaseStats(): mixed
     {
-        try {
-            // Get list of all tables with schema information
-            $tables = $this->schemaManager->getTables(); // No parameters needed
+        // Get list of all tables with schema information
+        $tables = $this->schemaManager->getTables(); // No parameters needed
 
-            if (empty($tables)) {
-                return Response::ok(['tables' => []], 'No tables found in database')->send();
-            }
-
-            $tableData = [];
-
-            // Get size information for each table
-            foreach ($tables as $table) {
-                // Check if the result includes schema information already
-                $tableName = is_array($table) ? $table['name'] : $table;
-                // Default to 'public' schema if not specified
-                $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
-
-                try {
-                    $size = $this->schemaManager->getTableSize($tableName);
-                    $rowCount = $this->schemaManager->getTableRowCount($tableName);
-
-                    $tableData[] = [
-                        'table_name' => $tableName,
-                        'schema' => $schema,
-                        'size' => $size,
-                        'rows' => $rowCount,
-                        'avg_row_size' => $rowCount > 0 ? round($size / $rowCount) : 0
-                    ];
-                } catch (\Exception $e) {
-                    // If we can't get size for a specific table, include it with null values
-                    error_log("Error getting size for table {$tableName}: " . $e->getMessage());
-                    $tableData[] = [
-                        'table_name' => $tableName,
-                        'schema' => $schema,
-                        'size' => null,
-                        'rows' => null,
-                        'avg_row_size' => null,
-                        'error' => 'Failed to retrieve size information'
-                    ];
-                }
-            }
-
-            // Sort tables by size in descending order
-            usort($tableData, function ($a, $b) {
-                // Handle null values in comparison
-                if ($a['size'] === null) {
-                    return 1;
-                }
-                if ($b['size'] === null) {
-                    return -1;
-                }
-                return $b['size'] <=> $a['size'];
-            });
-
-            return Response::ok([
-                'tables' => $tableData,
-                'total_tables' => count($tables)
-            ], 'Database statistics retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get database stats error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get database statistics: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (empty($tables)) {
+            return Response::ok(['tables' => []], 'No tables found in database')->send();
         }
+
+        $tableData = [];
+
+        // Get size information for each table
+        foreach ($tables as $table) {
+            // Check if the result includes schema information already
+            $tableName = is_array($table) ? $table['name'] : $table;
+            // Default to 'public' schema if not specified
+            $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
+
+            $size = $this->schemaManager->getTableSize($tableName);
+            $rowCount = $this->schemaManager->getTableRowCount($tableName);
+
+            $tableData[] = [
+            'table_name' => $tableName,
+            'schema' => $schema,
+            'size' => $size,
+            'rows' => $rowCount,
+            'avg_row_size' => $rowCount > 0 ? round($size / $rowCount) : 0
+            ];
+        }
+
+        // Sort tables by size in descending order
+        usort($tableData, function ($a, $b) {
+            // Handle zero values in comparison (put zero-size tables at the end)
+            if ($a['size'] === 0) {
+                return 1;
+            }
+            if ($b['size'] === 0) {
+                return -1;
+            }
+            return $b['size'] <=> $a['size'];
+        });
+
+        return Response::ok([
+            'tables' => $tableData,
+            'total_tables' => count($tables)
+        ], 'Database statistics retrieved successfully')->send();
     }
 
     /**
@@ -1352,68 +1142,58 @@ class DatabaseController
      */
     public function importTableData($params): mixed
     {
-        try {
-            if (!is_array($params)) {
-                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
-            }
-            $tableName = $params['name'] ?? null;
-            if (!$tableName) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!is_array($params)) {
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+        }
+        $tableName = $params['name'] ?? null;
+        if (!$tableName) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Get request data
-            $data = Request::getPostData();
+        // Get request data
+        $data = Request::getPostData();
 
-            if (!is_array($data)) {
-                return Response::error(
-                    'Invalid request format. Expected JSON object.',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            if (!isset($data['data']) || !is_array($data['data'])) {
-                return Response::error(
-                    'Import data is required and must be an array',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            $importData = $data['data'];
-            $options = $data['options'] ?? [];
-
-            // Import options with defaults
-            $skipFirstRow = $options['skipFirstRow'] ?? false;
-            $updateExisting = $options['updateExisting'] ?? false;
-            $skipErrors = $options['skipErrors'] ?? true;
-
-            // Check if table exists
-            if (!$this->schemaManager->tableExists($tableName)) {
-                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
-            }
-
-            // Get table columns to validate import data
-            $tableColumns = $this->schemaManager->getTableColumns($tableName);
-            $columnNames = array_column($tableColumns, 'name');
-
-            // Skip first row if it contains headers and option is enabled
-            if ($skipFirstRow && !empty($importData)) {
-                array_shift($importData);
-            }
-
-            // Check if we should use background processing for large imports
-            if (count($importData) > 500) {
-                return $this->processLargeImport($tableName, $importData, $options, $columnNames);
-            }
-
-            // Process with optimized batch transactions for smaller imports
-            return $this->processBatchImport($tableName, $importData, $options, $columnNames);
-        } catch (\Exception $e) {
-            error_log("Import table data error: " . $e->getMessage());
+        if (!is_array($data)) {
             return Response::error(
-                'Failed to import data: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Invalid request format. Expected JSON object.',
+                Response::HTTP_BAD_REQUEST
             )->send();
         }
+
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            return Response::error(
+                'Import data is required and must be an array',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        $importData = $data['data'];
+        $options = $data['options'] ?? [];
+
+        // Import options with defaults
+        $skipFirstRow = $options['skipFirstRow'] ?? false;
+
+        // Check if table exists
+        if (!$this->schemaManager->tableExists($tableName)) {
+            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+        }
+
+        // Get table columns to validate import data
+        $tableColumns = $this->schemaManager->getTableColumns($tableName);
+        $columnNames = array_column($tableColumns, 'name');
+
+        // Skip first row if it contains headers and option is enabled
+        if ($skipFirstRow && !empty($importData)) {
+            array_shift($importData);
+        }
+
+        // Check if we should use background processing for large imports
+        if (count($importData) > 500) {
+            return $this->processLargeImport($tableName, $importData, $options, $columnNames);
+        }
+
+        // Process with optimized batch transactions for smaller imports
+        return $this->processBatchImport($tableName, $importData, $options, $columnNames);
     }
 
     /**
@@ -1428,97 +1208,48 @@ class DatabaseController
     private function processBatchImport(string $tableName, array $importData, array $options, array $columnNames): mixed
     {
         $updateExisting = $options['updateExisting'] ?? false;
-        $skipErrors = $options['skipErrors'] ?? true;
         $batchSize = 100; // Optimal batch size for most databases
 
         $imported = 0;
         $failed = 0;
-        $errors = [];
 
         // Process data in batches with transactions
         $batches = array_chunk($importData, $batchSize);
         $totalBatches = count($batches);
 
         foreach ($batches as $batchIndex => $batch) {
-            try {
-                // Start transaction for this batch
-                $this->queryBuilder->beginTransaction();
+            // Start transaction for this batch
+            $this->queryBuilder->beginTransaction();
 
-                $batchImported = 0;
-                $batchFailed = 0;
+            $batchImported = 0;
 
-                foreach ($batch as $globalIndex => $row) {
-                    $rowNumber = ($batchIndex * $batchSize) + $globalIndex + 1;
-
-                    try {
-                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
-                        if ($filteredRow === null) {
-                            $batchFailed++;
-                            $failed++;
-                            if (!$skipErrors) {
-                                $errors[] = "Row {$rowNumber}: Invalid row data";
-                            }
-                            continue;
-                        }
-
-                        // Handle update existing records
-                        if ($updateExisting && isset($filteredRow['id'])) {
-                            $this->upsertRecord($tableName, $filteredRow);
-                        } else {
-                            $this->queryBuilder->insert($tableName, $filteredRow);
-                        }
-
-                        $batchImported++;
-                    } catch (\Exception $e) {
-                        $batchFailed++;
-                        $failed++;
-                        $error = "Row {$rowNumber}: " . $e->getMessage();
-                        $errors[] = $error;
-
-                        if (!$skipErrors) {
-                            // Rollback transaction and stop processing
-                            $this->queryBuilder->rollback();
-                            return Response::error(
-                                "Import failed at row {$rowNumber}: " . $e->getMessage(),
-                                Response::HTTP_BAD_REQUEST
-                            )->send();
-                        }
-                    }
+            foreach ($batch as $globalIndex => $row) {
+                $filteredRow = $this->validateAndFilterRow($row, $columnNames);
+                if ($filteredRow === null) {
+                    $failed++;
+                    continue;
                 }
 
-                // Commit transaction for this batch
-                $this->queryBuilder->commit();
-                $imported += $batchImported;
-            } catch (\Exception $e) {
-                // Rollback transaction on batch failure
-                try {
-                    $this->queryBuilder->rollback();
-                } catch (\Exception $rollbackError) {
-                    error_log("Rollback failed: " . $rollbackError->getMessage());
+                // Handle update existing records
+                if ($updateExisting && isset($filteredRow['id'])) {
+                    $this->upsertRecord($tableName, $filteredRow);
+                } else {
+                    $this->queryBuilder->insert($tableName, $filteredRow);
                 }
 
-                $failed += count($batch);
-                $batchError = "Batch " . ($batchIndex + 1) . " failed: " . $e->getMessage();
-                $errors[] = $batchError;
-
-                if (!$skipErrors) {
-                    return Response::error(
-                        "Import failed at batch " . ($batchIndex + 1) . ": " . $e->getMessage(),
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
+                $batchImported++;
             }
+
+            // Commit transaction for this batch
+            $this->queryBuilder->commit();
+            $imported += $batchImported;
         }
 
         $result = [
-            'imported' => $imported,
-            'failed' => $failed,
-            'batches_processed' => $totalBatches
+        'imported' => $imported,
+        'failed' => $failed,
+        'batches_processed' => $totalBatches
         ];
-
-        if (!empty($errors)) {
-            $result['errors'] = array_slice($errors, 0, 50); // Limit error messages
-        }
 
         $message = "Import completed. {$imported} records imported";
         if ($failed > 0) {
@@ -1541,7 +1272,6 @@ class DatabaseController
     {
         // For now, process large imports with larger batch sizes and optimizations
         $updateExisting = $options['updateExisting'] ?? false;
-        $skipErrors = $options['skipErrors'] ?? true;
         $batchSize = 250; // Larger batch size for large imports
 
         // Increase PHP execution time for large imports
@@ -1552,97 +1282,54 @@ class DatabaseController
 
         $imported = 0;
         $failed = 0;
-        $errors = [];
 
         $batches = array_chunk($importData, $batchSize);
         $totalBatches = count($batches);
         $totalRecords = count($importData);
 
-        foreach ($batches as $batchIndex => $batch) {
-            try {
-                $this->queryBuilder->beginTransaction();
+        foreach ($batches as $batch) {
+            $this->queryBuilder->beginTransaction();
 
-                // Build bulk insert for better performance
-                $validRows = [];
-                foreach ($batch as $globalIndex => $row) {
-                    $rowNumber = ($batchIndex * $batchSize) + $globalIndex + 1;
+            // Build bulk insert for better performance
+            $validRows = [];
+            foreach ($batch as $row) {
+                $filteredRow = $this->validateAndFilterRow($row, $columnNames);
 
-                    try {
-                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
-
-                        if ($filteredRow !== null) {
-                            if ($updateExisting && isset($filteredRow['id'])) {
-                                // Handle updates individually for now
-                                $this->upsertRecord($tableName, $filteredRow);
-                                $imported++;
-                            } else {
-                                $validRows[] = $filteredRow;
-                            }
-                        } else {
-                            $failed++;
-                            if (!$skipErrors) {
-                                $errors[] = "Row {$rowNumber}: Invalid row data";
-                            }
-                        }
-                    } catch (\Exception $e) {
-                        $failed++;
-                        $error = "Row {$rowNumber}: " . $e->getMessage();
-                        $errors[] = $error;
-
-                        if (!$skipErrors) {
-                            $this->queryBuilder->rawQuery('ROLLBACK');
-                            return Response::error(
-                                "Import failed at row {$rowNumber}: " . $e->getMessage(),
-                                Response::HTTP_BAD_REQUEST
-                            )->send();
-                        }
+                if ($filteredRow !== null) {
+                    if ($updateExisting && isset($filteredRow['id'])) {
+                        // Handle updates individually for now
+                        $this->upsertRecord($tableName, $filteredRow);
+                        $imported++;
+                    } else {
+                        $validRows[] = $filteredRow;
                     }
+                } else {
+                    $failed++;
                 }
+            }
 
-                // Bulk insert valid rows
-                if (!empty($validRows)) {
-                    $this->bulkInsert($tableName, $validRows);
-                    $imported += count($validRows);
-                }
+            // Bulk insert valid rows
+            if (!empty($validRows)) {
+                $this->bulkInsert($tableName, $validRows);
+                $imported += count($validRows);
+            }
 
-                $this->queryBuilder->commit();
+            $this->queryBuilder->commit();
 
-                // Memory cleanup
-                unset($batch, $validRows);
-                if (function_exists('gc_collect_cycles')) {
-                    gc_collect_cycles();
-                }
-            } catch (\Exception $e) {
-                try {
-                    $this->queryBuilder->rawQuery('ROLLBACK');
-                } catch (\Exception $rollbackError) {
-                    error_log("Rollback failed: " . $rollbackError->getMessage());
-                }
-
-                $failed += isset($batch) ? count($batch) : $batchSize;
-                $batchError = "Batch " . ($batchIndex + 1) . " failed: " . $e->getMessage();
-                $errors[] = $batchError;
-
-                if (!$skipErrors) {
-                    return Response::error(
-                        "Import failed at batch " . ($batchIndex + 1) . ": " . $e->getMessage(),
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
+            // Memory cleanup
+            unset($batch, $validRows);
+            if (function_exists('gc_collect_cycles')) {
+                gc_collect_cycles();
             }
         }
 
         $result = [
-            'imported' => $imported,
-            'failed' => $failed,
-            'total_records' => $totalRecords,
-            'batches_processed' => $totalBatches,
-            'processing_method' => 'large_import_optimized'
+        'imported' => $imported,
+        'failed' => $failed,
+        'total_records' => $totalRecords,
+        'batches_processed' => $totalBatches,
+        'processing_method' => 'large_import_optimized'
         ];
-
-        if (!empty($errors)) {
-            $result['errors'] = array_slice($errors, 0, 100); // More errors for large imports
-        }
 
         $message = "Large import completed. {$imported} records imported";
         if ($failed > 0) {
@@ -1719,111 +1406,99 @@ class DatabaseController
      */
     public function bulkDelete(array $params): mixed
     {
-        try {
-            if (!is_array($params)) {
-                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!is_array($params)) {
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $params['name'] ?? null;
-            if (!$tableName) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        $tableName = $params['name'] ?? null;
+        if (!$tableName) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Get request data
-            $data = Request::getPostData();
+        // Get request data
+        $data = Request::getPostData();
 
-            if (!is_array($data)) {
-                return Response::error(
-                    'Invalid request format. Expected JSON object.',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
-                return Response::error(
-                    'IDs array is required and cannot be empty',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            $ids = $data['ids'];
-
-            // Soft delete parameters
-            $softDelete = $data['soft_delete'] ?? false;
-            $statusColumn = $data['status_column'] ?? 'status';
-            $deletedValue = $data['deleted_value'] ?? 'deleted';
-
-            // Validate that all IDs are scalar values
-            foreach ($ids as $id) {
-                if (!is_scalar($id)) {
-                    return Response::error(
-                        'All IDs must be scalar values',
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
-            }
-
-            // Check if table exists
-            if (!$this->schemaManager->tableExists($tableName)) {
-                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
-            }
-
-            // If soft delete is requested, validate that the status column exists
-            if ($softDelete) {
-                $tableColumns = $this->schemaManager->getTableColumns($tableName);
-                $columnNames = array_column($tableColumns, 'name');
-
-                if (!in_array($statusColumn, $columnNames)) {
-                    return Response::error(
-                        "Column '{$statusColumn}' does not exist in table '{$tableName}'. Cannot perform soft delete.",
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
-            }
-
-            // Perform bulk delete/update using transaction
-            $this->queryBuilder->beginTransaction();
-
-            try {
-                $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-
-                if ($softDelete) {
-                    // Perform soft delete by updating status column
-                    $sql = $this->buildBulkSoftDeleteQuery($tableName, $statusColumn, $placeholders);
-                    $values = array_merge([$deletedValue], $ids);
-                    $stmt = $this->queryBuilder->executeQuery($sql, $values);
-                    $affectedCount = $stmt->rowCount();
-
-                    $this->queryBuilder->commit();
-
-                    return Response::ok([
-                        'soft_deleted' => $affectedCount,
-                        'ids' => $ids,
-                        'status_column' => $statusColumn,
-                        'deleted_value' => $deletedValue
-                    ], "Successfully soft deleted {$affectedCount} record(s)")->send();
-                } else {
-                    // Perform hard delete
-                    $sql = $this->buildBulkDeleteQuery($tableName, $placeholders);
-                    $stmt = $this->queryBuilder->executeQuery($sql, $ids);
-                    $deletedCount = $stmt->rowCount();
-
-                    $this->queryBuilder->commit();
-
-                    return Response::ok([
-                        'deleted' => $deletedCount,
-                        'ids' => $ids
-                    ], "Successfully deleted {$deletedCount} record(s)")->send();
-                }
-            } catch (\Exception $e) {
-                $this->queryBuilder->rollback();
-                throw $e;
-            }
-        } catch (\Exception $e) {
+        if (!is_array($data)) {
             return Response::error(
-                'Bulk delete failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Invalid request format. Expected JSON object.',
+                Response::HTTP_BAD_REQUEST
             )->send();
+        }
+
+        if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
+            return Response::error(
+                'IDs array is required and cannot be empty',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        $ids = $data['ids'];
+
+        // Soft delete parameters
+        $softDelete = $data['soft_delete'] ?? false;
+        $statusColumn = $data['status_column'] ?? 'status';
+        $deletedValue = $data['deleted_value'] ?? 'deleted';
+
+        // Validate that all IDs are scalar values
+        foreach ($ids as $id) {
+            if (!is_scalar($id)) {
+                return Response::error(
+                    'All IDs must be scalar values',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+        }
+
+        // Check if table exists
+        if (!$this->schemaManager->tableExists($tableName)) {
+            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+        }
+
+        // If soft delete is requested, validate that the status column exists
+        if ($softDelete) {
+            $tableColumns = $this->schemaManager->getTableColumns($tableName);
+            $columnNames = array_column($tableColumns, 'name');
+
+            if (!in_array($statusColumn, $columnNames)) {
+                return Response::error(
+                    "Column '{$statusColumn}' does not exist in table '{$tableName}'. Cannot perform soft delete.",
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+        }
+
+        // Perform bulk delete/update using transaction
+        $this->queryBuilder->beginTransaction();
+
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+
+        if ($softDelete) {
+            // Perform soft delete by updating status column
+            $sql = $this->buildBulkSoftDeleteQuery($tableName, $statusColumn, $placeholders);
+            $values = array_merge([$deletedValue], $ids);
+            $stmt = $this->queryBuilder->executeQuery($sql, $values);
+            $affectedCount = $stmt->rowCount();
+
+            $this->queryBuilder->commit();
+
+            return Response::ok([
+            'soft_deleted' => $affectedCount,
+            'ids' => $ids,
+            'status_column' => $statusColumn,
+            'deleted_value' => $deletedValue
+            ], "Successfully soft deleted {$affectedCount} record(s)")->send();
+        } else {
+            // Perform hard delete
+            $sql = $this->buildBulkDeleteQuery($tableName, $placeholders);
+            $stmt = $this->queryBuilder->executeQuery($sql, $ids);
+            $deletedCount = $stmt->rowCount();
+
+            $this->queryBuilder->commit();
+
+            return Response::ok([
+            'deleted' => $deletedCount,
+            'ids' => $ids
+            ], "Successfully deleted {$deletedCount} record(s)")->send();
         }
     }
 
@@ -1835,115 +1510,103 @@ class DatabaseController
      */
     public function bulkUpdate(array $params): mixed
     {
-        try {
-            if (!is_array($params)) {
-                return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!is_array($params)) {
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $params['name'] ?? null;
-            if (!$tableName) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        $tableName = $params['name'] ?? null;
+        if (!$tableName) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Get request data
-            $data = Request::getPostData();
+        // Get request data
+        $data = Request::getPostData();
 
-            if (!is_array($data)) {
-                return Response::error(
-                    'Invalid request format. Expected JSON object.',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
-                return Response::error(
-                    'IDs array is required and cannot be empty',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            if (!isset($data['data']) || !is_array($data['data']) || empty($data['data'])) {
-                return Response::error(
-                    'Update data is required and cannot be empty',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            $ids = $data['ids'];
-            $updateData = $data['data'];
-
-            // Validate that all IDs are scalar values
-            foreach ($ids as $id) {
-                if (!is_scalar($id)) {
-                    return Response::error(
-                        'All IDs must be scalar values',
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
-            }
-
-            // Check if table exists
-            if (!$this->schemaManager->tableExists($tableName)) {
-                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
-            }
-
-            // Get table columns to validate update data
-            $tableColumns = $this->schemaManager->getTableColumns($tableName);
-            $columnNames = array_column($tableColumns, 'name');
-
-            // Filter update data to only include valid columns
-            $filteredUpdateData = [];
-            foreach ($updateData as $column => $value) {
-                if (in_array($column, $columnNames)) {
-                    $filteredUpdateData[$column] = $value;
-                }
-            }
-
-            if (empty($filteredUpdateData)) {
-                return Response::error(
-                    'No valid columns found in update data',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Perform bulk update using transaction
-            $this->queryBuilder->beginTransaction();
-
-            try {
-                // Build SET clause and WHERE IN clause using database-agnostic identifiers
-                $setClauses = [];
-                $values = [];
-                foreach ($filteredUpdateData as $column => $value) {
-                    $setClauses[] = $column . ' = ?';
-                    $values[] = $value;
-                }
-
-                $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-                $sql = $this->buildBulkUpdateQuery($tableName, $setClauses, $placeholders);
-
-                // Combine values and ids for the query
-                $allValues = array_merge($values, $ids);
-
-                $stmt = $this->queryBuilder->executeQuery($sql, $allValues);
-                $updatedCount = $stmt->rowCount();
-
-                $this->queryBuilder->commit();
-
-                return Response::ok([
-                    'updated' => $updatedCount,
-                    'ids' => $ids,
-                    'data' => $filteredUpdateData
-                ], "Successfully updated {$updatedCount} record(s)")->send();
-            } catch (\Exception $e) {
-                $this->queryBuilder->rollback();
-                throw $e;
-            }
-        } catch (\Exception $e) {
+        if (!is_array($data)) {
             return Response::error(
-                'Bulk update failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Invalid request format. Expected JSON object.',
+                Response::HTTP_BAD_REQUEST
             )->send();
         }
+
+        if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
+            return Response::error(
+                'IDs array is required and cannot be empty',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        if (!isset($data['data']) || !is_array($data['data']) || empty($data['data'])) {
+            return Response::error(
+                'Update data is required and cannot be empty',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        $ids = $data['ids'];
+        $updateData = $data['data'];
+
+        // Validate that all IDs are scalar values
+        foreach ($ids as $id) {
+            if (!is_scalar($id)) {
+                return Response::error(
+                    'All IDs must be scalar values',
+                    Response::HTTP_BAD_REQUEST
+                )->send();
+            }
+        }
+
+        // Check if table exists
+        if (!$this->schemaManager->tableExists($tableName)) {
+            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+        }
+
+        // Get table columns to validate update data
+        $tableColumns = $this->schemaManager->getTableColumns($tableName);
+        $columnNames = array_column($tableColumns, 'name');
+
+        // Filter update data to only include valid columns
+        $filteredUpdateData = [];
+        foreach ($updateData as $column => $value) {
+            if (in_array($column, $columnNames)) {
+                $filteredUpdateData[$column] = $value;
+            }
+        }
+
+        if (empty($filteredUpdateData)) {
+            return Response::error(
+                'No valid columns found in update data',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        // Perform bulk update using transaction
+        $this->queryBuilder->beginTransaction();
+
+        // Build SET clause and WHERE IN clause using database-agnostic identifiers
+        $setClauses = [];
+        $values = [];
+        foreach ($filteredUpdateData as $column => $value) {
+            $setClauses[] = $column . ' = ?';
+            $values[] = $value;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+        $sql = $this->buildBulkUpdateQuery($tableName, $setClauses, $placeholders);
+
+        // Combine values and ids for the query
+        $allValues = array_merge($values, $ids);
+
+        $stmt = $this->queryBuilder->executeQuery($sql, $allValues);
+        $updatedCount = $stmt->rowCount();
+
+        $this->queryBuilder->commit();
+
+        return Response::ok([
+        'updated' => $updatedCount,
+        'ids' => $ids,
+        'data' => $filteredUpdateData
+        ], "Successfully updated {$updatedCount} record(s)")->send();
     }
 
     /**
@@ -2005,7 +1668,7 @@ class DatabaseController
         }
 
         return "UPDATE {$wrappedTableName} SET " . implode(', ', $wrappedSetClauses) .
-               " WHERE {$wrappedIdColumn} IN ({$placeholders})";
+           " WHERE {$wrappedIdColumn} IN ({$placeholders})";
     }
 
     /**
@@ -2024,7 +1687,7 @@ class DatabaseController
         $wrappedIdColumn = $this->wrapIdentifier('id');
 
         return "UPDATE {$wrappedTableName} SET {$wrappedStatusColumn} = ? " .
-               "WHERE {$wrappedIdColumn} IN ({$placeholders})";
+           "WHERE {$wrappedIdColumn} IN ({$placeholders})";
     }
 
     // Method formatBytes has been removed as it was unused
@@ -2041,45 +1704,37 @@ class DatabaseController
      */
     public function previewSchemaChanges(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            if (!isset($data['changes'])) {
-                return Response::error('Changes array is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            $tableName = $data['table_name'];
-            $changes = $data['changes'];
-
-            // Validate table exists
-            if (!$this->schemaManager->tableExists($tableName)) {
-                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
-            }
-
-            // Get current schema for comparison
-            $currentSchema = $this->schemaManager->getTableSchema($tableName);
-
-            // Generate preview of changes
-            $preview = $this->schemaManager->generateChangePreview($tableName, $changes);
-
-            return Response::ok([
-                'table_name' => $tableName,
-                'current_schema' => $currentSchema,
-                'proposed_changes' => $changes,
-                'preview' => $preview,
-                'generated_at' => date('Y-m-d H:i:s')
-            ])->send();
-        } catch (\Exception $e) {
-            error_log("Schema preview error: " . $e->getMessage());
-            return Response::error(
-                'Failed to generate schema preview: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        if (!isset($data['changes'])) {
+            return Response::error('Changes array is required', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        $tableName = $data['table_name'];
+        $changes = $data['changes'];
+
+        // Validate table exists
+        if (!$this->schemaManager->tableExists($tableName)) {
+            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+        }
+
+        // Get current schema for comparison
+        $currentSchema = $this->schemaManager->getTableSchema($tableName);
+
+        // Generate preview of changes
+        $preview = $this->schemaManager->generateChangePreview($tableName, $changes);
+
+        return Response::ok([
+        'table_name' => $tableName,
+        'current_schema' => $currentSchema,
+        'proposed_changes' => $changes,
+        'preview' => $preview,
+        'generated_at' => date('Y-m-d H:i:s')
+        ])->send();
     }
 
     /**
@@ -2089,67 +1744,59 @@ class DatabaseController
      */
     public function exportSchema(): mixed
     {
-        try {
-            $params = $_GET;
-            $data = Request::getPostData();
+        $params = $_GET;
+        $data = Request::getPostData();
 
-            // Support both GET and POST
-            $tableName = $params['table'] ?? $data['table'] ?? null;
-            $format = $params['format'] ?? $data['format'] ?? 'json';
+        // Support both GET and POST
+        $tableName = $params['table'] ?? $data['table'] ?? null;
+        $format = $params['format'] ?? $data['format'] ?? 'json';
 
-            if (!$tableName) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!$tableName) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Validate table exists
-            if (!$this->schemaManager->tableExists($tableName)) {
-                return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
-            }
+        // Validate table exists
+        if (!$this->schemaManager->tableExists($tableName)) {
+            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+        }
 
-            // Validate format
-            $supportedFormats = ['json', 'sql', 'yaml', 'php'];
-            if (!in_array($format, $supportedFormats)) {
-                return Response::error(
-                    "Unsupported format '{$format}'. Supported formats: " . implode(', ', $supportedFormats),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Export schema
-            $schema = $this->schemaManager->exportTableSchema($tableName, $format);
-
-            // Log export action using existing audit system
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-            $auditLogger->audit(
-                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-                'schema_export',
-                \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-                [
-                    'table' => $tableName,
-                    'format' => $format,
-                    'exported_at' => date('Y-m-d H:i:s'),
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-                ]
-            );
-
-            return Response::ok([
-                'table_name' => $tableName,
-                'format' => $format,
-                'schema' => $schema,
-                'exported_at' => date('Y-m-d H:i:s'),
-                'metadata' => [
-                    'export_size' => strlen(json_encode($schema)),
-                    'format_version' => '1.0'
-                ]
-            ])->send();
-        } catch (\Exception $e) {
-            error_log("Schema export error: " . $e->getMessage());
+        // Validate format
+        $supportedFormats = ['json', 'sql', 'yaml', 'php'];
+        if (!in_array($format, $supportedFormats)) {
             return Response::error(
-                'Failed to export schema: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                "Unsupported format '{$format}'. Supported formats: " . implode(', ', $supportedFormats),
+                Response::HTTP_BAD_REQUEST
             )->send();
         }
+
+        // Export schema
+        $schema = $this->schemaManager->exportTableSchema($tableName, $format);
+
+        // Log export action using existing audit system
+        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+        $auditLogger->audit(
+            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+            'schema_export',
+            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+            [
+                'table' => $tableName,
+                'format' => $format,
+                'exported_at' => date('Y-m-d H:i:s'),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+            ]
+        );
+
+        return Response::ok([
+            'table_name' => $tableName,
+            'format' => $format,
+            'schema' => $schema,
+            'exported_at' => date('Y-m-d H:i:s'),
+            'metadata' => [
+            'export_size' => strlen(json_encode($schema)),
+            'format_version' => '1.0'
+            ]
+        ])->send();
     }
 
     /**
@@ -2159,73 +1806,65 @@ class DatabaseController
      */
     public function importSchema(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['table_name'])) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['table_name'])) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            if (!isset($data['schema'])) {
-                return Response::error('Schema definition is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!isset($data['schema'])) {
+            return Response::error('Schema definition is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            $tableName = $data['table_name'];
-            $schema = $data['schema'];
-            $format = $data['format'] ?? 'json';
-            $options = $data['options'] ?? [];
+        $tableName = $data['table_name'];
+        $schema = $data['schema'];
+        $format = $data['format'] ?? 'json';
+        $options = $data['options'] ?? [];
 
-            // Validate schema before import
-            $validation = $this->schemaManager->validateSchema($schema, $format);
-            if (!$validation['valid']) {
-                return Response::error(
-                    'Invalid schema: ' . implode(', ', $validation['errors']),
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Check if validation-only mode
-            if ($options['validate_only'] ?? false) {
-                return Response::ok([
-                    'table_name' => $tableName,
-                    'validation' => $validation,
-                    'validated_at' => date('Y-m-d H:i:s')
-                ])->send();
-            }
-
-            // Import schema
-            $result = $this->schemaManager->importTableSchema($tableName, $schema, $format, $options);
-
-            // Log import action using existing audit system
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-            $auditLogger->audit(
-                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-                'schema_import',
-                \Glueful\Logging\AuditEvent::SEVERITY_WARNING, // Higher severity for imports
-                [
-                    'table' => $tableName,
-                    'format' => $format,
-                    'options' => $options,
-                    'changes_applied' => $result['changes'] ?? [],
-                    'imported_at' => date('Y-m-d H:i:s'),
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-                ]
-            );
-
-            return Response::ok([
-                'table_name' => $tableName,
-                'format' => $format,
-                'result' => $result,
-                'imported_at' => date('Y-m-d H:i:s')
-            ])->send();
-        } catch (\Exception $e) {
-            error_log("Schema import error: " . $e->getMessage());
+        // Validate schema before import
+        $validation = $this->schemaManager->validateSchema($schema, $format);
+        if (!$validation['valid']) {
             return Response::error(
-                'Failed to import schema: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                'Invalid schema: ' . implode(', ', $validation['errors']),
+                Response::HTTP_BAD_REQUEST
             )->send();
         }
+
+        // Check if validation-only mode
+        if ($options['validate_only'] ?? false) {
+            return Response::ok([
+            'table_name' => $tableName,
+            'validation' => $validation,
+            'validated_at' => date('Y-m-d H:i:s')
+            ])->send();
+        }
+
+        // Import schema
+        $result = $this->schemaManager->importTableSchema($tableName, $schema, $format, $options);
+
+        // Log import action using existing audit system
+        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+        $auditLogger->audit(
+            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+            'schema_import',
+            \Glueful\Logging\AuditEvent::SEVERITY_WARNING, // Higher severity for imports
+            [
+                'table' => $tableName,
+                'format' => $format,
+                'options' => $options,
+                'changes_applied' => $result['changes'] ?? [],
+                'imported_at' => date('Y-m-d H:i:s'),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+            ]
+        );
+
+        return Response::ok([
+            'table_name' => $tableName,
+            'format' => $format,
+            'result' => $result,
+            'imported_at' => date('Y-m-d H:i:s')
+        ])->send();
     }
 
     /**
@@ -2235,40 +1874,32 @@ class DatabaseController
      */
     public function getSchemaHistory(): mixed
     {
-        try {
-            $params = $_GET;
-            $tableName = $params['table'] ?? null;
-            $limit = (int)($params['limit'] ?? 50);
-            $offset = (int)($params['offset'] ?? 0);
+        $params = $_GET;
+        $tableName = $params['table'] ?? null;
+        $limit = (int)($params['limit'] ?? 50);
+        $offset = (int)($params['offset'] ?? 0);
 
-            if (!$tableName) {
-                return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            // Query audit logs for schema-related events
-            $historyEvents = $this->getSchemaAuditLogs($tableName, $limit, $offset);
-
-            // Get migration history from migrations table
-            $migrationHistory = $this->getMigrationHistory($tableName);
-
-            return Response::ok([
-                'table_name' => $tableName,
-                'schema_changes' => $historyEvents,
-                'migrations' => $migrationHistory,
-                'pagination' => [
-                    'limit' => $limit,
-                    'offset' => $offset,
-                    'total' => count($historyEvents)
-                ],
-                'retrieved_at' => date('Y-m-d H:i:s')
-            ])->send();
-        } catch (\Exception $e) {
-            error_log("Schema history error: " . $e->getMessage());
-            return Response::error(
-                'Failed to retrieve schema history: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$tableName) {
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        // Query audit logs for schema-related events
+        $historyEvents = $this->getSchemaAuditLogs($tableName, $limit, $offset);
+
+        // Get migration history from migrations table
+        $migrationHistory = $this->getMigrationHistory($tableName);
+
+        return Response::ok([
+        'table_name' => $tableName,
+        'schema_changes' => $historyEvents,
+        'migrations' => $migrationHistory,
+        'pagination' => [
+            'limit' => $limit,
+            'offset' => $offset,
+            'total' => count($historyEvents)
+        ],
+        'retrieved_at' => date('Y-m-d H:i:s')
+        ])->send();
     }
 
     /**
@@ -2278,68 +1909,60 @@ class DatabaseController
      */
     public function revertSchemaChange(): mixed
     {
-        try {
-            $data = Request::getPostData();
+        $data = Request::getPostData();
 
-            if (!isset($data['change_id'])) {
-                return Response::error('Change ID is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            $changeId = $data['change_id'];
-            $confirm = $data['confirm'] ?? false;
-
-            // Get the original change from audit logs
-            $originalChange = $this->getAuditLogById($changeId);
-
-            if (!$originalChange) {
-                return Response::error('Change not found', Response::HTTP_NOT_FOUND)->send();
-            }
-
-            // Generate revert operations
-            $revertOps = $this->schemaManager->generateRevertOperations($originalChange);
-
-            // If not confirmed, return preview
-            if (!$confirm) {
-                return Response::ok([
-                    'change_id' => $changeId,
-                    'original_change' => $originalChange,
-                    'revert_operations' => $revertOps,
-                    'preview_only' => true,
-                    'message' => 'Preview of revert operations. Set confirm=true to execute.'
-                ])->send();
-            }
-
-            // Execute revert operations
-            $result = $this->schemaManager->executeRevert($revertOps);
-
-            // Log revert action
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-            $auditLogger->audit(
-                \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-                'schema_revert',
-                \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
-                [
-                    'original_change_id' => $changeId,
-                    'reverted_operations' => $revertOps,
-                    'revert_result' => $result,
-                    'reverted_at' => date('Y-m-d H:i:s'),
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-                ]
-            );
-
-            return Response::ok([
-                'change_id' => $changeId,
-                'result' => $result,
-                'reverted_at' => date('Y-m-d H:i:s')
-            ])->send();
-        } catch (\Exception $e) {
-            error_log("Schema revert error: " . $e->getMessage());
-            return Response::error(
-                'Failed to revert schema change: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!isset($data['change_id'])) {
+            return Response::error('Change ID is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        $changeId = $data['change_id'];
+        $confirm = $data['confirm'] ?? false;
+
+        // Get the original change from audit logs
+        $originalChange = $this->getAuditLogById($changeId);
+
+        if (!$originalChange) {
+            return Response::error('Change not found', Response::HTTP_NOT_FOUND)->send();
+        }
+
+        // Generate revert operations
+        $revertOps = $this->schemaManager->generateRevertOperations($originalChange);
+
+        // If not confirmed, return preview
+        if (!$confirm) {
+            return Response::ok([
+            'change_id' => $changeId,
+            'original_change' => $originalChange,
+            'revert_operations' => $revertOps,
+            'preview_only' => true,
+            'message' => 'Preview of revert operations. Set confirm=true to execute.'
+            ])->send();
+        }
+
+        // Execute revert operations
+        $result = $this->schemaManager->executeRevert($revertOps);
+
+        // Log revert action
+        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
+        $auditLogger->audit(
+            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
+            'schema_revert',
+            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+            [
+                'original_change_id' => $changeId,
+                'reverted_operations' => $revertOps,
+                'revert_result' => $result,
+                'reverted_at' => date('Y-m-d H:i:s'),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+            ]
+        );
+
+        return Response::ok([
+            'change_id' => $changeId,
+            'result' => $result,
+            'reverted_at' => date('Y-m-d H:i:s')
+        ])->send();
     }
 
     /**
@@ -2352,48 +1975,43 @@ class DatabaseController
      */
     private function getSchemaAuditLogs(string $tableName, int $limit, int $offset): array
     {
-        try {
-            // Use database-agnostic approach - fetch schema-related logs and filter in PHP
-            // This avoids database-specific JSON functions like JSON_EXTRACT (MySQL) or jsonb operators (PostgreSQL)
-            $sql = "SELECT * FROM audit_logs 
-                    WHERE category = ? 
-                    AND (action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ?)
-                    ORDER BY created_at DESC 
-                    LIMIT ? OFFSET ?";
+        // Use database-agnostic approach - fetch schema-related logs and filter in PHP
+        // This avoids database-specific JSON functions like JSON_EXTRACT (MySQL) or jsonb operators (PostgreSQL)
+        $sql = "SELECT * FROM audit_logs 
+                WHERE category = ? 
+                AND (action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ?)
+                ORDER BY created_at DESC 
+                LIMIT ? OFFSET ?";
 
-            $params = [
-                'admin',
-                'schema_%',
-                '%_column',
-                '%_index',
-                '%_foreign_key',
-                $limit,
-                $offset
-            ];
+        $params = [
+        'admin',
+        'schema_%',
+        '%_column',
+        '%_index',
+        '%_foreign_key',
+        $limit,
+        $offset
+        ];
 
-            $stmt = $this->queryBuilder->executeQuery($sql, $params);
-            $allLogs = $stmt->fetchAll();
+        $stmt = $this->queryBuilder->executeQuery($sql, $params);
+        $allLogs = $stmt->fetchAll();
 
-            // Filter logs by table name using PHP JSON parsing (database-agnostic)
-            $filteredLogs = [];
-            foreach ($allLogs as $log) {
-                if (!empty($log['context'])) {
-                    $context = json_decode($log['context'], true);
-                    if (
-                        is_array($context) &&
-                        isset($context['table']) &&
-                        $context['table'] === $tableName
-                    ) {
-                        $filteredLogs[] = $log;
-                    }
+        // Filter logs by table name using PHP JSON parsing (database-agnostic)
+        $filteredLogs = [];
+        foreach ($allLogs as $log) {
+            if (!empty($log['context'])) {
+                $context = json_decode($log['context'], true);
+                if (
+                    is_array($context) &&
+                    isset($context['table']) &&
+                    $context['table'] === $tableName
+                ) {
+                    $filteredLogs[] = $log;
                 }
             }
-
-            return $filteredLogs;
-        } catch (\Exception $e) {
-            error_log("Error fetching schema audit logs: " . $e->getMessage());
-            return [];
         }
+
+        return $filteredLogs;
     }
 
     /**
@@ -2404,23 +2022,18 @@ class DatabaseController
      */
     private function getMigrationHistory(string $tableName): array
     {
-        try {
-            // Database-agnostic query - LIKE operator works the same across MySQL, PostgreSQL, and SQLite
-            $sql = "SELECT * FROM migrations 
-                    WHERE migration LIKE ? OR migration LIKE ?
-                    ORDER BY executed_at DESC";
+        // Database-agnostic query - LIKE operator works the same across MySQL, PostgreSQL, and SQLite
+        $sql = "SELECT * FROM migrations 
+                WHERE migration LIKE ? OR migration LIKE ?
+                ORDER BY executed_at DESC";
 
-            $patterns = [
-                "%{$tableName}%",
-                "%create_{$tableName}%"
-            ];
+        $patterns = [
+        "%{$tableName}%",
+        "%create_{$tableName}%"
+        ];
 
-            $stmt = $this->queryBuilder->executeQuery($sql, $patterns);
-            return $stmt->fetchAll();
-        } catch (\Exception $e) {
-            error_log("Error fetching migration history: " . $e->getMessage());
-            return [];
-        }
+        $stmt = $this->queryBuilder->executeQuery($sql, $patterns);
+        return $stmt->fetchAll();
     }
 
     /**
@@ -2431,16 +2044,11 @@ class DatabaseController
      */
     private function getAuditLogById(string $changeId): ?array
     {
-        try {
-            // Database-agnostic query - LIMIT works the same across MySQL, PostgreSQL, and SQLite
-            $sql = "SELECT * FROM audit_logs WHERE id = ? LIMIT 1";
-            $stmt = $this->queryBuilder->executeQuery($sql, [$changeId]);
-            $result = $stmt->fetchAll();
-            return $result[0] ?? null;
-        } catch (\Exception $e) {
-            error_log("Error fetching audit log: " . $e->getMessage());
-            return null;
-        }
+        // Database-agnostic query - LIMIT works the same across MySQL, PostgreSQL, and SQLite
+        $sql = "SELECT * FROM audit_logs WHERE id = ? LIMIT 1";
+        $stmt = $this->queryBuilder->executeQuery($sql, [$changeId]);
+        $result = $stmt->fetchAll();
+        return $result[0] ?? null;
     }
 
     /**
@@ -2458,8 +2066,8 @@ class DatabaseController
     {
         $searchableTypes = ['varchar', 'text', 'char', 'tinytext', 'mediumtext', 'longtext'];
         $excludedColumns = [
-            'id', 'uuid', 'password', 'token', 'secret', 'api_key',
-            'created_at', 'updated_at', 'deleted_at'
+        'id', 'uuid', 'password', 'token', 'secret', 'api_key',
+        'created_at', 'updated_at', 'deleted_at'
         ];
         $searchableColumns = [];
 
@@ -2530,9 +2138,9 @@ class DatabaseController
 
         // Valid operators for security
         $validOperators = [
-            '=', '!=', '<>', '>', '<', '>=', '<=',
-            'like', 'ilike', 'in', 'between',
-            'gt', 'gte', 'lt', 'lte', 'ne'
+        '=', '!=', '<>', '>', '<', '>=', '<=',
+        'like', 'ilike', 'in', 'between',
+        'gt', 'gte', 'lt', 'lte', 'ne'
         ];
 
         foreach ($filters as $field => $condition) {
@@ -2587,14 +2195,14 @@ class DatabaseController
 
             if (!isset($foreignKeyGroups[$referencedTable])) {
                 $foreignKeyGroups[$referencedTable] = [
-                    'columns' => [],
-                    'values' => []
+                'columns' => [],
+                'values' => []
                 ];
             }
 
             $foreignKeyGroups[$referencedTable]['columns'][] = [
-                'local_column' => $column['name'],
-                'referenced_column' => $relationship['references_column']
+            'local_column' => $column['name'],
+            'referenced_column' => $relationship['references_column']
             ];
         }
 
