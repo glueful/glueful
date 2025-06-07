@@ -10,6 +10,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\Exceptions\AuthenticationException;
 
 /**
  * Authentication Middleware
@@ -75,12 +76,8 @@ class AuthenticationMiddleware implements MiddlewareInterface
         $userData = $this->authenticate($request);
 
         if (!$userData) {
-            // Use a more generic error message that doesn't expose which specific authentication method failed
-            return new JsonResponse([
-                'success' => false,
-                'message' => 'Authentication failed. Please provide valid credentials.',
-                'code' => 401
-            ], 401);
+            // Let exceptions bubble up instead of returning response directly
+            throw new AuthenticationException('Authentication failed. Please provide valid credentials.');
         }
 
         // Attach user data to request attributes for controllers to access
@@ -88,11 +85,7 @@ class AuthenticationMiddleware implements MiddlewareInterface
 
         // Check admin permissions if required
         if ($this->requiresAdmin && !$this->authManager->isAdmin($userData)) {
-            return new JsonResponse([
-                'success' => false,
-                'message' => 'Insufficient permissions, admin access required',
-                'code' => 403
-            ], 403);
+            throw new AuthenticationException('Insufficient permissions, admin access required');
         }
 
         // Log successful authentication if logging is enabled
@@ -130,12 +123,8 @@ class AuthenticationMiddleware implements MiddlewareInterface
     {
         // Check if app() function exists (available when bootstrap is loaded)
         if (function_exists('app')) {
-            try {
-                return app();
-            } catch (\Exception $e) {
-                // Fall back to null if container is not available
-                return null;
-            }
+            // Let exceptions bubble up - container issues should be handled at application level
+            return app();
         }
 
         return null;

@@ -117,16 +117,12 @@ class RateLimiterMiddlewareTest extends TestCase
         // Create a mock handler that should not be called
         $mockHandler = $this->createMockHandler(null, false);
 
-        // Process the request
-        $response = $middleware->process($request, $mockHandler);
+        // Expect RateLimitExceededException to be thrown instead of returning response
+        $this->expectException(\Glueful\Exceptions\RateLimitExceededException::class);
+        $this->expectExceptionMessage('Too Many Requests');
 
-        // Verify the response is a 429 Too Many Requests
-        $this->assertEquals(429, $response->getStatusCode());
-
-        // Verify appropriate headers are set
-        $this->assertEquals('60', $response->headers->get('X-RateLimit-Limit'));
-        $this->assertEquals('0', $response->headers->get('X-RateLimit-Remaining'));
-        $this->assertEquals('30', $response->headers->get('Retry-After'));
+        // Process the request - should throw exception
+        $middleware->process($request, $mockHandler);
     }
 
     /**

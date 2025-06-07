@@ -43,70 +43,50 @@ class FilesController
      */
     public function getFile()
     {
-        try {
-            $this->authController->validateToken();
-            $request = new Request();
-            $requestData = $request->getQueryParams();
+        $this->authController->validateToken();
+        $request = new Request();
+        $requestData = $request->getQueryParams();
 
-            // Get parameters from request
-            $uuid = $requestData['uuid'] ?? null;
-            $type = $requestData['type'] ?? 'info';
+        // Get parameters from request
+        $uuid = $requestData['uuid'] ?? null;
+        $type = $requestData['type'] ?? 'info';
 
-            if (!isset($uuid)) {
-                return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            // Process image parameters if needed
-            $params = [];
-            if ($type === 'image') {
-                $params = [
-                    'w' => $requestData['w'] ?? null,
-                    'h' => $requestData['h'] ?? null,
-                    'q' => $requestData['q'] ?? 80,
-                    'z' => $requestData['z'] ?? null
-                ];
-            }
-
-            // Get the blob data
-            $result = $this->fileHandler->getBlob($uuid, $type, $params);
-
-            // Log the file access to audit logger
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_DATA,
-                'file_access',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'file_uuid' => $uuid,
-                    'access_type' => $type,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-                    'parameters' => $params
-                ]
-            );
-
-            // Note: For download and inline types, the getBlob method will automatically
-            // set headers and stream the file, so this return is only reached for
-            // info and image types, or if there was an error
-            return Response::ok($result, 'File retrieved successfully')->send();
-        } catch (\Exception $e) {
-            // Log error to audit logger
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_DATA,
-                'file_access_error',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'error' => $e->getMessage(),
-                    'file_uuid' => $requestData['uuid'] ?? null,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                ]
-            );
-
-            return Response::error(
-                'Failed to retrieve file: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!isset($uuid)) {
+            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
         }
+
+        // Process image parameters if needed
+        $params = [];
+        if ($type === 'image') {
+            $params = [
+                'w' => $requestData['w'] ?? null,
+                'h' => $requestData['h'] ?? null,
+                'q' => $requestData['q'] ?? 80,
+                'z' => $requestData['z'] ?? null
+            ];
+        }
+
+        // Get the blob data
+        $result = $this->fileHandler->getBlob($uuid, $type, $params);
+
+        // Log the file access to audit logger
+        $auditLogger = AuditLogger::getInstance();
+        $auditLogger->audit(
+            AuditEvent::CATEGORY_DATA,
+            'file_access',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'file_uuid' => $uuid,
+                'access_type' => $type,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                'parameters' => $params
+            ]
+        );
+
+        // Note: For download and inline types, the getBlob method will automatically
+        // set headers and stream the file, so this return is only reached for
+        // info and image types, or if there was an error
+        return Response::ok($result, 'File retrieved successfully')->send();
     }
 
     /**
@@ -120,78 +100,58 @@ class FilesController
     public function uploadFile()
     {
         $request = new Request();
-        try {
-            $this->authController->validateToken();
-            $contentType = $request->getContentType();
+        $this->authController->validateToken();
+        $contentType = $request->getContentType();
 
-            // Handle multipart form data (regular file upload)
-            if (strpos($contentType, 'multipart/form-data') !== false) {
-                if (empty($request->getFiles())) {
-                    return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                $result = $this->fileHandler->handleFileUpload($request->getQueryParams(), $request->getFiles());
-
-                // Log successful file upload to audit logger
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->audit(
-                    AuditEvent::CATEGORY_DATA,
-                    'file_upload',
-                    AuditEvent::SEVERITY_INFO,
-                    [
-                        'file_uuid' => $result['uuid'] ?? null,
-                        'filename' => $result['filename'] ?? 'unknown',
-                        'file_size' => $result['size'] ?? 0,
-                        'file_type' => $result['mime_type'] ?? 'unknown',
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                    ]
-                );
-
-                return Response::ok($result, 'File uploaded successfully')->send();
-            } else {
-                // Handle JSON/base64 upload
-                $postData = Request::getPostData();
-                if (!isset($postData['base64'])) {
-                    return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();
-                }
-
-                $result = $this->fileHandler->handleBase64Upload($request->getQueryParams(), $postData);
-
-                // Log successful base64 file upload to audit logger
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->audit(
-                    AuditEvent::CATEGORY_DATA,
-                    'file_upload_base64',
-                    AuditEvent::SEVERITY_INFO,
-                    [
-                        'file_uuid' => $result['uuid'] ?? null,
-                        'filename' => $result['filename'] ?? 'unknown',
-                        'file_size' => $result['size'] ?? 0,
-                        'file_type' => $result['mime_type'] ?? 'unknown',
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                    ]
-                );
-
-                return Response::ok($result, 'File uploaded successfully')->send();
+        // Handle multipart form data (regular file upload)
+        if (strpos($contentType, 'multipart/form-data') !== false) {
+            if (empty($request->getFiles())) {
+                return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST)->send();
             }
-        } catch (\Exception $e) {
-            // Log file upload error to audit logger
+
+            $result = $this->fileHandler->handleFileUpload($request->getQueryParams(), $request->getFiles());
+
+            // Log successful file upload to audit logger
             $auditLogger = AuditLogger::getInstance();
             $auditLogger->audit(
                 AuditEvent::CATEGORY_DATA,
-                'file_upload_error',
-                AuditEvent::SEVERITY_WARNING,
+                'file_upload',
+                AuditEvent::SEVERITY_INFO,
                 [
-                    'error' => $e->getMessage(),
-                    'content_type' => isset($contentType) ? $contentType : 'unknown',
+                    'file_uuid' => $result['uuid'] ?? null,
+                    'filename' => $result['filename'] ?? 'unknown',
+                    'file_size' => $result['size'] ?? 0,
+                    'file_type' => $result['mime_type'] ?? 'unknown',
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]
             );
 
-            return Response::error(
-                'Upload failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+            return Response::ok($result, 'File uploaded successfully')->send();
+        } else {
+            // Handle JSON/base64 upload
+            $postData = Request::getPostData();
+            if (!isset($postData['base64'])) {
+                return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();
+            }
+
+            $result = $this->fileHandler->handleBase64Upload($request->getQueryParams(), $postData);
+
+            // Log successful base64 file upload to audit logger
+            $auditLogger = AuditLogger::getInstance();
+            $auditLogger->audit(
+                AuditEvent::CATEGORY_DATA,
+                'file_upload_base64',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'file_uuid' => $result['uuid'] ?? null,
+                    'filename' => $result['filename'] ?? 'unknown',
+                    'file_size' => $result['size'] ?? 0,
+                    'file_type' => $result['mime_type'] ?? 'unknown',
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]
+            );
+
+            return Response::ok($result, 'File uploaded successfully')->send();
         }
     }
 
@@ -205,73 +165,54 @@ class FilesController
      */
     public function deleteFile(array $params)
     {
-        try {
-            $this->authController->validateToken();
-            $uuid = $params['uuid'] ?? null;
+        $this->authController->validateToken();
+        $uuid = $params['uuid'] ?? null;
 
-            if (!$uuid) {
-                return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
-            }
+        if (!$uuid) {
+            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
+        }
 
-            // Using the existing getBlob method to check if file exists
-            // Then manually delete the file
-            if ($this->fileHandler->fileExists($uuid)) {
-                // Get file metadata before deletion for audit purposes
-                $fileInfo = $this->fileHandler->getBlob($uuid, 'info');
-                $result = $this->fileHandler->deleteFile($uuid);
+        // Using the existing getBlob method to check if file exists
+        // Then manually delete the file
+        if ($this->fileHandler->fileExists($uuid)) {
+            // Get file metadata before deletion for audit purposes
+            $fileInfo = $this->fileHandler->getBlob($uuid, 'info');
+            $result = $this->fileHandler->deleteFile($uuid);
 
-                // Log successful file deletion to audit logger
-                if ($result) {
-                    $auditLogger = AuditLogger::getInstance();
-                    $auditLogger->audit(
-                        AuditEvent::CATEGORY_DATA,
-                        'file_delete',
-                        AuditEvent::SEVERITY_INFO,
-                        [
-                            'file_uuid' => $uuid,
-                            'filename' => $fileInfo['data']['name'] ?? 'unknown',
-                            'file_type' => $fileInfo['data']['mime_type'] ?? 'unknown',
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                        ]
-                    );
-                }
-            } else {
-                $result = false;
-                // Log attempted deletion of non-existent file
+            // Log successful file deletion to audit logger
+            if ($result) {
                 $auditLogger = AuditLogger::getInstance();
                 $auditLogger->audit(
                     AuditEvent::CATEGORY_DATA,
-                    'file_delete_not_found',
-                    AuditEvent::SEVERITY_WARNING,
+                    'file_delete',
+                    AuditEvent::SEVERITY_INFO,
                     [
                         'file_uuid' => $uuid,
+                        'filename' => $fileInfo['data']['name'] ?? 'unknown',
+                        'file_type' => $fileInfo['data']['mime_type'] ?? 'unknown',
                         'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                     ]
                 );
             }
-
-            if (!$result) {
-                return Response::error('File not found or could not be deleted', Response::HTTP_NOT_FOUND)->send();
-            }
-
-            return Response::ok(['uuid' => $uuid], 'File deleted successfully')->send();
-        } catch (\Exception $e) {
-            // Log file deletion error to audit logger
+        } else {
+            $result = false;
+            // Log attempted deletion of non-existent file
             $auditLogger = AuditLogger::getInstance();
             $auditLogger->audit(
                 AuditEvent::CATEGORY_DATA,
-                'file_delete_error',
+                'file_delete_not_found',
                 AuditEvent::SEVERITY_WARNING,
                 [
-                    'error' => $e->getMessage(),
-                    'file_uuid' => $params['uuid'] ?? null,
+                    'file_uuid' => $uuid,
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]
             );
-            return Response::error(
-                'File deletion failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
         }
+
+        if (!$result) {
+            return Response::error('File not found or could not be deleted', Response::HTTP_NOT_FOUND)->send();
+        }
+
+        return Response::ok(['uuid' => $uuid], 'File deleted successfully')->send();
     }
 }

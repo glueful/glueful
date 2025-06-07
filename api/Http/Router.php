@@ -409,6 +409,9 @@ class Router
      * 4. Executes appropriate handler with parameters
      * 5. Returns formatted response
      *
+     * Route not found errors are converted to NotFoundException for consistent
+     * handling by the global exception handler.
+     *
      * @param Request $request The request to handle
      * @return array API response array with success/error information
      */
@@ -419,155 +422,108 @@ class Router
 
         $pathInfo = $request->getPathInfo();
 
+        // Match the route - convert ResourceNotFoundException to NotFoundException
         try {
-            // Match the route
             $parameters = self::$matcher->match($pathInfo);
-            $routeName = md5($request->getPathInfo() . $request->getMethod());
-            $controller = $parameters['_controller'];
-
-            // Set up middleware pipeline with DI container
-            $container = app();
-            $dispatcher = new MiddlewareDispatcher(function (Request $request) use ($controller, $parameters) {
-                // Remove internal routing parameters
-                unset($parameters['_controller']);
-                unset($parameters['_route']);
-
-                // Execute controller
-                $reflection = new \ReflectionFunction($controller);
-                $parametersInfo = $reflection->getParameters();
-
-                // Check if there are parameters before trying to access them
-                if (
-                    !empty($parametersInfo) &&
-                    $parametersInfo[0]->getType() &&
-                    (
-                        // Use is_a to safely check the parameter type across PHP versions
-                        (method_exists($parametersInfo[0]->getType(), 'getName') &&
-                         $parametersInfo[0]->getType()->getName() === Request::class) ||
-                        (method_exists($parametersInfo[0]->getType(), '__toString') &&
-                         (string)$parametersInfo[0]->getType() === Request::class)
-                    )
-                ) {
-                    $result = call_user_func($controller, $request);
-                } else {
-                    $result = call_user_func($controller, $parameters);
-                }
-
-                // Convert the result to a Response object
-                if ($result instanceof Response) {
-                    return $result;
-                }
-
-                if (is_array($result)) {
-                    $statusCode = $result['code'] ?? ($result['success'] ?? true ? 200 : 500);
-                    return new JsonResponse($result, $statusCode);
-                }
-
-                return new JsonResponse([
-                    'success' => true,
-                    'data' => $result
-                ], 200);
-            }, $container);
-
-            // Add authentication middleware if required, using our new abstraction
-            $authManager = \Glueful\Auth\AuthBootstrap::getManager();
-
-            if (in_array($routeName, self::$adminProtectedRoutes)) {
-                $dispatcher->pipeClass(AuthenticationMiddleware::class, [
-                    true, // requires admin
-                    $authManager, // using our new authentication manager
-                    ['admin', 'jwt', 'api_key'] // try each auth method in sequence until one succeeds
-                ]);
-            } elseif (in_array($routeName, self::$protectedRoutes)) {
-                $dispatcher->pipeClass(AuthenticationMiddleware::class, [
-                    false, // standard authentication
-                    $authManager, // using our new authentication manager
-                    ['jwt', 'api_key'] // try each auth method in sequence until one succeeds
-                ]);
-            }
-
-            // Add PSR-15 middleware to the pipeline
-            foreach (self::$middlewareStack as $middleware) {
-                $dispatcher->pipe($middleware);
-            }
-
-            // Convert and add legacy middleware to the pipeline
-            foreach (self::$legacyMiddlewares as $middleware) {
-                $dispatcher->pipe(self::convertToMiddleware($middleware));
-            }
-
-            // Process the request through the middleware pipeline
-            $response = $dispatcher->handle($request);
-
-            // Convert the response to an array
-            if ($response instanceof JsonResponse) {
-                return json_decode($response->getContent(), true);
-            }
-
-            return [
-                'success' => true,
-                'data' => $response->getContent(),
-                'code' => $response->getStatusCode()
-            ];
-        } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException $e) {
-            return [
-                'success' => false,
-                'message' => 'Route not found',
-                'code' => 404
-            ];
-        } catch (\Throwable $e) {
-            // Consolidated exception handling for all other exceptions
-            // Log the exception with detailed context
-            self::logException($e);
-
-            // Return a consistent error response
-            return [
-                'success' => false,
-                'message' => 'Internal server error: ' . $e->getMessage(),
-                'code' => $e->getCode() ?: 500,
-                'type' => get_class($e)
-            ];
+        } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException) {
+            throw new \Glueful\Exceptions\NotFoundException('Route not found: ' . $pathInfo);
         }
-    }
 
-    /**
-     * Log exception details for debugging
-     *
-     * Logs exception information to help with troubleshooting.
-     * Delegates to the main ExceptionHandler if possible, otherwise falls back
-     * to basic error logging.
-     *
-     * @param \Throwable $exception The exception to log
-     */
-    private static function logException(\Throwable $exception): void
-    {
-        // Create context for logging
-        $context = [
-            'file' => $exception->getFile(),
-            'line' => $exception->getLine(),
-            'trace' => $exception->getTraceAsString(),
-            'type' => get_class($exception)
-        ];
+        $routeName = md5($request->getPathInfo() . $request->getMethod());
+        $controller = $parameters['_controller'];
 
-        // Try to use the framework's exception handler if available
-        if (class_exists('\\Glueful\\Exceptions\\ExceptionHandler')) {
+        // Set up middleware pipeline with DI container
+        $container = null;
+        if (function_exists('app')) {
             try {
-                // Call the framework's exception handler's logging method
-                call_user_func(['\\Glueful\\Exceptions\\ExceptionHandler', 'logError'], $exception, $context);
-                return;
-            } catch (\Throwable $e) {
-                // Fall back to error_log if the exception handler fails
+                $container = app();
+            } catch (\Exception $e) {
+                // In test environment, continue without container
+                $container = null;
             }
         }
+        $dispatcher = new MiddlewareDispatcher(function (Request $request) use ($controller, $parameters) {
+            // Remove internal routing parameters
+            unset($parameters['_controller']);
+            unset($parameters['_route']);
 
-        // Fall back to basic error logging
-        error_log(sprintf(
-            "Exception: %s, Message: %s, File: %s, Line: %d",
-            get_class($exception),
-            $exception->getMessage(),
-            $exception->getFile(),
-            $exception->getLine()
-        ));
+            // Execute controller
+            $reflection = new \ReflectionFunction($controller);
+            $parametersInfo = $reflection->getParameters();
+
+            // Check if there are parameters before trying to access them
+            if (
+                !empty($parametersInfo) &&
+                $parametersInfo[0]->getType() &&
+                (
+                    // Use is_a to safely check the parameter type across PHP versions
+                    (method_exists($parametersInfo[0]->getType(), 'getName') &&
+                     $parametersInfo[0]->getType()->getName() === Request::class) ||
+                    (method_exists($parametersInfo[0]->getType(), '__toString') &&
+                     (string)$parametersInfo[0]->getType() === Request::class)
+                )
+            ) {
+                $result = call_user_func($controller, $request);
+            } else {
+                $result = call_user_func($controller, $parameters);
+            }
+
+            // Convert the result to a Response object
+            if ($result instanceof Response) {
+                return $result;
+            }
+
+            if (is_array($result)) {
+                $statusCode = $result['code'] ?? ($result['success'] ?? true ? 200 : 500);
+                return new JsonResponse($result, $statusCode);
+            }
+
+            return new JsonResponse([
+                'success' => true,
+                'data' => $result
+            ], 200);
+        }, $container);
+
+        // Add authentication middleware if required, using our new abstraction
+        $authManager = \Glueful\Auth\AuthBootstrap::getManager();
+
+        if (in_array($routeName, self::$adminProtectedRoutes)) {
+            $dispatcher->pipeClass(AuthenticationMiddleware::class, [
+                true, // requires admin
+                $authManager, // using our new authentication manager
+                ['admin', 'jwt', 'api_key'] // try each auth method in sequence until one succeeds
+            ]);
+        } elseif (in_array($routeName, self::$protectedRoutes)) {
+            $dispatcher->pipeClass(AuthenticationMiddleware::class, [
+                false, // standard authentication
+                $authManager, // using our new authentication manager
+                ['jwt', 'api_key'] // try each auth method in sequence until one succeeds
+            ]);
+        }
+
+        // Add PSR-15 middleware to the pipeline
+        foreach (self::$middlewareStack as $middleware) {
+            $dispatcher->pipe($middleware);
+        }
+
+        // Convert and add legacy middleware to the pipeline
+        foreach (self::$legacyMiddlewares as $middleware) {
+            $dispatcher->pipe(self::convertToMiddleware($middleware));
+        }
+
+        // Process the request through the middleware pipeline
+        $response = $dispatcher->handle($request);
+
+        // Convert the response to an array
+        if ($response instanceof JsonResponse) {
+            return json_decode($response->getContent(), true);
+        }
+
+        return [
+            'success' => true,
+            'data' => $response->getContent(),
+            'code' => $response->getStatusCode()
+        ];
     }
 
     public static function getInstance(): Router

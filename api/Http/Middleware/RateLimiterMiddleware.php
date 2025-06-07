@@ -10,6 +10,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
 use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\Exceptions\RateLimitExceededException;
 
 /**
  * Rate Limiter Middleware
@@ -92,7 +93,8 @@ class RateLimiterMiddleware implements MiddlewareInterface
 
         // Check if the rate limit has been exceeded
         if ($limiter->isExceeded()) {
-            return $this->createRateLimitExceededResponse($limiter);
+            // Let exceptions bubble up instead of returning response directly
+            throw new RateLimitExceededException('Too Many Requests', $limiter->getRetryAfter());
         }
 
         // Register this attempt
@@ -235,7 +237,8 @@ class RateLimiterMiddleware implements MiddlewareInterface
             try {
                 return app();
             } catch (\Exception $e) {
-                // Fall back to null if container is not available
+                // In test environment or when container isn't initialized, return null
+                // This allows the middleware to work without DI container
                 return null;
             }
         }

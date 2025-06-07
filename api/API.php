@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Glueful;
 
 use Glueful\Http\{Router};
-use Glueful\Helpers\{Request, ExtensionsManager, RoutesManager};
+use Glueful\Helpers\{ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
-use Glueful\Exceptions\{ValidationException, AuthenticationException};
 use Glueful\Logging\LogManager;
-use Throwable;
 
 /**
  * Main API Initialization and Request Handler
@@ -50,42 +48,29 @@ class API
      */
     public static function init(): void
     {
-        try {
-            // Log initialization start
-            self::getLogger()->info("API initialization started");
+        // Log initialization start
+        self::getLogger()->info("API initialization started");
 
-            // Initialize core components
-            self::initializeCore();
+        // Initialize core components
+        self::initializeCore();
 
-            // Load enabled extensions first - they may register routes
-            self::getLogger()->debug("Loading extensions...");
-            ExtensionsManager::loadEnabledExtensions();
+        // Load enabled extensions first - they may register routes
+        self::getLogger()->debug("Loading extensions...");
+        ExtensionsManager::loadEnabledExtensions();
 
-            // Now load all route definitions
-            self::getLogger()->debug("Loading routes...");
-            RoutesManager::loadRoutes();
+        // Now load all route definitions
+        self::getLogger()->debug("Loading routes...");
+        RoutesManager::loadRoutes();
 
-            // Initialize scheduler only for CLI (not for admin web requests)
-            if (PHP_SAPI === 'cli') {
-                self::getLogger()->debug("Initializing job scheduler for CLI...");
-                // Initialize scheduler only when needed
-                JobScheduler::getInstance();
-            }
-
-            // Initialization complete
-            self::getLogger()->info("API initialization completed successfully");
-        } catch (\Throwable $e) {
-            // Log initialization failure
-            self::getLogger()->error("API initialization failed", [
-                'error' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ]);
-
-            // Re-throw to be handled by the main error handler
-            throw new \RuntimeException("API initialization failed: " . $e->getMessage(), 0, $e);
+        // Initialize scheduler only for CLI (not for admin web requests)
+        if (PHP_SAPI === 'cli') {
+            self::getLogger()->debug("Initializing job scheduler for CLI...");
+            // Initialize scheduler only when needed
+            JobScheduler::getInstance();
         }
+
+        // Initialization complete
+        self::getLogger()->info("API initialization completed successfully");
     }
 
     /**
@@ -176,84 +161,43 @@ class API
      * 4. Processes response through middleware
      * 5. Returns formatted JSON response
      *
-     * Error handling is delegated to controllers and the router,
+     * Error handling is delegated to the global exception handler,
      * ensuring consistent error responses across the API.
      *
      * @return void No direct return, outputs API response with status and data
-     * @throws \RuntimeException If request processing fails catastrophically
      */
     public static function processRequest(): void
     {
         $startTime = microtime(true);
         $requestId = uniqid('req-');
 
-        try {
-            // Log request start
-            self::getLogger()->info("API request started", [
-                'request_id' => $requestId,
-                'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
-                'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
-            ]);
+        // Log request start
+        self::getLogger()->info("API request started", [
+            'request_id' => $requestId,
+            'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
+            'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
+        ]);
 
-            // Set JSON response headers
-            header('Content-Type: application/json');
+        // Set JSON response headers
+        header('Content-Type: application/json');
 
-            // Get router instance
-            $router = Router::getInstance();
-            // Initialize API
-            self::init();
+        // Get router instance
+        $router = Router::getInstance();
+        // Initialize API
+        self::init();
 
-            // Let router handle the request
-            $response = $router->handleRequest();
+        // Let router handle the request
+        $response = $router->handleRequest();
 
-            // Output the response
-            echo json_encode($response);
+        // Output the response
+        echo json_encode($response);
 
-            // Log successful response
-            $totalTime = round((microtime(true) - $startTime) * 1000, 2);
-            self::getLogger()->info("API request completed", [
-                'request_id' => $requestId,
-                'time_ms' => $totalTime,
-                'status' => $response['code'] ?? 200
-            ]);
-        } catch (ValidationException $e) {
-             // Log validation error
-             self::getLogger()->notice("Validation error", [
-                'request_id' => $requestId,
-                'error' => $e->getMessage()
-             ]);
-
-            header('Content-Type: application/json');
-            http_response_code(400);
-            echo json_encode(['error' => 'validation_error', 'message' => $e->getMessage()]);
-        } catch (AuthenticationException $e) {
-             // Log authentication error
-             self::getLogger()->warning("Authentication error", [
-                'request_id' => $requestId,
-                'error' => $e->getMessage(),
-                'ip' => $_SERVER['REMOTE_ADDR'] ?? null
-             ]);
-
-            header('Content-Type: application/json');
-            http_response_code(401);
-            echo json_encode(['error' => 'authentication_error', 'message' => $e->getMessage()]);
-        } catch (Throwable $e) {
-            // Log server error
-            self::getLogger()->error("Server error", [
-                'request_id' => $requestId,
-                'error' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            error_log($e->getMessage());
-
-            header('Content-Type: application/json');
-            http_response_code(500);
-            echo json_encode(['error' => 'server_error', 'message' => $e->getMessage()]);
-            // Log the actual error details
-        }
+        // Log successful response
+        $totalTime = round((microtime(true) - $startTime) * 1000, 2);
+        self::getLogger()->info("API request completed", [
+            'request_id' => $requestId,
+            'time_ms' => $totalTime,
+            'status' => $response['code'] ?? 200
+        ]);
     }
 }

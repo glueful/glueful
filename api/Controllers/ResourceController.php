@@ -35,51 +35,44 @@ class ResourceController
      */
     public function get(array $params, array $queryParams)
     {
-        try {
-            // Authenticate using the new abstraction layer
-            $request = Request::createFromGlobals();
-            $userData = $this->authenticate($request);
+        // Authenticate using the new abstraction layer
+        $request = Request::createFromGlobals();
+        $userData = $this->authenticate($request);
 
-            if (!$userData) {
-                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Extract user UUID directly from authenticated data
-            $userUuid = $this->getUserUuid($userData);
-
-            if (!$userUuid) {
-                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role-based authorization disabled - implement with RBAC extension
-            // For now, require valid token for all operations
-            $token = $this->extractToken($request);
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Parse query parameters for repository
-            $page = max(1, (int)($queryParams['page'] ?? 1));
-            $perPage = min(100, max(1, (int)($queryParams['per_page'] ?? 25)));
-            $sort = $queryParams['sort'] ?? 'created_at';
-            $order = strtolower($queryParams['order'] ?? 'desc');
-            $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
-            $fields = $this->parseFields($queryParams['fields'] ?? '');
-
-            // Build conditions and order
-            $conditions = $this->parseConditions($queryParams);
-            $orderBy = [$sort => $order];
-
-            // Get repository and paginate results
-            $repository = $this->repositoryFactory->getRepository($params['resource']);
-            $result = $repository->paginate($page, $perPage, $conditions, $orderBy, $fields);
-            return Response::ok($result)->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Failed to retrieve data: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$userData) {
+            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
         }
+
+        // Extract user UUID directly from authenticated data
+        $userUuid = $this->getUserUuid($userData);
+
+        if (!$userUuid) {
+            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role-based authorization disabled - implement with RBAC extension
+        // For now, require valid token for all operations
+        $token = $this->extractToken($request);
+        if (!$token) {
+            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+        }
+
+        // Parse query parameters for repository
+        $page = max(1, (int)($queryParams['page'] ?? 1));
+        $perPage = min(100, max(1, (int)($queryParams['per_page'] ?? 25)));
+        $sort = $queryParams['sort'] ?? 'created_at';
+        $order = strtolower($queryParams['order'] ?? 'desc');
+        $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
+        $fields = $this->parseFields($queryParams['fields'] ?? '');
+
+        // Build conditions and order
+        $conditions = $this->parseConditions($queryParams);
+        $orderBy = [$sort => $order];
+
+        // Get repository and paginate results
+        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        $result = $repository->paginate($page, $perPage, $conditions, $orderBy, $fields);
+        return Response::ok($result)->send();
     }
 
     /**
@@ -91,43 +84,36 @@ class ResourceController
      */
     public function getSingle(array $params, array $queryParams)
     {
-        try {
-            // Authenticate using the new abstraction layer
-            $request = Request::createFromGlobals();
-            $userData = $this->authenticate($request);
+        // Authenticate using the new abstraction layer
+        $request = Request::createFromGlobals();
+        $userData = $this->authenticate($request);
 
-            if (!$userData) {
-                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Extract user UUID directly from authenticated data
-            $userUuid = $this->getUserUuid($userData);
-
-            if (!$userUuid) {
-                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role-based authorization disabled - implement with RBAC extension
-            // For now, require valid token for all operations
-            $token = $this->extractToken($request);
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get repository and find single record
-            $repository = $this->repositoryFactory->getRepository($params['resource']);
-            $result = $repository->find($params['uuid']);
-
-            if (!$result) {
-                return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
-            }
-            return Response::ok($result)->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Failed to retrieve data: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$userData) {
+            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
         }
+
+        // Extract user UUID directly from authenticated data
+        $userUuid = $this->getUserUuid($userData);
+
+        if (!$userUuid) {
+            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role-based authorization disabled - implement with RBAC extension
+        // For now, require valid token for all operations
+        $token = $this->extractToken($request);
+        if (!$token) {
+            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+        }
+
+        // Get repository and find single record
+        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        $result = $repository->find($params['uuid']);
+
+        if (!$result) {
+            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
+        }
+        return Response::ok($result)->send();
     }
 
     /**
@@ -139,56 +125,49 @@ class ResourceController
      */
     public function post(array $params, array $postData)
     {
-        try {
-            // Authenticate using the new abstraction layer
-            $request = Request::createFromGlobals();
-            $userData = $this->authenticate($request);
+        // Authenticate using the new abstraction layer
+        $request = Request::createFromGlobals();
+        $userData = $this->authenticate($request);
 
-            if (!$userData) {
-                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Extract user UUID directly from authenticated data
-            $userUuid = $this->getUserUuid($userData);
-
-            if (!$userUuid) {
-                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role-based authorization disabled - implement with RBAC extension
-            // For now, require valid token for all operations
-            $token = $this->extractToken($request);
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            if (empty($postData)) {
-                return Response::error('No data provided', Response::HTTP_BAD_REQUEST)->send();
-            }
-
-            // check if postData conatains 'password' and hash it
-            $passwordHasher = new PasswordHasher();
-            if (isset($postData['password'])) {
-                $postData['password'] = $passwordHasher->hash($postData['password']);
-            }
-
-            // Get repository and create record
-            $repository = $this->repositoryFactory->getRepository($params['resource']);
-            $uuid = $repository->create($postData);
-
-            $result = [
-                'uuid' => $uuid,
-                'success' => true,
-                'message' => 'Record created successfully'
-            ];
-
-            return Response::ok($result)->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Save failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$userData) {
+            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
         }
+
+        // Extract user UUID directly from authenticated data
+        $userUuid = $this->getUserUuid($userData);
+
+        if (!$userUuid) {
+            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role-based authorization disabled - implement with RBAC extension
+        // For now, require valid token for all operations
+        $token = $this->extractToken($request);
+        if (!$token) {
+            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+        }
+
+        if (empty($postData)) {
+            return Response::error('No data provided', Response::HTTP_BAD_REQUEST)->send();
+        }
+
+        // check if postData conatains 'password' and hash it
+        $passwordHasher = new PasswordHasher();
+        if (isset($postData['password'])) {
+            $postData['password'] = $passwordHasher->hash($postData['password']);
+        }
+
+        // Get repository and create record
+        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        $uuid = $repository->create($postData);
+
+        $result = [
+            'uuid' => $uuid,
+            'success' => true,
+            'message' => 'Record created successfully'
+        ];
+
+        return Response::ok($result)->send();
     }
 
     /**
@@ -200,61 +179,54 @@ class ResourceController
      */
     public function put(array $params, array $putData)
     {
-        try {
-            // Authenticate using the new abstraction layer
-            $request = Request::createFromGlobals();
-            $userData = $this->authenticate($request);
+        // Authenticate using the new abstraction layer
+        $request = Request::createFromGlobals();
+        $userData = $this->authenticate($request);
 
-            if (!$userData) {
-                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Extract user UUID directly from authenticated data
-            $userUuid = $this->getUserUuid($userData);
-
-            if (!$userUuid) {
-                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role-based authorization disabled - implement with RBAC extension
-            // For now, require valid token for all operations
-            $token = $this->extractToken($request);
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get repository and update record
-            $repository = $this->repositoryFactory->getRepository($params['resource']);
-
-            // Extract data from nested structure if present (for compatibility)
-            $updateData = $putData['data'] ?? $putData;
-            unset($updateData['uuid']); // Remove UUID from update data
-
-            // check if postData conatains 'password' and hash it
-            $passwordHasher = new PasswordHasher();
-            if (isset($updateData['password'])) {
-                $updateData['password'] = $passwordHasher->hash($updateData['password']);
-            }
-
-            $success = $repository->update($params['uuid'], $updateData);
-
-            if (!$success) {
-                return Response::error('Record not found or update failed', Response::HTTP_NOT_FOUND)->send();
-            }
-
-            $result = [
-                'affected' => 1,
-                'success' => true,
-                'message' => 'Record updated successfully'
-            ];
-
-            return Response::ok($result)->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Update failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$userData) {
+            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
         }
+
+        // Extract user UUID directly from authenticated data
+        $userUuid = $this->getUserUuid($userData);
+
+        if (!$userUuid) {
+            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role-based authorization disabled - implement with RBAC extension
+        // For now, require valid token for all operations
+        $token = $this->extractToken($request);
+        if (!$token) {
+            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+        }
+
+        // Get repository and update record
+        $repository = $this->repositoryFactory->getRepository($params['resource']);
+
+        // Extract data from nested structure if present (for compatibility)
+        $updateData = $putData['data'] ?? $putData;
+        unset($updateData['uuid']); // Remove UUID from update data
+
+        // check if postData conatains 'password' and hash it
+        $passwordHasher = new PasswordHasher();
+        if (isset($updateData['password'])) {
+            $updateData['password'] = $passwordHasher->hash($updateData['password']);
+        }
+
+        $success = $repository->update($params['uuid'], $updateData);
+
+        if (!$success) {
+            return Response::error('Record not found or update failed', Response::HTTP_NOT_FOUND)->send();
+        }
+
+        $result = [
+            'affected' => 1,
+            'success' => true,
+            'message' => 'Record updated successfully'
+        ];
+
+        return Response::ok($result)->send();
     }
 
     /**
@@ -265,50 +237,43 @@ class ResourceController
      */
     public function delete(array $params)
     {
-        try {
-            // Authenticate using the new abstraction layer
-            $request = Request::createFromGlobals();
-            $userData = $this->authenticate($request);
+        // Authenticate using the new abstraction layer
+        $request = Request::createFromGlobals();
+        $userData = $this->authenticate($request);
 
-            if (!$userData) {
-                return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Extract user UUID directly from authenticated data
-            $userUuid = $this->getUserUuid($userData);
-
-            if (!$userUuid) {
-                return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role-based authorization disabled - implement with RBAC extension
-            // For now, require valid token for all operations
-            $token = $this->extractToken($request);
-            if (!$token) {
-                return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-            }
-
-            // Get repository and delete record
-            $repository = $this->repositoryFactory->getRepository($params['resource']);
-            $success = $repository->delete($params['uuid']);
-
-            if (!$success) {
-                return Response::error('Record not found or delete failed', Response::HTTP_NOT_FOUND)->send();
-            }
-
-            $result = [
-                'affected' => 1,
-                'success' => true,
-                'message' => 'Record deleted successfully'
-            ];
-
-            return Response::ok($result, 'Resource deleted successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Delete failed: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR
-            )->send();
+        if (!$userData) {
+            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
         }
+
+        // Extract user UUID directly from authenticated data
+        $userUuid = $this->getUserUuid($userData);
+
+        if (!$userUuid) {
+            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role-based authorization disabled - implement with RBAC extension
+        // For now, require valid token for all operations
+        $token = $this->extractToken($request);
+        if (!$token) {
+            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
+        }
+
+        // Get repository and delete record
+        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        $success = $repository->delete($params['uuid']);
+
+        if (!$success) {
+            return Response::error('Record not found or delete failed', Response::HTTP_NOT_FOUND)->send();
+        }
+
+        $result = [
+            'affected' => 1,
+            'success' => true,
+            'message' => 'Record deleted successfully'
+        ];
+
+        return Response::ok($result, 'Resource deleted successfully')->send();
     }
 
     /**

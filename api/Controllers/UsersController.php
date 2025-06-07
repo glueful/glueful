@@ -49,71 +49,67 @@ class UsersController
      */
     public function index(Request $request): Response
     {
-        try {
-            $page = (int) $request->query->get('page', 1);
-            $perPage = (int) $request->query->get('per_page', 25);
-            $search = $request->query->get('search', '');
-            $status = $request->query->get('status', '');
-            $roleId = $request->query->get('role_id', '');
-            $sortBy = $request->query->get('sort', 'created_at');
-            $sortOrder = strtoupper($request->query->get('order', 'DESC'));
-            $includeDeleted = filter_var($request->query->get('include_deleted', false), FILTER_VALIDATE_BOOLEAN);
+        $page = (int) $request->query->get('page', 1);
+        $perPage = (int) $request->query->get('per_page', 25);
+        $search = $request->query->get('search', '');
+        $status = $request->query->get('status', '');
+        $roleId = $request->query->get('role_id', '');
+        $sortBy = $request->query->get('sort', 'created_at');
+        $sortOrder = strtoupper($request->query->get('order', 'DESC'));
+        $includeDeleted = filter_var($request->query->get('include_deleted', false), FILTER_VALIDATE_BOOLEAN);
 
-            // Build conditions for filtering
-            $conditions = [];
-            if ($status) {
-                $conditions['status'] = $status;
-            }
-
-            // Handle search across username and email
-            if ($search) {
-                // For complex search, we might need to use findWhere or implement search in repository
-                // For now, we'll keep it simple and let the repository handle it if it supports it
-                $conditions['search'] = $search;
-            }
-
-            // Handle role filtering
-            if ($roleId) {
-                $conditions['role_id'] = $roleId;
-            }
-
-            $orderBy = [$sortBy => $sortOrder];
-
-            // Use the query builder directly to handle soft deletes properly
-            $query = $this->getQueryBuilder()->select('users', [
-                'uuid', 'username', 'email', 'status', 'created_at', 'last_login_date'
-            ]);
-
-            // Add standard WHERE conditions
-            if (!empty($conditions)) {
-                $query->where($conditions);
-            }
-
-            // Handle soft deletes with proper NULL checking
-            if (!$includeDeleted) {
-                $query->whereNull('deleted_at');
-            }
-
-            // Add ordering
-            if (count($orderBy) > 0) {
-                $query->orderBy($orderBy);
-            }
-
-            $paginatedResult = $query->paginate($page, $perPage);
-
-            // Note: Role attachment disabled - use RBAC extension
-            $users = $paginatedResult['data'] ?? [];
-            foreach ($users as &$user) {
-                $user['roles'] = []; // Roles managed by RBAC extension
-            }
-
-            // Update the data in the pagination result and return it directly
-            $paginatedResult['data'] = $users;
-
-            return Response::ok($paginatedResult, 'Users retrieved successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Build conditions for filtering
+        $conditions = [];
+        if ($status) {
+            $conditions['status'] = $status;
         }
+
+        // Handle search across username and email
+        if ($search) {
+            // For complex search, we might need to use findWhere or implement search in repository
+            // For now, we'll keep it simple and let the repository handle it if it supports it
+            $conditions['search'] = $search;
+        }
+
+        // Handle role filtering
+        if ($roleId) {
+            $conditions['role_id'] = $roleId;
+        }
+
+        $orderBy = [$sortBy => $sortOrder];
+
+        // Use the query builder directly to handle soft deletes properly
+        $query = $this->getQueryBuilder()->select('users', [
+            'uuid', 'username', 'email', 'status', 'created_at', 'last_login_date'
+        ]);
+
+        // Add standard WHERE conditions
+        if (!empty($conditions)) {
+            $query->where($conditions);
+        }
+
+        // Handle soft deletes with proper NULL checking
+        if (!$includeDeleted) {
+            $query->whereNull('deleted_at');
+        }
+
+        // Add ordering
+        if (count($orderBy) > 0) {
+            $query->orderBy($orderBy);
+        }
+
+        $paginatedResult = $query->paginate($page, $perPage);
+
+        // Note: Role attachment disabled - use RBAC extension
+        $users = $paginatedResult['data'] ?? [];
+        foreach ($users as &$user) {
+            $user['roles'] = []; // Roles managed by RBAC extension
+        }
+
+        // Update the data in the pagination result and return it directly
+        $paginatedResult['data'] = $users;
+
+        return Response::ok($paginatedResult, 'Users retrieved successfully')->send();
     }
 
     /**
@@ -125,29 +121,23 @@ class UsersController
      */
     public function show(array $params): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
+        $uuid = $params['uuid'] ?? '';
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            // Note: Roles managed by RBAC extension
-            $user['roles'] = [];
-
-            // Get user profile
-            $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
-
-            // Remove sensitive data
-            unset($user['password']);
-
-            return Response::ok($user, 'User details retrieved successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        // Note: Roles managed by RBAC extension
+        $user['roles'] = [];
+
+        // Get user profile
+        $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
+
+        // Remove sensitive data
+        unset($user['password']);
+
+        return Response::ok($user, 'User details retrieved successfully')->send();
     }
 
     /**
@@ -159,67 +149,63 @@ class UsersController
      */
     public function create(Request $request): Response
     {
-        try {
-            $data = $request->toArray();
+        $data = $request->toArray();
 
-            // Validate required fields
-            if (empty($data['username']) || empty($data['email']) || empty($data['password'])) {
-                return Response::error(
-                    'Username, email, and password are required',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Validate email format
-            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                return Response::error(
-                    'Invalid email format',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Validate password length
-            if (strlen($data['password']) < 8) {
-                return Response::error(
-                    'Password must be at least 8 characters',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Hash password using PHP's password_hash
-            $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
-
-            // Extract roles and profile data
-            $roleUuids = $data['roles'] ?? [];
-            $profileData = $data['profile'] ?? [];
-            unset($data['roles'], $data['profile']);
-
-            // Create user
-            $userUuid = $this->userRepository->create($data);
-            if (!$userUuid) {
-                return Response::error('Failed to create user', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-            }
-
-            // Note: Role assignment disabled - use RBAC extension API
-            if (!empty($roleUuids)) {
-                // Role assignment is now handled by the RBAC extension
-                // Use the RBAC API endpoints for role management
-            }
-
-            // Create profile if data provided
-            if (!empty($profileData)) {
-                $this->userRepository->updateProfile($userUuid, $profileData);
-            }
-
-            // Fetch created user
-            $user = $this->userRepository->findByUUID($userUuid);
-            $user['roles'] = []; // Roles managed by RBAC extension
-            unset($user['password']);
-
-            return Response::created($user, 'User created successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Validate required fields
+        if (empty($data['username']) || empty($data['email']) || empty($data['password'])) {
+            return Response::error(
+                'Username, email, and password are required',
+                Response::HTTP_BAD_REQUEST
+            )->send();
         }
+
+        // Validate email format
+        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            return Response::error(
+                'Invalid email format',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        // Validate password length
+        if (strlen($data['password']) < 8) {
+            return Response::error(
+                'Password must be at least 8 characters',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        // Hash password using PHP's password_hash
+        $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
+
+        // Extract roles and profile data
+        $roleUuids = $data['roles'] ?? [];
+        $profileData = $data['profile'] ?? [];
+        unset($data['roles'], $data['profile']);
+
+        // Create user
+        $userUuid = $this->userRepository->create($data);
+        if (!$userUuid) {
+            return Response::error('Failed to create user', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        }
+
+        // Note: Role assignment disabled - use RBAC extension API
+        if (!empty($roleUuids)) {
+            // Role assignment is now handled by the RBAC extension
+            // Use the RBAC API endpoints for role management
+        }
+
+        // Create profile if data provided
+        if (!empty($profileData)) {
+            $this->userRepository->updateProfile($userUuid, $profileData);
+        }
+
+        // Fetch created user
+        $user = $this->userRepository->findByUUID($userUuid);
+        $user['roles'] = []; // Roles managed by RBAC extension
+        unset($user['password']);
+
+        return Response::created($user, 'User created successfully')->send();
     }
 
     /**
@@ -232,69 +218,63 @@ class UsersController
      */
     public function update(array $params, Request $request): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
-            $data = $request->toArray();
+        $uuid = $params['uuid'] ?? '';
+        $data = $request->toArray();
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
+        }
 
-            // Validate email if provided
-            if (isset($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+        // Validate email if provided
+        if (isset($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            return Response::error(
+                'Invalid email format',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        // Handle password update
+        if (isset($data['password'])) {
+            if (strlen($data['password']) < 8) {
                 return Response::error(
-                    'Invalid email format',
+                    'Password must be at least 8 characters',
                     Response::HTTP_BAD_REQUEST
                 )->send();
             }
+            $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
 
-            // Handle password update
-            if (isset($data['password'])) {
-                if (strlen($data['password']) < 8) {
-                    return Response::error(
-                        'Password must be at least 8 characters',
-                        Response::HTTP_BAD_REQUEST
-                    )->send();
-                }
-                $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
-
-                // Invalidate user sessions on password change
-                $this->tokenStorage->revokeAllUserSessions($user['uuid']);
-            }
-
-            // Extract roles and profile data
-            $roleUuids = $data['roles'] ?? null;
-            $profileData = $data['profile'] ?? null;
-            unset($data['roles'], $data['profile']);
-
-            // Update user
-            if (!empty($data)) {
-                $this->userRepository->update($user['uuid'], $data);
-            }
-
-            // Note: Role updates disabled - use RBAC extension API
-            if ($roleUuids !== null) {
-                // Role management is now handled by the RBAC extension
-                // Use the RBAC API endpoints for role assignment/removal
-            }
-
-            // Update profile if provided
-            if ($profileData !== null) {
-                $this->userRepository->updateProfile($user['uuid'], $profileData);
-            }
-
-            // Fetch updated user
-            $updatedUser = $this->userRepository->findByUUID($user['uuid']);
-            $updatedUser['roles'] = []; // Roles managed by RBAC extension
-            unset($updatedUser['password']);
-
-            return Response::ok($updatedUser, 'User updated successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            // Invalidate user sessions on password change
+            $this->tokenStorage->revokeAllUserSessions($user['uuid']);
         }
+
+        // Extract roles and profile data
+        $roleUuids = $data['roles'] ?? null;
+        $profileData = $data['profile'] ?? null;
+        unset($data['roles'], $data['profile']);
+
+        // Update user
+        if (!empty($data)) {
+            $this->userRepository->update($user['uuid'], $data);
+        }
+
+        // Note: Role updates disabled - use RBAC extension API
+        if ($roleUuids !== null) {
+            // Role management is now handled by the RBAC extension
+            // Use the RBAC API endpoints for role assignment/removal
+        }
+
+        // Update profile if provided
+        if ($profileData !== null) {
+            $this->userRepository->updateProfile($user['uuid'], $profileData);
+        }
+
+        // Fetch updated user
+        $updatedUser = $this->userRepository->findByUUID($user['uuid']);
+        $updatedUser['roles'] = []; // Roles managed by RBAC extension
+        unset($updatedUser['password']);
+
+        return Response::ok($updatedUser, 'User updated successfully')->send();
     }
 
     /**
@@ -306,29 +286,23 @@ class UsersController
      */
     public function delete(array $params): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
+        $uuid = $params['uuid'] ?? '';
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            // Note: Superuser protection disabled - implement in RBAC extension
-            // Superuser protection should be implemented using RBAC permissions
-
-            // Soft delete user (use BaseRepository delete method)
-            $this->userRepository->delete($user['uuid']);
-
-            // Invalidate user sessions
-            $this->tokenStorage->revokeAllUserSessions($user['uuid']);
-
-            return Response::ok(null, 'User deleted successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        // Note: Superuser protection disabled - implement in RBAC extension
+        // Superuser protection should be implemented using RBAC permissions
+
+        // Soft delete user (use BaseRepository delete method)
+        $this->userRepository->delete($user['uuid']);
+
+        // Invalidate user sessions
+        $this->tokenStorage->revokeAllUserSessions($user['uuid']);
+
+        return Response::ok(null, 'User deleted successfully')->send();
     }
 
     /**
@@ -340,24 +314,18 @@ class UsersController
      */
     public function restore(array $params): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
+        $uuid = $params['uuid'] ?? '';
 
-            $user = $this->userRepository->findByUUID($uuid); // For restore, check if user exists
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            // Use BaseRepository restore method - implement in UserRepository if not exists
-            // For now, update the deleted_at field to null
-            $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
-
-            return Response::ok(null, 'User restored successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid); // For restore, check if user exists
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        // Use BaseRepository restore method - implement in UserRepository if not exists
+        // For now, update the deleted_at field to null
+        $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
+
+        return Response::ok(null, 'User restored successfully')->send();
     }
 
     /**
@@ -369,70 +337,66 @@ class UsersController
      */
     public function bulk(Request $request): Response
     {
-        try {
-            $data = $request->toArray();
+        $data = $request->toArray();
 
-            if (empty($data['action']) || empty($data['user_ids'])) {
-                return Response::error(
-                    'Action and user_ids are required',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            $results = [
-                'success' => 0,
-                'failed' => 0,
-                'errors' => []
-            ];
-
-            foreach ($data['user_ids'] as $userUuid) {
-                try {
-                    $user = $this->userRepository->findByUuid($userUuid);
-                    if (!$user) {
-                        $results['failed']++;
-                        $results['errors'][] = "User {$userUuid} not found";
-                        continue;
-                    }
-
-                    switch ($data['action']) {
-                        case 'delete':
-                            $this->userRepository->delete($user['uuid']);
-                            break;
-                        case 'restore':
-                            $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
-                            break;
-                        case 'activate':
-                            $this->userRepository->update($user['uuid'], ['status' => 'active']);
-                            break;
-                        case 'deactivate':
-                            $this->userRepository->update($user['uuid'], ['status' => 'inactive']);
-                            break;
-                        case 'suspend':
-                            $this->userRepository->update($user['uuid'], ['status' => 'suspended']);
-                            $this->tokenStorage->revokeAllUserSessions($user['uuid']);
-                            break;
-                        case 'assign_role':
-                        case 'remove_role':
-                            // Note: Role operations disabled - use RBAC extension API
-                            $results['failed']++;
-                            $results['errors'][] = "Role operations moved to RBAC extension for user {$userUuid}";
-                            continue 2;
-                    }
-
-                    $results['success']++;
-                } catch (\Exception $e) {
-                    $results['failed']++;
-                    $results['errors'][] = "Failed for user {$userUuid}: " . $e->getMessage();
-                }
-            }
-
-            return Response::ok(
-                $results,
-                "Bulk operation completed: {$results['success']} succeeded, {$results['failed']} failed"
+        if (empty($data['action']) || empty($data['user_ids'])) {
+            return Response::error(
+                'Action and user_ids are required',
+                Response::HTTP_BAD_REQUEST
             )->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
         }
+
+        $results = [
+            'success' => 0,
+            'failed' => 0,
+            'errors' => []
+        ];
+
+        foreach ($data['user_ids'] as $userUuid) {
+            try {
+                $user = $this->userRepository->findByUuid($userUuid);
+                if (!$user) {
+                    $results['failed']++;
+                    $results['errors'][] = "User {$userUuid} not found";
+                    continue;
+                }
+
+                switch ($data['action']) {
+                    case 'delete':
+                        $this->userRepository->delete($user['uuid']);
+                        break;
+                    case 'restore':
+                        $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
+                        break;
+                    case 'activate':
+                        $this->userRepository->update($user['uuid'], ['status' => 'active']);
+                        break;
+                    case 'deactivate':
+                        $this->userRepository->update($user['uuid'], ['status' => 'inactive']);
+                        break;
+                    case 'suspend':
+                        $this->userRepository->update($user['uuid'], ['status' => 'suspended']);
+                        $this->tokenStorage->revokeAllUserSessions($user['uuid']);
+                        break;
+                    case 'assign_role':
+                    case 'remove_role':
+                        // Note: Role operations disabled - use RBAC extension API
+                        $results['failed']++;
+                        $results['errors'][] = "Role operations moved to RBAC extension for user {$userUuid}";
+                        continue 2;
+                }
+
+                $results['success']++;
+            } catch (\Exception $e) {
+                $results['failed']++;
+                $results['errors'][] = "Failed for user {$userUuid}: " . $e->getMessage();
+            }
+        }
+
+        return Response::ok(
+            $results,
+            "Bulk operation completed: {$results['success']} succeeded, {$results['failed']} failed"
+        )->send();
     }
 
     /**
@@ -444,54 +408,50 @@ class UsersController
      */
     public function stats(Request $request): Response
     {
-        try {
-            $period = $request->query->get('period', '30days');
+        $period = $request->query->get('period', '30days');
 
-            // Get basic user statistics using QueryBuilder
-            $stats = [];
+        // Get basic user statistics using QueryBuilder
+        $stats = [];
 
-            // Total users
-            $totalUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-                ->where(['deleted_at' => null])
-                ->get();
-            $stats['total_users'] = $totalUsers[0]['total'] ?? 0;
+        // Total users
+        $totalUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
+            ->where(['deleted_at' => null])
+            ->get();
+        $stats['total_users'] = $totalUsers[0]['total'] ?? 0;
 
-            // Active users
-            $activeUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-                ->where(['status' => 'active', 'deleted_at' => null])
-                ->get();
-            $stats['active_users'] = $activeUsers[0]['total'] ?? 0;
+        // Active users
+        $activeUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
+            ->where(['status' => 'active', 'deleted_at' => null])
+            ->get();
+        $stats['active_users'] = $activeUsers[0]['total'] ?? 0;
 
-            // Users by status
-            $statusStats = $this->getQueryBuilder()->select('users', ['status', new RawExpression('COUNT(*) as count')])
-                ->where(['deleted_at' => null])
-                ->groupBy(['status'])
-                ->get();
-            $stats['by_status'] = [];
-            foreach ($statusStats as $stat) {
-                $stats['by_status'][$stat['status']] = $stat['count'];
-            }
-
-            // New users in period - calculate date in PHP for cross-database compatibility
-            $daysBack = match ($period) {
-                '7days' => 7,
-                '30days' => 30,
-                '90days' => 90,
-                'year' => 365,
-                default => 30
-            };
-            $dateThreshold = date('Y-m-d H:i:s', strtotime("-{$daysBack} days"));
-
-            $newUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-                ->where(['deleted_at' => null])
-                ->whereRaw('created_at >= ?', [$dateThreshold])
-                ->get();
-            $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
-
-            return Response::ok($stats, 'Statistics retrieved successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Users by status
+        $statusStats = $this->getQueryBuilder()->select('users', ['status', new RawExpression('COUNT(*) as count')])
+            ->where(['deleted_at' => null])
+            ->groupBy(['status'])
+            ->get();
+        $stats['by_status'] = [];
+        foreach ($statusStats as $stat) {
+            $stats['by_status'][$stat['status']] = $stat['count'];
         }
+
+        // New users in period - calculate date in PHP for cross-database compatibility
+        $daysBack = match ($period) {
+            '7days' => 7,
+            '30days' => 30,
+            '90days' => 90,
+            'year' => 365,
+            default => 30
+        };
+        $dateThreshold = date('Y-m-d H:i:s', strtotime("-{$daysBack} days"));
+
+        $newUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
+            ->where(['deleted_at' => null])
+            ->whereRaw('created_at >= ?', [$dateThreshold])
+            ->get();
+        $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
+
+        return Response::ok($stats, 'Statistics retrieved successfully')->send();
     }
 
     /**
@@ -503,88 +463,84 @@ class UsersController
      */
     public function search(Request $request): Response
     {
-        try {
-            $query = $request->query->get('q', '');
-            $filters = [
-                'status' => $request->query->get('status'),
-                'role' => $request->query->get('role'),
-                'created_after' => $request->query->get('created_after'),
-                'created_before' => $request->query->get('created_before'),
-                'last_login_after' => $request->query->get('last_login_after'),
-                'last_login_before' => $request->query->get('last_login_before'),
-                'has_permission' => $request->query->get('has_permission')
-            ];
+        $query = $request->query->get('q', '');
+        $filters = [
+            'status' => $request->query->get('status'),
+            'role' => $request->query->get('role'),
+            'created_after' => $request->query->get('created_after'),
+            'created_before' => $request->query->get('created_before'),
+            'last_login_after' => $request->query->get('last_login_after'),
+            'last_login_before' => $request->query->get('last_login_before'),
+            'has_permission' => $request->query->get('has_permission')
+        ];
 
-            $page = (int) $request->query->get('page', 1);
-            $perPage = (int) $request->query->get('per_page', 25);
+        $page = (int) $request->query->get('page', 1);
+        $perPage = (int) $request->query->get('per_page', 25);
 
-            // Build search query using QueryBuilder
-            $searchQuery = $this->getQueryBuilder()->select('users', [
-                'users.uuid',
-                'users.username',
-                'users.email',
-                'users.status',
-                'users.created_at',
-                'users.last_login_date'
-            ]);
+        // Build search query using QueryBuilder
+        $searchQuery = $this->getQueryBuilder()->select('users', [
+            'users.uuid',
+            'users.username',
+            'users.email',
+            'users.status',
+            'users.created_at',
+            'users.last_login_date'
+        ]);
 
-            // Apply text search
-            if ($query) {
-                $searchQuery->whereRaw("(users.username LIKE ? OR users.email LIKE ?)", ["%{$query}%", "%{$query}%"]);
-            }
-
-            // Apply filters
-            $whereConditions = ['deleted_at' => null];
-            if ($filters['status']) {
-                $whereConditions['status'] = $filters['status'];
-            }
-            if ($filters['created_after']) {
-                $searchQuery->whereRaw("users.created_at >= ?", [$filters['created_after']]);
-            }
-            if ($filters['created_before']) {
-                $searchQuery->whereRaw("users.created_at <= ?", [$filters['created_before']]);
-            }
-            if ($filters['last_login_after']) {
-                $searchQuery->whereRaw("users.last_login_date >= ?", [$filters['last_login_after']]);
-            }
-            if ($filters['last_login_before']) {
-                $searchQuery->whereRaw("users.last_login_date <= ?", [$filters['last_login_before']]);
-            }
-
-            $searchQuery->where($whereConditions);
-
-            // Note: Role filtering disabled - implement with RBAC extension
-            if ($filters['role']) {
-                // Role filtering is now handled by the RBAC extension
-                return Response::error(
-                    'Role filtering requires RBAC extension',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Apply pagination
-            $searchQuery->limit($perPage)->offset(($page - 1) * $perPage);
-
-            $users = $searchQuery->get();
-
-            // Note: Roles managed by RBAC extension
-            foreach ($users as &$user) {
-                $user['roles'] = [];
-            }
-
-            $results = [
-                'data' => $users,
-                'pagination' => [
-                    'current_page' => $page,
-                    'per_page' => $perPage,
-                    'total' => count($users) // Simplified for now
-                ]
-            ];
-
-            return Response::ok($results, 'Search completed successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Apply text search
+        if ($query) {
+            $searchQuery->whereRaw("(users.username LIKE ? OR users.email LIKE ?)", ["%{$query}%", "%{$query}%"]);
         }
+
+        // Apply filters
+        $whereConditions = ['deleted_at' => null];
+        if ($filters['status']) {
+            $whereConditions['status'] = $filters['status'];
+        }
+        if ($filters['created_after']) {
+            $searchQuery->whereRaw("users.created_at >= ?", [$filters['created_after']]);
+        }
+        if ($filters['created_before']) {
+            $searchQuery->whereRaw("users.created_at <= ?", [$filters['created_before']]);
+        }
+        if ($filters['last_login_after']) {
+            $searchQuery->whereRaw("users.last_login_date >= ?", [$filters['last_login_after']]);
+        }
+        if ($filters['last_login_before']) {
+            $searchQuery->whereRaw("users.last_login_date <= ?", [$filters['last_login_before']]);
+        }
+
+        $searchQuery->where($whereConditions);
+
+        // Note: Role filtering disabled - implement with RBAC extension
+        if ($filters['role']) {
+            // Role filtering is now handled by the RBAC extension
+            return Response::error(
+                'Role filtering requires RBAC extension',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        // Apply pagination
+        $searchQuery->limit($perPage)->offset(($page - 1) * $perPage);
+
+        $users = $searchQuery->get();
+
+        // Note: Roles managed by RBAC extension
+        foreach ($users as &$user) {
+            $user['roles'] = [];
+        }
+
+        $results = [
+            'data' => $users,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => count($users) // Simplified for now
+            ]
+        ];
+
+        return Response::ok($results, 'Search completed successfully')->send();
     }
 
     /**
@@ -596,66 +552,62 @@ class UsersController
      */
     public function export(Request $request): Response
     {
-        try {
-            $format = $request->query->get('format', 'csv');
-            $filters = [
-                'status' => $request->query->get('status'),
-                'role' => $request->query->get('role'),
-                'include_deleted' => filter_var($request->query->get('include_deleted', false), FILTER_VALIDATE_BOOLEAN)
-            ];
+        $format = $request->query->get('format', 'csv');
+        $filters = [
+            'status' => $request->query->get('status'),
+            'role' => $request->query->get('role'),
+            'include_deleted' => filter_var($request->query->get('include_deleted', false), FILTER_VALIDATE_BOOLEAN)
+        ];
 
-            // Get users for export using QueryBuilder
-            $exportQuery = $this->getQueryBuilder()->select('users', [
-                'users.uuid',
-                'users.username',
-                'users.email',
-                'users.status',
-                'users.created_at',
-                'users.last_login_date'
-            ]);
+        // Get users for export using QueryBuilder
+        $exportQuery = $this->getQueryBuilder()->select('users', [
+            'users.uuid',
+            'users.username',
+            'users.email',
+            'users.status',
+            'users.created_at',
+            'users.last_login_date'
+        ]);
 
-            $whereConditions = [];
-            if (!$filters['include_deleted']) {
-                $whereConditions['deleted_at'] = null;
-            }
-            if ($filters['status']) {
-                $whereConditions['status'] = $filters['status'];
-            }
-
-            if (!empty($whereConditions)) {
-                $exportQuery->where($whereConditions);
-            }
-
-            // Note: Role filtering disabled - implement with RBAC extension
-            if ($filters['role']) {
-                return Response::error(
-                    'Role filtering requires RBAC extension',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            $users = $exportQuery->get();
-
-            // Get profiles for each user
-            foreach ($users as &$user) {
-                $user['roles'] = []; // Roles managed by RBAC extension
-                $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
-            }
-
-            if ($format === 'json') {
-                return Response::ok($users, 'Export completed successfully')->send();
-            }
-
-            // CSV export
-            $csv = $this->generateCSV($users);
-
-            header('Content-Type: text/csv');
-            header('Content-Disposition: attachment; filename="users_export_' . date('Y-m-d') . '.csv"');
-            echo $csv;
-            exit;
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $whereConditions = [];
+        if (!$filters['include_deleted']) {
+            $whereConditions['deleted_at'] = null;
         }
+        if ($filters['status']) {
+            $whereConditions['status'] = $filters['status'];
+        }
+
+        if (!empty($whereConditions)) {
+            $exportQuery->where($whereConditions);
+        }
+
+        // Note: Role filtering disabled - implement with RBAC extension
+        if ($filters['role']) {
+            return Response::error(
+                'Role filtering requires RBAC extension',
+                Response::HTTP_BAD_REQUEST
+            )->send();
+        }
+
+        $users = $exportQuery->get();
+
+        // Get profiles for each user
+        foreach ($users as &$user) {
+            $user['roles'] = []; // Roles managed by RBAC extension
+            $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
+        }
+
+        if ($format === 'json') {
+            return Response::ok($users, 'Export completed successfully')->send();
+        }
+
+        // CSV export
+        $csv = $this->generateCSV($users);
+
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="users_export_' . date('Y-m-d') . '.csv"');
+        echo $csv;
+        exit;
     }
 
     /**
@@ -667,33 +619,29 @@ class UsersController
      */
     public function import(Request $request): Response
     {
-        try {
-            $file = $request->files->get('file');
+        $file = $request->files->get('file');
 
-            if (!$file) {
-                return Response::error(
-                    'File is required',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
-
-            // Basic import functionality - for full implementation, consider using a dedicated import service
-            $results = [
-                'created' => 0,
-                'updated' => 0,
-                'failed' => 0,
-                'errors' => []
-            ];
-
-            // For now, return a placeholder response
-            $results['errors'][] = 'Import functionality needs to be implemented based on specific requirements';
-
-            $message = "Import completed: {$results['created']} created, " .
-                      "{$results['updated']} updated, {$results['failed']} failed";
-            return Response::ok($results, $message)->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        if (!$file) {
+            return Response::error(
+                'File is required',
+                Response::HTTP_BAD_REQUEST
+            )->send();
         }
+
+        // Basic import functionality - for full implementation, consider using a dedicated import service
+        $results = [
+            'created' => 0,
+            'updated' => 0,
+            'failed' => 0,
+            'errors' => []
+        ];
+
+        // For now, return a placeholder response
+        $results['errors'][] = 'Import functionality needs to be implemented based on specific requirements';
+
+        $message = "Import completed: {$results['created']} created, " .
+                  "{$results['updated']} updated, {$results['failed']} failed";
+        return Response::ok($results, $message)->send();
     }
 
     /**
@@ -706,38 +654,32 @@ class UsersController
      */
     public function activity(array $params, Request $request): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
-            $page = (int) $request->query->get('page', 1);
-            $perPage = (int) $request->query->get('per_page', 50);
+        $uuid = $params['uuid'] ?? '';
+        $page = (int) $request->query->get('page', 1);
+        $perPage = (int) $request->query->get('per_page', 50);
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            // Get user activity from audit logs using QueryBuilder
-            $activities = $this->getQueryBuilder()->select('audit_logs', [
-                'action',
-                'entity_type',
-                'entity_id',
-                'old_values',
-                'new_values',
-                'created_at',
-                'user_id'
-            ])
-            ->where(['user_id' => $user['uuid']])
-            ->orderBy(['created_at' => 'DESC'])
-            ->limit($perPage)
-            ->offset(($page - 1) * $perPage)
-            ->get();
-
-            return Response::ok($activities, 'Activity log retrieved successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        // Get user activity from audit logs using QueryBuilder
+        $activities = $this->getQueryBuilder()->select('audit_logs', [
+            'action',
+            'entity_type',
+            'entity_id',
+            'old_values',
+            'new_values',
+            'created_at',
+            'user_id'
+        ])
+        ->where(['user_id' => $user['uuid']])
+        ->orderBy(['created_at' => 'DESC'])
+        ->limit($perPage)
+        ->offset(($page - 1) * $perPage)
+        ->get();
+
+        return Response::ok($activities, 'Activity log retrieved successfully')->send();
     }
 
 
@@ -750,45 +692,39 @@ class UsersController
      */
     public function sessions(array $params): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
+        $uuid = $params['uuid'] ?? '';
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            // Get user sessions directly from auth_sessions table
-            $sessions = $this->getQueryBuilder()->select('auth_sessions', [
-                'session_id',
-                'access_token',
-                'status',
-                'provider',
-                'ip_address',
-                'user_agent',
-                'created_at',
-                'last_activity',
-                'last_token_refresh',
-                'access_expires_at',
-                'refresh_expires_at'
-            ])
-            ->where(['user_uuid' => $user['uuid'], 'status' => 'active'])
-            ->orderBy(['last_activity' => 'DESC'])
-            ->get();
-
-            // Mask sensitive token data
-            foreach ($sessions as &$session) {
-                if (isset($session['access_token'])) {
-                    $session['access_token'] = substr($session['access_token'], 0, 8) . '...';
-                }
-            }
-
-            return Response::ok($sessions, 'Sessions retrieved successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        // Get user sessions directly from auth_sessions table
+        $sessions = $this->getQueryBuilder()->select('auth_sessions', [
+            'session_id',
+            'access_token',
+            'status',
+            'provider',
+            'ip_address',
+            'user_agent',
+            'created_at',
+            'last_activity',
+            'last_token_refresh',
+            'access_expires_at',
+            'refresh_expires_at'
+        ])
+        ->where(['user_uuid' => $user['uuid'], 'status' => 'active'])
+        ->orderBy(['last_activity' => 'DESC'])
+        ->get();
+
+        // Mask sensitive token data
+        foreach ($sessions as &$session) {
+            if (isset($session['access_token'])) {
+                $session['access_token'] = substr($session['access_token'], 0, 8) . '...';
+            }
+        }
+
+        return Response::ok($sessions, 'Sessions retrieved successfully')->send();
     }
 
     /**
@@ -801,36 +737,30 @@ class UsersController
      */
     public function terminateSessions(array $params, Request $request): Response
     {
-        try {
-            $uuid = $params['uuid'] ?? '';
-            $sessionId = $request->get('session_id'); // Optional: terminate specific session
+        $uuid = $params['uuid'] ?? '';
+        $sessionId = $request->get('session_id'); // Optional: terminate specific session
 
-            $user = $this->userRepository->findByUUID($uuid);
-            if (!$user) {
-                throw new NotFoundException('User not found');
-            }
-
-            if ($sessionId) {
-                // Get the session token to revoke
-                $session = $this->getQueryBuilder()->select('auth_sessions', ['access_token'])
-                    ->where(['session_id' => $sessionId, 'user_uuid' => $user['uuid']])
-                    ->limit(1)
-                    ->get();
-
-                if (!empty($session)) {
-                    $this->tokenStorage->revokeSession($session[0]['access_token']);
-                }
-            } else {
-                // Revoke all user sessions
-                $this->tokenStorage->revokeAllUserSessions($user['uuid']);
-            }
-
-            return Response::ok(null, 'Session(s) terminated successfully')->send();
-        } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
-        } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        $user = $this->userRepository->findByUUID($uuid);
+        if (!$user) {
+            throw new NotFoundException('User not found');
         }
+
+        if ($sessionId) {
+            // Get the session token to revoke
+            $session = $this->getQueryBuilder()->select('auth_sessions', ['access_token'])
+                ->where(['session_id' => $sessionId, 'user_uuid' => $user['uuid']])
+                ->limit(1)
+                ->get();
+
+            if (!empty($session)) {
+                $this->tokenStorage->revokeSession($session[0]['access_token']);
+            }
+        } else {
+            // Revoke all user sessions
+            $this->tokenStorage->revokeAllUserSessions($user['uuid']);
+        }
+
+        return Response::ok(null, 'Session(s) terminated successfully')->send();
     }
 
     /**
