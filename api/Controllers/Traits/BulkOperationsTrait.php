@@ -97,6 +97,9 @@ trait BulkOperationsTrait
         // Batch ownership validation for performance
         $validUuids = $this->validateBulkOwnership($table, $uuids);
 
+        // Batch check if records exist using findMultiple
+        $existingRecords = $repository->findMultiple($uuids);
+
         // Process each UUID
         foreach ($uuids as $uuid) {
             try {
@@ -106,9 +109,8 @@ trait BulkOperationsTrait
                     continue;
                 }
 
-                // Check if record exists (batch this in production)
-                $existing = $repository->find($uuid);
-                if (!$existing) {
+                // Check if record exists (using batched data)
+                if (!isset($existingRecords[$uuid])) {
                     $failed[] = ['uuid' => $uuid, 'reason' => 'Record not found'];
                     continue;
                 }
@@ -198,6 +200,9 @@ trait BulkOperationsTrait
         $uuids = array_column($updates, 'uuid');
         $validUuids = $this->validateBulkOwnership($table, $uuids);
 
+        // Batch check if records exist using findMultiple
+        $existingRecords = $repository->findMultiple($uuids);
+
         // Process each update
         foreach ($updates as $update) {
             $uuid = $update['uuid'] ?? null;
@@ -215,9 +220,8 @@ trait BulkOperationsTrait
                     continue;
                 }
 
-                // Check if record exists
-                $existing = $repository->find($uuid);
-                if (!$existing) {
+                // Check if record exists (using batched data)
+                if (!isset($existingRecords[$uuid])) {
                     $failed[] = ['uuid' => $uuid, 'reason' => 'Record not found'];
                     continue;
                 }
@@ -282,15 +286,10 @@ trait BulkOperationsTrait
         $userUuid = $this->currentUser['uuid'];
         $validUuids = [];
 
-        // Fetch records individually (repositories don't have findMultiple by default)
-        // In production, consider adding a batch query method to your repository
-        foreach ($uuids as $uuid) {
-            $record = $repository->find($uuid);
+        // Batch fetch all records using findMultiple for better performance
+        $records = $repository->findMultiple($uuids);
 
-            if (!$record) {
-                continue;
-            }
-
+        foreach ($records as $uuid => $record) {
             $isOwned = false;
 
             switch ($table) {
@@ -303,7 +302,7 @@ trait BulkOperationsTrait
             }
 
             if ($isOwned) {
-                $validUuids[] = $record['uuid'];
+                $validUuids[] = $uuid;
             }
         }
 
