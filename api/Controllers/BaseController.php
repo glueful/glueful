@@ -13,6 +13,7 @@ use Glueful\Logging\AuditEvent;
 use Glueful\Permissions\Helpers\PermissionHelper;
 use Glueful\Permissions\Exceptions\UnauthorizedException;
 use Glueful\Permissions\PermissionContext;
+use Glueful\Permissions\PermissionManager;
 use Glueful\Models\User;
 use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
@@ -87,6 +88,11 @@ abstract class BaseController
             return true;
         }
 
+        // Check if permission provider is available
+        if (!$this->hasPermissionProvider('permission_check')) {
+            return false;
+        }
+
         $permissionContext = new PermissionContext(
             data: $context,
             ipAddress: $this->request->getClientIp(),
@@ -117,6 +123,30 @@ abstract class BaseController
     ): void {
         if (!$this->currentUser) {
             throw new UnauthorizedException('Authentication required', '401', 'Please log in to access this resource');
+        }
+
+        // Check if permission provider is available
+        $permissionManager = PermissionManager::getInstance();
+        if (!$permissionManager->hasActiveProvider()) {
+            // Log as error since this is a required operation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_SYSTEM,
+                'permission_required_no_provider',
+                AuditEvent::SEVERITY_ERROR,
+                [
+                    'user_uuid' => $this->currentUser->uuid,
+                    'permission' => $permission,
+                    'resource' => $resource,
+                    'message' => 'No permission provider available',
+                    'controller' => static::class
+                ]
+            );
+
+            throw new UnauthorizedException(
+                'Permission system unavailable',
+                '503',
+                'The permission system is currently unavailable. Please try again later.'
+            );
         }
 
         if (!$this->can($permission, $resource, $context)) {
@@ -165,6 +195,11 @@ abstract class BaseController
             return true;
         }
 
+        // Check if permission provider is available
+        if (!$this->hasPermissionProvider('permission_check_any')) {
+            return false;
+        }
+
         $permissionContext = new PermissionContext(
             data: $context,
             ipAddress: $this->request->getClientIp(),
@@ -178,6 +213,34 @@ abstract class BaseController
             $resource,
             $permissionContext->toArray()
         );
+    }
+
+    /**
+     * Check if a permission provider is available
+     *
+     * @param string|null $action Optional action being performed for logging
+     * @return bool True if provider is available, false otherwise
+     */
+    protected function hasPermissionProvider(?string $action = null): bool
+    {
+        $permissionManager = PermissionManager::getInstance();
+
+        if (!$permissionManager->hasActiveProvider()) {
+            // Log warning when no provider is available
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_SYSTEM,
+                $action ?? 'permission_provider_check',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'user_uuid' => $this->currentUser?->uuid,
+                    'message' => 'No permission provider available',
+                    'controller' => static::class
+                ]
+            );
+            return false;
+        }
+
+        return true;
     }
 
     /**
