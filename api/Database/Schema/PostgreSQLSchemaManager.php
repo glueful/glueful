@@ -1418,4 +1418,168 @@ class PostgreSQLSchemaManager implements SchemaManager
                 throw new \RuntimeException("Unsupported revert operation: {$op['type']}");
         }
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function convertSQLToEngineFormat(string $sql): string
+    {
+        if (empty($sql) || trim($sql) === '') {
+            throw new \RuntimeException("SQL statement cannot be empty");
+        }
+
+        // For PostgreSQL, we need to convert various SQL dialects to PostgreSQL-compatible syntax
+        $convertedSql = $sql;
+
+        // PostgreSQL-specific conversions and optimizations
+        $conversions = [
+            // Convert MySQL AUTO_INCREMENT to PostgreSQL SERIAL/BIGSERIAL
+            '/\b(BIGINT)\s+AUTO_INCREMENT\b/i' => 'BIGSERIAL',
+            '/\b(INTEGER|INT)\s+AUTO_INCREMENT\b/i' => 'SERIAL',
+
+            // Convert MySQL backtick identifiers to PostgreSQL double quotes
+            '/`([^`]+)`/' => '"$1"',
+
+            // Convert MySQL data types to PostgreSQL equivalents
+            '/\bTINYINT\b/i' => 'SMALLINT',
+            '/\bMEDIUMINT\b/i' => 'INTEGER',
+            '/\bDATETIME\b/i' => 'TIMESTAMP',
+            '/\bTEXT\(\d+\)/i' => 'TEXT',
+            '/\bDOUBLE\b(?!\s+PRECISION)/i' => 'DOUBLE PRECISION',
+            '/\b(TINY|MEDIUM|LONG)?BLOB\b/i' => 'BYTEA',
+
+            // Convert MySQL BOOLEAN to PostgreSQL
+            '/\bBOOLEAN\b/i' => 'BOOLEAN',
+            '/\bTINYINT\(1\)/i' => 'BOOLEAN',
+
+            // Remove MySQL-specific syntax that doesn't apply to PostgreSQL
+            '/\s*ENGINE\s*=\s*\w+/i' => '',
+            '/\s*CHARACTER\s+SET\s+\w+/i' => '',
+            '/\s*COLLATE\s+\w+/i' => '',
+            '/\bON\s+UPDATE\s+CURRENT_TIMESTAMP\b/i' => '',
+            '/\bCOMMENT\s+\'([^\']+)\'/i' => '',
+
+            // Convert MySQL LIMIT syntax to PostgreSQL (LIMIT offset, count -> LIMIT count OFFSET offset)
+            '/\bLIMIT\s+(\d+)\s*,\s*(\d+)\b/i' => 'LIMIT $2 OFFSET $1',
+
+            // Convert MySQL datetime functions
+            '/\bCURRENT_TIMESTAMP\(\)/i' => 'CURRENT_TIMESTAMP',
+            '/\bNOW\(\)/i' => 'NOW()',
+
+            // Convert MySQL IF NOT EXISTS (already compatible, but ensure consistency)
+            '/\bIF\s+NOT\s+EXISTS\b/i' => 'IF NOT EXISTS',
+        ];
+
+        foreach ($conversions as $pattern => $replacement) {
+            $convertedSql = preg_replace($pattern, $replacement, $convertedSql);
+        }
+
+        // Handle more complex conversions that require callbacks
+        $convertedSql = $this->convertComplexSyntax($convertedSql);
+
+        // Clean up whitespace
+        $convertedSql = preg_replace('/\s+/', ' ', $convertedSql);
+        $convertedSql = trim($convertedSql);
+
+        // Validate the converted SQL
+        $this->validatePostgreSQLSyntax($convertedSql);
+
+        return $convertedSql;
+    }
+
+    /**
+     * Handle complex syntax conversions that require more sophisticated logic
+     *
+     * @param string $sql The SQL to convert
+     * @return string Converted SQL
+     */
+    private function convertComplexSyntax(string $sql): string
+    {
+        // Convert MySQL ENUM to PostgreSQL TEXT with CHECK constraint
+        // Handle both quoted and unquoted identifiers
+        $sql = preg_replace_callback(
+            '/(\"?\w+\"?)\s+ENUM\s*\(([^)]+)\)/i',
+            function ($matches) {
+                $columnName = $matches[1];
+                $enumValues = $matches[2];
+
+                // Extract just the column name for the CHECK constraint
+                $checkColumnName = trim($columnName, '"');
+
+                // Create a CHECK constraint for the enum values
+                return "$columnName TEXT CHECK ($checkColumnName IN ($enumValues))";
+            },
+            $sql
+        );
+
+        // Convert MySQL UNSIGNED constraints to PostgreSQL CHECK constraints
+        // Handle both quoted and unquoted identifiers
+        $sql = preg_replace_callback(
+            '/(\"?\w+\"?)\s+(INTEGER|BIGINT|SMALLINT|TINYINT|MEDIUMINT)\s+UNSIGNED/i',
+            function ($matches) {
+                $columnName = $matches[1];
+                $originalDataType = strtoupper($matches[2]);
+
+                // Map MySQL types to PostgreSQL types
+                $typeMapping = [
+                    'TINYINT' => 'SMALLINT',
+                    'MEDIUMINT' => 'INTEGER',
+                    'INTEGER' => 'INTEGER',
+                    'BIGINT' => 'BIGINT',
+                    'SMALLINT' => 'SMALLINT'
+                ];
+
+                $pgDataType = $typeMapping[$originalDataType] ?? 'INTEGER';
+
+                // Extract just the column name for the CHECK constraint
+                $checkColumnName = trim($columnName, '"');
+
+                return "$columnName $pgDataType CHECK ($checkColumnName >= 0)";
+            },
+            $sql
+        );
+
+        return $sql;
+    }
+
+    /**
+     * Validate PostgreSQL-specific SQL syntax
+     *
+     * Performs basic validation to ensure the SQL is compatible with PostgreSQL.
+     *
+     * @param string $sql The SQL to validate
+     * @throws \RuntimeException If the SQL contains invalid syntax
+     */
+    private function validatePostgreSQLSyntax(string $sql): void
+    {
+        // Check for remaining MySQL-specific syntax that should have been converted
+        $invalidPatterns = [
+            '/\bAUTO_INCREMENT\b/i' => 'AUTO_INCREMENT should be converted to SERIAL',
+            '/`[^`]*`/' => 'Backticks should be converted to double quotes',
+            '/\bENGINE\s*=\s*\w+/i' => 'ENGINE clause should be removed for PostgreSQL',
+        ];
+
+        foreach ($invalidPatterns as $pattern => $error) {
+            if (preg_match($pattern, $sql)) {
+                throw new \RuntimeException("Invalid PostgreSQL syntax detected: $error");
+            }
+        }
+
+        // Check for basic SQL syntax errors only for CREATE TABLE statements
+        if (preg_match('/\bCREATE\s+TABLE\b/i', $sql)) {
+            // Ensure CREATE TABLE statements have proper structure
+            if (!preg_match('/\bCREATE\s+TABLE\s+[^(]+\s*\(/i', $sql)) {
+                throw new \RuntimeException("Invalid CREATE TABLE syntax for PostgreSQL");
+            }
+        }
+
+        // Additional validation for obviously problematic syntax
+        if (preg_match('/\bTINYINT(?!\s+CHECK)\b/i', $sql)) {
+            throw new \RuntimeException("Invalid PostgreSQL syntax detected: TINYINT should be converted to SMALLINT");
+        }
+
+        if (preg_match('/\bMEDIUMINT(?!\s+CHECK)\b/i', $sql)) {
+            throw new \RuntimeException("Invalid PostgreSQL syntax detected: MEDIUMINT should be converted to INTEGER");
+        }
+    }
 }

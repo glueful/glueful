@@ -429,4 +429,22 @@ interface SchemaManager
      * @throws \RuntimeException If table doesn't exist
      */
     public function getTableSchema(string $tableName): array;
+
+    /**
+     * Convert SQL statements to engine-specific syntax
+     *
+     * Transforms generic or other database engine SQL statements
+     * to be compatible with the current database engine.
+     *
+     * Common conversions:
+     * - Data type mappings (BIGINT -> INTEGER for SQLite)
+     * - AUTO_INCREMENT syntax variations
+     * - Engine-specific features
+     * - Character set and collation handling
+     *
+     * @param string $sql Original SQL statement
+     * @return string Converted SQL statement compatible with current engine
+     * @throws \RuntimeException If conversion fails or SQL is invalid
+     */
+    public function convertSQLToEngineFormat(string $sql): string;
 }

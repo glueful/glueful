@@ -68,6 +68,7 @@ class SQLiteSchemaManager implements SchemaManager
      * - Generated columns
      * - CHECK constraints
      * - DEFAULT expressions
+     * - AUTO_INCREMENT to SQLite syntax conversion
      *
      * Type Affinity Rules:
      * - INT -> INTEGER
@@ -84,11 +85,13 @@ class SQLiteSchemaManager implements SchemaManager
 
         foreach ($columns as $name => $definition) {
             if (is_string($definition)) {
-                // Handle string-based column definitions
+                // Handle string-based column definitions and convert to SQLite syntax
+                $definition = $this->convertToSQLiteSyntax($definition);
                 $columnDefinitions[] = "\"$name\" $definition";
             } elseif (is_array($definition)) {
                 // Handle array-based column definitions
-                $columnDefinitions[] = "\"$name\" {$definition['type']} " .
+                $type = $this->convertToSQLiteSyntax($definition['type']);
+                $columnDefinitions[] = "\"$name\" {$type} " .
                     (!empty($definition['nullable']) ? '' : 'NOT NULL') .
                     (!empty($definition['default']) ? " DEFAULT {$definition['default']}" : '');
             }
@@ -103,6 +106,147 @@ class SQLiteSchemaManager implements SchemaManager
         $this->currentTable = $table;
 
         return $this; // Return instance for method chaining
+    }
+
+    /**
+     * Convert MySQL/PostgreSQL syntax to SQLite compatible syntax
+     *
+     * Handles common incompatibilities:
+     * - AUTO_INCREMENT -> (removed, SQLite uses INTEGER PRIMARY KEY for auto-increment)
+     * - BIGINT -> INTEGER (SQLite treats all integers the same)
+     * - TINYINT -> INTEGER
+     * - SMALLINT -> INTEGER
+     * - MEDIUMINT -> INTEGER
+     * - UNSIGNED -> (removed, SQLite doesn't support unsigned)
+     * - ENUM -> TEXT (with CHECK constraint if possible)
+     * - DATETIME(6) -> DATETIME (SQLite doesn't support precision)
+     * - ENGINE=InnoDB -> (removed)
+     *
+     * @param string $definition Original column definition
+     * @return string SQLite compatible definition
+     */
+    private function convertToSQLiteSyntax(string $definition): string
+    {
+        // Remove AUTO_INCREMENT - SQLite uses INTEGER PRIMARY KEY for auto-increment
+        $definition = preg_replace('/\bAUTO_INCREMENT\b/i', '', $definition);
+
+        // Convert integer types to INTEGER (SQLite treats all integers the same)
+        $definition = preg_replace('/\b(BIGINT|TINYINT|SMALLINT|MEDIUMINT|INT)\b/i', 'INTEGER', $definition);
+
+        // Remove UNSIGNED keyword (SQLite doesn't support unsigned types)
+        $definition = preg_replace('/\bUNSIGNED\b/i', '', $definition);
+
+        // Convert DATETIME with precision to DATETIME
+        $definition = preg_replace('/\bDATETIME\(\d+\)/i', 'DATETIME', $definition);
+
+        // Convert TIMESTAMP to DATETIME (SQLite doesn't have TIMESTAMP type)
+        $definition = preg_replace('/\bTIMESTAMP\b/i', 'DATETIME', $definition);
+
+        // Convert VARCHAR with very large sizes to TEXT
+        $definition = preg_replace_callback('/\bVARCHAR\((\d+)\)/i', function ($matches) {
+            $size = (int)$matches[1];
+            return $size > 255 ? 'TEXT' : $matches[0];
+        }, $definition);
+
+        // Convert ENUM to TEXT (basic conversion - full CHECK constraint implementation would be more complex)
+        $definition = preg_replace('/\bENUM\s*\([^)]+\)/i', 'TEXT', $definition);
+
+        // Remove engine specifications
+        $definition = preg_replace('/\bENGINE\s*=\s*\w+/i', '', $definition);
+
+        // Remove character set specifications
+        $definition = preg_replace('/\bCHARACTER\s+SET\s+\w+/i', '', $definition);
+        $definition = preg_replace('/\bCOLLATE\s+\w+/i', '', $definition);
+
+        // Remove MySQL-specific ON UPDATE CURRENT_TIMESTAMP (SQLite doesn't support this)
+        $definition = preg_replace('/\bON\s+UPDATE\s+CURRENT_TIMESTAMP\b/i', '', $definition);
+
+        // Clean up extra whitespace
+        $definition = preg_replace('/\s+/', ' ', $definition);
+        $definition = trim($definition);
+
+        return $definition;
+    }
+
+    /**
+     * Convert complete SQL statements to SQLite compatible syntax
+     *
+     * This method can be used by other components (migrations, audit logging, etc.)
+     * to convert MySQL/PostgreSQL SQL statements to SQLite compatible syntax.
+     *
+     * Handles:
+     * - CREATE TABLE statements with AUTO_INCREMENT
+     * - Column definitions in various formats
+     * - Data type conversions
+     * - Engine specifications
+     * - Character set specifications
+     *
+     * @param string $sql Original SQL statement
+     * @return string SQLite compatible SQL statement
+     */
+    public function convertSQLToSQLite(string $sql): string
+    {
+        // Handle CREATE TABLE statements specifically
+        if (preg_match('/CREATE\s+TABLE/i', $sql)) {
+            // Convert column definitions within CREATE TABLE
+            $sql = preg_replace_callback(
+                '/(\w+)\s+(BIGINT|TINYINT|SMALLINT|MEDIUMINT|INT)\s+([^,\)]*?)AUTO_INCREMENT([^,\)]*?)(?=,|\)|$)/i',
+                function ($matches) {
+                    $columnName = $matches[1];
+                    $beforeAutoIncrement = trim($matches[3]);
+                    $afterAutoIncrement = trim($matches[4]);
+
+                    // Build the new column definition
+                    $newDefinition = $columnName . ' INTEGER';
+
+                    // Add constraints before AUTO_INCREMENT (like NOT NULL)
+                    if (!empty($beforeAutoIncrement) && !preg_match('/PRIMARY\s+KEY/i', $beforeAutoIncrement)) {
+                        $newDefinition .= ' ' . $beforeAutoIncrement;
+                    }
+
+                    // Check if PRIMARY KEY should be added
+                    if (preg_match('/PRIMARY\s+KEY/i', $beforeAutoIncrement . ' ' . $afterAutoIncrement)) {
+                        $newDefinition .= ' PRIMARY KEY';
+                    }
+
+                    // Add other constraints after PRIMARY KEY
+                    if (!empty($afterAutoIncrement) && !preg_match('/PRIMARY\s+KEY/i', $afterAutoIncrement)) {
+                        $newDefinition .= ' ' . $afterAutoIncrement;
+                    }
+
+                    return $newDefinition;
+                },
+                $sql
+            );
+        }
+
+        // Apply general syntax conversions
+        $sql = $this->convertToSQLiteSyntax($sql);
+
+        // Additional SQL-level conversions
+        // Remove IF NOT EXISTS from constraints (SQLite doesn't support this in all contexts)
+        $sql = preg_replace('/CONSTRAINT\s+IF\s+NOT\s+EXISTS/i', 'CONSTRAINT', $sql);
+
+        // Convert CREATE TABLE IF NOT EXISTS syntax issues
+        $sql = preg_replace('/ENGINE\s*=\s*\w+/i', '', $sql);
+
+        // Remove DEFAULT CHARSET
+        $sql = preg_replace('/DEFAULT\s+CHARSET\s*=\s*\w+/i', '', $sql);
+
+        // Clean up multiple spaces and trailing commas
+        $sql = preg_replace('/,\s*\)/i', ')', $sql);
+        $sql = preg_replace('/\s+/', ' ', $sql);
+        $sql = trim($sql);
+
+        return $sql;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function convertSQLToEngineFormat(string $sql): string
+    {
+        return $this->convertSQLToSQLite($sql);
     }
 
     /**
@@ -243,6 +387,8 @@ class SQLiteSchemaManager implements SchemaManager
     {
         try {
             $columnDef = implode(' ', $definition);
+            // Convert to SQLite compatible syntax
+            $columnDef = $this->convertToSQLiteSyntax($columnDef);
             $sql = "ALTER TABLE {$table} ADD COLUMN {$column} {$columnDef};";
 
             // Execute the query - if it doesn't throw an exception, consider it successful

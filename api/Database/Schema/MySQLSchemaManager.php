@@ -1155,4 +1155,89 @@ class MySQLSchemaManager implements SchemaManager
                 throw new \RuntimeException("Unsupported revert operation: {$op['type']}");
         }
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function convertSQLToEngineFormat(string $sql): string
+    {
+        if (empty($sql) || trim($sql) === '') {
+            throw new \RuntimeException("SQL statement cannot be empty");
+        }
+
+        // For MySQL, most SQL is already compatible, but we can apply some basic optimizations
+        // and ensure MySQL-specific syntax is used where appropriate
+
+        $convertedSql = $sql;
+
+        // Basic MySQL-specific conversions and optimizations
+        $conversions = [
+            // Ensure proper identifier quoting for MySQL
+            '/\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?=\s*(?:=|<|>|LIKE|IN|NOT\s+IN))/i' => '`$1`',
+
+            // Convert common data types to MySQL equivalents
+            '/\bBOOLEAN\b/i' => 'TINYINT(1)',
+            '/\bTEXT\s+NOT\s+NULL/i' => 'TEXT',
+            '/\bBLOB\s+NOT\s+NULL/i' => 'BLOB',
+
+            // Ensure MySQL AUTO_INCREMENT syntax
+            '/\bAUTO_INCREMENT\b/i' => 'AUTO_INCREMENT',
+            '/\bSERIAL\b/i' => 'BIGINT UNSIGNED AUTO_INCREMENT',
+
+            // MySQL specific engine and charset specifications
+            '/\bENGINE\s*=\s*(\w+)/i' => 'ENGINE=$1',
+            '/\bCHARSET\s*=\s*(\w+)/i' => 'CHARSET=$1',
+
+            // Convert LIMIT syntax variations to MySQL format
+            '/\bLIMIT\s+(\d+)\s+OFFSET\s+(\d+)/i' => 'LIMIT $2, $1',
+
+            // Ensure proper datetime functions
+            '/\bCURRENT_TIMESTAMP\(\)/i' => 'CURRENT_TIMESTAMP',
+            '/\bNOW\(\)/i' => 'NOW()',
+        ];
+
+        foreach ($conversions as $pattern => $replacement) {
+            $convertedSql = preg_replace($pattern, $replacement, $convertedSql);
+        }
+
+        // Validate that the converted SQL doesn't contain obviously invalid syntax
+        $this->validateMySQLSyntax($convertedSql);
+
+        return $convertedSql;
+    }
+
+    /**
+     * Validate MySQL-specific SQL syntax
+     *
+     * Performs basic validation to ensure the SQL is compatible with MySQL.
+     * This is not a comprehensive SQL parser, but catches common issues.
+     *
+     * @param string $sql SQL statement to validate
+     * @throws \RuntimeException If SQL contains invalid MySQL syntax
+     */
+    private function validateMySQLSyntax(string $sql): void
+    {
+        // Check for unsupported features or syntax
+        $unsupportedPatterns = [
+            '/\bFULL\s+OUTER\s+JOIN\b/i' => 'FULL OUTER JOIN is not supported in MySQL',
+            '/\bCONNECT\s+BY\b/i' => 'CONNECT BY (hierarchical queries) is not supported in MySQL',
+            '/\b\[\w+\]/i' => 'Square bracket identifiers are not supported in MySQL (use backticks)',
+            '/\bTOP\s+\d+\b/i' => 'TOP clause is not supported in MySQL (use LIMIT)',
+            '/\bROWNUM\b/i' => 'ROWNUM is not supported in MySQL (use LIMIT)',
+        ];
+
+        foreach ($unsupportedPatterns as $pattern => $message) {
+            if (preg_match($pattern, $sql)) {
+                throw new \RuntimeException("Invalid MySQL syntax: {$message}");
+            }
+        }
+
+        // Check for potentially dangerous operations without proper validation
+        if (preg_match('/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i', $sql)) {
+            if (!preg_match('/\bIF\s+EXISTS\b/i', $sql)) {
+                // This is more of a warning - we don't throw an exception for this
+                // but in a production system you might want to log this
+            }
+        }
+    }
 }
