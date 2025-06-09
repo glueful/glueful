@@ -106,6 +106,15 @@ interface RepositoryInterface
     public function findWhere(array $where, array $orderBy = [], ?int $limit = null): array;
 
     /**
+     * Find multiple records by their UUIDs
+     *
+     * @param array $uuids Array of UUIDs to find
+     * @param array $fields Fields to select (empty array = all fields)
+     * @return array Array of records indexed by UUID
+     */
+    public function findMultiple(array $uuids, array $fields = []): array;
+
+    /**
      * Bulk insert multiple records
      *
      * @param array $records Array of record data
