@@ -32,3 +32,18 @@ Router::delete('/{resource}/{uuid}', function (array $params) use ($container) {
         $resourceController = $container->get(ResourceController::class);
         return $resourceController->delete($params);
 }, requiresAuth: true);
+
+// Bulk operation routes (only if enabled in configuration)
+if (config('resource.security.bulk_operations', false)) {
+    Router::delete('/{resource}/bulk', function (array $params) use ($container) {
+            $resourceController = $container->get(ResourceController::class);
+            $deleteData = Request::getPostData();
+            return $resourceController->bulkDelete($params, $deleteData);
+    }, requiresAuth: true);
+
+    Router::put('/{resource}/bulk', function (array $params) use ($container) {
+            $resourceController = $container->get(ResourceController::class);
+            $updateData = Request::getPostData();
+            return $resourceController->bulkUpdate($params, $updateData);
+    }, requiresAuth: true);
+}
