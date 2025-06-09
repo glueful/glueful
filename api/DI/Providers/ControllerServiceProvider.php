@@ -52,8 +52,11 @@ class ControllerServiceProvider implements ServiceProviderInterface
         // Jobs Controller
         $container->bind(JobsController::class);
 
-        // Files Controller
-        $container->bind(FilesController::class);
+        // Files Controller - inject dependencies for BaseController compatibility
+        $container->bind(FilesController::class, function (ContainerInterface $container) {
+            $repositoryFactory = $container->get(RepositoryFactory::class);
+            return new FilesController($repositoryFactory);
+        });
 
         // Health Controller
         $container->bind(HealthController::class);

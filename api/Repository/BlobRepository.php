@@ -80,7 +80,7 @@ class BlobRepository extends BaseRepository
      * Get blob information with specific fields
      *
      * Retrieves blob metadata with custom field selection.
-     * Used by FileHandler for optimized queries.
+     * Used by FilesController for optimized file operations.
      *
      * @param string $uuid Blob UUID
      * @param array $fields Specific fields to retrieve
