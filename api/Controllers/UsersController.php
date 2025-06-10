@@ -6,11 +6,12 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Repository\UserRepository;
+use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Auth\TokenStorageService;
-use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\Database\RawExpression;
 use Symfony\Component\HttpFoundation\Request;
+use Glueful\Logging\AuditEvent;
 
 /**
  * UsersController
@@ -24,20 +25,25 @@ use Symfony\Component\HttpFoundation\Request;
  * - User statistics and analytics
  * - Import/Export functionality
  */
-class UsersController
+class UsersController extends BaseController
 {
-    use DatabaseConnectionTrait;
-
-    private UserRepository $userRepository;
+    private RepositoryInterface $userRepository;
     // Note: Role functionality migrated to RBAC extension
     private TokenStorageService $tokenStorage;
 
     public function __construct(
-        UserRepository $userRepository,
-        TokenStorageService $tokenStorage
+        ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
+        ?\Glueful\Auth\AuthenticationManager $authManager = null,
+        ?\Glueful\Logging\AuditLogger $auditLogger = null,
+        ?Request $request = null,
+        ?UserRepository $userRepository = null,
+        ?TokenStorageService $tokenStorage = null
     ) {
-        $this->userRepository = $userRepository;
-        $this->tokenStorage = $tokenStorage;
+        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+
+        // Initialize user-specific dependencies
+        $this->userRepository = $userRepository ?? $this->repositoryFactory->getRepository('users');
+        $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
     }
 
     /**
@@ -49,6 +55,12 @@ class UsersController
      */
     public function index(Request $request): Response
     {
+        // Permission check for viewing users
+        $this->requirePermission('users.read', 'users');
+
+        // Rate limiting for user listing
+        $this->rateLimitResource('users', 'read');
+
         $page = (int) $request->query->get('page', 1);
         $perPage = (int) $request->query->get('per_page', 25);
         $search = $request->query->get('search', '');
@@ -109,7 +121,18 @@ class UsersController
         // Update the data in the pagination result and return it directly
         $paginatedResult['data'] = $users;
 
-        return Response::ok($paginatedResult, 'Users retrieved successfully')->send();
+        $cacheKey = 'users_list_' . md5(serialize([
+            $page, $perPage, $search, $status, $roleId, $sortBy, $sortOrder, $includeDeleted
+        ]));
+
+        return $this->cacheResponse(
+            $cacheKey,
+            function () use ($paginatedResult) {
+                return Response::ok($paginatedResult, 'Users retrieved successfully');
+            },
+            300, // 5 minutes cache for user listing
+            ['users', 'user_list']
+        );
     }
 
     /**
@@ -123,7 +146,17 @@ class UsersController
     {
         $uuid = $params['uuid'] ?? '';
 
-        $user = $this->userRepository->findByUUID($uuid);
+        // Permission check with self-access logic
+        if ($uuid !== $this->getCurrentUserUuid()) {
+            $this->requirePermission('users.read', 'users', ['target_user_uuid' => $uuid]);
+        } else {
+            $this->requirePermission('users.self.read', 'users');
+        }
+
+        // Rate limiting for user details
+        $this->rateLimitResource('users', 'read');
+
+        $user = $this->userRepository->find($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -132,12 +165,19 @@ class UsersController
         $user['roles'] = [];
 
         // Get user profile
-        $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
+        $user['profile'] = $this->getUserRepository()->getProfile($user['uuid']) ?? [];
 
         // Remove sensitive data
         unset($user['password']);
 
-        return Response::ok($user, 'User details retrieved successfully')->send();
+        return $this->cacheResponse(
+            'user_details_' . $uuid,
+            function () use ($user) {
+                return Response::ok($user, 'User details retrieved successfully');
+            },
+            600, // 10 minutes cache for user details
+            ['users', 'user_' . $uuid]
+        );
     }
 
     /**
@@ -149,31 +189,25 @@ class UsersController
      */
     public function create(Request $request): Response
     {
+        // Permission check for creating users (admin only)
+        $this->requirePermission('users.create', 'users');
+
+        // Strict rate limiting for user creation
+        $this->rateLimitResource('users', 'write', 10, 300);
+
         $data = $request->toArray();
 
-        // Validate required fields
-        if (empty($data['username']) || empty($data['email']) || empty($data['password'])) {
+        // Enhanced input validation and sanitization
+        $validationErrors = $this->validateUserInput($data, 'create');
+        if (!empty($validationErrors)) {
             return Response::error(
-                'Username, email, and password are required',
+                'Validation failed: ' . implode(', ', $validationErrors),
                 Response::HTTP_BAD_REQUEST
             )->send();
         }
 
-        // Validate email format
-        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-            return Response::error(
-                'Invalid email format',
-                Response::HTTP_BAD_REQUEST
-            )->send();
-        }
-
-        // Validate password length
-        if (strlen($data['password']) < 8) {
-            return Response::error(
-                'Password must be at least 8 characters',
-                Response::HTTP_BAD_REQUEST
-            )->send();
-        }
+        // Sanitize input data
+        $data = $this->sanitizeUserInput($data);
 
         // Hash password using PHP's password_hash
         $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
@@ -197,13 +231,30 @@ class UsersController
 
         // Create profile if data provided
         if (!empty($profileData)) {
-            $this->userRepository->updateProfile($userUuid, $profileData);
+            $this->getUserRepository()->updateProfile($userUuid, $profileData);
         }
 
         // Fetch created user
-        $user = $this->userRepository->findByUUID($userUuid);
+        $user = $this->getUserRepository()->findByUUID($userUuid);
         $user['roles'] = []; // Roles managed by RBAC extension
         unset($user['password']);
+
+        // Audit log user creation
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'user_created',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'created_user_uuid' => $userUuid,
+                'created_user_email' => $data['email'] ?? null,
+                'created_user_username' => $data['username'] ?? null,
+                'creator_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
+        // Invalidate user-related caches
+        $this->invalidateCache(['users', 'user_list', 'statistics']);
 
         return Response::created($user, 'User created successfully')->send();
     }
@@ -221,27 +272,35 @@ class UsersController
         $uuid = $params['uuid'] ?? '';
         $data = $request->toArray();
 
-        $user = $this->userRepository->findByUUID($uuid);
+        // Permission check with self-access logic
+        if ($uuid !== $this->getCurrentUserUuid()) {
+            $this->requirePermission('users.update', 'users', ['target_user_uuid' => $uuid]);
+        } else {
+            $this->requirePermission('users.self.update', 'users');
+        }
+
+        // Moderate rate limiting for user updates
+        $this->rateLimitResource('users', 'write', 20, 300);
+
+        $user = $this->getUserRepository()->findByUUID($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
 
-        // Validate email if provided
-        if (isset($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+        // Enhanced input validation and sanitization
+        $validationErrors = $this->validateUserInput($data, 'update');
+        if (!empty($validationErrors)) {
             return Response::error(
-                'Invalid email format',
+                'Validation failed: ' . implode(', ', $validationErrors),
                 Response::HTTP_BAD_REQUEST
             )->send();
         }
 
+        // Sanitize input data
+        $data = $this->sanitizeUserInput($data);
+
         // Handle password update
         if (isset($data['password'])) {
-            if (strlen($data['password']) < 8) {
-                return Response::error(
-                    'Password must be at least 8 characters',
-                    Response::HTTP_BAD_REQUEST
-                )->send();
-            }
             $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
 
             // Invalidate user sessions on password change
@@ -266,13 +325,31 @@ class UsersController
 
         // Update profile if provided
         if ($profileData !== null) {
-            $this->userRepository->updateProfile($user['uuid'], $profileData);
+            $this->getUserRepository()->updateProfile($user['uuid'], $profileData);
         }
 
         // Fetch updated user
-        $updatedUser = $this->userRepository->findByUUID($user['uuid']);
+        $updatedUser = $this->getUserRepository()->findByUUID($user['uuid']);
         $updatedUser['roles'] = []; // Roles managed by RBAC extension
         unset($updatedUser['password']);
+
+        // Audit log user update
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'user_updated',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'updated_user_uuid' => $user['uuid'],
+                'updated_user_email' => $user['email'] ?? null,
+                'updated_fields' => array_keys($data),
+                'is_self_update' => $uuid === $this->getCurrentUserUuid(),
+                'updater_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
+        // Invalidate user-specific and list caches
+        $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
 
         return Response::ok($updatedUser, 'User updated successfully')->send();
     }
@@ -288,7 +365,16 @@ class UsersController
     {
         $uuid = $params['uuid'] ?? '';
 
-        $user = $this->userRepository->findByUUID($uuid);
+        // Permission check for deleting users (admin only)
+        $this->requirePermission('users.delete', 'users', ['target_user_uuid' => $uuid]);
+
+        // Strict rate limiting for user deletion
+        $this->rateLimitResource('users', 'delete', 5, 600);
+
+        // Require low risk behavior for destructive operations
+        $this->requireLowRiskBehavior(0.4, 'user_deletion');
+
+        $user = $this->getUserRepository()->findByUUID($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -297,10 +383,27 @@ class UsersController
         // Superuser protection should be implemented using RBAC permissions
 
         // Soft delete user (use BaseRepository delete method)
-        $this->userRepository->delete($user['uuid']);
+        $this->getUserRepository()->delete($user['uuid']);
 
         // Invalidate user sessions
         $this->tokenStorage->revokeAllUserSessions($user['uuid']);
+
+        // Audit log user deletion
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'user_deleted',
+            AuditEvent::SEVERITY_WARNING,
+            [
+                'deleted_user_uuid' => $user['uuid'],
+                'deleted_user_email' => $user['email'] ?? null,
+                'deleted_user_username' => $user['username'] ?? null,
+                'deleter_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
+        // Invalidate all user-related caches
+        $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
 
         return Response::ok(null, 'User deleted successfully')->send();
     }
@@ -316,7 +419,13 @@ class UsersController
     {
         $uuid = $params['uuid'] ?? '';
 
-        $user = $this->userRepository->findByUUID($uuid); // For restore, check if user exists
+        // Permission check for restoring users (admin only)
+        $this->requirePermission('users.restore', 'users', ['target_user_uuid' => $uuid]);
+
+        // Strict rate limiting for user restoration
+        $this->rateLimitResource('users', 'restore', 5, 600);
+
+        $user = $this->getUserRepository()->findByUUID($uuid); // For restore, check if user exists
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -324,6 +433,20 @@ class UsersController
         // Use BaseRepository restore method - implement in UserRepository if not exists
         // For now, update the deleted_at field to null
         $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
+
+        // Audit log user restoration
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'user_restored',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'restored_user_uuid' => $user['uuid'],
+                'restored_user_email' => $user['email'] ?? null,
+                'restored_user_username' => $user['username'] ?? null,
+                'restorer_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
 
         return Response::ok(null, 'User restored successfully')->send();
     }
@@ -337,6 +460,15 @@ class UsersController
      */
     public function bulk(Request $request): Response
     {
+        // Permission check for bulk operations (admin only)
+        $this->requirePermission('users.bulk.operations', 'users');
+
+        // Very strict rate limiting for bulk operations
+        $this->rateLimitResource('users', 'bulk', 2, 1200);
+
+        // Require very low risk behavior for bulk operations
+        $this->requireLowRiskBehavior(0.2, 'user_bulk_operations');
+
         $data = $request->toArray();
 
         if (empty($data['action']) || empty($data['user_ids'])) {
@@ -354,7 +486,7 @@ class UsersController
 
         foreach ($data['user_ids'] as $userUuid) {
             try {
-                $user = $this->userRepository->findByUuid($userUuid);
+                $user = $this->userRepository->find($userUuid);
                 if (!$user) {
                     $results['failed']++;
                     $results['errors'][] = "User {$userUuid} not found";
@@ -393,6 +525,22 @@ class UsersController
             }
         }
 
+        // Audit log bulk operation
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'user_bulk_operation',
+            AuditEvent::SEVERITY_WARNING,
+            [
+                'action' => $data['action'],
+                'user_ids' => $data['user_ids'],
+                'success_count' => $results['success'],
+                'failed_count' => $results['failed'],
+                'errors' => $results['errors'],
+                'operator_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
         return Response::ok(
             $results,
             "Bulk operation completed: {$results['success']} succeeded, {$results['failed']} failed"
@@ -408,6 +556,12 @@ class UsersController
      */
     public function stats(Request $request): Response
     {
+        // Permission check for viewing user statistics
+        $this->requirePermission('users.statistics', 'users');
+
+        // Rate limiting for statistics
+        $this->rateLimitResource('users', 'stats', 30, 300);
+
         $period = $request->query->get('period', '30days');
 
         // Get basic user statistics using QueryBuilder
@@ -451,7 +605,14 @@ class UsersController
             ->get();
         $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
 
-        return Response::ok($stats, 'Statistics retrieved successfully')->send();
+        return $this->cacheResponse(
+            'user_stats_' . $period,
+            function () use ($stats) {
+                return Response::ok($stats, 'Statistics retrieved successfully');
+            },
+            900, // 15 minutes cache
+            ['users', 'statistics']
+        );
     }
 
     /**
@@ -463,6 +624,12 @@ class UsersController
      */
     public function search(Request $request): Response
     {
+        // Permission check for searching users
+        $this->requirePermission('users.search', 'users');
+
+        // Rate limiting for search operations
+        $this->rateLimitResource('users', 'search', 50, 300);
+
         $query = $request->query->get('q', '');
         $filters = [
             'status' => $request->query->get('status'),
@@ -540,7 +707,14 @@ class UsersController
             ]
         ];
 
-        return Response::ok($results, 'Search completed successfully')->send();
+        return $this->cacheResponse(
+            'users_search_' . md5(serialize([$query, $filters, $page, $perPage])),
+            function () use ($results) {
+                return Response::ok($results, 'Search completed successfully');
+            },
+            300, // 5 minutes cache for search results
+            ['users', 'search']
+        );
     }
 
     /**
@@ -552,6 +726,15 @@ class UsersController
      */
     public function export(Request $request): Response
     {
+        // Permission check for exporting users (admin only)
+        $this->requirePermission('users.export', 'users');
+
+        // Very strict rate limiting for export operations
+        $this->rateLimitResource('users', 'export', 3, 900);
+
+        // Require low risk behavior for data export
+        $this->requireLowRiskBehavior(0.3, 'user_export');
+
         $format = $request->query->get('format', 'csv');
         $filters = [
             'status' => $request->query->get('status'),
@@ -594,8 +777,22 @@ class UsersController
         // Get profiles for each user
         foreach ($users as &$user) {
             $user['roles'] = []; // Roles managed by RBAC extension
-            $user['profile'] = $this->userRepository->getProfile($user['uuid']) ?? [];
+            $user['profile'] = $this->getUserRepository()->getProfile($user['uuid']) ?? [];
         }
+
+        // Audit log user export
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'users_exported',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'export_format' => $format,
+                'filters' => $filters,
+                'user_count' => count($users),
+                'exporter_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
 
         if ($format === 'json') {
             return Response::ok($users, 'Export completed successfully')->send();
@@ -619,6 +816,15 @@ class UsersController
      */
     public function import(Request $request): Response
     {
+        // Permission check for importing users (admin only)
+        $this->requirePermission('users.import', 'users');
+
+        // Very strict rate limiting for import operations
+        $this->rateLimitResource('users', 'import', 1, 1800);
+
+        // Require very low risk behavior for bulk data import
+        $this->requireLowRiskBehavior(0.2, 'user_import');
+
         $file = $request->files->get('file');
 
         if (!$file) {
@@ -639,6 +845,20 @@ class UsersController
         // For now, return a placeholder response
         $results['errors'][] = 'Import functionality needs to be implemented based on specific requirements';
 
+        // Audit log user import attempt
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'users_import_attempted',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'file_name' => $file->isValid() ? $file->getClientOriginalName() : null,
+                'file_size' => $file->isValid() ? $file->getSize() : null,
+                'results' => $results,
+                'importer_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
         $message = "Import completed: {$results['created']} created, " .
                   "{$results['updated']} updated, {$results['failed']} failed";
         return Response::ok($results, $message)->send();
@@ -655,10 +875,20 @@ class UsersController
     public function activity(array $params, Request $request): Response
     {
         $uuid = $params['uuid'] ?? '';
+
+        // Permission check with self-access logic
+        if ($uuid !== $this->getCurrentUserUuid()) {
+            $this->requirePermission('users.view_activity', 'users', ['target_user_uuid' => $uuid]);
+        } else {
+            $this->requirePermission('users.self.view_activity', 'users');
+        }
+
+        // Rate limiting for activity logs
+        $this->rateLimitResource('users', 'activity', 100, 300);
         $page = (int) $request->query->get('page', 1);
         $perPage = (int) $request->query->get('per_page', 50);
 
-        $user = $this->userRepository->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUUID($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -679,7 +909,14 @@ class UsersController
         ->offset(($page - 1) * $perPage)
         ->get();
 
-        return Response::ok($activities, 'Activity log retrieved successfully')->send();
+        return $this->cacheResponse(
+            'user_activity_' . $uuid . '_' . $page . '_' . $perPage,
+            function () use ($activities) {
+                return Response::ok($activities, 'Activity log retrieved successfully');
+            },
+            600, // 10 minutes cache for activity logs
+            ['users', 'user_' . $uuid, 'activity']
+        );
     }
 
 
@@ -694,7 +931,17 @@ class UsersController
     {
         $uuid = $params['uuid'] ?? '';
 
-        $user = $this->userRepository->findByUUID($uuid);
+        // Permission check with self-access logic
+        if ($uuid !== $this->getCurrentUserUuid()) {
+            $this->requirePermission('users.view_sessions', 'users', ['target_user_uuid' => $uuid]);
+        } else {
+            $this->requirePermission('users.self.view_sessions', 'users');
+        }
+
+        // Rate limiting for session viewing
+        $this->rateLimitResource('users', 'sessions', 50, 300);
+
+        $user = $this->getUserRepository()->findByUUID($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -724,7 +971,14 @@ class UsersController
             }
         }
 
-        return Response::ok($sessions, 'Sessions retrieved successfully')->send();
+        return $this->cacheResponse(
+            'user_sessions_' . $uuid,
+            function () use ($sessions) {
+                return Response::ok($sessions, 'Sessions retrieved successfully');
+            },
+            60, // 1 minute cache for sessions (frequently changing)
+            ['users', 'user_' . $uuid, 'sessions']
+        );
     }
 
     /**
@@ -738,13 +992,24 @@ class UsersController
     public function terminateSessions(array $params, Request $request): Response
     {
         $uuid = $params['uuid'] ?? '';
+
+        // Permission check with self-access logic
+        if ($uuid !== $this->getCurrentUserUuid()) {
+            $this->requirePermission('users.manage_sessions', 'users', ['target_user_uuid' => $uuid]);
+        } else {
+            $this->requirePermission('users.self.manage_sessions', 'users');
+        }
+
+        // Strict rate limiting for session termination
+        $this->rateLimitResource('users', 'terminate_sessions', 10, 300);
         $sessionId = $request->get('session_id'); // Optional: terminate specific session
 
-        $user = $this->userRepository->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUUID($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
 
+        $terminatedSessions = 0;
         if ($sessionId) {
             // Get the session token to revoke
             $session = $this->getQueryBuilder()->select('auth_sessions', ['access_token'])
@@ -754,11 +1019,32 @@ class UsersController
 
             if (!empty($session)) {
                 $this->tokenStorage->revokeSession($session[0]['access_token']);
+                $terminatedSessions = 1;
             }
         } else {
             // Revoke all user sessions
+            $activeSessions = $this->getQueryBuilder()->select('auth_sessions', ['session_id'])
+                ->where(['user_uuid' => $user['uuid'], 'status' => 'active'])
+                ->get();
+            $terminatedSessions = count($activeSessions);
             $this->tokenStorage->revokeAllUserSessions($user['uuid']);
         }
+
+        // Audit log session termination
+        $this->auditLogger->audit(
+            'security',
+            'user_sessions_terminated',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'target_user_uuid' => $user['uuid'],
+                'target_user_email' => $user['email'] ?? null,
+                'session_id' => $sessionId,
+                'terminated_sessions_count' => $terminatedSessions,
+                'is_self_termination' => $uuid === $this->getCurrentUserUuid(),
+                'terminator_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
 
         return Response::ok(null, 'Session(s) terminated successfully')->send();
     }
@@ -806,5 +1092,147 @@ class UsersController
         fclose($output);
 
         return $csv;
+    }
+
+    /**
+     * Validate user input data
+     *
+     * @param array $data Input data
+     * @param string $operation Operation type (create, update)
+     * @return array Validation errors
+     */
+    private function validateUserInput(array $data, string $operation): array
+    {
+        $errors = [];
+
+        // Required fields for creation
+        if ($operation === 'create') {
+            if (empty($data['username'])) {
+                $errors[] = 'Username is required';
+            }
+            if (empty($data['email'])) {
+                $errors[] = 'Email is required';
+            }
+            if (empty($data['password'])) {
+                $errors[] = 'Password is required';
+            }
+        }
+
+        // Username validation
+        if (isset($data['username'])) {
+            if (strlen($data['username']) < 3) {
+                $errors[] = 'Username must be at least 3 characters';
+            }
+            if (strlen($data['username']) > 50) {
+                $errors[] = 'Username cannot exceed 50 characters';
+            }
+            if (!preg_match('/^[a-zA-Z0-9_.-]+$/', $data['username'])) {
+                $errors[] = 'Username can only contain letters, numbers, dots, hyphens, and underscores';
+            }
+        }
+
+        // Email validation
+        if (isset($data['email'])) {
+            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                $errors[] = 'Invalid email format';
+            }
+            if (strlen($data['email']) > 255) {
+                $errors[] = 'Email cannot exceed 255 characters';
+            }
+        }
+
+        // Password validation
+        if (isset($data['password'])) {
+            if (strlen($data['password']) < 8) {
+                $errors[] = 'Password must be at least 8 characters';
+            }
+            if (strlen($data['password']) > 255) {
+                $errors[] = 'Password cannot exceed 255 characters';
+            }
+            if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/', $data['password'])) {
+                $errors[] = 'Password must contain at least one lowercase letter, one uppercase letter, and one number';
+            }
+        }
+
+        // Status validation
+        if (isset($data['status'])) {
+            $validStatuses = ['active', 'inactive', 'suspended', 'pending'];
+            if (!in_array($data['status'], $validStatuses)) {
+                $errors[] = 'Invalid status. Must be one of: ' . implode(', ', $validStatuses);
+            }
+        }
+
+        // Profile validation
+        if (isset($data['profile']) && is_array($data['profile'])) {
+            if (isset($data['profile']['first_name']) && strlen($data['profile']['first_name']) > 100) {
+                $errors[] = 'First name cannot exceed 100 characters';
+            }
+            if (isset($data['profile']['last_name']) && strlen($data['profile']['last_name']) > 100) {
+                $errors[] = 'Last name cannot exceed 100 characters';
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Sanitize user input data
+     *
+     * @param array $data Input data
+     * @return array Sanitized data
+     */
+    private function sanitizeUserInput(array $data): array
+    {
+        $sanitized = [];
+
+        // Sanitize string fields
+        $stringFields = ['username', 'email', 'status'];
+        foreach ($stringFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = trim(strip_tags($data[$field]));
+            }
+        }
+
+        // Password doesn't need sanitization (will be hashed)
+        if (isset($data['password'])) {
+            $sanitized['password'] = $data['password'];
+        }
+
+        // Sanitize profile data
+        if (isset($data['profile']) && is_array($data['profile'])) {
+            $sanitized['profile'] = [];
+            foreach ($data['profile'] as $key => $value) {
+                if (is_string($value)) {
+                    $sanitized['profile'][$key] = trim(strip_tags($value));
+                } else {
+                    $sanitized['profile'][$key] = $value;
+                }
+            }
+        }
+
+        // Preserve other fields
+        $preserveFields = ['roles'];
+        foreach ($preserveFields as $field) {
+            if (isset($data[$field])) {
+                $sanitized[$field] = $data[$field];
+            }
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * Get UserRepository instance for user-specific methods
+     *
+     * @return UserRepository
+     */
+    private function getUserRepository(): UserRepository
+    {
+        if ($this->userRepository instanceof UserRepository) {
+            return $this->userRepository;
+        }
+
+        // This should not happen in practice, but provides type safety
+        throw new \RuntimeException('UserRepository not available');
     }
 }

@@ -6,11 +6,13 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\Request;
-use Glueful\Helpers\Utils;
 use Glueful\Notifications\Services\NotificationService;
 use Glueful\Notifications\Services\NotificationDispatcher;
 use Glueful\Notifications\Services\ChannelManager;
-use Glueful\Repository\NotificationRepository;
+use Glueful\Repository\RepositoryFactory;
+use Glueful\Auth\AuthenticationManager;
+use Glueful\Logging\AuditLogger;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /**
  * Notifications Controller
@@ -20,7 +22,7 @@ use Glueful\Repository\NotificationRepository;
  *
  * @package Glueful\Controllers
  */
-class NotificationsController
+class NotificationsController extends BaseController
 {
     /**
      * @var NotificationService Notification service instance
@@ -30,13 +32,22 @@ class NotificationsController
     /**
      * Constructor
      */
-    public function __construct()
-    {
+    public function __construct(
+        ?RepositoryFactory $repositoryFactory = null,
+        ?AuthenticationManager $authManager = null,
+        ?AuditLogger $auditLogger = null,
+        ?SymfonyRequest $request = null
+    ) {
+        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+
+        // Get the notification repository directly
+        $notificationRepo = new \Glueful\Repository\NotificationRepository();
+
         $this->notificationService = new NotificationService(
             new NotificationDispatcher(
                 new ChannelManager()
             ),
-            new NotificationRepository()
+            $notificationRepo
         );
     }
 
@@ -90,12 +101,8 @@ class NotificationsController
      */
     public function getNotifications()
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
-
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
+        $this->requirePermission('notifications.read', 'notifications');
+        $this->rateLimitMethod();
 
         $request = new Request();
         $queryParams = $request->getQueryParams();
@@ -135,23 +142,46 @@ class NotificationsController
         }
 
         // Create notifiable from user
-        $userNotifiable = $this->createUserNotifiable($userData['uuid']);
+        $user = $this->getCurrentUser();
+        $userNotifiable = $this->createUserNotifiable($user->uuid);
 
-        // Retrieve notifications with pagination and filters
-        $notifications = $this->notificationService->getNotifications(
-            $userNotifiable,
-            $onlyUnread,
-            $perPage,
-            ($page - 1) * $perPage,
-            $filters
+        // Cache notifications list
+        $cacheKey = sprintf(
+            'notifications:user:%s:page:%d:filters:%s',
+            $user->uuid,
+            $page,
+            md5(serialize($filters))
         );
 
-        // Get total count for pagination using the service layer method, including filters
-        $totalCount = $this->notificationService->countNotifications(
-            $userNotifiable,
-            $onlyUnread,
-            $filters
+        $notifications = $this->cacheResponse(
+            $cacheKey,
+            function () use ($userNotifiable, $onlyUnread, $perPage, $page, $filters) {
+                return $this->notificationService->getNotifications(
+                    $userNotifiable,
+                    $onlyUnread,
+                    $perPage,
+                    ($page - 1) * $perPage,
+                    $filters
+                );
+            },
+            300,
+            ['user:' . $user->uuid, 'notifications']
         );
+
+        // Cache total count
+        $countCacheKey = sprintf(
+            'notifications:count:user:%s:filters:%s',
+            $user->uuid,
+            md5(serialize($filters))
+        );
+
+        $totalCount = $this->cacheResponse($countCacheKey, function () use ($userNotifiable, $onlyUnread, $filters) {
+            return $this->notificationService->countNotifications(
+                $userNotifiable,
+                $onlyUnread,
+                $filters
+            );
+        }, 300, ['user:' . $user->uuid, 'notifications']);
 
         return Response::ok([
             'data' => $notifications,
@@ -178,13 +208,10 @@ class NotificationsController
      */
     public function getNotification(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.read_own', 'notifications');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Use UUID-based lookup instead of ID-based
         $notification = $this->notificationService->getNotificationByUuid($params['id']);
 
@@ -194,7 +221,7 @@ class NotificationsController
         }
 
         // Check if notification belongs to the user
-        if ($notification->getNotifiableId() !== $userData['uuid']) {
+        if ($notification->getNotifiableId() !== $user->uuid) {
             return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
         }
 
@@ -209,13 +236,10 @@ class NotificationsController
      */
     public function markAsRead(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.update', 'notifications');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
         $notification = $this->notificationService->getNotificationByUuid($params['id']);
 
@@ -225,12 +249,26 @@ class NotificationsController
         }
 
         // Check if notification belongs to the user
-        if ($notification->getNotifiableId() !== $userData['uuid']) {
+        if ($notification->getNotifiableId() !== $user->uuid) {
             return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
         }
 
         // Mark as read
         $notification = $this->notificationService->markAsRead($notification);
+
+        // Invalidate user's notifications cache
+        $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
+
+        // Audit log
+        $this->auditLogger->audit(
+            'notifications',
+            'notification_marked_read',
+            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+            [
+                'user_uuid' => $user->uuid,
+                'notification_uuid' => $notification->getUuid()
+            ]
+        );
 
         return Response::ok($notification, 'Notification marked as read')->send();
     }
@@ -243,13 +281,10 @@ class NotificationsController
      */
     public function markAsUnread(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.update', 'notifications');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
         $notification = $this->notificationService->getNotificationByUuid($params['id']);
 
@@ -259,12 +294,15 @@ class NotificationsController
         }
 
         // Check if notification belongs to the user
-        if ($notification->getNotifiableId() !== $userData['uuid']) {
+        if ($notification->getNotifiableId() !== $user->uuid) {
             return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
         }
 
         // Mark as unread
         $notification = $this->notificationService->markAsUnread($notification);
+
+        // Invalidate user's notifications cache
+        $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
 
         return Response::ok($notification, 'Notification marked as unread')->send();
     }
@@ -276,18 +314,28 @@ class NotificationsController
      */
     public function markAllAsRead()
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.update', 'notifications');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Create notifiable from user
-        $userNotifiable = $this->createUserNotifiable($userData['uuid']);
+        $userNotifiable = $this->createUserNotifiable($user->uuid);
 
         // Mark all as read
         $this->notificationService->markAllAsRead($userNotifiable);
+
+        // Invalidate user's notifications cache
+        $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
+
+        // Audit log
+        $this->auditLogger->audit(
+            'notifications',
+            'all_notifications_marked_read',
+            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+            [
+                'user_uuid' => $user->uuid
+            ]
+        );
 
         return Response::ok(null, 'All notifications marked as read')->send();
     }
@@ -299,18 +347,18 @@ class NotificationsController
      */
     public function getPreferences()
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.preferences.read', 'notification_preferences');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Create notifiable from user
-        $userNotifiable = $this->createUserNotifiable($userData['uuid']);
+        $userNotifiable = $this->createUserNotifiable($user->uuid);
 
-        // Get preferences using the proper service method
-        $preferences = $this->notificationService->getPreferences($userNotifiable);
+        // Cache preferences
+        $cacheKey = sprintf('preferences:user:%s', $user->uuid);
+        $preferences = $this->cacheResponse($cacheKey, function () use ($userNotifiable) {
+            return $this->notificationService->getPreferences($userNotifiable);
+        }, 1800, ['user:' . $user->uuid, 'preferences']);
 
         $message = 'Notification preferences retrieved successfully';
         return Response::ok(['preferences' => $preferences], $message)->send();
@@ -323,13 +371,10 @@ class NotificationsController
      */
     public function updatePreferences()
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.preferences.update', 'notification_preferences');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         $data = Request::getPostData();
 
         if (!isset($data['notification_type']) || !isset($data['channels'])) {
@@ -338,7 +383,7 @@ class NotificationsController
         }
 
         // Create notifiable from user
-        $userNotifiable = $this->createUserNotifiable($userData['uuid']);
+        $userNotifiable = $this->createUserNotifiable($user->uuid);
 
         // Use setPreference instead of savePreference
         $preference = $this->notificationService->setPreference(
@@ -348,6 +393,9 @@ class NotificationsController
             $data['enabled'] ?? true,
             $data['settings'] ?? null
         );
+
+        // Invalidate preferences cache
+        $this->invalidateCache(['user:' . $user->uuid, 'preferences']);
 
         return Response::ok($preference, 'Notification preferences updated successfully')->send();
     }
@@ -360,13 +408,10 @@ class NotificationsController
      */
     public function deleteNotification(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.delete', 'notifications');
+        $this->rateLimitMethod();
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
+        $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
         $notification = $this->notificationService->getNotificationByUuid($params['id']);
 
@@ -376,7 +421,7 @@ class NotificationsController
         }
 
         // Check if notification belongs to the user
-        if ($notification->getNotifiableId() !== $userData['uuid']) {
+        if ($notification->getNotifiableId() !== $user->uuid) {
             return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
         }
 
@@ -386,6 +431,20 @@ class NotificationsController
         if (!$success) {
             return Response::error('Failed to delete notification', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
         }
+
+        // Invalidate user's notifications cache
+        $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
+
+        // Audit log
+        $this->auditLogger->audit(
+            'notifications',
+            'notification_deleted',
+            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
+            [
+                'user_uuid' => $user->uuid,
+                'notification_uuid' => $notification->getUuid()
+            ]
+        );
 
         return Response::ok(null, 'Notification deleted successfully')->send();
     }
@@ -397,18 +456,13 @@ class NotificationsController
      */
     public function getNotificationMetrics()
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
+        $this->requirePermission('notifications.metrics.read', 'notification_metrics');
+        $this->rateLimitMethod('getNotificationMetrics', ['attempts' => 10, 'window' => 60]);
 
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
-        // Extract token for permission check
-        $token = $userData['token'] ?? null;
-
-        // Get metrics from the notification service
-        $metrics = $this->notificationService->getPerformanceMetrics();
+        // Cache metrics
+        $metrics = $this->cacheResponse('notification_metrics', function () {
+            return $this->notificationService->getPerformanceMetrics();
+        }, 60, ['metrics', 'notifications']);
 
         return Response::ok([
             'metrics' => $metrics,
@@ -424,15 +478,8 @@ class NotificationsController
      */
     public function getChannelMetrics(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
-
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
-        // Extract token for permission check
-        $token = $userData['token'] ?? null;
+        $this->requirePermission('notifications.metrics.read', 'notification_metrics');
+        $this->rateLimitMethod('getChannelMetrics', ['attempts' => 10, 'window' => 60]);
 
         if (!isset($params['channel'])) {
             return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
@@ -452,8 +499,11 @@ class NotificationsController
             )->send();
         }
 
-        // Get metrics for the specific channel
-        $metrics = $this->notificationService->getChannelMetrics($channelName);
+        // Cache channel metrics
+        $cacheKey = sprintf('channel_metrics:%s', $channelName);
+        $metrics = $this->cacheResponse($cacheKey, function () use ($channelName) {
+            return $this->notificationService->getChannelMetrics($channelName);
+        }, 60, ['metrics', 'channel:' . $channelName]);
 
         return Response::ok([
             'metrics' => $metrics,
@@ -469,15 +519,8 @@ class NotificationsController
      */
     public function resetChannelMetrics(array $params)
     {
-        // Get authenticated user
-        $userData = Utils::getCurrentUser();
-
-        if (!$userData || !isset($userData['uuid'])) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
-        // Extract token for permission check
-        $token = $userData['token'] ?? null;
+        $this->requirePermission('notifications.metrics.reset', 'notification_metrics');
+        $this->rateLimitMethod('resetChannelMetrics', ['attempts' => 5, 'window' => 60]);
 
         if (!isset($params['channel'])) {
             return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
@@ -506,6 +549,21 @@ class NotificationsController
                 Response::HTTP_INTERNAL_SERVER_ERROR
             )->send();
         }
+
+        // Invalidate channel metrics cache
+        $this->invalidateCache(['metrics', 'channel:' . $channelName]);
+
+        // Audit log
+        $user = $this->getCurrentUser();
+        $this->auditLogger->audit(
+            'admin',
+            'channel_metrics_reset',
+            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
+            [
+                'admin_uuid' => $user->uuid,
+                'channel' => $channelName
+            ]
+        );
 
         return Response::ok(
             null,

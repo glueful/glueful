@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\{Request, DatabaseConnectionTrait};
+use Glueful\Helpers\Request;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{QueryBuilder};
+use Glueful\Logging\AuditEvent;
 
 /**
  * Database Controller
@@ -23,18 +24,22 @@ use Glueful\Database\{QueryBuilder};
  *
  * @package Glueful\Controllers
  */
-class DatabaseController
+class DatabaseController extends BaseController
 {
-    use DatabaseConnectionTrait;
-
     private SchemaManager $schemaManager;
     private QueryBuilder $queryBuilder;
 
     /**
      * Initialize Database Controller
      */
-    public function __construct()
-    {
+    public function __construct(
+        ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
+        ?\Glueful\Auth\AuthenticationManager $authManager = null,
+        ?\Glueful\Logging\AuditLogger $auditLogger = null,
+        ?\Symfony\Component\HttpFoundation\Request $request = null
+    ) {
+        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+
         $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
         $this->queryBuilder = $this->getQueryBuilder();
@@ -47,6 +52,12 @@ class DatabaseController
      */
     public function createTable(): mixed
     {
+        // Permission check - table creation is a critical operation
+        $this->requirePermission('database.tables.create', 'database');
+
+        // Rate limiting for table creation
+        $this->rateLimitResource('database.tables', 'write', 5, 300);
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name']) || !isset($data['columns'])) {
@@ -138,6 +149,21 @@ class DatabaseController
             $schemaManager->addForeignKey($foreignKeys);
         }
 
+            // Audit log table creation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'table_created',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'table_name' => $tableName,
+                    'columns' => $columnsData,
+                    'indexes' => $data['indexes'] ?? [],
+                    'foreign_keys' => $data['foreign_keys'] ?? [],
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             return Response::ok([
                 'table' => $tableName,
                 'columns' => $columnsData,
@@ -151,6 +177,15 @@ class DatabaseController
      */
     public function dropTable(): mixed
     {
+        // Permission check - table deletion is critical
+        $this->requirePermission('database.tables.drop', 'database');
+
+        // Very strict rate limiting for table deletion
+        $this->rateLimitResource('database.tables', 'delete', 2, 600);
+
+        // Require low risk behavior for destructive operations
+        $this->requireLowRiskBehavior(0.3, 'table_deletion');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -162,6 +197,18 @@ class DatabaseController
             return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
         }
 
+        // Audit log table deletion
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'table_dropped',
+            AuditEvent::SEVERITY_ERROR, // High severity for destructive operation
+            [
+                'table_name' => $data['table_name'],
+                'user_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
         return Response::ok(null, 'Table dropped successfully')->send();
     }
 
@@ -170,8 +217,18 @@ class DatabaseController
      */
     public function getTables(?bool $includeSchema = false): mixed
     {
-        $tables = $this->schemaManager->getTables();
-        return Response::ok($tables, 'Tables retrieved successfully')->send();
+        // Permission check for viewing database structure
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Standard rate limiting for read operations
+        $this->rateLimitResource('database.structure', 'read');
+
+        return $this->cacheResponse(
+            'tables_list',
+            fn() => $this->schemaManager->getTables(),
+            3600, // 1 hour cache
+            ['database', 'tables']
+        );
     }
 
     /**
@@ -179,16 +236,28 @@ class DatabaseController
      */
     public function getTableSize(?array $table): mixed
     {
+        // Permission check for reading table information
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for table operations
+        $this->rateLimitResource('database.tables', 'read');
+
         if (!isset($table['name'])) {
             return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
 
-        $size = $this->schemaManager->getTableSize($table['name']);
-
-        return Response::ok([
-            'table' => $table['name'],
-            'size' => $size
-        ], 'Table size retrieved successfully')->send();
+        return $this->cacheResponse(
+            'table_size_' . $table['name'],
+            function () use ($table) {
+                $size = $this->schemaManager->getTableSize($table['name']);
+                return Response::ok([
+                    'table' => $table['name'],
+                    'size' => $size
+                ], 'Table size retrieved successfully');
+            },
+            1800, // 30 minutes cache
+            ['database', 'table_' . $table['name']]
+        );
     }
 
     /**
@@ -208,6 +277,12 @@ class DatabaseController
      */
     public function getTableMetadata(?array $table): mixed
     {
+        // Permission check for reading table metadata
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for metadata operations
+        $this->rateLimitResource('database.metadata', 'read');
+
         if (!isset($table['name'])) {
             return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -250,7 +325,14 @@ class DatabaseController
                 'data_free' => $status['Data_free'] ?? 0
             ];
 
-            return Response::ok($metadata, 'Table metadata retrieved successfully')->send();
+            return $this->cacheResponse(
+                'table_metadata_' . $tableName,
+                function () use ($metadata) {
+                    return Response::ok($metadata, 'Table metadata retrieved successfully');
+                },
+                1800, // 30 minutes cache
+                ['database', 'table_' . $tableName, 'metadata']
+            );
     }
 
     /**
@@ -275,6 +357,12 @@ class DatabaseController
      */
     public function getTableData(?array $table): mixed
     {
+        // Permission check for reading table data
+        $this->requirePermission('database.data.read', 'database');
+
+        // Rate limiting for data access
+        $this->rateLimitResource('database.data', 'read');
+
         if (!isset($table['name'])) {
             return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -367,6 +455,12 @@ class DatabaseController
      */
     public function getColumns(array $params): mixed
     {
+        // Permission check for reading column information
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for column information
+        $this->rateLimitResource('database.columns', 'read');
+
         if (!isset($params['name'])) {
             return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -381,10 +475,17 @@ class DatabaseController
             return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
         }
 
-            return Response::ok([
-                'table' => $tableName,
-                'columns' => $columns
-            ], 'Table columns retrieved successfully')->send();
+            return $this->cacheResponse(
+                'table_columns_' . $tableName,
+                function () use ($tableName, $columns) {
+                    return Response::ok([
+                        'table' => $tableName,
+                        'columns' => $columns
+                    ], 'Table columns retrieved successfully');
+                },
+                3600, // 1 hour cache
+                ['database', 'table_' . $tableName, 'columns']
+            );
     }
 
     /**
@@ -396,6 +497,12 @@ class DatabaseController
      */
     public function addColumn(): mixed
     {
+        // Permission check for adding columns
+        $this->requirePermission('database.columns.add', 'database');
+
+        // Rate limiting for column operations
+        $this->rateLimitResource('database.columns', 'write', 10, 300);
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -476,6 +583,15 @@ class DatabaseController
      */
     public function dropColumn(): mixed
     {
+        // Permission check for dropping columns
+        $this->requirePermission('database.columns.drop', 'database');
+
+        // Strict rate limiting for column deletion
+        $this->rateLimitResource('database.columns', 'delete', 5, 600);
+
+        // Require low risk behavior for destructive operations
+        $this->requireLowRiskBehavior(0.4, 'column_deletion');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -542,6 +658,12 @@ class DatabaseController
      */
     public function addIndex(): mixed
     {
+        // Permission check for adding indexes
+        $this->requirePermission('database.indexes.create', 'database');
+
+        // Rate limiting for index operations
+        $this->rateLimitResource('database.indexes', 'write', 10, 300);
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -598,6 +720,20 @@ class DatabaseController
 
         // Check if all indexes were added successfully
         if (empty($failed)) {
+            // Audit log index creation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'indexes_added',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'table_name' => $tableName,
+                    'indexes_added' => $results,
+                    'total_indexes' => count($results),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // All indexes were added successfully
             return Response::ok([
                 'table' => $tableName,
@@ -610,6 +746,22 @@ class DatabaseController
                 Response::HTTP_BAD_REQUEST
             )->send();
         } else {
+            // Audit log partial index creation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'indexes_added_partial',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'table_name' => $tableName,
+                    'indexes_added' => $results,
+                    'indexes_failed' => $failed,
+                    'success_count' => count($results),
+                    'failed_count' => count($failed),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // Some indexes were added, but some failed
             return Response::ok([
                 'table' => $tableName,
@@ -628,6 +780,15 @@ class DatabaseController
      */
     public function dropIndex(): mixed
     {
+        // Permission check for dropping indexes
+        $this->requirePermission('database.indexes.drop', 'database');
+
+        // Strict rate limiting for index deletion
+        $this->rateLimitResource('database.indexes', 'delete', 5, 600);
+
+        // Require low risk behavior for destructive operations
+        $this->requireLowRiskBehavior(0.4, 'index_deletion');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -664,6 +825,20 @@ class DatabaseController
 
         // Check if all indexes were dropped successfully
         if (empty($failed)) {
+            // Audit log index deletion
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'indexes_dropped',
+                AuditEvent::SEVERITY_WARNING, // Higher severity for destructive operation
+                [
+                    'table_name' => $tableName,
+                    'indexes_dropped' => $results,
+                    'total_indexes' => count($results),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // All indexes were dropped successfully
             return Response::ok([
                 'table' => $tableName,
@@ -676,6 +851,22 @@ class DatabaseController
                 Response::HTTP_BAD_REQUEST
             )->send();
         } else {
+            // Audit log partial index deletion
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'indexes_dropped_partial',
+                AuditEvent::SEVERITY_ERROR, // High severity for partial destructive operation
+                [
+                    'table_name' => $tableName,
+                    'indexes_dropped' => $results,
+                    'indexes_failed' => $failed,
+                    'success_count' => count($results),
+                    'failed_count' => count($failed),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // Some indexes were dropped, but some failed
             return Response::ok([
                 'table' => $tableName,
@@ -700,6 +891,12 @@ class DatabaseController
      */
     public function addForeignKey(): mixed
     {
+        // Permission check for adding foreign keys
+        $this->requirePermission('database.foreign_keys.create', 'database');
+
+        // Rate limiting for foreign key operations
+        $this->rateLimitResource('database.foreign_keys', 'write', 8, 600);
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -752,6 +949,20 @@ class DatabaseController
 
         // Check if all foreign keys were added successfully
         if (empty($failed)) {
+            // Audit log foreign key creation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'foreign_keys_added',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'table_name' => $tableName,
+                    'constraints_added' => $results,
+                    'total_constraints' => count($results),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // All foreign keys were added successfully
             return Response::ok(
                 [
@@ -769,6 +980,22 @@ class DatabaseController
                 Response::HTTP_BAD_REQUEST
             )->send();
         } else {
+            // Audit log partial foreign key creation
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'foreign_keys_added_partial',
+                AuditEvent::SEVERITY_WARNING,
+                [
+                    'table_name' => $tableName,
+                    'constraints_added' => $results,
+                    'constraints_failed' => $failed,
+                    'success_count' => count($results),
+                    'failed_count' => count($failed),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // Some foreign keys were added, but some failed
             return Response::ok([
                 'table' => $tableName,
@@ -787,6 +1014,15 @@ class DatabaseController
      */
     public function dropForeignKey(): mixed
     {
+        // Permission check for dropping foreign keys
+        $this->requirePermission('database.foreign_keys.drop', 'database');
+
+        // Strict rate limiting for foreign key deletion
+        $this->rateLimitResource('database.foreign_keys', 'delete', 5, 900);
+
+        // Require low risk behavior for destructive operations
+        $this->requireLowRiskBehavior(0.4, 'foreign_key_deletion');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -826,6 +1062,20 @@ class DatabaseController
 
         // Check if all constraints were dropped successfully
         if (empty($failed)) {
+            // Audit log foreign key deletion
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'foreign_keys_dropped',
+                AuditEvent::SEVERITY_WARNING, // Higher severity for destructive operation
+                [
+                    'table_name' => $tableName,
+                    'constraints_dropped' => $results,
+                    'total_constraints' => count($results),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // All constraints were dropped successfully
             return Response::ok(
                 [
@@ -843,6 +1093,22 @@ class DatabaseController
                 Response::HTTP_BAD_REQUEST
             )->send();
         } else {
+            // Audit log partial foreign key deletion
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_ADMIN,
+                'foreign_keys_dropped_partial',
+                AuditEvent::SEVERITY_ERROR, // High severity for partial destructive operation
+                [
+                    'table_name' => $tableName,
+                    'constraints_dropped' => $results,
+                    'constraints_failed' => $failed,
+                    'success_count' => count($results),
+                    'failed_count' => count($failed),
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
             // Some constraints were dropped, but some failed
             return Response::ok([
                 'table' => $tableName,
@@ -862,6 +1128,15 @@ class DatabaseController
      */
     public function executeQuery(): mixed
     {
+        // Critical permission check - raw SQL execution
+        $this->requirePermission('database.query.execute', 'database');
+
+        // Very strict rate limiting for raw SQL execution
+        $this->rateLimitResource('database.query', 'execute', 3, 300);
+
+        // Require very low risk behavior for SQL execution
+        $this->requireLowRiskBehavior(0.2, 'raw_sql_execution');
+
         $data = Request::getPostData();
 
         if (!isset($data['query'])) {
@@ -896,6 +1171,21 @@ class DatabaseController
             ? 'Query executed successfully'
             : 'Query executed successfully, ' . count($results) . ' rows affected';
 
+        // Audit log raw SQL execution
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_ADMIN,
+            'raw_sql_executed',
+            $isReadOperation ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING,
+            [
+                'sql' => $sql,
+                'operation_type' => $firstWord,
+                'is_read_operation' => $isReadOperation,
+                'affected_rows' => count($results),
+                'user_uuid' => $this->getCurrentUserUuid(),
+                'ip_address' => $this->request->getClientIp()
+            ]
+        );
+
         $responseData = [
             'query' => $sql,
             'results' => $results,
@@ -917,6 +1207,15 @@ class DatabaseController
      */
     public function updateTableSchema(): mixed
     {
+        // Permission check for schema modification
+        $this->requirePermission('database.structure.write', 'database');
+
+        // Very strict rate limiting for schema updates
+        $this->rateLimitResource('database.schema', 'write', 3, 600);
+
+        // Require low risk behavior for complex schema operations
+        $this->requireLowRiskBehavior(0.3, 'schema_update');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -1083,6 +1382,12 @@ class DatabaseController
      */
     public function getDatabaseStats(): mixed
     {
+        // Permission check for database statistics
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for database statistics
+        $this->rateLimitResource('database.stats', 'read');
+
         // Get list of all tables with schema information
         $tables = $this->schemaManager->getTables(); // No parameters needed
 
@@ -1123,10 +1428,17 @@ class DatabaseController
             return $b['size'] <=> $a['size'];
         });
 
-        return Response::ok([
-            'tables' => $tableData,
-            'total_tables' => count($tables)
-        ], 'Database statistics retrieved successfully')->send();
+        return $this->cacheResponse(
+            'database_stats',
+            function () use ($tableData, $tables) {
+                return Response::ok([
+                    'tables' => $tableData,
+                    'total_tables' => count($tables)
+                ], 'Database statistics retrieved successfully');
+            },
+            900, // 15 minutes cache
+            ['database', 'statistics']
+        );
     }
 
     /**
@@ -1142,6 +1454,15 @@ class DatabaseController
      */
     public function importTableData($params): mixed
     {
+        // Permission check for data import
+        $this->requirePermission('database.data.import', 'database');
+
+        // Strict rate limiting for import operations
+        $this->rateLimitResource('database.data', 'import', 3, 900);
+
+        // Require low risk behavior for bulk operations
+        $this->requireLowRiskBehavior(0.5, 'data_import');
+
         if (!is_array($params)) {
             return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -1406,6 +1727,15 @@ class DatabaseController
      */
     public function bulkDelete(array $params): mixed
     {
+        // Permission check for bulk deletion
+        $this->requirePermission('database.data.delete', 'database');
+
+        // Very strict rate limiting for bulk deletion
+        $this->rateLimitResource('database.data', 'delete', 2, 1200);
+
+        // Require very low risk behavior for bulk deletion
+        $this->requireLowRiskBehavior(0.2, 'bulk_deletion');
+
         if (!is_array($params)) {
             return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -1510,6 +1840,15 @@ class DatabaseController
      */
     public function bulkUpdate(array $params): mixed
     {
+        // Permission check for bulk updates
+        $this->requirePermission('database.data.write', 'database');
+
+        // Strict rate limiting for bulk updates
+        $this->rateLimitResource('database.data', 'write', 5, 600);
+
+        // Require low risk behavior for bulk operations
+        $this->requireLowRiskBehavior(0.4, 'bulk_update');
+
         if (!is_array($params)) {
             return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
         }
@@ -1704,6 +2043,12 @@ class DatabaseController
      */
     public function previewSchemaChanges(): mixed
     {
+        // Permission check for schema preview
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for schema preview operations
+        $this->rateLimitResource('database.schema', 'read', 15, 300);
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -1744,6 +2089,12 @@ class DatabaseController
      */
     public function exportSchema(): mixed
     {
+        // Permission check for schema export
+        $this->requirePermission('database.schema.export', 'database');
+
+        // Rate limiting for export operations
+        $this->rateLimitResource('database.schema', 'export', 5, 300);
+
         $params = $_GET;
         $data = Request::getPostData();
 
@@ -1806,6 +2157,15 @@ class DatabaseController
      */
     public function importSchema(): mixed
     {
+        // Permission check for schema import
+        $this->requirePermission('database.schema.import', 'database');
+
+        // Very strict rate limiting for schema import
+        $this->rateLimitResource('database.schema', 'import', 2, 600);
+
+        // Require low risk behavior for schema changes
+        $this->requireLowRiskBehavior(0.3, 'schema_import');
+
         $data = Request::getPostData();
 
         if (!isset($data['table_name'])) {
@@ -1874,6 +2234,12 @@ class DatabaseController
      */
     public function getSchemaHistory(): mixed
     {
+        // Permission check for audit log access
+        $this->requirePermission('database.audit.read', 'database');
+
+        // Rate limiting for audit operations
+        $this->rateLimitResource('database.audit', 'read', 20, 300);
+
         $params = $_GET;
         $tableName = $params['table'] ?? null;
         $limit = (int)($params['limit'] ?? 50);
@@ -1909,6 +2275,15 @@ class DatabaseController
      */
     public function revertSchemaChange(): mixed
     {
+        // Permission check for schema reversion - admin only
+        $this->requirePermission('database.admin', 'database');
+
+        // Very strict rate limiting for schema reversion
+        $this->rateLimitResource('database.admin', 'revert', 1, 1800);
+
+        // Require very low risk behavior for critical operations
+        $this->requireLowRiskBehavior(0.2, 'schema_revert');
+
         $data = Request::getPostData();
 
         if (!isset($data['change_id'])) {

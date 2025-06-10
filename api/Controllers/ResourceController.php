@@ -5,25 +5,62 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Auth\{AuthBootstrap, PasswordHasher};
+use Glueful\Auth\PasswordHasher;
 use Glueful\Repository\RepositoryFactory;
-use Symfony\Component\HttpFoundation\Request;
+use Glueful\Logging\AuditEvent;
 
-class ResourceController
+/**
+ * ResourceController - Performance-First CRUD API
+ *
+ * Provides fast, minimal CRUD operations for any resource table.
+ * Security features are available as optional traits for enhanced protection.
+ *
+ * Performance-First Design:
+ * - Minimal overhead by default
+ * - Security features are opt-in via traits
+ * - Configurable limits and restrictions
+ *
+ * Available Security Traits:
+ * - TableAccessControlTrait: Restrict sensitive tables
+ * - FieldLevelPermissionsTrait: Hide sensitive fields
+ * - BulkOperationsTrait: Secure bulk operations
+ * - QueryRestrictionsTrait: Limit query parameters
+ *
+ * @package Glueful\Controllers
+ */
+class ResourceController extends BaseController
 {
-    private $authManager;
-    private RepositoryFactory $repositoryFactory;
+    /**
+     * Security feature toggles - can be overridden in child classes
+     */
+    protected bool $enableTableAccessControl = false;
+    protected bool $enableFieldPermissions = false;
+    protected bool $enableBulkOperations = false;
+    protected bool $enableQueryRestrictions = false;
+    protected bool $enableOwnershipValidation = true; // Keep this as reasonable default
 
     public function __construct(?RepositoryFactory $repositoryFactory = null)
     {
-        // Initialize auth system
-        AuthBootstrap::initialize();
-        $this->authManager = AuthBootstrap::getManager();
+        // Call parent constructor which handles auth initialization
+        parent::__construct($repositoryFactory);
 
-        // Initialize the permission manager
+        // Load configuration-based feature toggles
+        $this->loadSecurityConfiguration();
+    }
 
-        // Initialize repository factory
-        $this->repositoryFactory = $repositoryFactory ?? new RepositoryFactory();
+    /**
+     * Load security configuration from config files
+     */
+    protected function loadSecurityConfiguration(): void
+    {
+        // Allow configuration to override defaults
+        $config = config('resource.security', []);
+
+        $this->enableTableAccessControl = $config['table_access_control'] ?? $this->enableTableAccessControl;
+        $this->enableFieldPermissions = $config['field_permissions'] ?? $this->enableFieldPermissions;
+        $this->enableBulkOperations = $config['bulk_operations'] ?? $this->enableBulkOperations;
+        $this->enableQueryRestrictions = $config['query_restrictions'] ?? $this->enableQueryRestrictions;
+        $this->enableOwnershipValidation = $config['ownership_validation'] ?? $this->enableOwnershipValidation;
     }
 
     /**
@@ -35,27 +72,19 @@ class ResourceController
      */
     public function get(array $params, array $queryParams)
     {
-        // Authenticate using the new abstraction layer
-        $request = Request::createFromGlobals();
-        $userData = $this->authenticate($request);
+        $table = $params['resource'];
 
-        if (!$userData) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+        // Apply optional table access control
+        $this->applyTableAccessControl($table);
+
+        // Check specific table permission first
+        if (!$this->can("resource.{$table}.read")) {
+            // Fall back to generic read permission
+            $this->requirePermission('resource.read');
         }
 
-        // Extract user UUID directly from authenticated data
-        $userUuid = $this->getUserUuid($userData);
-
-        if (!$userUuid) {
-            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-        }
-
-        // Note: Role-based authorization disabled - implement with RBAC extension
-        // For now, require valid token for all operations
-        $token = $this->extractToken($request);
-        if (!$token) {
-            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-        }
+        // Apply rate limiting for resource access
+        $this->rateLimitResource($table, 'read', 100, 60);
 
         // Parse query parameters for repository
         $page = max(1, (int)($queryParams['page'] ?? 1));
@@ -65,13 +94,29 @@ class ResourceController
         $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
         $fields = $this->parseFields($queryParams['fields'] ?? '');
 
+        // Apply optional query parameter restrictions
+        $queryParams = $this->applyQueryRestrictions($queryParams, $table);
+
         // Build conditions and order
         $conditions = $this->parseConditions($queryParams);
         $orderBy = [$sort => $order];
 
-        // Get repository and paginate results
-        $repository = $this->repositoryFactory->getRepository($params['resource']);
-        $result = $repository->paginate($page, $perPage, $conditions, $orderBy, $fields);
+        // Get repository and paginate results with caching
+        $repository = $this->repositoryFactory->getRepository($table);
+
+        // Cache read operations by user and table
+        $result = $this->cacheByPermission(
+            "resource:{$table}:list",
+            fn() => $repository->paginate($page, $perPage, $conditions, $orderBy, $fields),
+            600 // 10 minutes
+        );
+
+        // Apply optional field-level permissions
+        $result = $this->applyFieldPermissions($result, $table, 'read');
+
+        // Log the resource access
+        $this->logResourceAccess('list', $table);
+
         return Response::ok($result)->send();
     }
 
@@ -84,35 +129,43 @@ class ResourceController
      */
     public function getSingle(array $params, array $queryParams)
     {
-        // Authenticate using the new abstraction layer
-        $request = Request::createFromGlobals();
-        $userData = $this->authenticate($request);
+        $table = $params['resource'];
 
-        if (!$userData) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+        // Apply optional table access control
+        $this->applyTableAccessControl($table);
+
+        // Check specific table permission first
+        if (!$this->can("resource.{$table}.read")) {
+            // Fall back to generic read permission
+            $this->requirePermission('resource.read');
         }
 
-        // Extract user UUID directly from authenticated data
-        $userUuid = $this->getUserUuid($userData);
+        // Apply rate limiting for single resource access
+        $this->rateLimitResource($table, 'read', 100, 60);
 
-        if (!$userUuid) {
-            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-        }
+        // Get repository and find single record with caching
+        $repository = $this->repositoryFactory->getRepository($table);
 
-        // Note: Role-based authorization disabled - implement with RBAC extension
-        // For now, require valid token for all operations
-        $token = $this->extractToken($request);
-        if (!$token) {
-            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
-        // Get repository and find single record
-        $repository = $this->repositoryFactory->getRepository($params['resource']);
-        $result = $repository->find($params['uuid']);
+        // Cache single resource reads
+        $result = $this->cacheByPermission(
+            "resource:{$table}:read:{$params['uuid']}",
+            fn() => $repository->find($params['uuid']),
+            300 // 5 minutes
+        );
 
         if (!$result) {
             return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
         }
+
+        // Apply optional ownership validation
+        $this->applyOwnershipValidation($table, $params['uuid'], $result);
+
+        // Apply optional field-level permissions
+        $result = $this->applyFieldPermissions($result, $table, 'read');
+
+        // Log the resource access
+        $this->logResourceAccess('read', $table, $params['uuid']);
+
         return Response::ok($result)->send();
     }
 
@@ -125,41 +178,42 @@ class ResourceController
      */
     public function post(array $params, array $postData)
     {
-        // Authenticate using the new abstraction layer
-        $request = Request::createFromGlobals();
-        $userData = $this->authenticate($request);
+        $table = $params['resource'];
 
-        if (!$userData) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+        // Apply optional table access control
+        $this->applyTableAccessControl($table);
+
+        // Check specific table permission first
+        if (!$this->can("resource.{$table}.create")) {
+            // Fall back to generic create permission
+            $this->requirePermission('resource.create');
         }
 
-        // Extract user UUID directly from authenticated data
-        $userUuid = $this->getUserUuid($userData);
+        // Apply rate limiting for resource creation (more restrictive)
+        $this->rateLimitResource($table, 'create', 50, 60);
 
-        if (!$userUuid) {
-            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
-        }
-
-        // Note: Role-based authorization disabled - implement with RBAC extension
-        // For now, require valid token for all operations
-        $token = $this->extractToken($request);
-        if (!$token) {
-            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-        }
+        // Require low-risk behavior for create operations
+        $this->requireLowRiskBehavior();
 
         if (empty($postData)) {
             return Response::error('No data provided', Response::HTTP_BAD_REQUEST)->send();
         }
 
-        // check if postData conatains 'password' and hash it
+        // check if postData contains 'password' and hash it
         $passwordHasher = new PasswordHasher();
         if (isset($postData['password'])) {
             $postData['password'] = $passwordHasher->hash($postData['password']);
         }
 
         // Get repository and create record
-        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        $repository = $this->repositoryFactory->getRepository($table);
         $uuid = $repository->create($postData);
+
+        // Invalidate cache after creation
+        $this->invalidateTableCache($table);
+
+        // Log the resource access
+        $this->logResourceAccess('create', $table, $uuid);
 
         $result = [
             'uuid' => $uuid,
@@ -179,36 +233,40 @@ class ResourceController
      */
     public function put(array $params, array $putData)
     {
-        // Authenticate using the new abstraction layer
-        $request = Request::createFromGlobals();
-        $userData = $this->authenticate($request);
+        $table = $params['resource'];
+        $uuid = $params['uuid'];
 
-        if (!$userData) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+        // Apply optional table access control
+        $this->applyTableAccessControl($table);
+
+        // Check specific table permission first
+        if (!$this->can("resource.{$table}.update")) {
+            // Fall back to generic update permission
+            $this->requirePermission('resource.update');
         }
 
-        // Extract user UUID directly from authenticated data
-        $userUuid = $this->getUserUuid($userData);
+        // Apply rate limiting for resource updates
+        $this->rateLimitResource($table, 'update', 30, 60);
 
-        if (!$userUuid) {
-            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Require low-risk behavior for update operations
+        $this->requireLowRiskBehavior();
+
+        // Get repository and check if record exists
+        $repository = $this->repositoryFactory->getRepository($table);
+        $existing = $repository->find($uuid);
+
+        if (!$existing) {
+            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
         }
 
-        // Note: Role-based authorization disabled - implement with RBAC extension
-        // For now, require valid token for all operations
-        $token = $this->extractToken($request);
-        if (!$token) {
-            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-        }
-
-        // Get repository and update record
-        $repository = $this->repositoryFactory->getRepository($params['resource']);
+        // Apply optional ownership validation
+        $this->applyOwnershipValidation($table, $uuid, $existing);
 
         // Extract data from nested structure if present (for compatibility)
         $updateData = $putData['data'] ?? $putData;
         unset($updateData['uuid']); // Remove UUID from update data
 
-        // check if postData conatains 'password' and hash it
+        // check if postData contains 'password' and hash it
         $passwordHasher = new PasswordHasher();
         if (isset($updateData['password'])) {
             $updateData['password'] = $passwordHasher->hash($updateData['password']);
@@ -219,6 +277,12 @@ class ResourceController
         if (!$success) {
             return Response::error('Record not found or update failed', Response::HTTP_NOT_FOUND)->send();
         }
+
+        // Invalidate cache after update
+        $this->invalidateTableCache($table, $uuid);
+
+        // Log the resource access
+        $this->logResourceAccess('update', $table, $uuid);
 
         $result = [
             'affected' => 1,
@@ -237,35 +301,46 @@ class ResourceController
      */
     public function delete(array $params)
     {
-        // Authenticate using the new abstraction layer
-        $request = Request::createFromGlobals();
-        $userData = $this->authenticate($request);
+        $table = $params['resource'];
+        $uuid = $params['uuid'];
 
-        if (!$userData) {
-            return Response::error('Unauthorized', Response::HTTP_UNAUTHORIZED)->send();
+        // Apply optional table access control
+        $this->applyTableAccessControl($table);
+
+        // Check specific table permission first
+        if (!$this->can("resource.{$table}.delete")) {
+            // Fall back to generic delete permission
+            $this->requirePermission('resource.delete');
         }
 
-        // Extract user UUID directly from authenticated data
-        $userUuid = $this->getUserUuid($userData);
+        // Apply strict rate limiting for delete operations
+        $this->rateLimitResource($table, 'delete', 10, 60);
 
-        if (!$userUuid) {
-            return Response::error('Invalid user data', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        // Require low-risk behavior for delete operations
+        $this->requireLowRiskBehavior();
+
+        // Get repository and check if record exists
+        $repository = $this->repositoryFactory->getRepository($table);
+        $existing = $repository->find($uuid);
+
+        if (!$existing) {
+            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
         }
 
-        // Note: Role-based authorization disabled - implement with RBAC extension
-        // For now, require valid token for all operations
-        $token = $this->extractToken($request);
-        if (!$token) {
-            return Response::error('No valid token found', Response::HTTP_UNAUTHORIZED)->send();
-        }
+        // Apply optional ownership validation
+        $this->applyOwnershipValidation($table, $uuid, $existing);
 
-        // Get repository and delete record
-        $repository = $this->repositoryFactory->getRepository($params['resource']);
         $success = $repository->delete($params['uuid']);
 
         if (!$success) {
             return Response::error('Record not found or delete failed', Response::HTTP_NOT_FOUND)->send();
         }
+
+        // Invalidate cache after deletion
+        $this->invalidateTableCache($table, $uuid);
+
+        // Log the resource access
+        $this->logResourceAccess('delete', $table, $uuid);
 
         $result = [
             'affected' => 1,
@@ -277,77 +352,117 @@ class ResourceController
     }
 
     /**
-     * Authenticate a request using multiple authentication methods
-     *
-     * @param Request $request The HTTP request to authenticate
-     * @return array|null User data if authenticated, null otherwise
+     * Log resource access for audit trail
      */
-    private function authenticate(Request $request): ?array
+    protected function logResourceAccess(string $operation, string $table, ?string $uuid = null): void
     {
-        // Try to authenticate with all available methods
-        return $this->authManager->authenticateWithProviders(['jwt', 'api_key'], $request);
+        $this->auditLogger->audit(
+            'resource_access',
+            $operation,
+            AuditEvent::SEVERITY_INFO,
+            [
+                'table' => $table,
+                'uuid' => $uuid,
+                'user_uuid' => $this->currentUser['uuid'],
+                'operation' => $operation
+            ]
+        );
     }
 
     /**
-     * Extract user UUID from authentication data
-     *
-     * Handles different authentication response formats
-     *
-     * @param array $authData Authentication data
-     * @return string|null User UUID
+     * Invalidate cache for a resource table
      */
-    private function getUserUuid(array $authData): ?string
+    protected function invalidateTableCache(string $table, ?string $uuid = null): void
     {
-        // For JWT auth, the returned data is the session record
-        // Check for user_uuid field first (auth_sessions table)
-        if (isset($authData['user_uuid'])) {
-            return $authData['user_uuid'];
+        // Build cache tags to invalidate
+        $tags = ["repository:{$table}", "resource:{$table}"];
+
+        // If UUID provided, also add specific resource cache tag
+        if ($uuid) {
+            $tags[] = "resource:{$table}:{$uuid}";
         }
 
-        // Direct UUID in auth data
-        if (isset($authData['uuid'])) {
-            return $authData['uuid'];
-        }
+        // Invalidate cache using base controller method
+        $this->invalidateCache($tags);
+    }
 
-        // UUID nested in user object
-        if (isset($authData['user']['uuid'])) {
-            return $authData['user']['uuid'];
-        }
+    // =================================================================
+    // Security Feature Application Methods (Can be overridden by traits)
+    // =================================================================
 
-        // UUID in nested user data (some providers return this structure)
-        if (isset($authData['data']['user']['uuid'])) {
-            return $authData['data']['user']['uuid'];
-        }
-
-        return null;
+    /**
+     * Apply table access control if enabled
+     */
+    protected function applyTableAccessControl(string $table): void
+    {
+        // Default: no restrictions
+        // Override via TableAccessControlTrait
     }
 
     /**
-     * Extract token from request
-     *
-     * @param Request $request
-     * @return string|null
+     * Apply field-level permissions if enabled
      */
-    private function extractToken(Request $request): ?string
+    protected function applyFieldPermissions($data, string $table, string $operation)
     {
-        $authHeader = $request->headers->get('Authorization');
-
-        if (!$authHeader) {
-            return null;
-        }
-
-        // Remove 'Bearer ' prefix if present
-        if (strpos($authHeader, 'Bearer ') === 0) {
-            return substr($authHeader, 7);
-        }
-
-        return $authHeader;
+        // Default: no field filtering
+        // Override via FieldLevelPermissionsTrait
+        return $data;
     }
+
+    /**
+     * Apply query parameter restrictions if enabled
+     */
+    protected function applyQueryRestrictions(array $queryParams, string $table): array
+    {
+        // Default: no query restrictions
+        // Override via QueryRestrictionsTrait
+        return $queryParams;
+    }
+
+    /**
+     * Apply ownership validation if enabled
+     */
+    protected function applyOwnershipValidation(string $table, string $uuid, array $record): void
+    {
+        if (!$this->enableOwnershipValidation) {
+            return;
+        }
+
+        // Simple ownership check for known tables
+        if (!in_array($table, ['profiles', 'blobs'])) {
+            return; // Not an owned resource
+        }
+
+        if (!$this->currentUser) {
+            $this->requirePermission('admin.access');
+            return;
+        }
+
+        $userUuid = $this->currentUser['uuid'];
+
+        // Check ownership based on table-specific ownership field
+        switch ($table) {
+            case 'profiles':
+                if (isset($record['user_uuid']) && $record['user_uuid'] !== $userUuid) {
+                    $this->requirePermission('admin.profiles.manage');
+                }
+                break;
+            case 'blobs':
+                if (isset($record['created_by']) && $record['created_by'] !== $userUuid) {
+                    $this->requirePermission('admin.files.manage');
+                }
+                break;
+        }
+    }
+
+    // =================================================================
+    // Helper Methods
+    // =================================================================
 
     /**
      * Parse query conditions from request parameters
      */
-    private function parseConditions(array $queryParams): array
+    protected function parseConditions(array $queryParams): array
     {
         $conditions = [];
 
@@ -368,7 +483,7 @@ class ResourceController
     /**
      * Parse fields to select from request parameters
      */
-    private function parseFields(string $fields): array
+    protected function parseFields(string $fields): array
     {
         if (empty($fields) || $fields === '*') {
             return [];

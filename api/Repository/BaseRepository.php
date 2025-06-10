@@ -306,6 +306,33 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * {@inheritdoc}
      */
+    public function findMultiple(array $uuids, array $fields = []): array
+    {
+        if (empty($uuids)) {
+            return [];
+        }
+
+        $results = $this->db->select(
+            $this->table,
+            !empty($fields) ? $fields : $this->defaultFields
+        )
+            ->where([$this->primaryKey => ['IN', $uuids]])
+            ->get();
+
+        // Index results by UUID
+        $indexed = [];
+        foreach ($results as $record) {
+            if (isset($record[$this->primaryKey])) {
+                $indexed[$record[$this->primaryKey]] = $record;
+            }
+        }
+
+        return $indexed;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function bulkCreate(array $records): array
     {
         $uuids = [];
