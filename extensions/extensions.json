@@ -23,16 +23,24 @@
       "type": "optional",
       "description": "Administrative interface for managing the application",
       "author": "Glueful Team"
+    },
+    "RBAC": {
+      "version": "0.15.0",
+      "enabled": true,
+      "installPath": "extensions/RBAC",
+      "type": "optional",
+      "description": "Role-Based Access Control for managing user permissions",
+      "author": "Glueful Team"
     }
   },
   "core": ["EmailNotification"],
-  "optional": ["Admin", "SocialLogin"],
+  "optional": ["Admin", "SocialLogin", "RBAC"],
   "environments": {
     "development": {
-      "enabledExtensions": ["EmailNotification", "Admin"]
+      "enabledExtensions": ["EmailNotification", "Admin", "RBAC"]
     },
     "production": {
-      "enabledExtensions": ["EmailNotification", "Admin"]
+      "enabledExtensions": ["EmailNotification", "Admin", "RBAC"]
     }
   }
 }

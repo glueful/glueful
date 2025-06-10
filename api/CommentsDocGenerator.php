@@ -72,9 +72,10 @@ class CommentsDocGenerator
 
         // Generate docs only for enabled extensions
         $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
-
+        error_log('Enabled extensions: ' . implode(', ', $enabledExtensions));
         foreach ($enabledExtensions as $extensionName) {
             $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+            error_log('Extension path for ' . $extensionName . ': ' . $extensionPath);
             if ($extensionPath) {
                 $routeFile = $extensionPath . '/src/routes.php';
 

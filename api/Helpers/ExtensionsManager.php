@@ -3989,13 +3989,26 @@ class ExtensionsManager
     */
     public static function getExtensionPath(string $extensionName): ?string
     {
+        // First try to find extension using class loading
         $extensionClass = self::findExtension($extensionName);
-        if (!$extensionClass) {
-            return null;
+        if ($extensionClass) {
+            $reflection = new \ReflectionClass($extensionClass);
+            return dirname($reflection->getFileName());
         }
 
-        $reflection = new \ReflectionClass($extensionClass);
-        return dirname($reflection->getFileName());
+        // Fall back to filesystem check for documentation generation
+        // when classes haven't been loaded yet
+        $extensionsPath = config('services.extensions.paths.extensions_dir');
+        if (empty($extensionsPath)) {
+            $extensionsPath = dirname(__DIR__, 2) . '/extensions/';
+        }
+
+        $extensionDir = rtrim($extensionsPath, '/') . '/' . $extensionName;
+        if (is_dir($extensionDir)) {
+            return $extensionDir;
+        }
+
+        return null;
     }
 
     /**

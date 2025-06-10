@@ -141,7 +141,12 @@ class MigrationManager
             }
         }
 
-        return array_filter($files, fn($file) => !in_array(basename($file), $applied));
+        $pendingFiles = array_filter($files, fn($file) => !in_array(basename($file), $applied));
+
+        // Sort files by filename to ensure proper execution order
+        usort($pendingFiles, fn($a, $b) => basename($a) <=> basename($b));
+
+        return $pendingFiles;
     }
 
     /**
