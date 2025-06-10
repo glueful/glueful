@@ -6,6 +6,7 @@ namespace Glueful;
 
 use ReflectionClass;
 use ReflectionMethod;
+use Glueful\Helpers\ExtensionsManager;
 
 /**
  * Comments Documentation Generator
@@ -32,6 +33,9 @@ class CommentsDocGenerator
     /** @var array Processed route information */
     private array $routeData = [];
 
+    /** @var ExtensionsManager Extensions manager for checking enabled extensions */
+    private ExtensionsManager $extensionsManager;
+
     /**
      * Constructor
      *
@@ -39,23 +43,26 @@ class CommentsDocGenerator
      * @param string|null $outputPath Custom output path for extension documentation
      * @param string|null $routesPath Custom path to routes directory
      * @param string|null $routesOutputPath Custom output path for routes documentation
+     * @param ExtensionsManager|null $extensionsManager Extensions manager instance
      */
     public function __construct(
         ?string $extensionsPath = null,
         ?string $outputPath = null,
         ?string $routesPath = null,
-        ?string $routesOutputPath = null
+        ?string $routesOutputPath = null,
+        ?ExtensionsManager $extensionsManager = null
     ) {
-        $this->extensionsPath = $extensionsPath ?? dirname(__DIR__) . '/extensions';
+        $this->extensionsPath = $extensionsPath ?? config(('app.paths.project_extensions'));
         $this->outputPath = $outputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
         $this->routesPath = $routesPath ?? dirname(__DIR__) . '/routes';
         $this->routesOutputPath = $routesOutputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/routes';
+        $this->extensionsManager = $extensionsManager ?? new ExtensionsManager();
     }
 
     /**
      * Generate documentation for all extensions and routes
      *
-     * Scans all extensions and routes directories and generates documentation
+     * Scans enabled extensions and routes directories and generates documentation
      *
      * @return array List of generated documentation files
      */
@@ -63,17 +70,19 @@ class CommentsDocGenerator
     {
         $generatedFiles = [];
 
-        // First, generate docs for extensions
-        $extensionDirs = array_filter(glob($this->extensionsPath . '/*'), 'is_dir');
+        // Generate docs only for enabled extensions
+        $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
 
-        foreach ($extensionDirs as $extDir) {
-            $extName = basename($extDir);
-            $routeFile = $extDir . '/src/routes.php';
+        foreach ($enabledExtensions as $extensionName) {
+            $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+            if ($extensionPath) {
+                $routeFile = $extensionPath . '/src/routes.php';
 
-            if (file_exists($routeFile)) {
-                $docFile = $this->generateForExtension($extName, $routeFile);
-                if ($docFile) {
-                    $generatedFiles[] = $docFile;
+                if (file_exists($routeFile)) {
+                    $docFile = $this->generateForExtension($extensionName, $routeFile);
+                    if ($docFile) {
+                        $generatedFiles[] = $docFile;
+                    }
                 }
             }
         }

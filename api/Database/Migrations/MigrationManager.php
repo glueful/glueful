@@ -67,7 +67,7 @@ class MigrationManager
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
 
-        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 3) . '/database/migrations';
+        $this->migrationsPath = $migrationsPath ?? config('app.paths.migrations');
         // echo $this->migrationsPath;
         // exit;
         $this->ensureVersionTable();
@@ -120,13 +120,13 @@ class MigrationManager
         $files = glob($this->migrationsPath . '/*.php');
 
         // Get migrations from extensions
-        $extensionsDir = dirname(__DIR__, 3) . '/extensions';
+        $extensionsDir = config('app.paths.project_extensions');
         if (is_dir($extensionsDir)) {
             // Get all extension directories
             $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
 
             foreach ($extensions as $extension) {
-                $migrationDir = $extension . '/migrations';
+                $migrationDir = $extension . 'migrations';
                 if (is_dir($migrationDir)) {
                     $extensionFiles = glob($migrationDir . '/*.php');
                     $files = array_merge($files, $extensionFiles);

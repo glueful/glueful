@@ -52,6 +52,7 @@ return [
         'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
         'project_extensions' => dirname(__DIR__) . '/extensions/',
         'archives' => dirname(__DIR__) . '/storage/archives/',
+        'migrations' => dirname(__DIR__) . '/database/migrations',
     ],
 
     // Pagination Settings

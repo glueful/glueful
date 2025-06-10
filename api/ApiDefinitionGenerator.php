@@ -568,47 +568,4 @@ class ApiDefinitionGenerator
             throw $e;
         }
     }
-
-
-    /**
-     * Get extension file paths
-     *
-     * @return array Extension file paths
-     */
-    private function getExtensionPaths(): array
-    {
-        $paths = [];
-        foreach ([config('app.paths.api_extensions'), config('app.paths.project_extensions')] as $dir) {
-            if (is_dir($dir)) {
-                $paths = [...$paths, ...$this->scanDirectory($dir)];
-            } else {
-                $this->log(strtoupper("--- Extensions Directory does not exist ---"));
-            }
-        }
-        return $paths;
-    }
-
-    /**
-     * Recursively scan directory for files
-     *
-     * @param string $dir Directory to scan
-     * @param array $results Accumulated results
-     * @return array File paths
-     */
-    private function scanDirectory(string $dir, array &$results = []): array
-    {
-        foreach (scandir($dir) as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
-            $path = realpath($dir . DIRECTORY_SEPARATOR . $file);
-            if (is_dir($path)) {
-                $this->scanDirectory($path, $results);
-            } elseif ($file[0] !== '.') {
-                $results[] = $path;
-            }
-        }
-        return $results;
-    }
 }
