@@ -1,46 +1,244 @@
 {
-  "extensions": {
-    "EmailNotification": {
-      "version": "0.21.0",
-      "enabled": true,
-      "installPath": "extensions/EmailNotification",
-      "type": "core",
-      "description": "Provides email notification functionality for the application",
-      "author": "Glueful Team"
+    "schema_version": "2.0",
+    "extensions": {
+        "EmailNotification": {
+            "version": "0.21.0",
+            "enabled": true,
+            "type": "core",
+            "description": "Provides email notification functionality for the application",
+            "author": "Glueful Team",
+            "license": "MIT",
+            "installPath": "extensions/EmailNotification",
+            "autoload": {
+                "psr-4": {
+                    "Glueful\\Extensions\\EmailNotification\\": "extensions/EmailNotification/src/",
+                    "Glueful\\Extensions\\EmailNotification\\Tests\\": "extensions/EmailNotification/tests/"
+                }
+            },
+            "dependencies": {
+                "php": "^8.2",
+                "extensions": [],
+                "packages": {
+                    "vlucas/phpdotenv": "^5.6"
+                }
+            },
+            "provides": {
+                "main": "extensions/EmailNotification/EmailNotification.php",
+                "services": [],
+                "routes": [],
+                "middleware": [],
+                "commands": [],
+                "migrations": []
+            },
+            "config": {
+                "categories": [
+                    "notifications",
+                    "communication"
+                ],
+                "publisher": "glueful-team",
+                "icon": "extensions/EmailNotification/assets/icon.png",
+                "galleryBanner": {
+                    "color": "#3064D0",
+                    "theme": "dark"
+                }
+            }
+        },
+        "SocialLogin": {
+            "version": "0.18.0",
+            "enabled": false,
+            "type": "optional",
+            "description": "Provides social authentication through Google, Facebook and GitHub",
+            "author": "Glueful Team",
+            "license": "MIT",
+            "installPath": "extensions/SocialLogin",
+            "autoload": {
+                "psr-4": {
+                    "Glueful\\Extensions\\SocialLogin\\": "extensions/SocialLogin/src/",
+                    "Glueful\\Extensions\\SocialLogin\\Tests\\": "extensions/SocialLogin/tests/"
+                }
+            },
+            "dependencies": {
+                "php": "^8.2",
+                "extensions": [],
+                "packages": {
+                    "vlucas/phpdotenv": "^5.6"
+                }
+            },
+            "provides": {
+                "main": "extensions/SocialLogin/SocialLogin.php",
+                "services": [],
+                "routes": [
+                    "extensions/SocialLogin/src/routes.php"
+                ],
+                "middleware": [],
+                "commands": [],
+                "migrations": [
+                    "extensions/SocialLogin/migrations/CreateSocialAccountsTable.php"
+                ]
+            },
+            "config": {
+                "categories": [
+                    "authentication",
+                    "social-integration"
+                ],
+                "publisher": "glueful-team",
+                "icon": "extensions/SocialLogin/assets/icon.png",
+                "galleryBanner": {
+                    "color": "#4285F4",
+                    "theme": "dark"
+                }
+            }
+        },
+        "Admin": {
+            "version": "0.18.0",
+            "enabled": true,
+            "type": "optional",
+            "description": "Administrative interface for managing the application",
+            "author": "Glueful Team",
+            "license": "MIT",
+            "installPath": "extensions/Admin",
+            "autoload": {
+                "psr-4": {
+                    "Glueful\\Extensions\\Admin\\": "extensions/Admin/src/",
+                    "Glueful\\Extensions\\Admin\\Tests\\": "extensions/Admin/tests/"
+                }
+            },
+            "dependencies": {
+                "php": "^8.2",
+                "extensions": [],
+                "packages": {
+                    "vlucas/phpdotenv": "^5.6"
+                }
+            },
+            "provides": {
+                "main": "extensions/Admin/Admin.php",
+                "services": [
+                    "extensions/Admin/src/AdminServiceProvider.php"
+                ],
+                "routes": [
+                    "extensions/Admin/src/routes.php"
+                ],
+                "middleware": [],
+                "commands": [],
+                "migrations": []
+            },
+            "config": {
+                "categories": [
+                    "admin",
+                    "dashboard",
+                    "management"
+                ],
+                "publisher": "glueful-team",
+                "icon": "extensions/Admin/assets/icon.png",
+                "galleryBanner": {
+                    "color": "#1F2937",
+                    "theme": "dark"
+                },
+                "features": [
+                    "Interactive API visualization dashboard with metrics and analytics",
+                    "System health monitoring and performance tracking",
+                    "Extension management with activation/deactivation capabilities",
+                    "Database migrations and schema management",
+                    "User and permission management interface",
+                    "API testing and endpoint exploration tools"
+                ]
+            }
+        },
+        "RBAC": {
+            "version": "0.27.0",
+            "enabled": true,
+            "type": "optional",
+            "description": "Role-Based Access Control for managing user permissions",
+            "author": "Glueful Team",
+            "license": "MIT",
+            "installPath": "extensions/RBAC",
+            "autoload": {
+                "psr-4": {
+                    "Glueful\\Extensions\\RBAC\\": "extensions/RBAC/src/",
+                    "Glueful\\Extensions\\RBAC\\Tests\\": "extensions/RBAC/tests/"
+                }
+            },
+            "dependencies": {
+                "php": ">=8.1",
+                "extensions": [],
+                "packages": []
+            },
+            "provides": {
+                "main": "extensions/RBAC/RBAC.php",
+                "services": [
+                    "extensions/RBAC/src/Services/RBACServiceProvider.php"
+                ],
+                "routes": [
+                    "extensions/RBAC/src/routes.php"
+                ],
+                "middleware": [],
+                "commands": [],
+                "migrations": [
+                    "extensions/RBAC/migrations/001_CreateRolesTables.php",
+                    "extensions/RBAC/migrations/002_CreatePermissionsTables.php",
+                    "extensions/RBAC/migrations/003_SeedDefaultRoles.php"
+                ]
+            },
+            "config": {
+                "categories": [
+                    "authentication",
+                    "authorization",
+                    "security"
+                ],
+                "publisher": "glueful-team",
+                "icon": "extensions/RBAC/assets/icon.png",
+                "galleryBanner": {
+                    "color": "#2563EB",
+                    "theme": "dark"
+                }
+            }
+        }
     },
-    "SocialLogin": {
-      "version": "0.18.0",
-      "enabled": false,
-      "installPath": "extensions/SocialLogin",
-      "type": "optional",
-      "description": "Provides social authentication through Google, Facebook and GitHub",
-      "author": "Glueful Team"
+    "environments": {
+        "development": {
+            "enabledExtensions": [
+                "EmailNotification",
+                "Admin",
+                "RBAC"
+            ],
+            "autoload_dev": true,
+            "debug_mode": true
+        },
+        "production": {
+            "enabledExtensions": [
+                "EmailNotification",
+                "Admin",
+                "RBAC"
+            ],
+            "autoload_dev": false,
+            "debug_mode": false
+        }
     },
-    "Admin": {
-      "version": "0.18.0",
-      "enabled": true,
-      "installPath": "extensions/Admin",
-      "type": "optional",
-      "description": "Administrative interface for managing the application",
-      "author": "Glueful Team"
+    "global_config": {
+        "extension_directory": "extensions",
+        "cache_enabled": true,
+        "load_order": [
+            "EmailNotification",
+            "SocialLogin",
+            "Admin",
+            "RBAC"
+        ],
+        "require_manifest": true,
+        "validate_dependencies": true
     },
-    "RBAC": {
-      "version": "0.15.0",
-      "enabled": true,
-      "installPath": "extensions/RBAC",
-      "type": "optional",
-      "description": "Role-Based Access Control for managing user permissions",
-      "author": "Glueful Team"
+    "metadata": {
+        "created_at": "2025-06-10T22:27:59+00:00",
+        "last_updated": "2025-06-10T23:48:38+00:00",
+        "total_extensions": 4,
+        "enabled_extensions": 3,
+        "core_extensions": [
+            "EmailNotification"
+        ],
+        "optional_extensions": [
+            "SocialLogin",
+            "Admin",
+            "RBAC"
+        ],
+        "migrated_from": "schema_v1.0"
     }
-  },
-  "core": ["EmailNotification"],
-  "optional": ["Admin", "SocialLogin", "RBAC"],
-  "environments": {
-    "development": {
-      "enabledExtensions": ["EmailNotification", "Admin", "RBAC"]
-    },
-    "production": {
-      "enabledExtensions": ["EmailNotification", "Admin", "RBAC"]
-    }
-  }
 }

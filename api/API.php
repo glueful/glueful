@@ -58,8 +58,12 @@ class API
         self::getLogger()->debug("Loading extensions...");
         ExtensionsManager::loadEnabledExtensions();
 
-        // Now load all route definitions
-        self::getLogger()->debug("Loading routes...");
+        // Load extension routes from enabled extensions
+        self::getLogger()->debug("Loading extension routes...");
+        ExtensionsManager::loadExtensionRoutes();
+
+        // Now load all core route definitions
+        self::getLogger()->debug("Loading core routes...");
         RoutesManager::loadRoutes();
 
         // Initialize scheduler only for CLI (not for admin web requests)

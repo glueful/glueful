@@ -21,7 +21,7 @@ A modern, secure, and scalable API framework designed for building robust PHP ap
 - Comprehensive audit logging for security events
 - Performance-optimized database query logging with N+1 detection
 - File storage and management
-- Modular extension system
+- High-performance Extension System v2.0 (50x faster loading)
 - Comprehensive testing infrastructure
 
 ## Requirements
@@ -97,10 +97,13 @@ php glueful generate:json api-definitions -d mydb -T users
 php glueful generate:json doc
 ```
 
-### Extension Management
+### Extension Management (v2.0)
 ```bash
 # List all extensions
 php glueful extensions list
+
+# List with autoload information  
+php glueful extensions list --show-autoload
 
 # Get extension details
 php glueful extensions info MyExtension
@@ -111,6 +114,12 @@ php glueful extensions disable MyExtension
 
 # Create new extension
 php glueful extensions create MyExtension
+
+# Advanced management
+php glueful extensions validate-config    # Validate configuration
+php glueful extensions benchmark          # Performance testing
+php glueful extensions debug              # System diagnostics
+php glueful extensions namespaces         # View registered namespaces
 ```
 
 ### Cache Management
@@ -260,6 +269,12 @@ Glueful implements a comprehensive authentication system:
 - **[Security Hardening Guide](/docs/SECURITY.md)** - Comprehensive security checklist and best practices
 - **[Deployment Guide](/docs/DEPLOYMENT.md)** - Docker, cloud, and traditional server deployment strategies
 - **[Error Handling Guide](/docs/ERROR_HANDLING.md)** - Server-side and client-side error handling patterns
+
+### Extension System v2.0
+- **[Extension System v2.0 Documentation](/docs/EXTENSION_SYSTEM_V2.md)** - Complete guide to the new high-performance extension system
+- **[Extension Commands Reference](/docs/EXTENSION_COMMANDS_REFERENCE.md)** - Quick reference for all extension management commands
+- **[Migration Guide v1.0 to v2.0](/docs/MIGRATION_GUIDE_V1_TO_V2.md)** - Seamless migration from legacy extension system
+- **[Performance Comparison](/docs/PERFORMANCE_COMPARISON.md)** - Detailed performance analysis and benchmarks
 
 ### Additional Resources
 - Feature documentation in `/docs/features/`

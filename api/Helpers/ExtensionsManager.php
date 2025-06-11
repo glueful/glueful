@@ -25,14 +25,6 @@ class ExtensionsManager
     /** @var array Loaded extension instances */
     private static array $loadedExtensions = [];
 
-    /** @var array All registered extensions */
-    private static array $allExtensions = [];
-
-    /** @var array Extension namespaces and their directories */
-    private static array $extensionNamespaces = [
-        'Glueful\\Extensions\\' => ['extensions']
-    ];
-
     /** @var ClassLoader|null Composer's class loader instance */
     private static ?ClassLoader $classLoader = null;
 
@@ -141,15 +133,9 @@ class ExtensionsManager
         // Register extension namespaces with Composer if available
         self::registerExtensionNamespaces();
 
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                self::scanAndLoadExtensions($dir, $namespace, self::$allExtensions);
-            }
-        }
-
-        // Initialize all loaded extensions
-        self::initializeExtensions();
+        // Note: loadExtensions() is deprecated in favor of loadEnabledExtensions()
+        // This method now simply delegates to the enabled extensions loader
+        self::loadEnabledExtensions();
     }
 
     /**
@@ -176,24 +162,178 @@ class ExtensionsManager
         // Register extension namespaces with Composer if available
         self::registerExtensionNamespaces();
 
-        // Use base namespace and path to directly access enabled extensions
-        $baseNamespace = 'Glueful\\Extensions\\';
-        $baseDir = dirname(__DIR__, 2) . '/extensions';
+        // Extensions are loaded automatically via namespace registration
+        // We only need to ensure service providers and routes are loaded
+        self::debug("Extension namespaces registered, service providers will be loaded next");
 
+        // Load service providers from extensions.json manifest
+        self::loadExtensionServiceProviders();
+    }
+
+    /**
+     * Load service providers from enabled extensions
+     *
+     * Loads service provider files specified in the "provides.services" section
+     * of extension manifests for all currently enabled extensions.
+     *
+     * @return void
+     */
+    public static function loadExtensionServiceProviders(): void
+    {
+        $config = self::loadExtensionsConfig();
+
+        // Check if this is the new schema version
+        if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+            self::debug("Extensions config is not schema v2.0, skipping service provider loading");
+            return;
+        }
+
+        // Get enabled extensions for current environment
+        $environment = env('APP_ENV', 'production');
+        $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+        if (empty($enabledExtensions)) {
+            self::debug("No extensions enabled for environment: {$environment}");
+            return;
+        }
+
+        // Get DI container
+        if (!function_exists('app')) {
+            throw new \RuntimeException("DI container not initialized. Cannot load extension service providers.");
+        }
+
+        $container = app();
+        $projectRoot = dirname(__DIR__, 2);
+        $loadedProviderCount = 0;
+
+        // Load service providers for each enabled extension
         foreach ($enabledExtensions as $extensionName) {
-            $extensionDir = $baseDir . '/' . $extensionName;
-            $extensionNamespace = $baseNamespace . $extensionName . '\\';
+            if (!isset($config['extensions'][$extensionName])) {
+                self::debug("Extension '{$extensionName}' not found in config");
+                continue;
+            }
 
-            if (is_dir($extensionDir)) {
-                self::debug("Loading enabled extension: {$extensionName}");
-                self::scanAndLoadExtensions($extensionDir, $extensionNamespace, self::$loadedExtensions);
+            $extension = $config['extensions'][$extensionName];
+
+            // Skip if extension is disabled
+            if (!($extension['enabled'] ?? true)) {
+                self::debug("Extension '{$extensionName}' is disabled");
+                continue;
+            }
+
+            // Load service providers
+            $serviceProviders = $extension['provides']['services'] ?? [];
+            if (!empty($serviceProviders)) {
+                foreach ($serviceProviders as $serviceProviderPath) {
+                    $absolutePath = $projectRoot . '/' . $serviceProviderPath;
+
+                    if (file_exists($absolutePath)) {
+                        try {
+                            // Load the service provider file
+                            require_once $absolutePath;
+
+                            // Extract class name from path
+                            $pathInfo = pathinfo($serviceProviderPath);
+                            $className = $pathInfo['filename'];
+
+                            // Try to determine the namespace from the path structure
+                            $pathParts = explode('/', $serviceProviderPath);
+
+                            // Build full class name based on path structure
+                            $fullClassName = null;
+
+                            // Pattern: extensions/ExtensionName/src/Services/ServiceProvider.php
+                            if (count($pathParts) >= 5 && $pathParts[2] === 'src') {
+                                $subNamespace = $pathParts[3]; // e.g., "Services"
+                                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$subNamespace}\\{$className}";
+                            } else {
+                                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$className}";
+                            }
+
+                            if (class_exists($fullClassName)) {
+                                $serviceProvider = new $fullClassName();
+                                $container->register($serviceProvider);
+                                $loadedProviderCount++;
+                                self::debug("Loaded service provider: {$fullClassName}");
+                            } else {
+                                self::debug("Service provider class not found: {$fullClassName}");
+                            }
+                        } catch (\Exception $e) {
+                            error_log("Error loading service provider {$serviceProviderPath}: " . $e->getMessage());
+                        }
+                    } else {
+                        self::debug("Service provider file not found: {$absolutePath}");
+                    }
+                }
             } else {
-                self::debug("Enabled extension directory not found: {$extensionDir}");
+                self::debug("No service providers defined for extension: {$extensionName}");
             }
         }
 
-        // Initialize all loaded extensions
-        self::initializeExtensions();
+        self::debug("Loaded {$loadedProviderCount} service provider(s) from extensions");
+    }
+
+    /**
+     * Load extension routes from enabled extensions
+     *
+     * Loads route files specified in the "provides.routes" section of extension manifests
+     * for all currently enabled extensions.
+     *
+     * @return void
+     */
+    public static function loadExtensionRoutes(): void
+    {
+        $config = self::loadExtensionsConfig();
+
+        // Check if this is the new schema version
+        if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+            self::debug("Extensions config is not schema v2.0, skipping extension route loading");
+            return;
+        }
+
+        // Get enabled extensions for current environment
+        $environment = env('APP_ENV', 'production');
+        $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+        if (empty($enabledExtensions)) {
+            self::debug("No extensions enabled for environment: {$environment}");
+            return;
+        }
+
+        $projectRoot = dirname(__DIR__, 2);
+        $loadedRouteCount = 0;
+
+        // Load routes for each enabled extension
+        foreach ($enabledExtensions as $extensionName) {
+            if (!isset($config['extensions'][$extensionName])) {
+                self::debug("Extension '{$extensionName}' not found in config");
+                continue;
+            }
+
+            $extension = $config['extensions'][$extensionName];
+
+            // Skip if extension is disabled
+            if (!($extension['enabled'] ?? false)) {
+                continue;
+            }
+
+            // Load routes from the "provides.routes" section
+            if (isset($extension['provides']['routes']) && is_array($extension['provides']['routes'])) {
+                foreach ($extension['provides']['routes'] as $routeFile) {
+                    $fullRoutePath = $projectRoot . '/' . $routeFile;
+
+                    if (file_exists($fullRoutePath)) {
+                        self::debug("Loading extension routes from: {$routeFile}");
+                        require_once $fullRoutePath;
+                        $loadedRouteCount++;
+                    } else {
+                        self::debug("Extension route file not found: {$fullRoutePath}");
+                    }
+                }
+            }
+        }
+
+        self::debug("Loaded {$loadedRouteCount} extension route files");
     }
 
     /**
@@ -209,257 +349,122 @@ class ExtensionsManager
             return;
         }
 
-        // First, register the base Extensions namespace
-        // This is now required since we've removed it from composer.json
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                if (!is_dir($dir)) {
+        // Use new fast loading method
+        if (!self::registerExtensionNamespacesFromConfig($classLoader)) {
+            error_log("Failed to register extension namespaces from config");
+        }
+    }
+
+    /**
+     * Fast extension namespace registration using pre-computed mappings from extensions.json
+     *
+     * @param \Composer\Autoload\ClassLoader $classLoader
+     * @return bool Success status
+     */
+    private static function registerExtensionNamespacesFromConfig(\Composer\Autoload\ClassLoader $classLoader): bool
+    {
+        try {
+            $config = self::loadExtensionsConfig();
+
+            // Check if this is the new schema version
+            if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+                self::debug("Extensions config is not schema v2.0, falling back to legacy method");
+                return false;
+            }
+
+            // Get enabled extensions for current environment
+            $environment = env('APP_ENV', 'production');
+            $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+            if (empty($enabledExtensions)) {
+                self::debug("No extensions enabled for environment: {$environment}");
+                return true;
+            }
+
+            $projectRoot = dirname(__DIR__, 2);
+            $registeredCount = 0;
+
+            // Register autoload mappings for enabled extensions only
+            foreach ($enabledExtensions as $extensionName) {
+                if (!isset($config['extensions'][$extensionName])) {
+                    self::debug("Extension '{$extensionName}' not found in config");
                     continue;
                 }
 
-                // Register main namespace
-                $classLoader->addPsr4($namespace, $dir);
-                self::debug("Registered base namespace {$namespace} to {$dir}");
-            }
-        }
+                $extension = $config['extensions'][$extensionName];
 
-        // Then register each extension's specific namespace
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                if (!is_dir($dir)) {
+                // Skip if extension is disabled
+                if (!($extension['enabled'] ?? false)) {
                     continue;
                 }
 
-                // Register specific extensions with their full namespaces
-                foreach (glob($dir . '/*', GLOB_ONLYDIR) as $extensionDir) {
-                    $extensionName = basename($extensionDir);
-                    $fullNamespace = $namespace . $extensionName . '\\';
-                    $classLoader->addPsr4($fullNamespace, $extensionDir . '/');
-                    self::debug("Registered extension namespace {$fullNamespace} to {$extensionDir}/");
+                // Register PSR-4 mappings
+                if (isset($extension['autoload']['psr-4'])) {
+                    foreach ($extension['autoload']['psr-4'] as $namespace => $path) {
+                        $absolutePath = $projectRoot . '/' . ltrim($path, '/');
 
-                    // Register all subdirectories with their matching namespaces
-                    self::registerSubdirectoryNamespaces($classLoader, $extensionDir, $fullNamespace);
-
-                    // Also register alias for common subdirectories to help with misreferenced classes
-                    self::registerLegacyAliases($classLoader, $extensionDir, $namespace, $extensionName);
-                }
-            }
-        }
-    }
-
-    /**
-     * Register all subdirectories within an extension with their proper namespaces
-     *
-     * @param ClassLoader $classLoader Composer's class loader
-     * @param string $extensionPath Path to the extension
-     * @param string $baseNamespace Base namespace for the extension
-     * @return void
-     */
-    private static function registerSubdirectoryNamespaces(
-        ClassLoader $classLoader,
-        string $extensionPath,
-        string $baseNamespace
-    ): void {
-        // Use RecursiveDirectoryIterator to find all subdirectories
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($extensionPath, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                $subdir = $item->getPathname();
-                $relativePath = substr($subdir, strlen($extensionPath) + 1);
-
-                if (empty($relativePath)) {
-                    continue; // Skip the root extension directory
-                }
-
-                // Convert directory path to namespace format
-                $namespaceSegment = str_replace('/', '\\', $relativePath);
-                $subdirNamespace = $baseNamespace . $namespaceSegment . '\\';
-
-                // Register this subdirectory with its corresponding namespace
-                $classLoader->addPsr4($subdirNamespace, $subdir . '/');
-            }
-        }
-    }
-
-    /**
-     * Register legacy namespace aliases for backwards compatibility
-     *
-     * @param ClassLoader $classLoader Composer's class loader
-     * @param string $extensionPath Path to the extension
-     * @param string $namespace Base namespace for extensions
-     * @param string $extensionName Name of the extension
-     * @return void
-     */
-    private static function registerLegacyAliases(
-        ClassLoader $classLoader,
-        string $extensionPath,
-        string $namespace,
-        string $extensionName
-    ): void {
-        // Common directories within extensions that might contain classes
-        $commonDirs = ['Providers', 'migrations', 'Models', 'Controllers', 'Services'];
-
-        foreach ($commonDirs as $dir) {
-            $subdirPath = $extensionPath . '/' . $dir;
-            if (is_dir($subdirPath)) {
-                // Register a fallback namespace to catch misreferenced classes
-                // For example: Glueful\Extensions\GithubAuthProvider ->
-                // extensions/SocialLogin/Providers/GithubAuthProvider
-                $aliasNamespace = "Glueful\\Extensions\\";
-                $classLoader->addPsr4(
-                    $aliasNamespace,
-                    $extensionPath . '/' . $dir . '/'
-                );
-            }
-        }
-    }
-
-    /**
-     * Register a new extension namespace
-     *
-     * Allows plugins to register additional extension namespaces
-     *
-     * @param string $namespace Base namespace for extensions
-     * @param array $directories Directories to scan for extensions
-     * @return void
-     */
-    public static function registerExtensionNamespace(string $namespace, array $directories): void
-    {
-        self::$extensionNamespaces[$namespace] = $directories;
-    }
-
-    /**
-     * Scan directory and load extension classes
-     *
-     * Recursively scans directory for PHP files and loads any
-     * classes that extend the Extensions base class.
-     *
-     * @param string $dir Directory to scan
-     * @param string $namespace Base namespace for discovered classes
-     * @return void
-     */
-    private static function scanAndLoadExtensions(string $dir, string $namespace, array &$loadedExtensions): void
-    {
-        if (!is_dir($dir)) {
-            error_log("Directory does not exist: $dir");
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $relativePath = substr($file->getPathname(), strlen($dir) + 1);
-                $filename = basename($relativePath);
-                $className = str_replace('.php', '', $filename);
-
-                // Construct the proper namespace including subdirectories
-                // Skip 'src' directory if it exists as it's typically a source container, not part of namespace
-                $subdirectories = dirname($relativePath);
-                if ($subdirectories !== '.' && $subdirectories !== '') {
-                    // Remove 'src' from the beginning of the path if present
-                    $namespacePart = str_replace('/', '\\', $subdirectories);
-                    if (str_starts_with($namespacePart, 'src\\')) {
-                        $namespacePart = substr($namespacePart, 4); // Remove 'src\'
-                    }
-
-                    if (!empty($namespacePart)) {
-                        $fullClassName = $namespace . $namespacePart . '\\' . $className;
-                    } else {
-                        $fullClassName = $namespace . $className;
-                    }
-                } else {
-                    $fullClassName = $namespace . $className;
-                }
-
-                // Use autoloader to load the class and its dependencies
-                try {
-                    // Using class_exists with autoload=true triggers PHP's autoloader
-                    // which handles dependency resolution automatically
-                    if (class_exists($fullClassName, true)) {
-                        $reflection = new \ReflectionClass($fullClassName);
-
-                        // Only register classes that extend the Extensions base class
-                        if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                            if (!in_array($fullClassName, $loadedExtensions, true)) {
-                                $loadedExtensions[] = $fullClassName;
-                                self::debug("Loaded extension: {$fullClassName}");
-                            } else {
-                                self::debug("Skipping duplicate extension: {$fullClassName}");
-                            }
+                        if (is_dir($absolutePath)) {
+                            $classLoader->addPsr4($namespace, $absolutePath);
+                            self::debug("Registered namespace {$namespace} -> {$absolutePath}");
+                            $registeredCount++;
+                        } else {
+                            self::debug("Warning: Autoload path does not exist: {$absolutePath}");
                         }
                     }
-                } catch (\Throwable $e) {
-                    // Log the error but continue with other extensions
-                    error_log("Error loading class {$fullClassName} from {$file->getPathname()}: " . $e->getMessage());
-                    self::debug("Failed to load extension class: {$fullClassName}");
+                }
+
+                // Register files if specified
+                if (isset($extension['autoload']['files'])) {
+                    foreach ($extension['autoload']['files'] as $file) {
+                        $absoluteFile = $projectRoot . '/' . ltrim($file, '/');
+                        if (file_exists($absoluteFile)) {
+                            require_once $absoluteFile;
+                            self::debug("Included autoload file: {$absoluteFile}");
+                        }
+                    }
                 }
             }
+
+            self::debug(
+                "Fast loading: Registered {$registeredCount} namespace mappings for " .
+                count($enabledExtensions) . " extensions"
+            );
+            return true;
+        } catch (\Exception $e) {
+            self::debug("Fast loading failed: " . $e->getMessage());
+            return false;
         }
     }
 
-    /**
-     * Initialize all loaded extensions
-     *
-     * Calls appropriate lifecycle methods on extensions based on
-     * what interfaces they implement:
-     * - For service providers: registerServices()
-     * - For middleware providers: registerMiddleware()
-     * - For all extensions: initialize()
-     *
-     * @return void
-     */
-    private static function initializeExtensions(): void
-    {
-        foreach (self::$loadedExtensions as $extensionClass) {
-            try {
-                $reflection = new \ReflectionClass($extensionClass);
 
-                // Call general initialize method if it exists
-                if ($reflection->hasMethod('initialize')) {
-                    $extensionClass::initialize();
-                }
 
-                // Register services with DI container using service provider
-                if (!function_exists('app')) {
-                    throw new \RuntimeException(
-                        "DI container not initialized. Cannot load extension: {$extensionClass}"
-                    );
-                }
 
-                $container = app();
-                $serviceProvider = $extensionClass::getServiceProvider();
-                $container->register($serviceProvider);
 
-                // Register middleware if method exists
-                if ($reflection->hasMethod('registerMiddleware')) {
-                    $extensionClass::registerMiddleware();
-                }
-            } catch (\Exception $e) {
-                error_log("Error initializing extension {$extensionClass}: " . $e->getMessage());
-            }
-        }
-    }
+
 
     /**
-     * Get all loaded extensions
+     * Get all available extensions from extensions.json
      *
-     * @return array The loaded extensions
+     * @return array The available extensions with their metadata
      */
     public static function getLoadedExtensions(): array
     {
-        if (empty(self::$allExtensions)) {
-            self::loadExtensions();
+        $config = self::loadExtensionsConfig();
+
+        if (!isset($config['extensions'])) {
+            return [];
         }
-        return self::$allExtensions;
+
+        $extensions = [];
+        foreach ($config['extensions'] as $name => $extensionData) {
+            $extensions[] = [
+                'name' => $name,
+                'class' => "Glueful\\Extensions\\{$name}\\{$name}Extension", // Expected class pattern
+                'metadata' => $extensionData
+            ];
+        }
+
+        return $extensions;
     }
 
     /**
@@ -813,6 +818,16 @@ class ExtensionsManager
         }
 
         return $default;
+    }
+
+    /**
+     * Get the path to the extensions configuration file
+     *
+     * @return string Path to extensions.json
+     */
+    public static function getExtensionsConfigPath(): string
+    {
+        return config('services.extensions.config_file');
     }
 
     public static function loadExtensionsConfig(): array
@@ -1569,12 +1584,14 @@ class ExtensionsManager
         // Update extensions.json configuration
         $config = self::loadExtensionsConfig();
 
-        // Add extension to configuration
-        $config['extensions'][$extensionName] = [
-            'version' => $version,
-            'enabled' => false,  // Start disabled by default
-            'installPath' => $installPath
-        ];
+        // Create full extension entry for schema v2.0
+        $extensionEntry = self::createExtensionConfigEntry($extensionName, $version, $installPath);
+        $config['extensions'][$extensionName] = $extensionEntry;
+
+        // Ensure schema version is set
+        if (!isset($config['schema_version'])) {
+            $config['schema_version'] = '2.0';
+        }
 
         // Save updated configuration
         if (!self::saveExtensionsJson($config)) {
@@ -4265,5 +4282,243 @@ class ExtensionsManager
             'success' => empty($issues),
             'issues' => $issues
         ];
+    }
+
+    /**
+     * Create a complete extension configuration entry for schema v2.0
+     *
+     * @param string $extensionName Extension name
+     * @param string $version Extension version
+     * @param string $installPath Installation path
+     * @return array Complete extension configuration
+     */
+    private static function createExtensionConfigEntry(
+        string $extensionName,
+        string $version,
+        string $installPath
+    ): array {
+        // Extract autoload mappings from extension's composer.json
+        $autoload = self::extractExtensionAutoloadMappings($extensionName, $installPath);
+
+        // Extract dependencies
+        $dependencies = self::extractExtensionDependencies($extensionName, $installPath);
+
+        // Extract provides information
+        $provides = self::extractExtensionProvides($extensionName, $installPath);
+
+        // Extract config information
+        $config = self::extractExtensionConfig($extensionName, $installPath);
+
+        return [
+            'version' => $version,
+            'enabled' => false, // Start disabled by default
+            'type' => 'optional', // Default type, can be updated later
+            'description' => $config['description'] ?? "Extension: {$extensionName}",
+            'author' => $config['author'] ?? 'Unknown',
+            'license' => $config['license'] ?? 'MIT',
+            'installPath' => $installPath,
+            'autoload' => $autoload,
+            'dependencies' => $dependencies,
+            'provides' => $provides,
+            'config' => $config
+        ];
+    }
+
+    /**
+     * Extract autoload mappings from extension's composer.json
+     */
+    private static function extractExtensionAutoloadMappings(string $extensionName, string $installPath): array
+    {
+        $autoload = ['psr-4' => []];
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+
+        if (!file_exists($composerPath)) {
+            // Fallback: assume standard structure
+            $autoload['psr-4']["Glueful\\Extensions\\{$extensionName}\\"] = "{$installPath}/src/";
+            return $autoload;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \RuntimeException('Invalid JSON in composer.json');
+            }
+
+            // Extract PSR-4 mappings
+            if (isset($composerConfig['autoload']['psr-4'])) {
+                foreach ($composerConfig['autoload']['psr-4'] as $namespace => $path) {
+                    $autoload['psr-4'][$namespace] = "{$installPath}/" . ltrim($path, '/');
+                }
+            }
+
+            // Extract dev PSR-4 mappings
+            if (isset($composerConfig['autoload-dev']['psr-4'])) {
+                foreach ($composerConfig['autoload-dev']['psr-4'] as $namespace => $path) {
+                    $autoload['psr-4'][$namespace] = "{$installPath}/" . ltrim($path, '/');
+                }
+            }
+
+            // Extract files
+            if (isset($composerConfig['autoload']['files'])) {
+                $autoload['files'] = array_map(
+                    fn($file) => "{$installPath}/" . ltrim($file, '/'),
+                    $composerConfig['autoload']['files']
+                );
+            }
+        } catch (\Exception $e) {
+            // Fallback on error
+            $autoload['psr-4']["Glueful\\Extensions\\{$extensionName}\\"] = "{$installPath}/src/";
+        }
+
+        return $autoload;
+    }
+
+    /**
+     * Extract dependencies from extension's composer.json
+     */
+    private static function extractExtensionDependencies(string $extensionName, string $installPath): array
+    {
+        $dependencies = [
+            'php' => '>=8.2',
+            'extensions' => [],
+            'packages' => []
+        ];
+
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+        if (!file_exists($composerPath)) {
+            return $dependencies;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return $dependencies;
+            }
+
+            // Extract PHP version
+            if (isset($composerConfig['require']['php'])) {
+                $dependencies['php'] = $composerConfig['require']['php'];
+            }
+
+            // Extract package dependencies
+            foreach ($composerConfig['require'] ?? [] as $package => $version) {
+                if ($package !== 'php' && !str_starts_with($package, 'ext-')) {
+                    $dependencies['packages'][$package] = $version;
+                }
+            }
+
+            // Extract extension dependencies
+            if (isset($composerConfig['extra']['glueful']['requires']['extensions'])) {
+                $dependencies['extensions'] = $composerConfig['extra']['glueful']['requires']['extensions'];
+            }
+        } catch (\Exception $e) {
+            // Return defaults on error
+        }
+
+        return $dependencies;
+    }
+
+    /**
+     * Extract provides information from extension structure
+     */
+    private static function extractExtensionProvides(string $extensionName, string $installPath): array
+    {
+        $provides = [
+            'main' => "{$installPath}/{$extensionName}.php",
+            'services' => [],
+            'routes' => [],
+            'middleware' => [],
+            'commands' => [],
+            'migrations' => []
+        ];
+
+        $extensionPath = dirname(__DIR__, 2) . "/{$installPath}";
+
+        // Look for common files
+        $commonFiles = [
+            'routes' => ['routes.php', 'src/routes.php'],
+            'services' => ['services.php', 'src/services.php', "src/Services/{$extensionName}ServiceProvider.php"],
+        ];
+
+        foreach ($commonFiles as $type => $files) {
+            foreach ($files as $file) {
+                $fullPath = "{$extensionPath}/{$file}";
+                if (file_exists($fullPath)) {
+                    $provides[$type][] = "{$installPath}/{$file}";
+                }
+            }
+        }
+
+        // Find migrations
+        $migrationDirs = ['migrations', 'database/migrations'];
+        foreach ($migrationDirs as $dir) {
+            $fullDir = "{$extensionPath}/{$dir}";
+            if (is_dir($fullDir)) {
+                foreach (glob("{$fullDir}/*.php") as $migrationFile) {
+                    $provides['migrations'][] = "{$installPath}/{$dir}/" . basename($migrationFile);
+                }
+            }
+        }
+
+        return $provides;
+    }
+
+    /**
+     * Extract config information from extension's composer.json
+     */
+    private static function extractExtensionConfig(string $extensionName, string $installPath): array
+    {
+        $config = [
+            'categories' => [],
+            'publisher' => 'unknown',
+            'icon' => "{$installPath}/assets/icon.png",
+            'description' => "Extension: {$extensionName}",
+            'author' => 'Unknown',
+            'license' => 'MIT'
+        ];
+
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+        if (!file_exists($composerPath)) {
+            return $config;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return $config;
+            }
+
+            // Extract basic info
+            $config['description'] = $composerConfig['description'] ?? $config['description'];
+            $config['license'] = $composerConfig['license'] ?? $config['license'];
+
+            if (isset($composerConfig['authors'][0]['name'])) {
+                $config['author'] = $composerConfig['authors'][0]['name'];
+            }
+
+            // Extract from extra.glueful section
+            if (isset($composerConfig['extra']['glueful'])) {
+                $extra = $composerConfig['extra']['glueful'];
+
+                $config['categories'] = $extra['categories'] ?? [];
+                $config['publisher'] = $extra['publisher'] ?? 'unknown';
+
+                if (isset($extra['icon'])) {
+                    $config['icon'] = "{$installPath}/" . ltrim($extra['icon'], './');
+                }
+
+                if (isset($extra['galleryBanner'])) {
+                    $config['galleryBanner'] = $extra['galleryBanner'];
+                }
+
+                if (isset($extra['features'])) {
+                    $config['features'] = $extra['features'];
+                }
+            }
+        } catch (\Exception $e) {
+            // Return defaults on error
+        }
+
+        return $config;
     }
 }
