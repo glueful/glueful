@@ -416,6 +416,21 @@ class EmailVerification
             $this->clearAttempts($email);
             CacheEngine::delete($key);
 
+            // Update email_verified_at timestamp if user exists
+            try {
+                $userRepository = new UserRepository();
+                $user = $userRepository->findByEmail($email);
+                if ($user && isset($user['uuid'])) {
+                    // Update the email_verified_at timestamp
+                    $userRepository->update($user['uuid'], [
+                        'email_verified_at' => date('Y-m-d H:i:s')
+                    ]);
+                }
+            } catch (\Exception $e) {
+                // Log the error but don't fail the verification
+                error_log("Failed to update email_verified_at timestamp: " . $e->getMessage());
+            }
+
             // Log the successful verification to audit system
             if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
                 try {

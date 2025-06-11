@@ -63,6 +63,7 @@ class CreateInitialSchema implements MigrationInterface
             'ip_address' => 'VARCHAR(40)',
             'x_forwarded_for_ip_address' => 'VARCHAR(40)',
             'last_login_date' => 'TIMESTAMP',
+            'email_verified_at' => 'TIMESTAMP NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([

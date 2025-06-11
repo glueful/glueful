@@ -20,26 +20,21 @@ Router::group('/auth', function () use ($container) {
      *   success:boolean="Success status",
      *   message:string="Success message",
      *   data:{
-     *     tokens:{
-     *       access_token:string="JWT access token",
-     *       refresh_token:string="JWT refresh token",
-     *       token_type:string="Token type (Bearer)",
-     *       expires_in:integer="Token expiration in seconds"
-     *     },
+     *     access_token:string="JWT access token",
+     *     token_type:string="Bearer",
+     *     expires_in:integer="Token expiration in seconds",
+     *     refresh_token:string="JWT refresh token",
      *     user:{
-     *       uuid:string="User unique identifier",
-     *       username:string="Username",
+     *       id:string="User unique identifier",
      *       email:string="Email address",
-     *       roles:array="User roles",
-     *       permissions:array="User permissions",
-     *       created_at:string="Account creation timestamp",
-     *       last_login:string="Last login timestamp",
-     *       profile:{
-     *         first_name:string="First name",
-     *         last_name:string="Last name",
-     *         avatar_url:string="Profile image URL",
-     *         full_name:string="Full name"
-     *       }
+     *       email_verified:boolean="Email verification status",
+     *       username:string="Username",
+     *       name:string="Full name",
+     *       given_name:string="First name",
+     *       family_name:string="Last name",
+     *       picture:string="Profile image URL",
+     *       locale:string="User locale (e.g., en-US)",
+     *       updated_at:integer="Last update timestamp (Unix epoch)"
      *     }
      *   },
      *   code:integer="HTTP status code"
@@ -177,12 +172,10 @@ Router::group('/auth', function () use ($container) {
      *   success:boolean="Success status",
      *   message:string="Success message",
      *   data:{
-     *     tokens:{
-     *       access_token:string="New JWT access token",
-     *       refresh_token:string="New JWT refresh token",
-     *       token_type:string="Token type (Bearer)",
-     *       expires_in:integer="Token expiration in seconds"
-     *     }
+     *     access_token:string="New JWT access token",
+     *     token_type:string="Bearer",
+     *     expires_in:integer="Token expiration in seconds",
+     *     refresh_token:string="New JWT refresh token"
      *   },
      *   code:integer="HTTP status code"
      * }

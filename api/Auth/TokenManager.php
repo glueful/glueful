@@ -322,6 +322,62 @@ class TokenManager
     }
 
      /**
+     * Normalize user data to ensure consistent structure across all providers
+     *
+     * Ensures all user objects contain required fields with proper defaults.
+     * Fetches missing profile data from database if needed.
+     *
+     * @param array $user Raw user data from authentication provider
+     * @param string|null $provider Provider name (jwt, admin, ldap, saml, etc.)
+     * @return array Normalized user data with consistent structure
+     */
+    private static function normalizeUserData(array $user, ?string $provider = null): array
+    {
+        // Start with the existing user data
+        $normalizedUser = $user;
+
+        // Ensure critical fields exist
+        if (!isset($normalizedUser['uuid'])) {
+            // Cannot normalize without UUID
+            return $user;
+        }
+
+        // Set default values for commonly missing fields
+        $normalizedUser['remember_me'] = $normalizedUser['remember_me'] ?? false;
+        $normalizedUser['provider'] = $provider ?? 'jwt';
+
+        // Ensure profile data exists
+        if (!isset($normalizedUser['profile']) || empty($normalizedUser['profile'])) {
+            // Try to fetch profile data from database
+            $userRepository = new \Glueful\Repository\UserRepository();
+            $profileData = $userRepository->getProfile($normalizedUser['uuid']);
+
+            // Create profile structure with null-safe access
+            $normalizedUser['profile'] = [
+                'first_name' => $profileData['first_name'] ?? null,
+                'last_name' => $profileData['last_name'] ?? null,
+                'photo_uuid' => $profileData['photo_uuid'] ?? null,
+                'photo_url' => $profileData['photo_url'] ?? null
+            ];
+        }
+
+        // Don't include roles in the login response - fetch via separate endpoint
+        // This follows OAuth/OIDC best practices for minimal token responses
+
+        // Ensure consistent timestamp fields
+        if (isset($normalizedUser['last_login_at']) && !isset($normalizedUser['last_login'])) {
+            $normalizedUser['last_login'] = $normalizedUser['last_login_at'];
+        }
+
+        // Ensure last_login_date is set (used in JWT token claims)
+        if (!isset($normalizedUser['last_login_date'])) {
+            $normalizedUser['last_login_date'] = $normalizedUser['last_login'] ?? date('Y-m-d H:i:s');
+        }
+
+        return $normalizedUser;
+    }
+
+     /**
      * Create user session with provider support
      *
      * Handles user authentication and session creation with support for different authentication providers.
@@ -337,10 +393,9 @@ class TokenManager
             return [];  // Return empty array that will be caught as failure
         }
 
-        // Ensure remember_me is set with a default value if not present
-        if (!isset($user['remember_me'])) {
-            $user['remember_me'] = false;
-        }
+        // Normalize user data to ensure consistent structure
+        $user = self::normalizeUserData($user, $provider);
+
         // Adjust token lifetime based on remember-me preference
         $accessTokenLifetime = $user['remember_me']
             ? (int)config('session.remember_expiration', 30 * 24 * 3600) // 30 days
@@ -383,14 +438,40 @@ class TokenManager
         );
 
         unset($user['refresh_token']);
+
+        // Build OIDC-compliant user object
+        $oidcUser = [
+            'id' => $user['uuid'],
+            'email' => $user['email'] ?? null,
+            'email_verified' => !empty($user['email_verified_at']),
+            'username' => $user['username'] ?? null,
+            'locale' => $user['locale'] ?? 'en-US',
+            'updated_at' => isset($user['updated_at']) ? strtotime($user['updated_at']) : time()
+        ];
+
+        // Add name fields if profile exists
+        if (isset($user['profile'])) {
+            $firstName = $user['profile']['first_name'] ?? '';
+            $lastName = $user['profile']['last_name'] ?? '';
+
+            if ($firstName || $lastName) {
+                $oidcUser['name'] = trim($firstName . ' ' . $lastName);
+                $oidcUser['given_name'] = $firstName ?: null;
+                $oidcUser['family_name'] = $lastName ?: null;
+            }
+
+            if (!empty($user['profile']['photo_url'])) {
+                $oidcUser['picture'] = $user['profile']['photo_url'];
+            }
+        }
+
+        // Return OAuth 2.0 compliant response structure
         return [
-            'tokens' => [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'expires_in' => $accessTokenLifetime,
-                'token_type' => 'Bearer'
-            ],
-            'user' => $user
+            'access_token' => $tokens['access_token'],
+            'token_type' => 'Bearer',
+            'expires_in' => $accessTokenLifetime,
+            'refresh_token' => $tokens['refresh_token'],
+            'user' => $oidcUser
         ];
     }
 
