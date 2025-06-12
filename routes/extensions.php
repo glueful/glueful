@@ -142,4 +142,4 @@ Router::group('/extensions', function () use ($container) {
         $controller = $container->get(ExtensionsController::class);
         return $controller->deleteExtension();
     });
-});
+}, requiresAuth: true);

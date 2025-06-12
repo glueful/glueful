@@ -161,53 +161,60 @@ class AuthenticationManager
     /**
      * Check if a user has admin privileges
      *
-     * Tries different methods to determine admin status:
-     * 1. Check is_admin flag directly in user data
-     * 2. Check provider-specific admin determination
-     * 3. Look for superuser role in roles array
+     * Uses the permission system to check if the user has system.access permission.
+     * This ensures consistent permission checking across the application.
      *
      * @param array $userData User data from authentication
      * @return bool True if user has admin privileges
      */
     public function isAdmin(array $userData): bool
     {
-        // Direct check for is_admin flag
-        if (isset($userData['is_admin']) && $userData['is_admin'] === true) {
-            return true;
+        // Extract user UUID for permission checking
+        $userUuid = $userData['uuid'] ?? null;
+        if (!$userUuid) {
+            error_log('AuthenticationManager::isAdmin: No user UUID found in user data');
+            return false;
         }
 
-        // Check via provider-specific method
-        if ($this->defaultProvider->isAdmin($userData)) {
-            return true;
-        }
+        // Use the permission system to check for system.access permission
+        try {
+            $permissionManager = \Glueful\Permissions\PermissionManager::getInstance();
 
-        // Extra check for roles directly in user data
-        if (isset($userData['roles']) && is_array($userData['roles'])) {
-            foreach ($userData['roles'] as $role) {
-                // Check for superuser role
-                if (isset($role['name']) && strtolower($role['name']) === 'superuser') {
-                    return true;
+            if (!$permissionManager->hasActiveProvider()) {
+                // No permission provider available - deny access by default
+                return false;
+            }
+
+            // Check if user has system.access permission
+            $hasPermission = $permissionManager->can(
+                $userUuid,
+                \Glueful\Interfaces\Permission\PermissionStandards::PERMISSION_SYSTEM_ACCESS,
+                'system'
+            );
+            return $hasPermission;
+        } catch (\Exception $e) {
+            // Log error and deny access on any permission system failure
+            error_log('AuthenticationManager::isAdmin: Exception occurred: ' . $e->getMessage());
+            error_log('AuthenticationManager::isAdmin: Stack trace: ' . $e->getTraceAsString());
+
+            if (class_exists('\\Glueful\\Logging\\Logger')) {
+                try {
+                    call_user_func(
+                        ['\\Glueful\\Logging\\Logger', 'error'],
+                        'Permission check failed in AuthenticationManager::isAdmin',
+                        [
+                            'user_uuid' => $userUuid,
+                            'error' => $e->getMessage()
+                        ]
+                    );
+                } catch (\Throwable $logError) {
+                    // Silently fail if logging fails
                 }
             }
+
+            // Deny access on error
+            return false;
         }
-
-        // Additional check for admin/superuser in the user object if it exists
-        if (isset($userData['user']) && is_array($userData['user'])) {
-            if (isset($userData['user']['is_admin']) && $userData['user']['is_admin']) {
-                return true;
-            }
-
-            // Check roles in user object if they exist
-            if (isset($userData['user']['roles']) && is_array($userData['user']['roles'])) {
-                foreach ($userData['user']['roles'] as $role) {
-                    if (isset($role['name']) && strtolower($role['name']) === 'superuser') {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
     }
 
     /**

@@ -429,7 +429,9 @@ class Router
             throw new \Glueful\Exceptions\NotFoundException('Route not found: ' . $pathInfo);
         }
 
-        $routeName = md5($request->getPathInfo() . $request->getMethod());
+        // Generate route name using same logic as addRoute method
+        $routeKey = $request->getPathInfo() . '|' . $request->getMethod();
+        $routeName = md5($routeKey);
         $controller = $parameters['_controller'];
 
         // Set up middleware pipeline with DI container
@@ -509,6 +511,11 @@ class Router
         // Convert and add legacy middleware to the pipeline
         foreach (self::$legacyMiddlewares as $middleware) {
             $dispatcher->pipe(self::convertToMiddleware($middleware));
+        }
+
+        // Update request in container for middleware to share state
+        if ($container) {
+            $container->instance(Request::class, $request);
         }
 
         // Process the request through the middleware pipeline

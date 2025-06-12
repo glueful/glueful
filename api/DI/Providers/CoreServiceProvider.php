@@ -15,6 +15,8 @@ use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\TokenManager;
 use Glueful\Helpers\ConfigManager;
 use Glueful\Security\RandomStringGenerator;
+use Glueful\Permissions\PermissionManager;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Core Service Provider
@@ -61,9 +63,23 @@ class CoreServiceProvider implements ServiceProviderInterface
         });
 
         $container->singleton(AuthenticationManager::class, function ($container) {
-            return new AuthenticationManager(
-                $container->get(TokenManager::class)
-            );
+            // Create with default JWT provider (no explicit provider needed)
+            return new AuthenticationManager();
+        });
+
+        // Request service - singleton to maintain state across the request lifecycle
+        $container->singleton(Request::class, function ($container) {
+            return Request::createFromGlobals();
+        });
+
+        // Permission services
+        $container->singleton(PermissionManager::class, function ($container) {
+            return PermissionManager::getInstance();
+        });
+
+        // Also register with string key for backward compatibility
+        $container->singleton('permission.manager', function ($container) {
+            return PermissionManager::getInstance();
         });
     }
 

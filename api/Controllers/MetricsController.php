@@ -13,9 +13,13 @@ class MetricsController extends BaseController
 {
     private SchemaManager $schemaManager;
 
-    public function __construct()
-    {
-        parent::__construct();
+    public function __construct(
+        ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
+        ?\Glueful\Auth\AuthenticationManager $authManager = null,
+        ?\Glueful\Logging\AuditLogger $auditLogger = null,
+        ?\Symfony\Component\HttpFoundation\Request $request = null
+    ) {
+        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
         $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
     }

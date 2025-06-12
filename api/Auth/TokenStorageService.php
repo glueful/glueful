@@ -225,10 +225,12 @@ class TokenStorageService implements TokenStorageInterface
             }
         }
 
-        // Fallback to database
+        // Fallback to database with expiration check
+        $now = date('Y-m-d H:i:s');
         $result = $this->queryBuilder
             ->select($this->sessionTable, ['*'])
             ->where(['access_token' => $accessToken, 'status' => 'active'])
+            ->whereRaw('access_expires_at > ?', [$now])
             ->get();
 
         if (empty($result)) {

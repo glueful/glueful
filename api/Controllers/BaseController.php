@@ -58,8 +58,8 @@ abstract class BaseController
         // Initialize audit logger
         $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
 
-        // Set request
-        $this->request = $request ?? Request::createFromGlobals();
+        // Set request - use provided request or get from container
+        $this->request = $request ?? app()->get(Request::class);
 
         // Get user data from request attributes (set by middleware)
         $userData = $this->request->attributes->get('user');
@@ -122,7 +122,8 @@ abstract class BaseController
         array $context = []
     ): void {
         if (!$this->currentUser) {
-            throw new UnauthorizedException('Authentication required', '401', 'Please log in to access this resource');
+            error_log('User not authenticated');
+            throw new UnauthorizedException('anonymous', 'authentication', 'system', 'Authentication required');
         }
 
         // Check if permission provider is available
@@ -169,8 +170,9 @@ abstract class BaseController
             );
 
             throw new UnauthorizedException(
-                'Insufficient permissions',
-                '403',
+                $this->currentUser->uuid,
+                $permission,
+                $resource,
                 sprintf('You do not have permission to %s on %s', $permission, $resource)
             );
         }
@@ -528,9 +530,10 @@ abstract class BaseController
     {
         if (!$this->currentUser) {
             throw new UnauthorizedException(
-                'Authentication required for this operation',
-                '401',
-                'Please log in to access this resource'
+                'anonymous',
+                'authentication',
+                'system',
+                'Authentication required for this operation'
             );
         }
 

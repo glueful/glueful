@@ -73,7 +73,6 @@ class AuthenticationMiddleware implements MiddlewareInterface
     {
         // Try to authenticate the request
         $userData = $this->authenticate($request);
-
         if (!$userData) {
             // Let exceptions bubble up instead of returning response directly
             throw new AuthenticationException('Authentication failed. Please provide valid credentials.');
@@ -101,16 +100,99 @@ class AuthenticationMiddleware implements MiddlewareInterface
      *
      * @param Request $request The HTTP request
      * @return array|null User data if authenticated, null otherwise
+     * @throws AuthenticationException If token is expired
      */
     private function authenticate(Request $request): ?array
     {
         // If specific providers are requested, try them in sequence
         if (!empty($this->providerNames)) {
-            return $this->authManager->authenticateWithProviders($this->providerNames, $request);
+            $userData = $this->authManager->authenticateWithProviders($this->providerNames, $request);
+        } else {
+            // Otherwise use the default provider
+            $userData = $this->authManager->authenticate($request);
         }
 
-        // Otherwise use the default provider
-        return $this->authManager->authenticate($request);
+        // If authentication succeeded, validate token expiration
+        if ($userData) {
+            $this->validateTokenExpiration($userData, $request);
+        }
+
+        return $userData;
+    }
+
+    /**
+     * Validate token expiration from user data
+     *
+     * @param array $userData User session data
+     * @param Request $request The HTTP request (unused but kept for future use)
+     * @throws AuthenticationException If tokens are expired
+     */
+    private function validateTokenExpiration(array $userData, Request $request): void
+    {
+        $now = time();
+        $currentTime = date('Y-m-d H:i:s');
+
+        // Check access token expiration
+        if (isset($userData['access_expires_at'])) {
+            $accessExpiresAt = strtotime($userData['access_expires_at']);
+            if ($accessExpiresAt !== false && $accessExpiresAt < $now) {
+                // Check if refresh token is still valid
+                if (isset($userData['refresh_expires_at'])) {
+                    $refreshExpiresAt = strtotime($userData['refresh_expires_at']);
+                    if ($refreshExpiresAt !== false && $refreshExpiresAt > $now) {
+                        // Refresh token is valid - should trigger token refresh
+                        throw new AuthenticationException('Access token expired. Please refresh your token.', 401, [
+                            'error_code' => 'TOKEN_EXPIRED',
+                            'refresh_available' => true
+                        ]);
+                    }
+                }
+
+                // Both tokens expired or refresh not available
+                throw new AuthenticationException('Session expired. Please log in again.', 401, [
+                    'error_code' => 'SESSION_EXPIRED',
+                    'refresh_available' => false
+                ]);
+            }
+        }
+
+        // Check refresh token expiration (for completeness)
+        if (isset($userData['refresh_expires_at'])) {
+            $refreshExpiresAt = strtotime($userData['refresh_expires_at']);
+            if ($refreshExpiresAt !== false && $refreshExpiresAt < $now) {
+                throw new AuthenticationException('Session expired. Please log in again.', 401, [
+                    'error_code' => 'SESSION_EXPIRED',
+                    'refresh_available' => false
+                ]);
+            }
+        }
+
+        // Validate JWT token expiration if present
+        if (isset($userData['access_token'])) {
+            // Ensure access_token is a string (JWT token), not an array
+            if (is_string($userData['access_token']) && class_exists('\\Glueful\\Auth\\JWTService')) {
+                try {
+                    if (call_user_func(['\\Glueful\\Auth\\JWTService', 'isExpired'], $userData['access_token'])) {
+                        error_log("AuthenticationMiddleware: JWT token is expired");
+                        throw new AuthenticationException('Access token expired. Please refresh your token.', 401, [
+                            'error_code' => 'TOKEN_EXPIRED',
+                            'refresh_available' => isset($userData['refresh_token'])
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    error_log("AuthenticationMiddleware: JWT validation failed: " . $e->getMessage());
+                    error_log("AuthenticationMiddleware: access_token type: " . gettype($userData['access_token']));
+                    throw new AuthenticationException('Invalid token format.', 401, [
+                        'error_code' => 'INVALID_TOKEN'
+                    ]);
+                }
+            } else {
+                error_log("AuthenticationMiddleware: access_token is not a valid JWT string");
+                throw new AuthenticationException('Invalid token format.', 401, [
+                    'error_code' => 'INVALID_TOKEN'
+                ]);
+            }
+        }
     }
 
     /**

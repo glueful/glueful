@@ -253,6 +253,13 @@ class ExtensionsManager
                             if (class_exists($fullClassName)) {
                                 $serviceProvider = new $fullClassName();
                                 $container->register($serviceProvider);
+
+                                // Boot the service provider immediately since container is already booted
+                                if (method_exists($serviceProvider, 'boot')) {
+                                    $serviceProvider->boot($container);
+                                    self::debug("Booted service provider: {$fullClassName}");
+                                }
+
                                 $loadedProviderCount++;
                                 self::debug("Loaded service provider: {$fullClassName}");
                             } else {
