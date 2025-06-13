@@ -1,0 +1,93 @@
+{
+  "name": "RBAC",
+  "displayName": "Role-Based Access Control",
+  "version": "0.27.0",
+  "publisher": "glueful-team",
+  "description": "Modern, flexible role-based access control system with hierarchical roles, permissions, and audit trails",
+  "categories": ["authentication", "authorization", "security"],
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#2563EB",
+    "theme": "dark"
+  },
+  "engines": {
+    "glueful": ">=0.27.0"
+  },
+  "main": "./RBAC.php",
+  "dependencies": {
+    "php": ">=8.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/RBAC"
+  },
+  "extensionDependencies": [],
+  "features": [
+    "Hierarchical role-based access control with inheritance",
+    "Direct user permission assignments and overrides",
+    "Resource-level permission filtering and scoping",
+    "Temporal permissions with expiry dates",
+    "Comprehensive audit trails for all RBAC operations",
+    "Multi-layer caching for optimal performance",
+    "RESTful API for role and permission management"
+  ],
+  "compatibility": {
+    "environments": ["production", "development"],
+    "databases": ["MySQL", "PostgreSQL", "SQLite"]
+  },
+  "support": {
+    "email": "support@glueful.com",
+    "issues": "https://github.com/glueful/extensions/issues"
+  },
+  "provides": {
+    "services": [
+      "extensions/RBAC/src/Services/RBACServiceProvider.php"
+    ],
+    "routes": [
+      "extensions/RBAC/src/routes.php"
+    ]
+  },
+  "glueful": {
+    "type": "permission",
+    "priority": 100,
+    "provides": [
+      "permission_provider",
+      "role_management",
+      "permission_management"
+    ],
+    "hooks": {
+      "boot": "RBAC::boot",
+      "permissions": "RBAC::registerPermissions",
+      "routes": "RBAC::registerRoutes"
+    },
+    "config": {
+      "cache_enabled": true,
+      "cache_ttl": 3600,
+      "audit_enabled": true,
+      "role_hierarchy_enabled": true,
+      "permission_inheritance": true
+    },
+    "migrations": [
+      "001_CreateRolesTables.php",
+      "002_CreatePermissionsTables.php",
+      "003_SeedDefaultRoles.php"
+    ],
+    "models": [
+      "Role",
+      "Permission",
+      "UserRole",
+      "UserPermission",
+      "RolePermission"
+    ],
+    "providers": [
+      "RBACPermissionProvider"
+    ],
+    "middleware": [
+      "rbac.permission",
+      "rbac.role"
+    ],
+    "routes": {
+      "route": "routes/api.php"
+    }
+  }
+}

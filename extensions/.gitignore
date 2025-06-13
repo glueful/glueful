@@ -2,6 +2,11 @@
 !.gitignore
 !extensions.json
 !README.md
-!EmailNotification
-!SocialLogin
-!RBAC
+!EmailNotification/
+!EmailNotification/**
+!SocialLogin/
+!SocialLogin/**
+!RBAC/
+!RBAC/**
+!Admin/
+!Admin/**

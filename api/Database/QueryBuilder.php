@@ -759,6 +759,34 @@ class QueryBuilder
     }
 
     /**
+     * Add OR WHERE NULL condition to the query
+     *
+     * @param string $column Column name
+     * @return self Builder instance for chaining
+     */
+    public function orWhereNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build OR WHERE NULL clause
+        $condition = "$wrappedColumn IS NULL";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
      * Add WHERE LIKE condition to the query
      *
      * @param string $column Column name
@@ -1052,6 +1080,36 @@ class QueryBuilder
         // Build and append WHERE clause
         $whereClause = ltrim($this->buildClause('', $conditions), ' ');
         $this->query .= (strpos($this->query, 'WHERE') === false ? " WHERE " : " AND ") . $whereClause;
+
+        return $this;
+    }
+
+    /**
+     * Add OR WHERE conditions to the query
+     *
+     * @param array $conditions Key-value pairs of column => value conditions
+     * @return self
+     */
+    public function orWhere(array $conditions): self
+    {
+        if (empty($conditions)) {
+            return $this;
+        }
+
+        // Add bindings
+        foreach ($conditions as $col => $value) {
+            $this->bindings[] = $value;
+        }
+
+        // Build and append OR WHERE clause
+        $whereClause = ltrim($this->buildClause('', $conditions), ' ');
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $whereClause;
+        } else {
+            $this->query .= " OR " . $whereClause;
+        }
 
         return $this;
     }

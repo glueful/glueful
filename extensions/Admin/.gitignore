@@ -1,0 +1,17 @@
+# Development-specific files
+/vendor/
+/composer.lock
+/.phpunit.result.cache
+
+# Environment variables
+/.env
+
+# Build artifacts
+/build/
+
+# Test coverage reports
+/coverage/
+
+# Operating system files
+.DS_Store
+Thumbs.db

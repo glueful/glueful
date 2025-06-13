@@ -1,0 +1,79 @@
+{
+    "name": "glueful/admin",
+    "description": "Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface",
+    "type": "glueful-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Michael Tawiah Sowah",
+            "email": "michael@glueful.dev"
+        }
+    ],
+    "keywords": ["admin", "dashboard", "management", "visualization", "monitoring"],
+    "require": {
+        "php": "^8.2",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "require-dev": {
+        "glueful/glueful": "dev-main",
+        "phpunit/phpunit": "^10.5",
+        "squizlabs/php_codesniffer": "^3.6",
+        "phpstan/phpstan": "^1.0"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "${GLUEFUL_PATH}"
+        }
+    ],
+    "homepage": "https://github.com/glueful/extensions/tree/main/extensions/Admin",
+    "autoload": {
+        "psr-4": {
+            "Glueful\\Extensions\\Admin\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Glueful\\Extensions\\Admin\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "phpcs": "vendor/bin/phpcs --standard=Squiz src",
+        "phpcbf": "vendor/bin/phpcbf --standard=Squiz src",
+        "analyze": "vendor/bin/phpstan analyze src --level=5",
+        "build": "php scripts/build.php",
+        "deploy": "php scripts/deploy.php"
+    },
+    "extra": {
+        "glueful": {
+            "name": "Admin",
+            "displayName": "Admin",
+            "description": "Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface",
+            "version": "0.18.0",
+            "icon": "assets/icon.png",
+            "galleryBanner": {
+                "color": "#1F2937",
+                "theme": "dark"
+            },
+            "categories": ["admin", "dashboard", "management"],
+            "publisher": "glueful-team",
+            "main": "./Admin.php",
+            "features": [
+                "Interactive API visualization dashboard with metrics and analytics",
+                "System health monitoring and performance tracking",
+                "Extension management with activation/deactivation capabilities",
+                "Database migrations and schema management",
+                "User and permission management interface",
+                "API testing and endpoint exploration tools"
+            ],
+            "requires": {
+                "glueful": ">=0.27.0",
+                "extensions": []
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

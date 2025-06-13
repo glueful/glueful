@@ -1,0 +1,41 @@
+{
+  "name": "Admin",
+  "displayName": "Admin",
+  "version": "0.18.0",
+  "publisher": "glueful-team",
+  "description": "Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface",
+  "categories": ["admin", "dashboard", "management"],
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1F2937",
+    "theme": "dark"
+  },
+  "engines": {
+    "glueful": ">=0.27.0"
+  },
+  "main": "./Admin.php",
+  "dependencies": {
+    "php": ">=8.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/Admin"
+  },
+  "extensionDependencies": [],
+  "features": [
+    "Interactive API visualization dashboard with metrics and analytics",
+    "System health monitoring and performance tracking",
+    "Extension management with activation/deactivation capabilities",
+    "Database migrations and schema management",
+    "User and permission management interface",
+    "API testing and endpoint exploration tools"
+  ],
+  "compatibility": {
+    "browsers": ["Chrome", "Firefox", "Safari", "Edge"],
+    "environments": ["production", "development"]
+  },
+  "support": {
+    "email": "your.email@example.com",
+    "issues": "https://github.com/yourusername/Admin/issues"
+  }
+}

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <style>
+        @media only screen and (max-width: 620px) {
+            table.body {
+                width: 100%;
+                min-width: 320px;
+            }
+        }
+        body {
+            font-family: Roboto, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #444444;
+            height: 100% !important;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+            -ms-text-size-adjust: 100%;
+            -webkit-text-size-adjust: 100%;
+        }
+        .wrapper {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .content {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 25px;
+            border: 1px solid #e9e9e9;
+        }
+        .header {
+            text-align: left;
+            margin-bottom: 25px;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: bold;
+            line-height: 1.3;
+            /* margin:0 0 15px 0 */
+        }
+        .logo {
+            margin-bottom: 15px;
+            max-width: 200px;
+            max-height: 80px;
+        }
+        .message {
+            color: #333333;
+            font-size: 16px;
+            line-height: 1.6em;
+        }
+        .footer {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid #e9e9e9;
+            color: #999999;
+            font-size: 12px;
+            text-align: left;
+        }
+        .otp-container {
+            background-color: #f1f7fd;
+            border: 1px dashed #bfdcf7;
+            border-radius: 6px;
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .otp-code {
+            font-size: 32px;
+            font-weight: 700;
+            color: #3490dc;
+            letter-spacing: 8px;
+        }
+        .alert-box {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 3px;
+        }
+        .btn {
+            background-color: #3490dc;
+            border-radius: 3px;
+            color: #ffffff !important;
+            display: inline-block;
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 12px 24px;
+            text-decoration: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="content">
+            {{content}}
+        </div>
+    </div>
+</body>
+</html>
