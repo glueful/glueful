@@ -52,6 +52,12 @@ class WorkerOptions
     /** @var array Queue priorities (higher number = higher priority) */
     public readonly array $queuePriorities;
 
+    /** @var int Batch size for batch processing */
+    public readonly int $batchSize;
+
+    /** @var bool Enable batch processing */
+    public readonly bool $enableBatching;
+
     /**
      * Create worker options
      *
@@ -66,6 +72,8 @@ class WorkerOptions
      * @param int $maxRuntime Max runtime before restart seconds (default: 3600)
      * @param string $name Worker name (default: auto-generated)
      * @param array $queuePriorities Queue priorities (default: [])
+     * @param int $batchSize Batch size for processing (default: 10)
+     * @param bool $enableBatching Enable batch processing (default: false)
      */
     public function __construct(
         int $sleep = 3,
@@ -78,7 +86,9 @@ class WorkerOptions
         bool $verbose = false,
         int $maxRuntime = 3600,
         string $name = '',
-        array $queuePriorities = []
+        array $queuePriorities = [],
+        int $batchSize = 10,
+        bool $enableBatching = false
     ) {
         $this->sleep = max(1, $sleep);
         $this->memory = max(32, $memory);
@@ -91,6 +101,8 @@ class WorkerOptions
         $this->maxRuntime = max(60, $maxRuntime);
         $this->name = $name ?: 'worker-' . uniqid();
         $this->queuePriorities = $queuePriorities;
+        $this->batchSize = max(1, $batchSize);
+        $this->enableBatching = $enableBatching;
     }
 
     /**

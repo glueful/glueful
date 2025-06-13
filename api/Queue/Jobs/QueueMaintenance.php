@@ -112,7 +112,6 @@ class QueueMaintenance
 
             $this->stats['cleaned_metrics'] = $cleaned;
             $this->log("Cleaned up {$cleaned} old job metrics");
-
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Metrics cleanup failed: " . $e->getMessage();
             $this->log("Metrics cleanup failed: " . $e->getMessage(), 'error');
@@ -132,7 +131,6 @@ class QueueMaintenance
 
             $this->stats['cleaned_failed_jobs'] = $cleaned;
             $this->log("Cleaned up {$cleaned} old failed jobs");
-
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed jobs cleanup failed: " . $e->getMessage();
             $this->log("Failed jobs cleanup failed: " . $e->getMessage(), 'error');
@@ -157,7 +155,6 @@ class QueueMaintenance
                     // Perform driver-specific optimizations
                     $this->optimizeConnection($driver, $connectionName);
                     $optimized++;
-
                 } catch (\Exception $e) {
                     $this->stats['errors'][] = "Optimization failed for {$connectionName}: " . $e->getMessage();
                     $this->log("Optimization failed for {$connectionName}: " . $e->getMessage(), 'error');
@@ -166,7 +163,6 @@ class QueueMaintenance
 
             $this->stats['optimized_queues'] = $optimized;
             $this->log("Optimized {$optimized} queue connections");
-
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Queue optimization failed: " . $e->getMessage();
             $this->log("Queue optimization failed: " . $e->getMessage(), 'error');
@@ -259,7 +255,6 @@ class QueueMaintenance
             // Save statistics (this could be saved to database, cache, or file)
             $this->saveStatistics($totalStats);
             $this->log("Updated queue statistics");
-
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Statistics update failed: " . $e->getMessage();
             $this->log("Statistics update failed: " . $e->getMessage(), 'error');
@@ -292,7 +287,6 @@ class QueueMaintenance
                             'response_time' => $health->responseTime,
                         ];
                     }
-
                 } catch (\Exception $e) {
                     $unhealthyConnections[] = [
                         'connection' => $connectionName,
@@ -309,7 +303,6 @@ class QueueMaintenance
                     $this->log("Unhealthy connection {$unhealthy['connection']}: {$unhealthy['message']}", 'warning');
                 }
             }
-
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Health check failed: " . $e->getMessage();
             $this->log("Health check failed: " . $e->getMessage(), 'error');

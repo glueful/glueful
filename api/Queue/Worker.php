@@ -87,8 +87,6 @@ class Worker
         $this->listenForSignals();
         $this->registerWorker($connection, $queue);
 
-        $driver = $this->manager->connection($connection);
-
         while (!$this->shouldQuit) {
             $job = $this->getNextJob($connection, $queue);
 
@@ -150,6 +148,7 @@ class Worker
     protected function process(string $connection, JobInterface $job): void
     {
         $startTime = microtime(true);
+        $memoryBefore = memory_get_usage(true);
 
         try {
             // Check if job exceeded max attempts
@@ -187,6 +186,9 @@ class Worker
             $this->handleJobException($connection, $job, $e);
             $this->monitor->recordJobFailure($job, $e, $processingTime);
             $this->stats['jobs_failed']++;
+        } finally {
+            // Memory management and leak prevention
+            $this->performMemoryCleanup($memoryBefore);
         }
 
         // Update memory peak
@@ -215,12 +217,12 @@ class Worker
     /**
      * Handle job exception
      *
-     * @param string $connection Connection name
+     * @param string $connectionName Connection name (unused but kept for API compatibility)
      * @param JobInterface $job Failed job
      * @param \Exception $exception Exception that occurred
      * @return void
      */
-    protected function handleJobException(string $connection, JobInterface $job, \Exception $exception): void
+    protected function handleJobException(string $connectionName, JobInterface $job, \Exception $exception): void
     {
         $this->logError("Job failed: " . $job->getDescription() . " - " . $exception->getMessage());
 
@@ -496,5 +498,163 @@ class Worker
     protected function logError(string $message): void
     {
         echo "[" . date('Y-m-d H:i:s') . "] ERROR: {$message}\n";
+    }
+
+    /**
+     * Perform memory cleanup to prevent leaks
+     *
+     * @param int $memoryBefore Memory usage before job processing
+     * @return void
+     */
+    protected function performMemoryCleanup(int $memoryBefore): void
+    {
+        $memoryAfter = memory_get_usage(true);
+        $memoryDelta = $memoryAfter - $memoryBefore;
+        $memoryThreshold = $this->options->memory * 1024 * 1024; // Convert MB to bytes
+
+        // Log high memory usage
+        if ($memoryDelta > 5 * 1024 * 1024) { // More than 5MB increase
+            $this->logWarning("High memory usage detected: " . $this->formatBytes($memoryDelta) . " increase");
+        }
+
+        // Force garbage collection if memory usage is high
+        if ($memoryAfter > $memoryThreshold * 0.8 || $this->jobsProcessed % 100 === 0) {
+            if (gc_enabled()) {
+                $collected = gc_collect_cycles();
+                if ($this->options->verbose && $collected > 0) {
+                    $this->logInfo("Garbage collector freed {$collected} cycles");
+                }
+            }
+        }
+
+        // Clear opcache if available and memory is high
+        if ($memoryAfter > $memoryThreshold * 0.9 && function_exists('opcache_reset')) {
+            opcache_reset();
+            $this->logInfo("OPcache reset due to high memory usage");
+        }
+    }
+
+    /**
+     * Format bytes into human readable format
+     *
+     * @param int $bytes Number of bytes
+     * @return string Formatted string
+     */
+    protected function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
+            $bytes /= 1024;
+        }
+        return round($bytes, 2) . ' ' . $units[$i];
+    }
+
+    /**
+     * Enhanced daemon with batch processing support
+     *
+     * @param string $connection Connection name
+     * @param string $queue Queue name
+     * @param WorkerOptions $options Worker options
+     * @return void
+     */
+    public function daemonWithBatchProcessing(string $connection, string $queue, WorkerOptions $options): void
+    {
+        $this->options = $options;
+        $this->listenForSignals();
+        $this->registerWorker($connection, $queue);
+
+        $batchSize = $options->batchSize ?? 10;
+        $jobBatch = [];
+
+        while (!$this->shouldQuit) {
+            // Handle signals and check for shutdown in one place
+            if (function_exists('pcntl_signal_dispatch')) {
+                pcntl_signal_dispatch();
+            }
+
+            // Collect jobs for batch processing
+            $jobsCollected = 0;
+            while ($jobsCollected < $batchSize && $this->shouldQuit === false) {
+                $job = $this->getNextJob($connection, $queue);
+                if ($job) {
+                    $jobBatch[] = $job;
+                    $jobsCollected++;
+                } else {
+                    break; // No more jobs available
+                }
+            }
+
+            // Process batch if we have jobs
+            if (!empty($jobBatch)) {
+                $this->processBatch($connection, $jobBatch);
+                $this->jobsProcessed += count($jobBatch);
+                $this->stats['jobs_processed'] += count($jobBatch);
+                $jobBatch = []; // Clear batch
+
+                // Check limits after batch processing
+                if ($this->options->maxJobs > 0 && $this->jobsProcessed >= $this->options->maxJobs) {
+                    $this->logInfo("Max jobs ({$this->options->maxJobs}) reached. Stopping worker.");
+                    $this->stop();
+                    break;
+                }
+            } else {
+                // No jobs available
+                if ($this->options->stopWhenEmpty) {
+                    $this->logInfo("Queue is empty. Stopping worker as requested.");
+                    $this->stop();
+                    break;
+                }
+
+                $this->sleep($this->options->sleep);
+            }
+
+            $this->updateHeartbeat();
+
+            // Check memory and runtime limits
+            if (
+                $this->memoryExceeded($this->options->memory) ||
+                ($this->options->maxRuntime > 0 && (time() - $this->startTime) >= $this->options->maxRuntime)
+            ) {
+                $this->stop();
+                break;
+            }
+
+            // Handle signals
+            if (function_exists('pcntl_signal_dispatch')) {
+                pcntl_signal_dispatch();
+            }
+        }
+
+        $this->unregisterWorker();
+        $this->logInfo("Worker stopped gracefully.");
+    }
+
+    /**
+     * Process a batch of jobs for better throughput
+     *
+     * @param string $connection Connection name
+     * @param array $jobs Array of jobs to process
+     * @return void
+     */
+    protected function processBatch(string $connection, array $jobs): void
+    {
+        $startTime = microtime(true);
+        $batchSize = count($jobs);
+
+        $this->logInfo("Processing batch of {$batchSize} jobs");
+
+        foreach ($jobs as $job) {
+            try {
+                $this->process($connection, $job);
+            } catch (\Exception $e) {
+                $this->logError("Batch processing error: " . $e->getMessage());
+                $this->stats['jobs_failed']++;
+            }
+        }
+
+        $batchTime = microtime(true) - $startTime;
+        $avgTime = $batchTime / $batchSize;
+
+        $this->logInfo("Batch completed in " . round($batchTime, 3) . "s (avg: " . round($avgTime, 3) . "s per job)");
     }
 }

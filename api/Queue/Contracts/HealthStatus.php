@@ -39,7 +39,8 @@ class HealthStatus
         public readonly string $message = '',
         public readonly ?float $responseTime = null,
         public readonly ?\DateTime $checkedAt = null
-    ) {}
+    ) {
+    }
 
     /**
      * Create healthy status instance

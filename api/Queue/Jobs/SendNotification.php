@@ -59,12 +59,70 @@ class SendNotification extends Job
         // Get notification service
         $notificationService = $this->getNotificationService();
 
-        // Send notification based on type
-        $type = $data['type'];
-        $result = $notificationService->send($data);
+        // Create a temporary notifiable for this notification
+        $notifiable = new class ($data['recipient'], $data['type'] ?? 'email') implements
+            \Glueful\Notifications\Contracts\Notifiable
+        {
+            private string $recipient;
+            private string $type;
+
+            public function __construct(string $recipient, string $type)
+            {
+                $this->recipient = $recipient;
+                $this->type = $type;
+            }
+
+            public function routeNotificationFor(string $channel): ?string
+            {
+                return $this->recipient;
+            }
+
+            public function getNotifiableId(): string
+            {
+                return md5($this->recipient);
+            }
+
+            public function getNotifiableType(): string
+            {
+                return 'notification_recipient';
+            }
+
+            public function shouldReceiveNotification(string $notificationType, string $channel): bool
+            {
+                return true;
+            }
+
+            public function getNotificationPreferences(): array
+            {
+                return [$this->type => true];
+            }
+        };
+
+        // Send notification using NotificationService
+        $result = $notificationService->send(
+            $data['notification_type'] ?? 'general',
+            $notifiable,
+            $data['subject'] ?? 'Notification',
+            $data,
+            [
+                'channels' => [$data['type'] ?? 'email'],
+                'template_name' => $data['template'] ?? null
+            ]
+        );
+
+        // Parse the result
+        $parsedResult = \Glueful\Notifications\Utils\NotificationResultParser::parseEmailResult(
+            $result,
+            ['recipient' => $data['recipient']],
+            'Notification sent successfully'
+        );
 
         // Log successful notification
-        $this->logNotificationResult($type, $data, $result, true);
+        $this->logNotificationResult($data['type'], $data, $parsedResult, $parsedResult['success']);
+
+        if (!$parsedResult['success']) {
+            throw new \Exception($parsedResult['message'] ?? 'Failed to send notification');
+        }
     }
 
     /**
@@ -193,64 +251,27 @@ class SendNotification extends Job
     /**
      * Get notification service instance
      *
-     * @return object Notification service
+     * @return \Glueful\Notifications\Services\NotificationService Notification service
      * @throws \Exception If service not available
      */
-    private function getNotificationService(): object
+    private function getNotificationService(): \Glueful\Notifications\Services\NotificationService
     {
-        // Try to use existing notification service
-        if (class_exists('\\Glueful\\Services\\NotificationService')) {
-            return new \Glueful\Services\NotificationService();
+        // Create the channel manager
+        $channelManager = new \Glueful\Notifications\Services\ChannelManager();
+
+        // Create the notification dispatcher
+        $dispatcher = new \Glueful\Notifications\Services\NotificationDispatcher($channelManager);
+
+        // Initialize EmailNotificationProvider if available
+        if (class_exists('\\Glueful\\Extensions\\EmailNotification\\EmailNotificationProvider')) {
+            $emailProvider = new \Glueful\Extensions\EmailNotification\EmailNotificationProvider();
+            $emailProvider->initialize();
+            $emailProvider->register($channelManager);
         }
 
-        // Fallback to simple notification service
-        return new class {
-            public function send(array $data): array
-            {
-                // Simple implementation - could be enhanced
-                switch ($data['type']) {
-                    case 'email':
-                        return $this->sendEmail($data);
-                    case 'sms':
-                        return $this->sendSms($data);
-                    default:
-                        throw new \Exception("Notification type '{$data['type']}' not implemented");
-                }
-            }
-
-            private function sendEmail(array $data): array
-            {
-                // Simple mail() implementation
-                $headers = "From: " . ($data['from'] ?? 'noreply@glueful.com') . "\r\n";
-                $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-
-                $success = mail(
-                    $data['recipient'],
-                    $data['subject'],
-                    $data['message'],
-                    $headers
-                );
-
-                return [
-                    'success' => $success,
-                    'method' => 'mail',
-                    'timestamp' => time()
-                ];
-            }
-
-            private function sendSms(array $data): array
-            {
-                // Placeholder SMS implementation
-                // In production, integrate with SMS service like Twilio
-                error_log("SMS to {$data['recipient']}: {$data['message']}");
-
-                return [
-                    'success' => true,
-                    'method' => 'log',
-                    'timestamp' => time()
-                ];
-            }
-        };
+        // Initialize NotificationService with required dispatcher and repository
+        $notificationRepository = new \Glueful\Repository\NotificationRepository();
+        return new \Glueful\Notifications\Services\NotificationService($dispatcher, $notificationRepository);
     }
 
     /**
@@ -300,12 +321,8 @@ class SendNotification extends Job
             $fallbackData = $data['fallback'];
             $fallbackData['original_error'] = $exception->getMessage();
 
-            // Create new notification job for fallback
-            $fallbackJob = new self($fallbackData);
-
             // Note: In a real implementation, you'd queue this through the queue manager
             error_log("Fallback notification queued: " . json_encode($fallbackData));
-
         } catch (\Exception $e) {
             error_log("Fallback notification also failed: " . $e->getMessage());
         }
