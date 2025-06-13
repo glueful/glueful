@@ -73,6 +73,7 @@ class Kernel
             \Glueful\Console\Commands\ConfigProductionCommand::class,
             \Glueful\Console\Commands\SecurityCommand::class,
             \Glueful\Console\Commands\ArchiveCommand::class,
+            \Glueful\Console\Commands\Queue\QueueCommand::class,
         ]);
     }
 

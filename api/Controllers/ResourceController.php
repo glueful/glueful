@@ -363,7 +363,7 @@ class ResourceController extends BaseController
             [
                 'table' => $table,
                 'uuid' => $uuid,
-                'user_uuid' => $this->currentUser['uuid'],
+                'user_uuid' => $this->getCurrentUserUuid(),
                 'operation' => $operation
             ]
         );
@@ -438,7 +438,7 @@ class ResourceController extends BaseController
             return;
         }
 
-        $userUuid = $this->currentUser['uuid'];
+        $userUuid = $this->getCurrentUserUuid();
 
         // Check ownership based on table-specific ownership field
         switch ($table) {

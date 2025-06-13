@@ -283,7 +283,7 @@ trait BulkOperationsTrait
         }
 
         $repository = $this->repositoryFactory->getRepository($table);
-        $userUuid = $this->currentUser['uuid'];
+        $userUuid = $this->getCurrentUserUuid();
         $validUuids = [];
 
         // Batch fetch all records using findMultiple for better performance

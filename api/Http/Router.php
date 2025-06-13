@@ -425,13 +425,18 @@ class Router
         // Match the route - convert ResourceNotFoundException to NotFoundException
         try {
             $parameters = self::$matcher->match($pathInfo);
+
+            // 👇 Inject matched route parameters into the Request
+            foreach ($parameters as $key => $value) {
+                $request->attributes->set($key, $value);
+            }
         } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException) {
             throw new \Glueful\Exceptions\NotFoundException('Route not found: ' . $pathInfo);
         }
 
-        // Generate route name using same logic as addRoute method
-        $routeKey = $request->getPathInfo() . '|' . $request->getMethod();
-        $routeName = md5($routeKey);
+        // Use the route name from Symfony's routing system instead of generating our own
+        // This ensures dynamic routes work correctly
+        $routeName = $parameters['_route'] ?? null;
         $controller = $parameters['_controller'];
 
         // Set up middleware pipeline with DI container

@@ -223,12 +223,14 @@ class DatabaseController extends BaseController
         // Standard rate limiting for read operations
         $this->rateLimitResource('database.structure', 'read');
 
-        return $this->cacheResponse(
+        $data = $this->cacheResponse(
             'tables_list',
             fn() => $this->schemaManager->getTables(),
             3600, // 1 hour cache
             ['database', 'tables']
         );
+
+        return Response::ok($data, 'Tables retrieved successfully')->send();
     }
 
     /**
@@ -246,18 +248,20 @@ class DatabaseController extends BaseController
             return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
         }
 
-        return $this->cacheResponse(
+        $data = $this->cacheResponse(
             'table_size_' . $table['name'],
             function () use ($table) {
                 $size = $this->schemaManager->getTableSize($table['name']);
-                return Response::ok([
+                return [
                     'table' => $table['name'],
                     'size' => $size
-                ], 'Table size retrieved successfully');
+                ];
             },
             1800, // 30 minutes cache
             ['database', 'table_' . $table['name']]
         );
+
+        return Response::ok($data, 'Table size retrieved successfully')->send();
     }
 
     /**
@@ -325,14 +329,15 @@ class DatabaseController extends BaseController
                 'data_free' => $status['Data_free'] ?? 0
             ];
 
-            return $this->cacheResponse(
+            $data = $this->cacheResponse(
                 'table_metadata_' . $tableName,
                 function () use ($metadata) {
-                    return Response::ok($metadata, 'Table metadata retrieved successfully');
+                    return $metadata;
                 },
                 1800, // 30 minutes cache
                 ['database', 'table_' . $tableName, 'metadata']
             );
+            return Response::ok($data, 'Table metadata retrieved successfully')->send();
     }
 
     /**
@@ -358,6 +363,8 @@ class DatabaseController extends BaseController
     public function getTableData(?array $table): mixed
     {
         // Permission check for reading table data
+        $datatest = $this->currentUser;
+        error_log('Checking permissions for database.data.read' . json_encode($datatest));
         $this->requirePermission('database.data.read', 'database');
 
         // Rate limiting for data access
@@ -475,17 +482,18 @@ class DatabaseController extends BaseController
             return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
         }
 
-            return $this->cacheResponse(
+            $data =  $this->cacheResponse(
                 'table_columns_' . $tableName,
                 function () use ($tableName, $columns) {
-                    return Response::ok([
+                    return [
                         'table' => $tableName,
                         'columns' => $columns
-                    ], 'Table columns retrieved successfully');
+                    ];
                 },
                 3600, // 1 hour cache
                 ['database', 'table_' . $tableName, 'columns']
             );
+            return Response::ok($data, 'Table columns retrieved successfully')->send();
     }
 
     /**
@@ -1389,7 +1397,8 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.stats', 'read');
 
         // Get list of all tables with schema information
-        $tables = $this->schemaManager->getTables(); // No parameters needed
+        $tables = $this->schemaManager->getTables();
+        error_log("Retrieved " . count($tables) . " tables from the database");
 
         if (empty($tables)) {
             return Response::ok(['tables' => []], 'No tables found in database')->send();
@@ -1427,18 +1436,19 @@ class DatabaseController extends BaseController
             }
             return $b['size'] <=> $a['size'];
         });
-
-        return $this->cacheResponse(
+        $data = $this->cacheResponse(
             'database_stats',
             function () use ($tableData, $tables) {
-                return Response::ok([
+                return [
                     'tables' => $tableData,
                     'total_tables' => count($tables)
-                ], 'Database statistics retrieved successfully');
+                ];
             },
             900, // 15 minutes cache
             ['database', 'statistics']
         );
+
+        return Response::ok($data, 'Database statistics retrieved successfully')->send();
     }
 
     /**

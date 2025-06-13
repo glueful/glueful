@@ -112,10 +112,37 @@ class UsersController extends BaseController
 
         $paginatedResult = $query->paginate($page, $perPage);
 
-        // Note: Role attachment disabled - use RBAC extension
+        // Fetch roles from RBAC extension if available
         $users = $paginatedResult['data'] ?? [];
+        $container = app();
+
         foreach ($users as &$user) {
-            $user['roles'] = []; // Roles managed by RBAC extension
+            try {
+                // Check if RBAC role service is available in container
+                if ($container->has('rbac.role_service')) {
+                    $roleService = $container->get('rbac.role_service');
+                    $userRoles = $roleService->getUserRoles($user['uuid']);
+
+                    // Format roles for API response
+                    $user['roles'] = array_map(function ($roleData) {
+                        return [
+                            'uuid' => $roleData['role']->getUuid(),
+                            'name' => $roleData['role']->getName(),
+                            'slug' => $roleData['role']->getSlug(),
+                            'level' => $roleData['role']->getLevel(),
+                            'is_system' => $roleData['role']->isSystem(),
+                            'assigned_at' => $roleData['assignment']->getCreatedAt()
+                        ];
+                    }, $userRoles);
+                } else {
+                    // Fallback when RBAC extension is not available
+                    $user['roles'] = [];
+                }
+            } catch (\Exception $e) {
+                // Log error and gracefully fallback
+                error_log("Failed to fetch roles for user {$user['uuid']}: " . $e->getMessage());
+                $user['roles'] = [];
+            }
         }
 
         // Update the data in the pagination result and return it directly
@@ -125,14 +152,15 @@ class UsersController extends BaseController
             $page, $perPage, $search, $status, $roleId, $sortBy, $sortOrder, $includeDeleted
         ]));
 
-        return $this->cacheResponse(
+        $resData = $this->cacheResponse(
             $cacheKey,
             function () use ($paginatedResult) {
-                return Response::ok($paginatedResult, 'Users retrieved successfully');
+                return $paginatedResult;
             },
             300, // 5 minutes cache for user listing
             ['users', 'user_list']
         );
+         return Response::ok($resData, 'Users retrieved successfully')->send();
     }
 
     /**
@@ -161,8 +189,31 @@ class UsersController extends BaseController
             throw new NotFoundException('User not found');
         }
 
-        // Note: Roles managed by RBAC extension
-        $user['roles'] = [];
+        // Fetch roles from RBAC extension if available
+        $container = app();
+        try {
+            if ($container->has('rbac.role_service')) {
+                $roleService = $container->get('rbac.role_service');
+                $userRoles = $roleService->getUserRoles($user['uuid']);
+
+                // Format roles for API response
+                $user['roles'] = array_map(function ($roleData) {
+                    return [
+                        'uuid' => $roleData['role']->getUuid(),
+                        'name' => $roleData['role']->getName(),
+                        'slug' => $roleData['role']->getSlug(),
+                        'level' => $roleData['role']->getLevel(),
+                        'is_system' => $roleData['role']->isSystem(),
+                        'assigned_at' => $roleData['assignment']->getCreatedAt()
+                    ];
+                }, $userRoles);
+            } else {
+                $user['roles'] = [];
+            }
+        } catch (\Exception $e) {
+            error_log("Failed to fetch roles for user {$user['uuid']}: " . $e->getMessage());
+            $user['roles'] = [];
+        }
 
         // Get user profile
         $user['profile'] = $this->getUserRepository()->getProfile($user['uuid']) ?? [];
@@ -170,14 +221,15 @@ class UsersController extends BaseController
         // Remove sensitive data
         unset($user['password']);
 
-        return $this->cacheResponse(
+        $userRes = $this->cacheResponse(
             'user_details_' . $uuid,
             function () use ($user) {
-                return Response::ok($user, 'User details retrieved successfully');
+                return $user;
             },
             600, // 10 minutes cache for user details
             ['users', 'user_' . $uuid]
         );
+        return Response::ok($userRes, 'User details retrieved successfully')->send();
     }
 
     /**
@@ -236,7 +288,31 @@ class UsersController extends BaseController
 
         // Fetch created user
         $user = $this->getUserRepository()->findByUUID($userUuid);
-        $user['roles'] = []; // Roles managed by RBAC extension
+        // Fetch newly assigned roles from RBAC extension if available
+        $container = app();
+        try {
+            if ($container->has('rbac.role_service')) {
+                $roleService = $container->get('rbac.role_service');
+                $userRoles = $roleService->getUserRoles($user['uuid']);
+
+                $user['roles'] = array_map(function ($roleData) {
+                    return [
+                        'uuid' => $roleData['role']->getUuid(),
+                        'name' => $roleData['role']->getName(),
+                        'slug' => $roleData['role']->getSlug(),
+                        'level' => $roleData['role']->getLevel(),
+                        'is_system' => $roleData['role']->isSystem(),
+                        'assigned_at' => $roleData['assignment']->getCreatedAt()
+                    ];
+                }, $userRoles);
+            } else {
+                $user['roles'] = [];
+            }
+        } catch (\Exception $e) {
+            error_log("Failed to fetch roles for newly created user {$user['uuid']}: " . $e->getMessage());
+            $user['roles'] = [];
+        }
+
         unset($user['password']);
 
         // Audit log user creation
@@ -330,7 +406,31 @@ class UsersController extends BaseController
 
         // Fetch updated user
         $updatedUser = $this->getUserRepository()->findByUUID($user['uuid']);
-        $updatedUser['roles'] = []; // Roles managed by RBAC extension
+        // Fetch updated roles from RBAC extension if available
+        $container = app();
+        try {
+            if ($container->has('rbac.role_service')) {
+                $roleService = $container->get('rbac.role_service');
+                $userRoles = $roleService->getUserRoles($updatedUser['uuid']);
+
+                $updatedUser['roles'] = array_map(function ($roleData) {
+                    return [
+                        'uuid' => $roleData['role']->getUuid(),
+                        'name' => $roleData['role']->getName(),
+                        'slug' => $roleData['role']->getSlug(),
+                        'level' => $roleData['role']->getLevel(),
+                        'is_system' => $roleData['role']->isSystem(),
+                        'assigned_at' => $roleData['assignment']->getCreatedAt()
+                    ];
+                }, $userRoles);
+            } else {
+                $updatedUser['roles'] = [];
+            }
+        } catch (\Exception $e) {
+            error_log("Failed to fetch roles for updated user {$updatedUser['uuid']}: " . $e->getMessage());
+            $updatedUser['roles'] = [];
+        }
+
         unset($updatedUser['password']);
 
         // Audit log user update
@@ -605,14 +705,16 @@ class UsersController extends BaseController
             ->get();
         $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
 
-        return $this->cacheResponse(
+        $userStats = $this->cacheResponse(
             'user_stats_' . $period,
             function () use ($stats) {
-                return Response::ok($stats, 'Statistics retrieved successfully');
+                return $stats;
             },
             900, // 15 minutes cache
             ['users', 'statistics']
         );
+
+        return Response::ok($userStats, 'Statistics retrieved successfully')->send();
     }
 
     /**
@@ -707,14 +809,16 @@ class UsersController extends BaseController
             ]
         ];
 
-        return $this->cacheResponse(
+        $res = $this->cacheResponse(
             'users_search_' . md5(serialize([$query, $filters, $page, $perPage])),
             function () use ($results) {
-                return Response::ok($results, 'Search completed successfully');
+                return $results;
             },
             300, // 5 minutes cache for search results
             ['users', 'search']
         );
+
+        return Response::ok($res, 'Search completed successfully')->send();
     }
 
     /**
@@ -909,7 +1013,7 @@ class UsersController extends BaseController
         ->offset(($page - 1) * $perPage)
         ->get();
 
-        return $this->cacheResponse(
+        $activityRes = $this->cacheResponse(
             'user_activity_' . $uuid . '_' . $page . '_' . $perPage,
             function () use ($activities) {
                 return Response::ok($activities, 'Activity log retrieved successfully');
@@ -917,6 +1021,7 @@ class UsersController extends BaseController
             600, // 10 minutes cache for activity logs
             ['users', 'user_' . $uuid, 'activity']
         );
+        return Response::ok($activityRes, 'Activity log retrieved successfully')->send();
     }
 
 
@@ -971,14 +1076,15 @@ class UsersController extends BaseController
             }
         }
 
-        return $this->cacheResponse(
+        $sessionRes = $this->cacheResponse(
             'user_sessions_' . $uuid,
             function () use ($sessions) {
-                return Response::ok($sessions, 'Sessions retrieved successfully');
+                return $sessions;
             },
             60, // 1 minute cache for sessions (frequently changing)
             ['users', 'user_' . $uuid, 'sessions']
         );
+        return Response::ok($sessionRes, 'Sessions retrieved successfully')->send();
     }
 
     /**

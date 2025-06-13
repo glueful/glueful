@@ -134,7 +134,7 @@ trait QueryRestrictionsTrait
                     'table' => $table,
                     'blocked_parameter' => $param,
                     'required_permission' => $requiredPermission,
-                    'user_uuid' => $this->currentUser['uuid'] ?? null
+                    'user_uuid' => $this->getCurrentUserUuid()
                 ]
             );
         }

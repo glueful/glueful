@@ -8,6 +8,7 @@ use Glueful\Auth\AuthBootstrap;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Controllers\Traits\AsyncAuditTrait;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Permissions\Helpers\PermissionHelper;
@@ -35,6 +36,7 @@ use Symfony\Component\HttpFoundation\Request;
 abstract class BaseController
 {
     use DatabaseConnectionTrait;
+    use AsyncAuditTrait;
 
     protected AuthenticationManager $authManager;
     protected RepositoryFactory $repositoryFactory;
@@ -63,6 +65,7 @@ abstract class BaseController
 
         // Get user data from request attributes (set by middleware)
         $userData = $this->request->attributes->get('user');
+        // error_log('User data from request: ' . json_encode($userData));
         if ($userData) {
             $this->currentUser = User::fromArray($userData);
             $this->currentToken = $this->extractToken($this->request);
@@ -85,6 +88,7 @@ abstract class BaseController
 
         // Admin users have all permissions
         if ($this->isAdmin()) {
+            error_log('Admin user has all permissions');
             return true;
         }
 
@@ -130,7 +134,7 @@ abstract class BaseController
         $permissionManager = PermissionManager::getInstance();
         if (!$permissionManager->hasActiveProvider()) {
             // Log as error since this is a required operation
-            $this->auditLogger->audit(
+            $this->asyncAudit(
                 AuditEvent::CATEGORY_SYSTEM,
                 'permission_required_no_provider',
                 AuditEvent::SEVERITY_ERROR,
@@ -162,7 +166,7 @@ abstract class BaseController
                 requestId: $this->request->headers->get('X-Request-ID')
             );
 
-            $this->auditLogger->audit(
+            $this->asyncAudit(
                 'security',
                 'permission_denied',
                 AuditEvent::SEVERITY_WARNING,
@@ -229,7 +233,7 @@ abstract class BaseController
 
         if (!$permissionManager->hasActiveProvider()) {
             // Log warning when no provider is available
-            $this->auditLogger->audit(
+            $this->asyncAudit(
                 AuditEvent::CATEGORY_SYSTEM,
                 $action ?? 'permission_provider_check',
                 AuditEvent::SEVERITY_WARNING,
@@ -252,7 +256,9 @@ abstract class BaseController
      */
     protected function isAdmin(): bool
     {
-        return $this->currentUser?->isAdmin ?? false;
+        $user = $this->getCurrentUser();
+        $userData = $user?->toArray() ?? [];
+        return $this->authManager->isAdmin($userData);
     }
 
     /**
@@ -552,7 +558,7 @@ abstract class BaseController
         $behaviorScore = $limiter->getBehaviorScore();
 
         if ($behaviorScore > $maxScore) {
-            $this->auditLogger->audit(
+            $this->asyncAudit(
                 'security',
                 'high_risk_behavior_blocked',
                 AuditEvent::SEVERITY_WARNING,
@@ -591,7 +597,7 @@ abstract class BaseController
         $limiter = new RateLimiter($key, 1, 1);
         $limiter->reset();
 
-        $this->auditLogger->audit(
+        $this->asyncAudit(
             'admin',
             'rate_limit_reset',
             AuditEvent::SEVERITY_INFO,
@@ -890,7 +896,7 @@ abstract class BaseController
         CacheEngine::invalidateTags($tags);
 
         // Log cache invalidation
-        $this->auditLogger->audit(
+        $this->asyncAudit(
             AuditEvent::CATEGORY_SYSTEM,
             'cache_invalidated',
             AuditEvent::SEVERITY_INFO,

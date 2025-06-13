@@ -341,7 +341,66 @@ class JobsController extends BaseController
         $jobs = $this->cacheByPermission(
             'scheduled_jobs_list',
             function () {
-                return $this->scheduler->getJobs();
+                $rawJobs = $this->scheduler->getJobs();
+
+                // Load configuration jobs data directly from config file
+                $configFile = dirname(__DIR__, 2) . '/config/schedule.php';
+                $configJobs = [];
+                if (file_exists($configFile)) {
+                    $scheduleConfig = require $configFile;
+                    if (isset($scheduleConfig['jobs']) && is_array($scheduleConfig['jobs'])) {
+                        foreach ($scheduleConfig['jobs'] as $configJob) {
+                            if (isset($configJob['name'])) {
+                                $configJobs[$configJob['name']] = $configJob;
+                            }
+                        }
+                    }
+                }
+
+                // Transform job arrays into clean API response format
+                $serializedJobs = [];
+                foreach ($rawJobs as $job) {
+                    $jobName = $job['name'] ?? 'Unknown';
+
+                    // Check if this is a config job and merge data
+                    if (isset($configJobs[$jobName])) {
+                        $configData = $configJobs[$jobName];
+                        $serializedJobs[] = [
+                            'name' => $jobName,
+                            'description' => $configData['description'] ?? '',
+                            'schedule' => $configData['schedule'] ?? $job['schedule'] ?? '',
+                            'handler_class' => $configData['handler_class'] ?? '',
+                            'enabled' => $configData['enabled'] ?? true,
+                            'persistence' => $configData['persistence'] ?? false,
+                            'timeout' => $configData['timeout'] ?? 300,
+                            'retry_attempts' => $configData['retry_attempts'] ?? 1,
+                            'parameters' => $configData['parameters'] ?? [],
+                            'next_run' => $job['next_run'] ?? null,
+                            'last_run' => $job['last_run'] ?? null,
+                            'status' => isset($configData['enabled'])
+                                ? ($configData['enabled'] ? 'active' : 'inactive')
+                                : 'active'
+                        ];
+                    } else {
+                        // For database jobs or other jobs, use the existing structure
+                        $serializedJobs[] = [
+                            'name' => $jobName,
+                            'description' => $job['description'] ?? '',
+                            'schedule' => $job['schedule'] ?? '',
+                            'handler_class' => $job['handler_class'] ?? '',
+                            'enabled' => $job['enabled'] ?? true,
+                            'persistence' => $job['persistence'] ?? false,
+                            'timeout' => $job['timeout'] ?? 300,
+                            'retry_attempts' => $job['retry_attempts'] ?? 1,
+                            'parameters' => is_array($job['parameters'] ?? null) ? $job['parameters'] : [],
+                            'next_run' => $job['next_run'] ?? null,
+                            'last_run' => $job['last_run'] ?? null,
+                            'status' => $job['status'] ?? ($job['enabled'] ? 'active' : 'inactive')
+                        ];
+                    }
+                }
+
+                return $serializedJobs;
             },
             300 // Default 5 minutes
         );

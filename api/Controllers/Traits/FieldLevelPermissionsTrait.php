@@ -138,7 +138,7 @@ trait FieldLevelPermissionsTrait
      */
     protected function getUserFieldPermissions(string $table, string $operation): array
     {
-        $cacheKey = "field_perms:{$table}:{$operation}:" . ($this->currentUser['uuid'] ?? 'anonymous');
+        $cacheKey = "field_perms:{$table}:{$operation}:" . ($this->getCurrentUserUuid() ?? 'anonymous');
 
         return $this->cacheByPermission(
             $cacheKey,

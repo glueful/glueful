@@ -69,6 +69,17 @@ return [
             'timeout' => 600,  // 10 minutes
             'retry_attempts' => 2,
         ],
+        [
+            'name' => 'queue-maintenance',
+            'schedule' => '*/15 * * * *',  // Every 15 minutes
+            'handler_class' => 'Glueful\\Queue\\Jobs\\QueueMaintenance',
+            'parameters' => [],
+            'description' => 'Perform queue system maintenance and optimization',
+            'enabled' => env('QUEUE_MAINTENANCE_ENABLED', true),
+            'persistence' => false,
+            'timeout' => 300,  // 5 minutes
+            'retry_attempts' => 2,
+        ],
     ],
 
     // Global scheduler settings

@@ -7,6 +7,8 @@ namespace Glueful\Controllers;
 use Glueful\Helpers\ConfigManager;
 use Glueful\Logging\AuditEvent;
 use Glueful\Cache\CacheEngine;
+use Glueful\Exceptions\SecurityException;
+use InvalidArgumentException;
 
 class ConfigController extends BaseController
 {
@@ -33,65 +35,129 @@ class ConfigController extends BaseController
         // Check permissions
         $this->requirePermission('system.config.view');
 
-        // Multi-level rate limiting
-        $this->applyMultiLevelRateLimit('config_list');
+        // Load config files directly from the config directory
+        $configPath = dirname(__DIR__, 2) . '/config';
+        $configFiles = glob($configPath . '/*.php');
 
-        // Behavior scoring for suspicious patterns
-        $this->trackConfigAccessBehavior('list_all');
+        if ($configFiles === false) {
+            return [];
+        }
 
-        // Use permission-aware caching for config list
-        return $this->cacheByPermission('config_list', function () {
-            // Audit config access
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'config_list_accessed',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'action' => 'list_configs'
-                ]
-            );
+        $groupedConfig = [];
 
-            // Load config files directly from the config directory
-            $configPath = dirname(__DIR__, 2) . '/config';
-            $configFiles = glob($configPath . '/*.php');
-
-            if ($configFiles === false) {
-                return [];
+        // Load core configs
+        foreach ($configFiles as $file) {
+            // Skip if not a file or not readable
+            if (!is_file($file) || !is_readable($file)) {
+                continue;
             }
 
-            $groupedConfig = [];
-            foreach ($configFiles as $file) {
-                // Skip if not a file or not readable
-                if (!is_file($file) || !is_readable($file)) {
-                    continue;
-                }
+            $name = basename($file, '.php');
 
-                $name = basename($file, '.php');
+            // Load the config file
+            $config = require $file;
 
-                // Load the config file
-                $config = require $file;
+            // Validate that config file returns an array
+            if (!is_array($config)) {
+                continue;
+            }
 
-                // Validate that config file returns an array
-                if (!is_array($config)) {
-                    continue;
-                }
+            // Mask sensitive data based on user permissions
+            $maskedConfig = $this->maskSensitiveData($config, $name);
 
-                // Mask sensitive data based on user permissions
-                $maskedConfig = $this->maskSensitiveData($config, $name);
-
-                $groupedConfig[] = [
+            $groupedConfig[] = [
                 'name' => $name,
                 'config' => $maskedConfig,
-                ];
-            }
+                'source' => 'core'
+            ];
+        }
 
-            return $groupedConfig;
-        });
+        // Load extension configs
+        $extensionConfigs = $this->loadExtensionConfigs();
+        foreach ($extensionConfigs as $extensionConfig) {
+            $groupedConfig[] = [
+                'name' => $extensionConfig['name'],
+                'config' => $extensionConfig['content'],
+                'source' => 'extension',
+                'extension_version' => $extensionConfig['extension_version'] ?? null
+            ];
+        }
+
+        return $groupedConfig;
+    }
+
+
+    private function loadExtensionConfigs(): array
+    {
+        $configs = [];
+
+        try {
+            // Get enabled extension names directly
+            $enabledExtensionNames = \Glueful\Helpers\ExtensionsManager::getEnabledExtensions();
+
+            foreach ($enabledExtensionNames as $extensionName) {
+                // Check common config file locations in extensions directory
+                $extensionPath = dirname(__DIR__, 2) . '/extensions/' . $extensionName;
+
+                if (!is_dir($extensionPath)) {
+                    continue;
+                }
+
+                // Check common config file locations
+                $configPaths = [
+                    $extensionPath . '/src/config.php',
+                    $extensionPath . '/config.php',
+                    $extensionPath . '/config/' . strtolower($extensionName) . '.php'
+                ];
+
+                foreach ($configPaths as $configFile) {
+                    if (file_exists($configFile)) {
+                        $config = $this->safeIncludeConfig($configFile);
+
+                        // Mask sensitive data based on user permissions
+                        $maskedConfig = $this->maskSensitiveData($config, $extensionName);
+
+                        $configs[$extensionName] = [
+                            'name' => $extensionName,
+                            'source' => 'extension',
+                            'content' => $maskedConfig,
+                            'extension_version' => null, // Can be enhanced later if needed
+                            'last_modified' => filemtime($configFile)
+                        ];
+
+                        break; // Only load first found config file
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail the entire operation
+        }
+
+        return $configs;
+    }
+
+    private function safeIncludeConfig(string $file): array
+    {
+        // Basic security: ensure file is within allowed paths
+        $realPath = realpath($file);
+        $basePath = realpath(dirname(__DIR__, 2));
+
+        if (!$realPath || !str_starts_with($realPath, $basePath)) {
+            throw new SecurityException("Invalid config file path: {$file}");
+        }
+
+        $config = include $realPath;
+
+        if (!is_array($config)) {
+            throw new InvalidArgumentException("Config file {$file} must return an array");
+        }
+
+        return $config;
     }
 
     public function getConfigByFile(string $filename): ?array
     {
+
         // Check permissions
         $this->requirePermission('system.config.view');
 
@@ -116,37 +182,58 @@ class ConfigController extends BaseController
 
         // Use permission-aware caching for config file access
         return $this->cacheByPermission("config_file_{$configName}", function () use ($configName) {
-            // Build the full path to the config file
+            // First check core config files
             $configPath = dirname(__DIR__, 2) . '/config';
             $filePath = $configPath . '/' . $configName . '.php';
 
-            // Check if the file exists and is readable
-            if (!file_exists($filePath) || !is_readable($filePath)) {
-                return null;
+            // Check if the core config file exists and is readable
+            if (file_exists($filePath) && is_readable($filePath)) {
+                // Load the config file directly
+                $config = require $filePath;
+
+                // Validate that config file returns an array
+                if (is_array($config)) {
+                    // Audit config file access
+                    $this->auditLogger->audit(
+                        AuditEvent::CATEGORY_SYSTEM,
+                        'config_file_accessed',
+                        AuditEvent::SEVERITY_INFO,
+                        [
+                            'user_uuid' => $this->getCurrentUserUuid(),
+                            'config_file' => $configName,
+                            'is_sensitive' => in_array($configName, self::SENSITIVE_CONFIG_FILES),
+                            'source' => 'core'
+                        ]
+                    );
+
+                    // Mask sensitive data
+                    return $this->maskSensitiveData($config, $configName);
+                }
             }
 
-            // Load the config file directly
-            $config = require $filePath;
+            // If not found in core, check extension configs
+            $extensionConfigs = $this->loadExtensionConfigs();
 
-            // Validate that config file returns an array
-            if (!is_array($config)) {
-                return null;
+            if (isset($extensionConfigs[$configName])) {
+                $extensionConfig = $extensionConfigs[$configName];
+
+                // Audit config file access
+                $this->auditLogger->audit(
+                    AuditEvent::CATEGORY_SYSTEM,
+                    'config_file_accessed',
+                    AuditEvent::SEVERITY_INFO,
+                    [
+                        'user_uuid' => $this->getCurrentUserUuid(),
+                        'config_file' => $configName,
+                        'is_sensitive' => false, // Extension configs are not in sensitive list
+                        'source' => 'extension'
+                    ]
+                );
+
+                return $extensionConfig['content'];
             }
 
-            // Audit config file access
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'config_file_accessed',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'config_file' => $configName,
-                    'is_sensitive' => in_array($configName, self::SENSITIVE_CONFIG_FILES)
-                ]
-            );
-
-            // Mask sensitive data
-            return $this->maskSensitiveData($config, $configName);
+            return null;
         });
     }
 
@@ -725,7 +812,7 @@ class ConfigController extends BaseController
      */
     private function validateConfigName(string $name): bool
     {
-        return preg_match('/^[a-z0-9_-]+$/', $name) === 1;
+        return preg_match('/^[a-zA-Z0-9_-]+$/', $name) === 1;
     }
 
     /**
