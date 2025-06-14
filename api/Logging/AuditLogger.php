@@ -394,10 +394,19 @@ class AuditLogger extends LogManager
 
             // Store in database if enabled
             if ($this->storageBackends['database']) {
-                // Check if batch logging is enabled
-                if (config('logging.audit.batch_enabled', false)) {
+                // Check if this event should be processed asynchronously
+                $asyncConfig = config('app.audit.async_processing', []);
+                $isAsyncEnabled = $asyncConfig['enabled'] ?? false;
+                $asyncCategories = $asyncConfig['categories'] ?? [];
+
+                if ($isAsyncEnabled && in_array($event->getCategory(), $asyncCategories)) {
+                    // Queue for async processing
+                    $this->queueAsyncAudit($event);
+                } elseif (config('app.audit.batch_enabled', false)) {
+                    // Use batch logging for immediate processing
                     $this->addToBatch($event);
                 } else {
+                    // Immediate database write
                     $this->storeAuditEventInDatabase($event);
                 }
             }
@@ -1291,9 +1300,10 @@ class AuditLogger extends LogManager
     {
         self::$batchQueue[] = $event;
 
-        // Check if we should flush the batch
-        $batchSize = (int) config('logging.audit.batch_size', 50);
-        $batchTimeout = (int) config('logging.audit.batch_timeout', 5);
+        // Get category-specific batch settings
+        $category = $event->getCategory();
+        $batchSize = $this->getCategoryBatchSize($category);
+        $batchTimeout = $this->getCategoryBatchTimeout($category);
 
         $shouldFlush = count(self::$batchQueue) >= $batchSize ||
                        (self::$lastBatchFlush > 0 && (time() - self::$lastBatchFlush) >= $batchTimeout);
@@ -1301,6 +1311,30 @@ class AuditLogger extends LogManager
         if ($shouldFlush) {
             $this->flushBatch();
         }
+    }
+
+    /**
+     * Get category-specific batch size
+     */
+    protected function getCategoryBatchSize(string $category): int
+    {
+        return match (strtolower($category)) {
+            'auth' => (int) config('app.audit.auth_event_batch_size', 100),
+            'resource_access' => (int) config('app.audit.resource_access_batch_size', 300),
+            default => (int) config('app.audit.batch_size', 50)
+        };
+    }
+
+    /**
+     * Get category-specific batch timeout
+     */
+    protected function getCategoryBatchTimeout(string $category): int
+    {
+        return match (strtolower($category)) {
+            'auth' => (int) config('app.audit.auth_event_batch_timeout', 3),
+            'resource_access' => (int) config('app.audit.resource_access_batch_timeout', 15),
+            default => (int) config('app.audit.batch_timeout', 5)
+        };
     }
 
     /**
@@ -1359,6 +1393,32 @@ class AuditLogger extends LogManager
                 'batch_size' => count($batchData),
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Queue audit event for async processing
+     *
+     * @param AuditEvent $event Event to queue
+     * @return void
+     */
+    protected function queueAsyncAudit(AuditEvent $event): void
+    {
+        try {
+            $queueConfig = config('app.audit.async_processing', []);
+            $queueName = $queueConfig['queue_name'] ?? 'audit';
+
+            // Get queue manager and dispatch
+            $queueManager = new \Glueful\Queue\QueueManager();
+            $queueManager->push(
+                \Glueful\Queue\Jobs\ProcessAuditLog::class,
+                $event->toArray(),
+                $queueName
+            );
+        } catch (\Exception $e) {
+            // Fallback to immediate processing if queue fails
+            error_log("Failed to queue audit event, falling back to immediate processing: " . $e->getMessage());
+            $this->storeAuditEventInDatabase($event);
         }
     }
 

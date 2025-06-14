@@ -270,7 +270,10 @@ class UserRoleController
             $overview = [
                 'user_uuid' => $userUuid,
                 'roles' => $this->roleService->getUserRoles($userUuid, $scope),
-                'direct_permissions' => $this->permissionService->getUserDirectPermissions($userUuid, ['active_only' => true]),
+                'direct_permissions' => $this->permissionService->getUserDirectPermissions(
+                    $userUuid,
+                    ['active_only' => true]
+                ),
                 'effective_permissions' => $this->permissionService->getUserEffectivePermissions($userUuid, $scope)
             ];
 
