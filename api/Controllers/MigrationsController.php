@@ -114,6 +114,31 @@ class MigrationsController extends BaseController
     }
 
     /**
+     * Get pending migrations data without sending response (for internal use)
+     *
+     * @return array Pending migrations data
+     */
+    public function getPendingMigrationsData(): array
+    {
+        // Get all available migration files
+        $pendingMigrations = $this->migrationManager->getPendingMigrations();
+
+        // Format the response data
+        $formattedMigrations = array_map(function ($migration) {
+            return [
+                'name' => basename($migration),
+                'status' => 'pending',
+                'migration_file' => $migration
+            ];
+        }, $pendingMigrations);
+
+        return [
+            'pending_count' => count($pendingMigrations),
+            'migrations' => $formattedMigrations
+        ];
+    }
+
+    /**
      * Get pending migrations that haven't been executed
      *
      * @return mixed HTTP response
@@ -163,17 +188,8 @@ class MigrationsController extends BaseController
                     ]
                 );
 
-                // Get all available migration files
-                $pendingMigrations = $this->migrationManager->getPendingMigrations();
-
-                // Format the response data
-                $formattedMigrations = array_map(function ($migration) {
-                    return [
-                        'name' => basename($migration),
-                        'status' => 'pending',
-                        'migration_file' => $migration
-                    ];
-                }, $pendingMigrations);
+                // Use the new data method to get pending migrations
+                $data = $this->getPendingMigrationsData();
 
                 // Enhanced success logging with comprehensive metrics
                 $this->auditLogger->audit(
@@ -187,9 +203,13 @@ class MigrationsController extends BaseController
                         'resource' => 'migrations',
                         'operation' => 'read_pending_success',
                         'results' => [
-                            'pending_count' => count($pendingMigrations),
-                            'migration_files' => array_map('basename', $pendingMigrations),
-                            'total_size' => array_sum(array_map('strlen', $pendingMigrations))
+                            'pending_count' => $data['pending_count'],
+                            'migration_files' => array_map(function ($m) {
+                                return $m['name'];
+                            }, $data['migrations']),
+                            'total_size' => array_sum(array_map(function ($m) {
+                                return strlen($m['migration_file']);
+                            }, $data['migrations']))
                         ],
                         'performance' => [
                             'memory_usage' => memory_get_usage(true),
@@ -206,10 +226,7 @@ class MigrationsController extends BaseController
                     ]
                 );
 
-                return Response::ok([
-                    'pending_count' => count($pendingMigrations),
-                    'migrations' => $formattedMigrations
-                ], 'Pending migrations retrieved successfully')->send();
+                return Response::ok($data, 'Pending migrations retrieved successfully')->send();
             },
             300  // 5 minute cache for pending migrations
         );

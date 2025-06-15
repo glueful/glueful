@@ -32,6 +32,24 @@ class MetricsController extends BaseController
      *
      * @return mixed HTTP response
      */
+    /**
+     * Get API metrics data without sending response (for internal use)
+     *
+     * @return array API metrics data
+     */
+    public function getApiMetricsData(): array
+    {
+        // Cache API metrics with permission-aware caching
+        return $this->cacheByPermission(
+            'api_metrics_data',
+            function () {
+                $metricsService = new \Glueful\Services\ApiMetricsService();
+                return $metricsService->getApiMetrics();
+            },
+            $this->isAdmin() ? 60 : 300 // 1 min for admins, 5 min for users
+        );
+    }
+
     public function getApiMetrics(): mixed
     {
         $this->requirePermission('system.metrics.view', 'metrics:api');
@@ -50,15 +68,8 @@ class MetricsController extends BaseController
             ]
         );
 
-        // Cache API metrics with permission-aware caching
-        $endpointMetrics = $this->cacheByPermission(
-            'api_metrics_data',
-            function () {
-                $metricsService = new \Glueful\Services\ApiMetricsService();
-                return $metricsService->getApiMetrics();
-            },
-            $this->isAdmin() ? 60 : 300 // 1 min for admins, 5 min for users
-        );
+        // Use the new method to get data
+        $endpointMetrics = $this->getApiMetricsData();
 
         return $this->withSecurityHeaders(
             $this->withCacheHeaders(
@@ -162,6 +173,23 @@ class MetricsController extends BaseController
      *
      * @return mixed HTTP response with system health metrics
      */
+    /**
+     * Get system health data without sending response (for internal use)
+     *
+     * @return array System health data
+     */
+    public function getSystemHealthData(): array
+    {
+        // Use permission-aware caching for system health data
+        return $this->cacheByPermission(
+            'system_health_metrics',
+            function () {
+                return $this->generateSystemHealthMetrics();
+            },
+            $this->isAdmin() ? 300 : 600 // 5 min for admins, 10 min for users
+        );
+    }
+
     public function systemHealth(): mixed
     {
         $this->requirePermission('system.health.view', 'metrics:system');
@@ -185,14 +213,8 @@ class MetricsController extends BaseController
             ]
         );
 
-        // Use permission-aware caching for system health data
-        $metrics = $this->cacheByPermission(
-            'system_health_metrics',
-            function () {
-                return $this->generateSystemHealthMetrics();
-            },
-            $this->isAdmin() ? 300 : 600 // 5 min for admins, 10 min for users
-        );
+        // Use the new method to get data
+        $metrics = $this->getSystemHealthData();
 
         return $this->withSecurityHeaders(
             $this->withCacheHeaders(

@@ -21,8 +21,7 @@ use Glueful\Controllers\{
     DatabaseController,
     MigrationsController,
     JobsController,
-    MetricsController,
-    AuthController
+    MetricsController
 };
 use Symfony\Component\HttpFoundation\Request;
 
@@ -1024,5 +1023,31 @@ Router::group('/admin', function () use ($container) {
             $metricsController = $container->get(MetricsController::class);
             return $metricsController->systemHealth();
         });
+    }, requiresAdminAuth: true);
+
+    /**
+     * @route GET /admin/dashboard
+     * @tag Dashboard
+     * @summary Get comprehensive dashboard data
+     * @description Retrieves all dashboard data in a single request including database stats,
+     * system health, migrations, extensions, permissions, roles, jobs, and API metrics
+     * @requiresAuth true
+     * @response 200 application/json "Dashboard data retrieved successfully" {
+     *   database:object="Database statistics and table information",
+     *   system_health:object="System health metrics and status",
+     *   migrations:object="Migration status and pending count",
+     *   extensions:object="Extension statistics and status",
+     *   permissions:object="RBAC permissions data and statistics",
+     *   roles:object="RBAC roles data and statistics",
+     *   jobs:object="Scheduled jobs information",
+     *   api_metrics:object="API performance and usage metrics",
+     *   timestamp:string="Data collection timestamp"
+     * }
+     * @response 403 application/json "Permission denied"
+     * @response 500 application/json "Server error"
+     */
+    Router::get('/dashboard', function (Request $request) use ($container) {
+        $adminController = $container->get(AdminController::class);
+        return $adminController->getDashboardData($request);
     }, requiresAdminAuth: true);
 });

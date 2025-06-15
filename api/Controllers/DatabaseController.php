@@ -1388,57 +1388,57 @@ class DatabaseController extends BaseController
      *
      * @return mixed HTTP response
      */
-    public function getDatabaseStats(): mixed
+    /**
+     * Get database statistics data with caching (for internal use)
+     *
+     * @return array Database statistics data
+     */
+    public function getDatabaseStatsData(): array
     {
-        // Permission check for database statistics
-        $this->requirePermission('database.structure.read', 'database');
-
-        // Rate limiting for database statistics
-        $this->rateLimitResource('database.stats', 'read');
-
-        // Get list of all tables with schema information
-        $tables = $this->schemaManager->getTables();
-        error_log("Retrieved " . count($tables) . " tables from the database");
-
-        if (empty($tables)) {
-            return Response::ok(['tables' => []], 'No tables found in database')->send();
-        }
-
-        $tableData = [];
-
-        // Get size information for each table
-        foreach ($tables as $table) {
-            // Check if the result includes schema information already
-            $tableName = is_array($table) ? $table['name'] : $table;
-            // Default to 'public' schema if not specified
-            $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
-
-            $size = $this->schemaManager->getTableSize($tableName);
-            $rowCount = $this->schemaManager->getTableRowCount($tableName);
-
-            $tableData[] = [
-            'table_name' => $tableName,
-            'schema' => $schema,
-            'size' => $size,
-            'rows' => $rowCount,
-            'avg_row_size' => $rowCount > 0 ? round($size / $rowCount) : 0
-            ];
-        }
-
-        // Sort tables by size in descending order
-        usort($tableData, function ($a, $b) {
-            // Handle zero values in comparison (put zero-size tables at the end)
-            if ($a['size'] === 0) {
-                return 1;
-            }
-            if ($b['size'] === 0) {
-                return -1;
-            }
-            return $b['size'] <=> $a['size'];
-        });
-        $data = $this->cacheResponse(
+        return $this->cacheResponse(
             'database_stats',
-            function () use ($tableData, $tables) {
+            function () {
+                // Get list of all tables with schema information
+                $tables = $this->schemaManager->getTables();
+                error_log("Retrieved " . count($tables) . " tables from the database");
+
+                if (empty($tables)) {
+                    return ['tables' => [], 'total_tables' => 0];
+                }
+
+                $tableData = [];
+
+                // Get size information for each table
+                foreach ($tables as $table) {
+                    // Check if the result includes schema information already
+                    $tableName = is_array($table) ? $table['name'] : $table;
+                    // Default to 'public' schema if not specified
+                    $schema = is_array($table) && isset($table['schema']) ? $table['schema'] : 'public';
+
+                    $size = $this->schemaManager->getTableSize($tableName);
+                    $rowCount = $this->schemaManager->getTableRowCount($tableName);
+
+                    $tableData[] = [
+                        'table_name' => $tableName,
+                        'schema' => $schema,
+                        'size' => $size,
+                        'rows' => $rowCount,
+                        'avg_row_size' => $rowCount > 0 ? round($size / $rowCount) : 0
+                    ];
+                }
+
+                // Sort tables by size in descending order
+                usort($tableData, function ($a, $b) {
+                    // Handle zero values in comparison (put zero-size tables at the end)
+                    if ($a['size'] === 0) {
+                        return 1;
+                    }
+                    if ($b['size'] === 0) {
+                        return -1;
+                    }
+                    return $b['size'] <=> $a['size'];
+                });
+
                 return [
                     'tables' => $tableData,
                     'total_tables' => count($tables)
@@ -1447,6 +1447,18 @@ class DatabaseController extends BaseController
             900, // 15 minutes cache
             ['database', 'statistics']
         );
+    }
+
+    public function getDatabaseStats(): mixed
+    {
+        // Permission check for database statistics
+        $this->requirePermission('database.structure.read', 'database');
+
+        // Rate limiting for database statistics
+        $this->rateLimitResource('database.stats', 'read');
+
+        // Use the data method that includes caching
+        $data = $this->getDatabaseStatsData();
 
         return Response::ok($data, 'Database statistics retrieved successfully')->send();
     }

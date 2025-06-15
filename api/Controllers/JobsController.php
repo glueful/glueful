@@ -311,34 +311,13 @@ class JobsController extends BaseController
     }
 
     /**
-     * Get all jobs with pagination and filtering
+     * Get scheduled jobs data without sending response (for internal use)
      *
-     * @return mixed HTTP response
+     * @return array Scheduled jobs data
      */
-    public function getScheduledJobs(): mixed
+    public function getScheduledJobsData(): array
     {
-        $startTime = microtime(true);
-
-        // Check permission to view jobs
-        $this->requirePermission('system.jobs.view');
-
-        // Log job list access
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_list_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'controller' => static::class,
-                'action' => 'getScheduledJobs',
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'timestamp' => time()
-            ]
-        );
-
-        // Cache job list with permission-aware TTL
-        $jobs = $this->cacheByPermission(
+        return $this->cacheResponse(
             'scheduled_jobs_list',
             function () {
                 $rawJobs = $this->scheduler->getJobs();
@@ -404,6 +383,37 @@ class JobsController extends BaseController
             },
             300 // Default 5 minutes
         );
+    }
+
+    /**
+     * Get all jobs with pagination and filtering
+     *
+     * @return mixed HTTP response
+     */
+    public function getScheduledJobs(): mixed
+    {
+        $startTime = microtime(true);
+
+        // Check permission to view jobs
+        $this->requirePermission('system.jobs.view');
+
+        // Log job list access
+        $this->auditLogger->audit(
+            AuditEvent::CATEGORY_SYSTEM,
+            'job_list_accessed',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'user_uuid' => $this->getCurrentUserUuid(),
+                'controller' => static::class,
+                'action' => 'getScheduledJobs',
+                'ip_address' => $this->request->getClientIp(),
+                'user_agent' => $this->request->headers->get('User-Agent'),
+                'timestamp' => time()
+            ]
+        );
+
+        // Use the new data method to get scheduled jobs
+        $jobs = $this->getScheduledJobsData();
 
         $executionTime = (microtime(true) - $startTime) * 1000;
 
