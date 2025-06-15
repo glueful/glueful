@@ -14,10 +14,12 @@ class AdminController
     private ?ConfigController $configController = null;
     private $authManager = null;
     private bool $authInitialized = false;
+    private $container;
 
     public function __construct()
     {
-        // Lightweight constructor - dependencies are loaded lazily when needed
+        // Get the DI container
+        $this->container = app();
     }
 
     /**
@@ -26,7 +28,7 @@ class AdminController
     private function getConfigController(): ConfigController
     {
         if ($this->configController === null) {
-            $this->configController = new ConfigController();
+            $this->configController = $this->container->get(ConfigController::class);
         }
         return $this->configController;
     }
@@ -220,30 +222,6 @@ class AdminController
     }
 
     /**
-     * Authenticate a request using multiple authentication methods
-     *
-     * @param SymfonyRequest $request The HTTP request to authenticate
-     * @return array|null User data if authenticated, null otherwise
-     */
-    private function authenticate(SymfonyRequest $request): ?array
-    {
-        // For admin routes, try admin provider first, then either jwt OR api_key (not both)
-        $userData = $this->getAuthManager()->authenticateWithProvider('admin', $request);
-
-        if (!$userData) {
-            // If admin auth fails, try jwt
-            $userData = $this->getAuthManager()->authenticateWithProvider('jwt', $request);
-
-            // If jwt fails, try api_key as a last resort
-            if (!$userData) {
-                $userData = $this->getAuthManager()->authenticateWithProvider('api_key', $request);
-            }
-        }
-
-        return $userData;
-    }
-
-    /**
      * Get comprehensive dashboard data in a single request
      */
     public function getDashboardData(SymfonyRequest $request): mixed
@@ -253,11 +231,11 @@ class AdminController
                 'timestamp' => date('c')
             ];
 
-            // Get all controllers we need - instantiate directly like other methods in this class
-            $dbController = new \Glueful\Controllers\DatabaseController();
-            $migrationsController = new \Glueful\Controllers\MigrationsController();
-            $jobsController = new \Glueful\Controllers\JobsController();
-            $metricsController = new \Glueful\Controllers\MetricsController();
+            // Get all controllers from DI container
+            $dbController = $this->container->get(\Glueful\Controllers\DatabaseController::class);
+            $migrationsController = $this->container->get(\Glueful\Controllers\MigrationsController::class);
+            $jobsController = $this->container->get(\Glueful\Controllers\JobsController::class);
+            $metricsController = $this->container->get(\Glueful\Controllers\MetricsController::class);
 
             // Fetch all data (using existing controller methods)
 
@@ -379,15 +357,12 @@ class AdminController
                 // Check if RBAC extension is enabled
                 $rbacEnabled = \Glueful\Helpers\ExtensionsManager::isExtensionEnabled('RBAC');
                 if ($rbacEnabled) {
-                    // Get the DI container
-                    $container = app();
-
                     // Get RBAC repositories from the container
-                    $permissionRepository = $container->get('rbac.repository.permission');
-                    $roleRepository = $container->get('rbac.repository.role');
+                    $permissionRepository = $this->container->get('rbac.repository.permission');
+                    $roleRepository = $this->container->get('rbac.repository.role');
 
                     // Get permissions data using repository methods
-                    $allPermissions = $permissionRepository->findAll(['exclude_deleted' => true]);
+                    $allPermissions = $permissionRepository->findAll();
                     $permissionTotal = count($allPermissions);
 
                     // Get permissions by category
@@ -396,22 +371,32 @@ class AdminController
                     $systemPermissions = 0;
 
                     foreach ($allPermissions as $permission) {
-                        // Count by category
-                        $category = $permission->getCategory() ?? 'uncategorized';
+                        // Handle both array and object formats
+                        $category = is_array($permission)
+                            ? ($permission['category'] ?? 'uncategorized')
+                            : ($permission->getCategory() ?? 'uncategorized');
+
                         if (!isset($byCategory[$category])) {
                             $byCategory[$category] = 0;
                         }
                         $byCategory[$category]++;
 
                         // Count by resource type
-                        $resourceType = $permission->getResourceType() ?? 'general';
+                        $resourceType = is_array($permission)
+                            ? ($permission['resource_type'] ?? 'general')
+                            : ($permission->getResourceType() ?? 'general');
+
                         if (!isset($byResourceType[$resourceType])) {
                             $byResourceType[$resourceType] = 0;
                         }
                         $byResourceType[$resourceType]++;
 
                         // Count system permissions
-                        if ($permission->isSystem()) {
+                        $isSystem = is_array($permission)
+                            ? ($permission['is_system'] ?? false)
+                            : $permission->isSystem();
+
+                        if ($isSystem) {
                             $systemPermissions++;
                         }
                     }
@@ -424,14 +409,25 @@ class AdminController
                     $recentPermissions = array_slice($allPermissions, 0, 5);
                     $recentPermissionsList = [];
                     foreach ($recentPermissions as $permission) {
-                        $recentPermissionsList[] = [
-                            'uuid' => $permission->getUuid(),
-                            'name' => $permission->getName(),
-                            'slug' => $permission->getSlug(),
-                            'category' => $permission->getCategory(),
-                            'resource_type' => $permission->getResourceType(),
-                            'is_system' => $permission->isSystem()
-                        ];
+                        if (is_array($permission)) {
+                            $recentPermissionsList[] = [
+                                'uuid' => $permission['uuid'] ?? null,
+                                'name' => $permission['name'] ?? null,
+                                'slug' => $permission['slug'] ?? null,
+                                'category' => $permission['category'] ?? null,
+                                'resource_type' => $permission['resource_type'] ?? null,
+                                'is_system' => $permission['is_system'] ?? false
+                            ];
+                        } else {
+                            $recentPermissionsList[] = [
+                                'uuid' => $permission->getUuid(),
+                                'name' => $permission->getName(),
+                                'slug' => $permission->getSlug(),
+                                'category' => $permission->getCategory(),
+                                'resource_type' => $permission->getResourceType(),
+                                'is_system' => $permission->isSystem()
+                            ];
+                        }
                     }
 
                     $dashboard['permissions'] = [
@@ -445,7 +441,7 @@ class AdminController
                     ];
 
                     // Get roles data using repository methods
-                    $allRoles = $roleRepository->findAll(['exclude_deleted' => true]);
+                    $allRoles = $roleRepository->findAll();
                     $roleTotal = count($allRoles);
 
                     $activeRoles = 0;
@@ -453,18 +449,30 @@ class AdminController
                     $byLevel = [];
 
                     foreach ($allRoles as $role) {
+                        // Handle both array and object formats
                         // Count active roles
-                        if ($role->isActive()) {
+                        $isActive = is_array($role)
+                            ? ($role['is_active'] ?? false)
+                            : $role->isActive();
+
+                        if ($isActive) {
                             $activeRoles++;
                         }
 
                         // Count system roles
-                        if ($role->isSystem()) {
+                        $isSystem = is_array($role)
+                            ? ($role['is_system'] ?? false)
+                            : $role->isSystem();
+
+                        if ($isSystem) {
                             $systemRoles++;
                         }
 
                         // Count by level
-                        $level = $role->getLevel();
+                        $level = is_array($role)
+                            ? ($role['level'] ?? 0)
+                            : $role->getLevel();
+
                         if (!isset($byLevel[$level])) {
                             $byLevel[$level] = 0;
                         }
@@ -478,15 +486,27 @@ class AdminController
                     $recentRoles = array_slice($allRoles, 0, 5);
                     $recentRolesList = [];
                     foreach ($recentRoles as $role) {
-                        $recentRolesList[] = [
-                            'uuid' => $role->getUuid(),
-                            'name' => $role->getName(),
-                            'slug' => $role->getSlug(),
-                            'description' => $role->getDescription(),
-                            'level' => $role->getLevel(),
-                            'is_active' => $role->isActive(),
-                            'is_system' => $role->isSystem()
-                        ];
+                        if (is_array($role)) {
+                            $recentRolesList[] = [
+                                'uuid' => $role['uuid'] ?? null,
+                                'name' => $role['name'] ?? null,
+                                'slug' => $role['slug'] ?? null,
+                                'description' => $role['description'] ?? null,
+                                'level' => $role['level'] ?? 0,
+                                'is_active' => $role['is_active'] ?? false,
+                                'is_system' => $role['is_system'] ?? false
+                            ];
+                        } else {
+                            $recentRolesList[] = [
+                                'uuid' => $role->getUuid(),
+                                'name' => $role->getName(),
+                                'slug' => $role->getSlug(),
+                                'description' => $role->getDescription(),
+                                'level' => $role->getLevel(),
+                                'is_active' => $role->isActive(),
+                                'is_system' => $role->isSystem()
+                            ];
+                        }
                     }
 
                     $dashboard['roles'] = [

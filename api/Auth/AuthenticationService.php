@@ -131,6 +131,9 @@ class AuthenticationService
         $userData['roles'] = []; // Roles managed by RBAC extension
         $userData['last_login'] = date('Y-m-d H:i:s');
 
+        // Pass through remember_me preference from credentials
+        $userData['remember_me'] = $credentials['remember_me'] ?? false;
+
         // Update user tracking fields in the database
         try {
             // Get request information for tracking
@@ -437,14 +440,38 @@ class AuthenticationService
             return null;
         }
 
+        // Build OIDC-compliant user object (same as login response)
+        $oidcUser = [
+            'id' => $userData['uuid'],
+            'email' => $userData['email'] ?? null,
+            'email_verified' => !empty($userData['email_verified_at']),
+            'username' => $userData['username'] ?? null,
+            'locale' => $userData['locale'] ?? 'en-US',
+            'updated_at' => isset($userData['updated_at']) ? strtotime($userData['updated_at']) : time()
+        ];
+
+        // Add name fields if profile exists
+        if (isset($userData['profile'])) {
+            $firstName = $userData['profile']['first_name'] ?? '';
+            $lastName = $userData['profile']['last_name'] ?? '';
+
+            if ($firstName || $lastName) {
+                $oidcUser['name'] = trim($firstName . ' ' . $lastName);
+                $oidcUser['given_name'] = $firstName ?: null;
+                $oidcUser['family_name'] = $lastName ?: null;
+            }
+
+            if (!empty($userData['profile']['photo_url'])) {
+                $oidcUser['picture'] = $userData['profile']['photo_url'];
+            }
+        }
+
         return [
-            'tokens' => [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'expires_in' => $tokens['expires_in'],
-                'token_type' => 'Bearer'
-            ],
-            'user' => $userData
+            'access_token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token'],
+            'expires_in' => $tokens['expires_in'],
+            'token_type' => 'Bearer',
+            'user' => $oidcUser
         ];
     }
 

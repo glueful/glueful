@@ -84,9 +84,9 @@ class TokenManager
         // Skip audit logging for token generation - login success is sufficient
 
         return [
-        'access_token' => $accessToken,
-        'refresh_token' => $refreshToken,
-        'expires_in' => $accessTokenLifetime
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $accessTokenLifetime
         ];
     }
     /**
@@ -273,7 +273,21 @@ class TokenManager
 
         // Default to standard JWT token generation for backward compatibility
         if (!$tokens) {
-            $tokens = self::generateTokenPair($sessionData);
+            // Get remember_me status from the session to determine token lifetime
+            $connection = new Connection();
+            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+            $sessionResult = $queryBuilder->select('auth_sessions', ['remember_me'])
+                ->where(['refresh_token' => $refreshToken])
+                ->get();
+            $rememberMe = !empty($sessionResult[0]['remember_me']);
+            // Set appropriate token lifetime based on remember_me
+            $accessTokenLifetime = $rememberMe
+                ? (int)config('session.remember_expiration', 30 * 24 * 3600)  // 30 days
+                : (int)config('session.access_token_lifetime', 3600);         // 1 hour
+            $refreshTokenLifetime = $rememberMe
+                ? (int)config('session.remember_expiration', 60 * 24 * 3600)  // 60 days for refresh
+                : (int)config('session.refresh_token_lifetime', 7 * 24 * 3600); // 7 days
+            $tokens = self::generateTokenPair($sessionData, $accessTokenLifetime, $refreshTokenLifetime);
         }
 
         // Log successful token refresh
@@ -314,9 +328,9 @@ class TokenManager
 
         // Return basic session data with user UUID
         // The calling method will handle fetching full user data
+        // Note: We exclude access_token to prevent token wrapping
         return [
             'uuid' => $result[0]['user_uuid'],
-            'access_token' => $result[0]['access_token'],
             'created_at' => $result[0]['created_at']
         ];
     }

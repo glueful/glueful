@@ -147,7 +147,9 @@ class CreateInitialSchema implements MigrationInterface
             'refresh_expires_at' => 'TIMESTAMP NOT NULL',
             'status' => "ENUM('active', 'revoked') DEFAULT 'active'",
             'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+            'provider' => "TEXT DEFAULT 'jwt'",
+            'remember_me' => 'BOOLEAN DEFAULT FALSE',
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'user_uuid'],

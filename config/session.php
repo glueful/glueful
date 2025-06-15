@@ -9,9 +9,9 @@
 
 return [
     // Token Lifetimes (in seconds)
-    'access_token_lifetime' => env('ACCESS_TOKEN_LIFETIME', 900),      // 15 minutes
+    'access_token_lifetime' => env('ACCESS_TOKEN_LIFETIME', 3600),      // 1 hour (standard)
     'refresh_token_lifetime' => env('REFRESH_TOKEN_LIFETIME', 604800), // 7 days
-    'remember_expiration' => 30 * 24 * 3600,                          // 30 days
+    'remember_expiration' => env('REMEMBER_TOKEN_LIFETIME', 2592000),                          // 30 days
 
     // Security Keys - MUST be set in environment variables
     'token_salt' => env('TOKEN_SALT'),  // REQUIRED: Strong random salt for token generation
@@ -30,9 +30,6 @@ return [
         // ],
         // 'api_key' => [
         //     'class' => \Glueful\Auth\ApiKeyAuthenticationProvider::class,
-        // ],
-        // 'admin' => [
-        //     'class' => \Glueful\Auth\AdminAuthenticationProvider::class,
         // ],
     ],
 ];

@@ -48,6 +48,12 @@ class AuthController
         $clientIp = $request->getClientIp();
         $userAgent = $request->headers->get('User-Agent');
 
+        // Extract remember me preference from credentials
+        $rememberMe = isset($credentials['remember']) && $credentials['remember'];
+
+        // Add remember_me to credentials for authentication service
+        $credentials['remember_me'] = $rememberMe;
+
         // Check if a specific provider was requested
         $providerName = null;
         if (isset($credentials['provider'])) {
@@ -70,6 +76,7 @@ class AuthController
                     'provider' => $providerName ?? 'default',
                     'ip_address' => $clientIp,
                     'user_agent' => $userAgent,
+                    'remember_me' => $rememberMe,
                     'reason' => 'Invalid credentials'
                 ],
                 AuditEvent::SEVERITY_WARNING
@@ -88,6 +95,7 @@ class AuthController
                 'provider' => $providerName ?? 'default',
                 'ip_address' => $clientIp,
                 'user_agent' => $userAgent,
+                'remember_me' => $rememberMe,
                 'session_id' => $result['token'] ?? null
             ],
             AuditEvent::SEVERITY_INFO

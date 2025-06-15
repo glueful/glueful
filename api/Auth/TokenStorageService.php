@@ -78,7 +78,8 @@ class TokenStorageService implements TokenStorageInterface
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s'),
                 'last_token_refresh' => date('Y-m-d H:i:s'),
-                'token_fingerprint' => hash('sha256', $tokens['access_token'])
+                'token_fingerprint' => hash('sha256', $tokens['access_token']),
+                'remember_me' => !empty($sessionData['remember_me']) ? 1 : 0
             ];
 
             // Store in database
