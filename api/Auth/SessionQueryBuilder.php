@@ -790,8 +790,10 @@ class SessionQueryBuilder
             if ($condition['type'] === 'nested') {
                 $parts[] = '(' . $this->conditionsToString($condition['value']) . ')';
             } else {
-                $parts[] = $condition['type'] . ' ' . $condition['operator'] . ' ' .
-                          (is_array($condition['value']) ? '[' . implode(',', $condition['value']) . ']' : $condition['value']);
+                $value = is_array($condition['value'])
+                    ? '[' . implode(',', $condition['value']) . ']'
+                    : $condition['value'];
+                $parts[] = $condition['type'] . ' ' . $condition['operator'] . ' ' . $value;
             }
         }
 

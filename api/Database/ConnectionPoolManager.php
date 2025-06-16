@@ -305,7 +305,8 @@ class ConnectionPoolManager
         foreach ($this->pools as $engine => $pool) {
             $stats = $pool->getStats();
             $health[$engine] = [
-                'healthy' => $stats['failed_health_checks'] < ($stats['total_health_checks'] * 0.1), // < 10% failure rate
+                'healthy' => $stats['failed_health_checks'] < ($stats['total_health_checks'] * 0.1),
+                // < 10% failure rate
                 'active_connections' => $stats['active_connections'],
                 'idle_connections' => $stats['idle_connections'],
                 'total_connections' => $stats['total_connections'],

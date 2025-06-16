@@ -181,7 +181,8 @@ class PoolMonitor
                 $poolRecommendations[] = [
                     'type' => 'scaling',
                     'priority' => 'high',
-                    'message' => 'Consider increasing max_connections - pool utilization is ' . $stats['utilization_percent'] . '%'
+                    'message' => 'Consider increasing max_connections - pool utilization is ' .
+                                $stats['utilization_percent'] . '%'
                 ];
             }
 
@@ -190,7 +191,8 @@ class PoolMonitor
                 $poolRecommendations[] = [
                     'type' => 'performance',
                     'priority' => 'high',
-                    'message' => 'High timeout rate detected - consider tuning acquisition_timeout or increasing pool size'
+                    'message' => 'High timeout rate detected - consider tuning acquisition_timeout ' .
+                                'or increasing pool size'
                 ];
             }
 
@@ -269,7 +271,10 @@ class PoolMonitor
             $alerts[] = 'low_success_rate';
         }
 
-        if (isset($metrics['avg_acquisition_time']) && $metrics['avg_acquisition_time'] > self::$thresholds['max_avg_acquisition_time']) {
+        if (
+            isset($metrics['avg_acquisition_time']) &&
+            $metrics['avg_acquisition_time'] > self::$thresholds['max_avg_acquisition_time']
+        ) {
             $alerts[] = 'slow_acquisition';
         }
 
