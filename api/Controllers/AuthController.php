@@ -406,6 +406,13 @@ class AuthController
             throw new AuthenticationException('Invalid or expired refresh token');
         }
 
+        // Update RequestUserContext with the new token to maintain consistency
+        // within the current request
+        $requestContext = \Glueful\Http\RequestUserContext::getInstance();
+        if ($requestContext->isAuthenticated()) {
+            $requestContext->updateToken($result['access_token']);
+        }
+
         return Response::ok($result, 'Token refreshed successfully')->send();
     }
 }

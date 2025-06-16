@@ -536,6 +536,34 @@ class RequestUserContext
     }
 
     /**
+     * Update token after refresh
+     *
+     * Updates the cached token and refreshes session data without losing
+     * other cached information. This is used when tokens are refreshed
+     * within the same request.
+     *
+     * @param string $newToken New access token
+     * @return self Fluent interface
+     */
+    public function updateToken(string $newToken): self
+    {
+        // Update the cached token
+        $this->token = $newToken;
+
+        // Clear only authentication-related caches
+        $this->sessionData = null;
+        $this->user = null;
+
+        // Keep permission cache since permissions haven't changed
+        // Only clear the admin check since it may depend on session data
+        unset($this->permissionCache['is_admin']);
+
+        // Re-initialize with the new token
+        $this->authAttempted = false;
+        return $this->initialize();
+    }
+
+    /**
      * Refresh user data from session
      *
      * @return self Fluent interface
