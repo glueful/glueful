@@ -24,9 +24,14 @@ class SessionCacheManager
 {
     private const SESSION_PREFIX = 'session:';
     private const PROVIDER_INDEX_PREFIX = 'provider:';
+    private const PERMISSION_CACHE_PREFIX = 'user_permissions:';
+    private const USER_SESSION_INDEX_PREFIX = 'user_sessions:';
     private const DEFAULT_TTL = 3600; // 1 hour
+    private const PERMISSIONS_TTL = 1800; // 30 minutes
     private static ?int $ttl = null;
     private static ?array $providerConfigs = null;
+    private static ?object $permissionService = null;
+    private static ?object $queueService = null;
 
     /**
      * Initialize session cache manager
@@ -46,6 +51,56 @@ class SessionCacheManager
 
         // Load provider-specific configurations
         self::$providerConfigs = config('security.authentication_providers', []);
+
+        // Initialize services via DI container
+        self::initializeServices();
+    }
+
+    /**
+     * Initialize services via dependency injection
+     */
+    private static function initializeServices(): void
+    {
+        try {
+            // Try to get services from DI container using actual Glueful service names
+            if (function_exists('app')) {
+                $container = app();
+
+                // Try to resolve RBAC permission provider (primary)
+                if ($container->has('rbac.permission_provider')) {
+                    self::$permissionService = $container->get('rbac.permission_provider');
+                } elseif ($container->has('rbac.role_service')) {
+                    // Fallback to role service if permission provider not available
+                    self::$permissionService = $container->get('rbac.role_service');
+                }
+
+                // Try to resolve queue service
+                if ($container->has('queue.service')) {
+                    self::$queueService = $container->get('queue.service');
+                } elseif ($container->has('QueueService')) {
+                    self::$queueService = $container->get('QueueService');
+                }
+            }
+        } catch (\Throwable $e) {
+            // Services not available, will fall back to PermissionManager
+            error_log("SessionCacheManager: Failed to initialize services via DI: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Set permission service (for testing or manual DI)
+     */
+    public static function setPermissionService(?object $service): void
+    {
+        self::$permissionService = $service;
+    }
+
+    /**
+     * Set queue service (for testing or manual DI)
+     */
+    public static function setQueueService(?object $service): void
+    {
+        self::$queueService = $service;
     }
 
     /**
@@ -69,19 +124,23 @@ class SessionCacheManager
         self::initialize();
         $sessionId = self::generateSessionId();
 
-        // Use custom TTL if provided, or provider-specific TTL if available
+    // Use custom TTL if provided, or provider-specific TTL if available
         $sessionTtl = $ttl ?? self::getProviderTtl($provider);
+
+    // Pre-load permissions if RBAC extension is available
+        $enhancedUserData = self::enhanceUserDataWithPermissions($userData);
 
         $sessionData = [
             'id' => $sessionId,
             'token' => $token,
-            'user' => $userData,
+            'user' => $enhancedUserData,
             'created_at' => time(),
             'last_activity' => time(),
-            'provider' => $provider ?? 'jwt' // Store the provider used
+            'provider' => $provider ?? 'jwt', // Store the provider used
+            'permissions_loaded_at' => time() // Track when permissions were cached
         ];
 
-        // Store session data
+    // Store session data
         $success = CacheEngine::set(
             self::SESSION_PREFIX . $sessionId,
             $sessionData,
@@ -92,8 +151,18 @@ class SessionCacheManager
             // Index this session by provider for easier management
             self::indexSessionByProvider($provider ?? 'jwt', $sessionId, $sessionTtl);
 
+            // Index session by user UUID for quick lookup
+            if (isset($enhancedUserData['uuid'])) {
+                self::indexSessionByUser($enhancedUserData['uuid'], $sessionId, $sessionTtl);
+            }
+
             // Have TokenManager map the token to this session
             $mapped = TokenManager::mapTokenToSession($token, $sessionId);
+
+            // Cache permissions separately for faster access
+            if (isset($enhancedUserData['permissions']) && isset($enhancedUserData['uuid'])) {
+                self::cacheUserPermissions($enhancedUserData['uuid'], $enhancedUserData['permissions']);
+            }
 
             // Skip audit logging here - session creation is already logged in TokenManager
 
@@ -129,6 +198,57 @@ class SessionCacheManager
     }
 
     /**
+     * Index session by user UUID
+     *
+     * Creates a secondary index of sessions organized by user.
+     * Enables efficient lookup of all sessions for a specific user.
+     *
+     * @param string $userUuid User UUID
+     * @param string $sessionId Session identifier
+     * @param int $ttl Time-to-live in seconds
+     * @return bool Success status
+     */
+    private static function indexSessionByUser(string $userUuid, string $sessionId, int $ttl): bool
+    {
+        $indexKey = self::USER_SESSION_INDEX_PREFIX . $userUuid;
+        $sessions = CacheEngine::get($indexKey) ?? [];
+
+        // Add session to the user's index
+        $sessions[] = $sessionId;
+
+        // Remove any duplicates
+        $sessions = array_unique($sessions);
+
+        return CacheEngine::set($indexKey, $sessions, $ttl);
+    }
+
+    /**
+     * Remove session from user index
+     *
+     * Removes a session ID from a user's index list.
+     *
+     * @param string $userUuid User UUID
+     * @param string $sessionId Session ID to remove
+     * @return bool Success status
+     */
+    private static function removeSessionFromUserIndex(string $userUuid, string $sessionId): bool
+    {
+        $indexKey = self::USER_SESSION_INDEX_PREFIX . $userUuid;
+        $sessions = CacheEngine::get($indexKey) ?? [];
+
+        // Remove session from the index
+        $sessions = array_diff($sessions, [$sessionId]);
+
+        // If no sessions left, delete the index entirely
+        if (empty($sessions)) {
+            return CacheEngine::delete($indexKey);
+        }
+
+        // Use default TTL for user session index
+        return CacheEngine::set($indexKey, $sessions, self::DEFAULT_TTL);
+    }
+
+    /**
      * Get sessions by provider
      *
      * Retrieves all sessions for a specific authentication provider.
@@ -143,15 +263,12 @@ class SessionCacheManager
         $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
         $sessionIds = CacheEngine::get($indexKey) ?? [];
 
-        $sessions = [];
-        foreach ($sessionIds as $sessionId) {
-            $session = CacheEngine::get(self::SESSION_PREFIX . $sessionId);
-            if ($session) {
-                $sessions[] = $session;
-            }
+        if (empty($sessionIds)) {
+            return [];
         }
 
-        return $sessions;
+        // Batch retrieve sessions to avoid N+1 cache calls
+        return self::batchGetSessions($sessionIds);
     }
 
     /**
@@ -233,6 +350,11 @@ class SessionCacheManager
             self::removeSessionFromProviderIndex($session['provider'], $sessionId);
         }
 
+        // Remove from user index if user information is available
+        if ($session && isset($session['user']['uuid'])) {
+            self::removeSessionFromUserIndex($session['user']['uuid'], $sessionId);
+        }
+
         return CacheEngine::delete(self::SESSION_PREFIX . $sessionId);
     }
 
@@ -312,17 +434,18 @@ class SessionCacheManager
                     'session_destroyed',
                     $userId,
                     [
-                        'session_id' => $sessionId,
-                        'provider' => $sessionProvider,
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                        'reason' => 'explicit_logout'
+                    'session_id' => $sessionId,
+                    'provider' => $sessionProvider,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    'reason' => 'explicit_logout'
                     ],
                     AuditEvent::SEVERITY_INFO
                 );
             }
         } catch (\Throwable $e) {
             // Silently handle audit logging errors to ensure session destruction isn't affected
+            unset($e); // Intentionally ignored exception
         }
 
         return $sessionRemoved && $mappingRemoved;
@@ -386,17 +509,18 @@ class SessionCacheManager
                         'session_updated',
                         $userId,
                         [
-                            'session_id' => $sessionId,
-                            'provider' => $sessionProvider,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                            'token_refreshed' => true
+                        'session_id' => $sessionId,
+                        'provider' => $sessionProvider,
+                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                        'token_refreshed' => true
                         ],
                         AuditEvent::SEVERITY_INFO
                     );
                 }
             } catch (\Throwable $e) {
                 // Silently handle audit logging errors to ensure session update isn't affected
+                unset($e); // Intentionally ignored exception
             }
 
             return $mapped;
@@ -421,6 +545,37 @@ class SessionCacheManager
         }
 
         return self::getSession($token, $provider);
+    }
+
+    /**
+     * Get session with permission validation
+     *
+     * Retrieves session data and checks if permissions need refresh.
+     *
+     * @param string $token Authentication token
+     * @param string|null $provider Optional provider hint
+     * @return array|null Session data or null if invalid
+     */
+    public static function getSessionWithValidPermissions(string $token, ?string $provider = null): ?array
+    {
+        $session = self::getSession($token, $provider);
+
+        if (!$session) {
+            return null;
+        }
+
+        // Check if permissions need refresh
+        $permissionsAge = time() - ($session['permissions_loaded_at'] ?? 0);
+
+        if ($permissionsAge > self::PERMISSIONS_TTL) {
+            // Queue background permission refresh for next request
+            $userUuid = $session['user']['uuid'] ?? null;
+            if ($userUuid) {
+                self::queuePermissionRefresh($userUuid, $token);
+            }
+        }
+
+        return $session;
     }
 
     /**
@@ -478,17 +633,772 @@ class SessionCacheManager
                 'provider_sessions_invalidated',
                 $userId,
                 [
-                    'provider' => $provider,
-                    'sessions_count' => $sessionCount,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                'provider' => $provider,
+                'sessions_count' => $sessionCount,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
                 ],
                 AuditEvent::SEVERITY_WARNING // Higher severity as this is a bulk operation
             );
         } catch (\Throwable $e) {
             // Silently handle audit logging errors to ensure invalidation isn't affected
+            unset($e); // Intentionally ignored exception
         }
 
         return $success;
+    }
+
+    /**
+     * Enhance user data with permissions and roles
+     *
+     * Pre-loads user permissions and roles using DI-injected permission service.
+     *
+     * @param array $userData Base user data
+     * @return array Enhanced user data with permissions
+     */
+    private static function enhanceUserDataWithPermissions(array $userData): array
+    {
+        $userUuid = $userData['uuid'] ?? null;
+
+        if (!$userUuid) {
+            return $userData;
+        }
+
+        try {
+            $permissions = self::loadUserPermissions($userUuid);
+            $roles = self::loadUserRoles($userUuid);
+
+            // Ensure we have arrays (defensive programming)
+            $permissions = is_array($permissions) ? $permissions : [];
+            $roles = is_array($roles) ? $roles : [];
+
+            return array_merge($userData, [
+            'permissions' => $permissions,
+            'roles' => $roles,
+            'permission_hash' => hash('xxh3', serialize(array_merge($permissions, $roles)))
+            ]);
+        } catch (\Throwable $e) {
+            // Log error but don't fail session creation
+            error_log("Failed to load permissions for user {$userUuid}: " . $e->getMessage());
+            return array_merge($userData, [
+            'permissions' => [],
+            'roles' => [],
+            'permission_hash' => null
+            ]);
+        }
+    }
+
+    /**
+     * Load user permissions using RBAC permission provider
+     *
+     * @param string $userUuid User UUID
+     * @return array User permissions grouped by resource
+     */
+    private static function loadUserPermissions(string $userUuid): array
+    {
+        try {
+            // 1. Use DI-injected RBAC permission provider (primary)
+            if (self::$permissionService && method_exists(self::$permissionService, 'getUserPermissions')) {
+                return self::$permissionService->getUserPermissions($userUuid);
+            }
+
+            // 2. Fallback to PermissionManager with active provider
+            if (class_exists('Glueful\\Permissions\\PermissionManager')) {
+                $manager = \Glueful\Permissions\PermissionManager::getInstance();
+                if ($manager->hasActiveProvider()) {
+                    $provider = $manager->getProvider();
+                    if ($provider && method_exists($provider, 'getUserPermissions')) {
+                        return $provider->getUserPermissions($userUuid);
+                    }
+                }
+            }
+
+            // 3. Direct RBAC repository access if available
+            if (function_exists('app') && app()->has('rbac.repository.user_permission')) {
+                $userPermRepo = app()->get('rbac.repository.user_permission');
+                if (method_exists($userPermRepo, 'getUserPermissions')) {
+                    return $userPermRepo->getUserPermissions($userUuid);
+                }
+            }
+
+            return [];
+        } catch (\Throwable $e) {
+            error_log("Failed to load permissions for user {$userUuid}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Load user roles using RBAC role service
+     *
+     * @param string $userUuid User UUID
+     * @return array User roles with hierarchy information
+     */
+    private static function loadUserRoles(string $userUuid): array
+    {
+        try {
+            // 1. Use DI-injected RBAC service first (most efficient)
+            if (self::$permissionService && method_exists(self::$permissionService, 'getUserRoles')) {
+                return self::$permissionService->getUserRoles($userUuid);
+            }
+
+            // 2. Try RBAC role service directly
+            if (function_exists('app') && app()->has('rbac.role_service')) {
+                $roleService = app()->get('rbac.role_service');
+                if (method_exists($roleService, 'getUserRoles')) {
+                    return $roleService->getUserRoles($userUuid);
+                }
+            }
+
+            // 3. Try RBAC role repository
+            if (function_exists('app') && app()->has('rbac.repository.user_role')) {
+                $userRoleRepo = app()->get('rbac.repository.user_role');
+                if (method_exists($userRoleRepo, 'getUserRoles')) {
+                    return $userRoleRepo->getUserRoles($userUuid);
+                }
+            }
+
+            // 4. Try PermissionManager provider (only if it's an RBAC provider with getUserRoles)
+            if (class_exists('Glueful\\Permissions\\PermissionManager')) {
+                $manager = \Glueful\Permissions\PermissionManager::getInstance();
+                if ($manager->hasActiveProvider()) {
+                    $provider = $manager->getProvider();
+                    // Only call getUserRoles if the provider actually has this method
+                    if ($provider && method_exists($provider, 'getUserRoles')) {
+                        $result = call_user_func([$provider, 'getUserRoles'], $userUuid);
+                        return is_array($result) ? $result : [];
+                    }
+                }
+            }
+
+            // 5. Graceful fallback - return empty array if no role system available
+            return [];
+        } catch (\Throwable $e) {
+            error_log("Failed to load roles for user {$userUuid}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Cache user permissions separately for faster access
+     *
+     * @param string $userUuid User UUID
+     * @param array $permissions User permissions
+     * @return bool Success status
+     */
+    private static function cacheUserPermissions(string $userUuid, array $permissions): bool
+    {
+        try {
+            $cacheKey = self::PERMISSION_CACHE_PREFIX . $userUuid;
+            return CacheEngine::set($cacheKey, $permissions, self::PERMISSIONS_TTL);
+        } catch (\Throwable $e) {
+            error_log("Failed to cache permissions for user {$userUuid}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get cached user permissions
+     *
+     * @param string $userUuid User UUID
+     * @return array|null Cached permissions or null if not found
+     */
+    public static function getCachedUserPermissions(string $userUuid): ?array
+    {
+        try {
+            $cacheKey = self::PERMISSION_CACHE_PREFIX . $userUuid;
+            return CacheEngine::get($cacheKey);
+        } catch (\Throwable $e) {
+            error_log("Failed to get cached permissions for user {$userUuid}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Invalidate cached user permissions across all systems
+     *
+     * Integrates with RBAC permission provider invalidation.
+     *
+     * @param string $userUuid User UUID
+     * @return bool Success status
+     */
+    public static function invalidateUserPermissions(string $userUuid): bool
+    {
+        try {
+            // 1. Invalidate session-level permission cache
+            $cacheKey = self::PERMISSION_CACHE_PREFIX . $userUuid;
+            $success = CacheEngine::delete($cacheKey);
+
+            // 2. Invalidate RBAC permission provider cache if available
+            if (self::$permissionService && method_exists(self::$permissionService, 'invalidateUserCache')) {
+                self::$permissionService->invalidateUserCache($userUuid);
+            }
+
+            // 3. Fallback: invalidate via PermissionManager
+            if (class_exists('Glueful\\Permissions\\PermissionManager')) {
+                $manager = \Glueful\Permissions\PermissionManager::getInstance();
+                if ($manager->hasActiveProvider()) {
+                    $provider = $manager->getProvider();
+                    if ($provider && method_exists($provider, 'invalidateUserCache')) {
+                        $provider->invalidateUserCache($userUuid);
+                    }
+                }
+            }
+
+            // 4. Invalidate session permission patterns
+            $patterns = [
+            "session:*:user:{$userUuid}:permissions",
+            "rbac:check:{$userUuid}:*",
+            "permissions:user:{$userUuid}*"
+            ];
+
+            foreach ($patterns as $pattern) {
+                CacheEngine::deletePattern($pattern);
+            }
+
+            // 5. Clean up user session index (optional - sessions will auto-cleanup)
+            $userIndexKey = self::USER_SESSION_INDEX_PREFIX . $userUuid;
+            CacheEngine::delete($userIndexKey);
+
+            return $success;
+        } catch (\Throwable $e) {
+            error_log("Failed to invalidate permissions for user {$userUuid}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Queue permission refresh for background processing
+     *
+     * @param string $userUuid User UUID
+     * @param string $token Session token
+     * @return void
+     */
+    private static function queuePermissionRefresh(string $userUuid, string $token): void
+    {
+        try {
+            // Use DI-injected queue service first
+            if (self::$queueService && method_exists(self::$queueService, 'dispatch')) {
+                self::$queueService->dispatch('RefreshUserPermissionsJob', [
+                'user_uuid' => $userUuid,
+                'token' => $token,
+                'queued_at' => time()
+                ]);
+                return;
+            }
+
+            // Fallback: mark for refresh on next session access
+            $refreshKey = "permission_refresh:{$userUuid}";
+            CacheEngine::set($refreshKey, $token, 300); // 5 minutes
+        } catch (\Throwable $e) {
+            error_log("Failed to queue permission refresh for user {$userUuid}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Refresh user permissions in their active session
+     *
+     * @param string $userUuid User UUID
+     * @param string $token Session token
+     * @return bool Success status
+     */
+    public static function refreshUserPermissionsInSession(string $userUuid, string $token): bool
+    {
+        try {
+            // Get current session
+            $session = self::getSession($token);
+            if (!$session) {
+                return false;
+            }
+
+            // Load fresh permissions
+            $permissions = self::loadUserPermissions($userUuid);
+            $roles = self::loadUserRoles($userUuid);
+
+            // Update session data
+            $session['user']['permissions'] = $permissions;
+            $session['user']['roles'] = $roles;
+            $session['user']['permission_hash'] = hash('xxh3', serialize(array_merge($permissions, $roles)));
+            $session['permissions_loaded_at'] = time();
+
+            // Get session ID and update
+            $sessionId = TokenManager::getSessionIdFromToken($token);
+            if ($sessionId) {
+                $ttl = self::getProviderTtl($session['provider'] ?? 'jwt');
+                $success = CacheEngine::set(self::SESSION_PREFIX . $sessionId, $session, $ttl);
+
+                if ($success) {
+                    // Update separate permission cache
+                    self::cacheUserPermissions($userUuid, $permissions);
+                }
+
+                return $success;
+            }
+
+            return false;
+        } catch (\Throwable $e) {
+            error_log("Failed to refresh permissions in session for user {$userUuid}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Refresh permissions for all active sessions of a user
+     *
+     * @param string $userUuid User UUID
+     * @return int Number of sessions updated
+     */
+    public static function refreshPermissionsForAllUserSessions(string $userUuid): int
+    {
+        $updatedSessions = 0;
+
+        try {
+            // Find all sessions for the user (this is a simplified approach)
+            // In a real implementation, you might want to maintain a user-to-sessions index
+            $sessions = self::findUserSessions($userUuid);
+
+            foreach ($sessions as $session) {
+                if (isset($session['token'])) {
+                    $success = self::refreshUserPermissionsInSession($userUuid, $session['token']);
+                    if ($success) {
+                        $updatedSessions++;
+                    }
+                }
+            }
+
+            // Also invalidate the separate permission cache
+            self::invalidateUserPermissions($userUuid);
+        } catch (\Throwable $e) {
+            error_log("Failed to refresh permissions for all sessions of user {$userUuid}: " . $e->getMessage());
+        }
+
+        return $updatedSessions;
+    }
+
+    /**
+     * Find all active sessions for a user
+     *
+     * Uses the user session index for efficient lookup.
+     *
+     * @param string $userUuid User UUID
+     * @return array Array of session data
+     */
+    private static function findUserSessions(string $userUuid): array
+    {
+        try {
+            self::initialize();
+
+            // Get session IDs from user index
+            $indexKey = self::USER_SESSION_INDEX_PREFIX . $userUuid;
+            $sessionIds = CacheEngine::get($indexKey) ?? [];
+
+            // Use batch get to retrieve all sessions at once
+            $sessions = self::batchGetSessions($sessionIds);
+            $validSessions = [];
+
+            // Verify sessions belong to this user and clean up invalid entries
+            foreach ($sessions as $i => $session) {
+                if (isset($session['user']['uuid']) && $session['user']['uuid'] === $userUuid) {
+                    $validSessions[] = $session;
+                } else {
+                    // Clean up invalid index entry if we can map it back to sessionId
+                    if (isset($sessionIds[$i])) {
+                        self::removeSessionFromUserIndex($userUuid, $sessionIds[$i]);
+                    }
+                }
+            }
+
+            $sessions = $validSessions;
+
+            return $sessions;
+        } catch (\Throwable $e) {
+            error_log("Failed to find sessions for user {$userUuid}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get all active sessions for a user (public interface)
+     *
+     * @param string $userUuid User UUID
+     * @return array Array of session data
+     */
+    public static function getUserSessions(string $userUuid): array
+    {
+        return self::findUserSessions($userUuid);
+    }
+
+    /**
+     * Get count of active sessions for a user
+     *
+     * @param string $userUuid User UUID
+     * @return int Number of active sessions
+     */
+    public static function getUserSessionCount(string $userUuid): int
+    {
+        return count(self::findUserSessions($userUuid));
+    }
+
+    /**
+     * Terminate all sessions for a user
+     *
+     * @param string $userUuid User UUID
+     * @return int Number of sessions terminated
+     */
+    public static function terminateAllUserSessions(string $userUuid): int
+    {
+        $sessions = self::findUserSessions($userUuid);
+        $terminated = 0;
+
+        foreach ($sessions as $session) {
+            if (isset($session['token'])) {
+                $success = self::destroySession($session['token']);
+                if ($success) {
+                    $terminated++;
+                }
+            }
+        }
+
+        return $terminated;
+    }
+
+    /**
+     * Check if session permissions are valid and fresh
+     *
+     * Uses RBAC-style cache validation logic.
+     *
+     * @param array $session Session data
+     * @return bool True if permissions are valid
+     */
+    private static function areSessionPermissionsValid(array $session): bool
+    {
+        // Check if permissions exist
+        if (!isset($session['user']['permissions']) || !isset($session['permissions_loaded_at'])) {
+            return false;
+        }
+
+        // Check TTL
+        $age = time() - $session['permissions_loaded_at'];
+        if ($age > self::PERMISSIONS_TTL) {
+            return false;
+        }
+
+        // Validate permission hash if available (integrity check)
+        if (isset($session['user']['permission_hash'])) {
+            $currentHash = hash('xxh3', serialize(array_merge(
+                $session['user']['permissions'] ?? [],
+                $session['user']['roles'] ?? []
+            )));
+
+            if ($currentHash !== $session['user']['permission_hash']) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Get optimized session with smart permission caching
+     *
+     * Uses RBAC-style optimization patterns for maximum performance.
+     *
+     * @param string $token Authentication token
+     * @param array $context Additional context for permission loading (reserved for future use)
+     * @return array|null Session data with optimized permissions
+     */
+    public static function getOptimizedSession(string $token, array $context = []): ?array
+    {
+        // Note: $context parameter reserved for future context-aware permission loading
+        unset($context); // Acknowledge unused parameter until context-aware loading is implemented
+        $session = self::getSession($token);
+
+        if (!$session) {
+            return null;
+        }
+
+        // Check if permissions are valid
+        if (self::areSessionPermissionsValid($session)) {
+            // Permissions are fresh, return as-is
+            return $session;
+        }
+
+        // Permissions need refresh - load fresh data
+        $userUuid = $session['user']['uuid'] ?? null;
+        if ($userUuid) {
+            try {
+                $permissions = self::loadUserPermissions($userUuid);
+                $roles = self::loadUserRoles($userUuid);
+
+                // Update session with fresh permissions
+                $session['user']['permissions'] = $permissions;
+                $session['user']['roles'] = $roles;
+                $session['user']['permission_hash'] = hash('xxh3', serialize(array_merge($permissions, $roles)));
+                $session['permissions_loaded_at'] = time();
+
+                // Store updated session
+                $sessionId = TokenManager::getSessionIdFromToken($token);
+                if ($sessionId) {
+                    $ttl = self::getProviderTtl($session['provider'] ?? 'jwt');
+                    CacheEngine::set(self::SESSION_PREFIX . $sessionId, $session, $ttl);
+
+                    // Also update separate permission cache
+                    self::cacheUserPermissions($userUuid, $permissions);
+                }
+            } catch (\Throwable $e) {
+                error_log("Failed to refresh permissions for optimized session: " . $e->getMessage());
+                // Return session with potentially stale permissions rather than failing
+            }
+        }
+
+        return $session;
+    }
+
+    /**
+     * Batch load permissions for multiple users
+     *
+     * Optimizes permission loading for bulk operations.
+     *
+     * @param array $userUuids Array of user UUIDs
+     * @return array Associative array of userUuid => permissions
+     */
+    public static function batchLoadUserPermissions(array $userUuids): array
+    {
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        $results = [];
+        $missing = [];
+
+        // Check cache for all users first
+        foreach ($userUuids as $userUuid) {
+            $cached = self::getCachedUserPermissions($userUuid);
+            if ($cached !== null) {
+                $results[$userUuid] = $cached;
+            } else {
+                $missing[] = $userUuid;
+            }
+        }
+
+        // Load missing permissions
+        if (!empty($missing)) {
+            try {
+                // Try batch loading if RBAC provider supports it
+                if (self::$permissionService && method_exists(self::$permissionService, 'batchGetUserPermissions')) {
+                    $batchResults = self::$permissionService->batchGetUserPermissions($missing);
+                    foreach ($batchResults as $userUuid => $permissions) {
+                        $results[$userUuid] = $permissions;
+                        self::cacheUserPermissions($userUuid, $permissions);
+                    }
+                } else {
+                    // Fallback to individual loading
+                    foreach ($missing as $userUuid) {
+                        $permissions = self::loadUserPermissions($userUuid);
+                        $results[$userUuid] = $permissions;
+                        self::cacheUserPermissions($userUuid, $permissions);
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log("Failed to batch load permissions: " . $e->getMessage());
+                // Fill missing with empty arrays
+                foreach ($missing as $userUuid) {
+                    $results[$userUuid] = [];
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Batch retrieve sessions to avoid N+1 cache calls
+     *
+     * @param array $sessionIds Array of session IDs
+     * @return array Array of valid sessions
+     */
+    private static function batchGetSessions(array $sessionIds): array
+    {
+        if (empty($sessionIds)) {
+            return [];
+        }
+
+        // Prepare cache keys
+        $cacheKeys = array_map(fn($id) => self::SESSION_PREFIX . $id, $sessionIds);
+
+        // Use the new batch get operation from CacheEngine
+        $cachedSessions = CacheEngine::mget($cacheKeys);
+
+        // Return only valid sessions (filter out null/false values)
+        return array_values(array_filter($cachedSessions));
+    }
+
+    /**
+     * Create session query builder for advanced filtering
+     *
+     * @return SessionQueryBuilder Query builder instance
+     */
+    public static function sessionQuery(): SessionQueryBuilder
+    {
+        return new SessionQueryBuilder(__CLASS__);
+    }
+
+    /**
+     * Get sessions by provider for query builder (public access for SessionQueryBuilder)
+     *
+     * @param string $provider Provider name
+     * @return array Sessions for the provider
+     */
+    public static function getSessionsByProviderForQuery(string $provider): array
+    {
+        try {
+            $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+            $sessionIds = CacheEngine::get($indexKey) ?? [];
+
+            return self::batchGetSessions($sessionIds);
+        } catch (\Throwable $e) {
+            error_log("Failed to get sessions for provider {$provider}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get provider TTL (public access for SessionTransaction)
+     *
+     * @param string $provider Provider name
+     * @return int TTL in seconds
+     */
+    public static function getProviderTtlPublic(string $provider): int
+    {
+        return self::getProviderTtl($provider);
+    }
+
+    /**
+     * Remove session from provider index (public access for SessionTransaction)
+     *
+     * @param string $provider Provider name
+     * @param string $sessionId Session ID
+     * @return bool Success status
+     */
+    public static function removeSessionFromProviderIndexPublic(string $provider, string $sessionId): bool
+    {
+        try {
+            $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
+            $sessionIds = CacheEngine::get($indexKey) ?? [];
+
+            $sessionIds = array_filter($sessionIds, fn($id) => $id !== $sessionId);
+
+            return CacheEngine::set($indexKey, array_values($sessionIds), self::DEFAULT_TTL);
+        } catch (\Throwable $e) {
+            error_log("Failed to remove session from provider index: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Index session by provider (public access for SessionTransaction)
+     *
+     * @param string $provider Provider name
+     * @param string $sessionId Session ID
+     * @param int $ttl TTL in seconds
+     * @return bool Success status
+     */
+    public static function indexSessionByProviderPublic(string $provider, string $sessionId, int $ttl): bool
+    {
+        return self::indexSessionByProvider($provider, $sessionId, $ttl);
+    }
+
+    /**
+     * Create bulk session transaction
+     *
+     * @return SessionTransaction Transaction instance
+     */
+    public static function transaction(): SessionTransaction
+    {
+        $transaction = new SessionTransaction();
+        $transaction->begin();
+        return $transaction;
+    }
+
+    /**
+     * Invalidate sessions matching criteria
+     *
+     * @param array $criteria Selection criteria
+     * @return int Number of sessions invalidated
+     */
+    public static function invalidateSessionsWhere(array $criteria): int
+    {
+        $transaction = self::transaction();
+
+        try {
+            $count = $transaction->invalidateSessionsWhere($criteria);
+            $transaction->commit();
+            return $count;
+        } catch (\Exception $e) {
+            $transaction->rollback();
+            throw $e;
+        }
+    }
+
+    /**
+     * Update sessions matching criteria
+     *
+     * @param array $criteria Selection criteria
+     * @param array $updates Updates to apply
+     * @return int Number of sessions updated
+     */
+    public static function updateSessionsWhere(array $criteria, array $updates): int
+    {
+        $transaction = self::transaction();
+
+        try {
+            $count = $transaction->updateSessionsWhere($criteria, $updates);
+            $transaction->commit();
+            return $count;
+        } catch (\Exception $e) {
+            $transaction->rollback();
+            throw $e;
+        }
+    }
+
+    /**
+     * Create bulk sessions
+     *
+     * @param array $sessionsData Array of session data
+     * @return array Array of created session IDs
+     */
+    public static function createBulkSessions(array $sessionsData): array
+    {
+        $transaction = self::transaction();
+
+        try {
+            $sessionIds = $transaction->createSessions($sessionsData);
+            $transaction->commit();
+            return $sessionIds;
+        } catch (\Exception $e) {
+            $transaction->rollback();
+            throw $e;
+        }
+    }
+
+    /**
+     * Migrate sessions between providers
+     *
+     * @param string $fromProvider Source provider
+     * @param string $toProvider Target provider
+     * @return int Number of sessions migrated
+     */
+    public static function migrateSessions(string $fromProvider, string $toProvider): int
+    {
+        $transaction = self::transaction();
+
+        try {
+            $count = $transaction->migrateSessions($fromProvider, $toProvider);
+            $transaction->commit();
+            return $count;
+        } catch (\Exception $e) {
+            $transaction->rollback();
+            throw $e;
+        }
     }
 }

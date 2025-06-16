@@ -88,6 +88,58 @@ class CacheEngine
     }
 
     /**
+     * Get multiple cache values in a single operation
+     *
+     * @param array $keys Array of cache keys
+     * @return array Associative array of key => value pairs (missing keys are omitted)
+     */
+    public static function mget(array $keys): array
+    {
+        if (!self::ensureEnabled() || empty($keys)) {
+            return [];
+        }
+
+        // Add prefix to all keys
+        $prefixedKeys = array_map(fn($key) => self::$prefix . $key, $keys);
+
+        // Use driver's mget method (all drivers implement this now)
+        $values = self::$driver->mget($prefixedKeys);
+        $result = [];
+
+        // Map back to original keys, filtering out null values
+        for ($i = 0; $i < count($keys); $i++) {
+            if (isset($values[$i]) && $values[$i] !== null) {
+                $result[$keys[$i]] = $values[$i];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Set multiple cache values in a single operation
+     *
+     * @param array $values Associative array of key => value pairs
+     * @param int $ttl Time to live in seconds
+     * @return bool True if all values were set successfully
+     */
+    public static function mset(array $values, int $ttl = 3600): bool
+    {
+        if (!self::ensureEnabled() || empty($values)) {
+            return false;
+        }
+
+        // Add prefix to all keys
+        $prefixedValues = [];
+        foreach ($values as $key => $value) {
+            $prefixedValues[self::$prefix . $key] = $value;
+        }
+
+        // Use driver's mset method (all drivers implement this now)
+        return self::$driver->mset($prefixedValues, $ttl);
+    }
+
+    /**
      * Delete cached value
      *
      * @param string $key Cache key
@@ -483,6 +535,7 @@ class CacheEngine
 
         $capabilities = [
             'basic_operations' => true,
+            'batch_operations' => true, // All drivers now implement mget/mset
             'pattern_deletion' => method_exists(self::$driver, 'deletePattern') ||
                                   method_exists(self::$driver, 'getAllKeys'),
             'key_enumeration' => method_exists(self::$driver, 'getKeys') || method_exists(self::$driver, 'getAllKeys'),

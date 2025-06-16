@@ -115,16 +115,16 @@ class RolePermissionRepository extends BaseRepository
      */
     public function getRolePermissions(string $roleUuid, array $filters = []): array
     {
-        $conditions = ['role_uuid' => $roleUuid];
+        $query = $this->db->select($this->table, $this->defaultFields)
+            ->where(['role_uuid' => $roleUuid]);
 
         // Filter active permissions only
         if ($filters['active_only'] ?? false) {
-            $conditions[] = ['expires_at', 'IS', null];
-            $conditions[] = ['OR'];
-            $conditions[] = ['expires_at', '>', date('Y-m-d H:i:s')];
+            $currentTime = $this->db->getDriver()->formatDateTime();
+            $query->whereGreaterThan('expires_at', $currentTime)->orWhereNull('expires_at');
         }
 
-        $results = $this->findWhere($conditions);
+        $results = $query->get();
         return $this->toModels($results);
     }
 
@@ -272,10 +272,12 @@ class RolePermissionRepository extends BaseRepository
      */
     public function cleanupExpiredPermissions(): int
     {
-        $expired = $this->findWhere([
-            ['expires_at', 'IS NOT', null],
-            ['expires_at', '<=', date('Y-m-d H:i:s')]
-        ]);
+        $currentTime = $this->db->getDriver()->formatDateTime();
+        $query = $this->db->select($this->table, $this->defaultFields)
+            ->whereNotNull('expires_at')
+            ->whereLessThanOrEqual('expires_at', $currentTime);
+
+        $expired = $query->get();
 
         $count = 0;
         foreach ($expired as $assignment) {

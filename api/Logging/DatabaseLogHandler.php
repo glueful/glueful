@@ -106,18 +106,20 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     private function ensureLogsTable(): void
     {
         $this->schema->createTable('app_logs', [
-            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
+            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
-            'channel' => 'VARCHAR(50) NOT NULL',
-            'level' => 'INTEGER NOT NULL',
+            'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
             'message' => 'TEXT NOT NULL',
-            'context' => 'JSON',
+            'context' => 'JSON NULL',
             'exec_time' => 'FLOAT NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'INDEX', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'channel'],
+            'batch_uuid' => 'CHAR(12) NULL',
+            'channel' => 'VARCHAR(255) NOT NULL',
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'batch_uuid'],
             ['type' => 'INDEX', 'column' => 'level'],
+            ['type' => 'INDEX', 'column' => 'channel'],
             ['type' => 'INDEX', 'column' => 'created_at']
         ]);
     }

@@ -89,4 +89,48 @@ class MySQLDriver implements DatabaseDriver
                "WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE() " .
                "ORDER BY ORDINAL_POSITION";
     }
+
+    /**
+     * Format datetime for MySQL storage
+     *
+     * MySQL stores datetime values in 'Y-m-d H:i:s' format in the server's timezone.
+     * This method ensures consistent datetime formatting for MySQL DATETIME columns.
+     *
+     * @param \DateTime|string|null $datetime Datetime to format (defaults to current time)
+     * @return string MySQL-compatible datetime string
+     * @throws \InvalidArgumentException If provided datetime string is invalid
+     */
+    public function formatDateTime($datetime = null): string
+    {
+        if ($datetime === null) {
+            return date('Y-m-d H:i:s');
+        }
+
+        if ($datetime instanceof \DateTime) {
+            return $datetime->format('Y-m-d H:i:s');
+        }
+
+        if (is_string($datetime)) {
+            $parsedDate = \DateTime::createFromFormat('Y-m-d H:i:s', $datetime);
+            if ($parsedDate === false) {
+                // Try to parse as a general date string
+                try {
+                    $parsedDate = new \DateTime($datetime);
+                } catch (\Exception) {
+                    throw new \InvalidArgumentException("Invalid datetime string: {$datetime}");
+                }
+            }
+            return $parsedDate->format('Y-m-d H:i:s');
+        }
+
+        throw new \InvalidArgumentException('Datetime must be null, DateTime object, or string');
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getPingQuery(): string
+    {
+        return 'SELECT 1';
+    }
 }

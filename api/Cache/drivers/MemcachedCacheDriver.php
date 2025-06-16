@@ -140,6 +140,46 @@ class MemcachedCacheDriver implements CacheDriverInterface
     }
 
     /**
+     * Get multiple cached values
+     *
+     * @param array $keys Array of cache keys
+     * @return array Indexed array of values (same order as keys, null for missing keys)
+     */
+    public function mget(array $keys): array
+    {
+        if (empty($keys)) {
+            return [];
+        }
+
+        $values = $this->memcached->getMulti($keys);
+        $result = [];
+
+        // Ensure values are returned in the same order as keys
+        foreach ($keys as $key) {
+            $result[] = $values[$key] ?? null;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Store multiple values in cache
+     *
+     * @param array $values Associative array of key => value pairs
+     * @param int $ttl Time to live in seconds
+     * @return bool True if all values stored successfully
+     */
+    public function mset(array $values, int $ttl = 3600): bool
+    {
+        if (empty($values)) {
+            return true;
+        }
+
+        // Memcached setMulti returns true if all keys were stored successfully
+        return $this->memcached->setMulti($values, $ttl);
+    }
+
+    /**
      * Delete cached value
      *
      * @param string $key Cache key

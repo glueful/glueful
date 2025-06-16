@@ -13,7 +13,6 @@ use Glueful\Database\Schema\SchemaManager;
  * - Roles
  * - File storage and blobs
  * - User profiles
- * - Audit logging
  *
  * Database Design:
  * - Follows ACID principles
@@ -25,7 +24,6 @@ use Glueful\Database\Schema\SchemaManager;
  * Security Features:
  * - Password hashing
  * - Token management
- * - Activity logging
  *
  * @package Glueful\Database\Migrations
  */
@@ -45,7 +43,6 @@ class CreateInitialSchema implements MigrationInterface
      * - profiles: User profile information
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
-     * - logs: System activity tracking
      *
      * @param SchemaManager $schema Database schema manager
      */
@@ -161,23 +158,6 @@ class CreateInitialSchema implements MigrationInterface
                 'on' => 'users'
             ]
         ]);
-
-        // Create App Logs Table
-        $schema->createTable('app_logs', [
-            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
-            'message' => 'TEXT NOT NULL',
-            'context' => 'JSON NULL',
-            'exec_time' => 'FLOAT NULL',
-            'channel' => 'VARCHAR(255) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'level'],
-            ['type' => 'INDEX', 'column' => 'channel'],
-            ['type' => 'INDEX', 'column' => 'created_at']
-        ]);
     }
 
     /**
@@ -189,7 +169,7 @@ class CreateInitialSchema implements MigrationInterface
      * - Cleans up completely
      *
      * Drop order:
-     * 1. Dependent tables first (logs, sessions)
+     * 1. Dependent tables first (sessions)
      * 2. Junction tables (role assignments)
      * 3. Feature tables (blobs, profiles)
      * 4. Core tables (roles, users)
@@ -198,7 +178,6 @@ class CreateInitialSchema implements MigrationInterface
      */
     public function down(SchemaManager $schema): void
     {
-        $schema->dropTable('app_logs');
         $schema->dropTable('auth_sessions');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');

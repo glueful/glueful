@@ -625,33 +625,57 @@ class FilesController extends BaseController
      */
     private function checkUploadPermissions(array $files): void
     {
-        foreach ($files as $fileData) {
+        // Batch analyze all files first to determine required permissions
+        $requiredPermissions = [];
+        $fileAnalysis = [];
+
+        foreach ($files as $index => $fileData) {
             $fileSize = $fileData['size'] ?? 0;
             $mimeType = $fileData['type'] ?? 'application/octet-stream';
             $fileName = $fileData['name'] ?? 'unknown';
 
-            // Check file size permissions
+            $fileAnalysis[$index] = [
+                'size' => $fileSize,
+                'mime_type' => $mimeType,
+                'name' => $fileName
+            ];
+
+            // Determine required permissions
             if ($fileSize > 50 * 1024 * 1024) { // 50MB
-                $this->requirePermission('files.upload.large', 'system', [
-                    'file_size' => $fileSize,
-                    'file_name' => $fileName,
-                    'mime_type' => $mimeType
-                ]);
+                $requiredPermissions['files.upload.large'] = true;
             }
 
-            // Check file type permissions
             if (str_starts_with($mimeType, 'video/')) {
-                $this->requirePermission('files.upload.video', 'system', [
-                    'file_size' => $fileSize,
-                    'mime_type' => $mimeType
-                ]);
+                $requiredPermissions['files.upload.video'] = true;
             } elseif (str_starts_with($mimeType, 'application/')) {
-                $this->requirePermission('files.upload.executable', 'system', [
-                    'file_size' => $fileSize,
-                    'mime_type' => $mimeType
-                ]);
+                $requiredPermissions['files.upload.executable'] = true;
             }
         }
+
+        // Batch check all required permissions at once using cached user context
+        foreach (array_keys($requiredPermissions) as $permission) {
+            if (!$this->hasCachedPermission($permission, 'system', ['file_count' => count($files)])) {
+                throw new UnauthorizedException(
+                    $this->getCachedUserUuid(),
+                    $permission,
+                    'system',
+                    "You do not have permission to upload these file types or sizes"
+                );
+            }
+        }
+
+        // Single audit log for the entire permission check
+        $this->asyncAudit(
+            AuditEvent::CATEGORY_FILE,
+            'batch_upload_permission_check',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'file_count' => count($files),
+                'permissions_required' => array_keys($requiredPermissions),
+                'total_size' => array_sum(array_column($fileAnalysis, 'size')),
+                'mime_types' => array_unique(array_column($fileAnalysis, 'mime_type'))
+            ]
+        );
     }
 
     /**

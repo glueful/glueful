@@ -32,6 +32,7 @@ trait AsyncAuditTrait
      *
      * Intelligently routes audit events to either synchronous or
      * asynchronous processing based on severity and configuration.
+     * Now delegates to AuditLogger's implementation for consistency.
      *
      * Critical events (ERROR, CRITICAL) are always processed synchronously
      * to ensure immediate logging. Non-critical events can be queued for
@@ -41,19 +42,66 @@ trait AsyncAuditTrait
      * @param string $action Action performed
      * @param string $severity Event severity
      * @param array $context Additional context data
-     * @return void
+     * @return string Event ID
      */
-    protected function asyncAudit(string $category, string $action, string $severity, array $context = []): void
+    protected function asyncAudit(string $category, string $action, string $severity, array $context = []): string
     {
-        // Determine if we should use async logging
-        $useAsync = $this->shouldUseAsyncLogging($severity);
+        // Use AuditLogger's audit method which now has built-in async detection
+        if (isset($this->auditLogger)) {
+            return $this->auditLogger->audit($category, $action, $severity, $context);
+        }
+
+        // Fallback for controllers without auditLogger
+        $useAsync = $this->shouldUseAsyncLogging($category, $severity);
 
         if ($useAsync) {
             $this->queueAuditLog($category, $action, $severity, $context);
+            return 'queued-' . uniqid();
         } else {
             // Synchronous logging for critical events
             $this->performSyncAudit($category, $action, $severity, $context);
+            return 'sync-' . uniqid();
         }
+    }
+
+    /**
+     * Log high-volume category events (automatically uses async processing)
+     *
+     * @param string $category High-volume category
+     * @param string $action Action performed
+     * @param array $context Additional context data
+     * @param string $severity Event severity
+     * @return string Event ID
+     */
+    protected function logHighVolumeEvent(
+        string $category,
+        string $action,
+        array $context = [],
+        string $severity = AuditEvent::SEVERITY_INFO
+    ): string {
+        return $this->asyncAudit($category, $action, $severity, $context);
+    }
+
+
+    /**
+     * Log API access event (high-volume)
+     *
+     * @param string $endpoint API endpoint
+     * @param string $method HTTP method
+     * @param array $context Additional context
+     * @return string Event ID
+     */
+    protected function logApiAccess(
+        string $endpoint,
+        string $method,
+        array $context = []
+    ): string {
+        $enrichedContext = array_merge($context, [
+            'endpoint' => $endpoint,
+            'method' => $method
+        ]);
+
+        return $this->logHighVolumeEvent('api_access', 'access', $enrichedContext);
     }
 
     /**
@@ -119,12 +167,35 @@ trait AsyncAuditTrait
     /**
      * Determine if async logging should be used
      *
+     * @param string $category Event category
      * @param string $severity Event severity
      * @return bool True if async logging should be used
      */
-    private function shouldUseAsyncLogging(string $severity): bool
+    private function shouldUseAsyncLogging(string $category, string $severity = AuditEvent::SEVERITY_INFO): bool
     {
-        // Always use sync for critical events
+        // High-volume categories that should be processed asynchronously
+        $highVolumeCategories = [
+            AuditEvent::CATEGORY_DATA,
+            AuditEvent::CATEGORY_FILE,
+            AuditEvent::CATEGORY_SYSTEM,
+            'resource_access',
+            'api_access'
+        ];
+
+        // Critical categories that should always be processed synchronously
+        $criticalCategories = [
+            AuditEvent::CATEGORY_AUTH,
+            AuditEvent::CATEGORY_AUTHZ,
+            AuditEvent::CATEGORY_ADMIN,
+            AuditEvent::CATEGORY_CONFIG
+        ];
+
+        // Always use sync for critical categories
+        if (in_array($category, $criticalCategories)) {
+            return false;
+        }
+
+        // Always use sync for critical severities
         $criticalSeverities = [
             AuditEvent::SEVERITY_ERROR,
             AuditEvent::SEVERITY_CRITICAL,
@@ -136,14 +207,20 @@ trait AsyncAuditTrait
             return false;
         }
 
-        // Check if async logging is enabled
-        $asyncEnabled = $this->getConfig('audit.async_enabled', true);
-        if (!$asyncEnabled) {
-            return false;
+        // Use async for high-volume categories
+        if (in_array($category, $highVolumeCategories)) {
+            // Check if async logging is enabled
+            $asyncEnabled = $this->getConfig('audit.async_enabled', true);
+            if (!$asyncEnabled) {
+                return false;
+            }
+
+            // Check if queue is available and healthy
+            return $this->isQueueHealthy();
         }
 
-        // Check if queue is available and healthy
-        return $this->isQueueHealthy();
+        // Default to sync for other categories
+        return false;
     }
 
     /**

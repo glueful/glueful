@@ -93,7 +93,10 @@ class DriverDiscovery
             return $discovered;
         }
 
-        $files = glob($path . '/*Driver.php');
+        $files = array_merge(
+            glob($path . '/*Driver.php'),
+            glob($path . '/*Queue.php')
+        );
         foreach ($files as $file) {
             $driver = $this->analyzeDriverFile($file);
             if ($driver) {

@@ -9,6 +9,7 @@ use Glueful\Auth\AuthenticationManager;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\Controllers\Traits\AsyncAuditTrait;
+use Glueful\Controllers\Traits\CachedUserContextTrait;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Permissions\Helpers\PermissionHelper;
@@ -24,6 +25,7 @@ use Glueful\Http\Response;
 use Glueful\Cache\CacheEngine;
 use Glueful\Database\QueryCacheService;
 use Glueful\Cache\EdgeCacheService;
+use Glueful\Http\RequestUserContext;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -37,6 +39,7 @@ abstract class BaseController
 {
     use DatabaseConnectionTrait;
     use AsyncAuditTrait;
+    use CachedUserContextTrait;
 
     protected AuthenticationManager $authManager;
     protected RepositoryFactory $repositoryFactory;
@@ -44,6 +47,7 @@ abstract class BaseController
     protected ?User $currentUser = null;
     protected ?string $currentToken = null;
     protected Request $request;
+    protected RequestUserContext $userContext;
 
     public function __construct(
         ?RepositoryFactory $repositoryFactory = null,
@@ -63,13 +67,12 @@ abstract class BaseController
         // Set request - use provided request or get from container
         $this->request = $request ?? app()->get(Request::class);
 
-        // Get user data from request attributes (set by middleware)
-        $userData = $this->request->attributes->get('user');
-        // error_log('User data from request: ' . json_encode($userData));
-        if ($userData) {
-            $this->currentUser = User::fromArray($userData);
-            $this->currentToken = $this->extractToken($this->request);
-        }
+        // Initialize request user context for cached authentication
+        $this->userContext = RequestUserContext::getInstance()->initialize();
+
+        // Set current user and token from context (cached)
+        $this->currentUser = $this->userContext->getUser();
+        $this->currentToken = $this->userContext->getToken();
     }
 
     /**
@@ -82,34 +85,8 @@ abstract class BaseController
      */
     protected function can(string $permission, string $resource = 'system', array $context = []): bool
     {
-        if (!$this->currentUser) {
-            return false;
-        }
-
-        // Admin users have all permissions
-        if ($this->isAdmin()) {
-            error_log('Admin user has all permissions');
-            return true;
-        }
-
-        // Check if permission provider is available
-        if (!$this->hasPermissionProvider('permission_check')) {
-            return false;
-        }
-
-        $permissionContext = new PermissionContext(
-            data: $context,
-            ipAddress: $this->request->getClientIp(),
-            userAgent: $this->request->headers->get('User-Agent'),
-            requestId: $this->request->headers->get('X-Request-ID')
-        );
-
-        return PermissionHelper::hasPermission(
-            $this->currentUser->uuid,
-            $permission,
-            $resource,
-            $permissionContext->toArray()
-        );
+        // Use cached permission check from CachedUserContextTrait
+        return $this->hasCachedPermission($permission, $resource, $context);
     }
 
     /**
@@ -125,26 +102,25 @@ abstract class BaseController
         string $resource = 'system',
         array $context = []
     ): void {
-        if (!$this->currentUser) {
-            error_log('User not authenticated');
-            throw new UnauthorizedException('anonymous', 'authentication', 'system', 'Authentication required');
-        }
+        // Use cached authentication check from CachedUserContextTrait
+        $this->requireCachedAuthentication();
 
         // Check if permission provider is available
         $permissionManager = PermissionManager::getInstance();
         if (!$permissionManager->hasActiveProvider()) {
             // Log as error since this is a required operation
+            $auditContext = $this->getCachedAuditContext([
+                'permission' => $permission,
+                'resource' => $resource,
+                'message' => 'No permission provider available',
+                'controller' => static::class
+            ]);
+
             $this->asyncAudit(
                 AuditEvent::CATEGORY_SYSTEM,
                 'permission_required_no_provider',
                 AuditEvent::SEVERITY_ERROR,
-                [
-                    'user_uuid' => $this->currentUser->uuid,
-                    'permission' => $permission,
-                    'resource' => $resource,
-                    'message' => 'No permission provider available',
-                    'controller' => static::class
-                ]
+                $auditContext
             );
 
             throw new UnauthorizedException(
@@ -155,26 +131,20 @@ abstract class BaseController
         }
 
         if (!$this->can($permission, $resource, $context)) {
-            $permissionContext = new PermissionContext(
-                data: array_merge([
-                    'user_uuid' => $this->currentUser->uuid,
-                    'permission' => $permission,
-                    'resource' => $resource
-                ], $context),
-                ipAddress: $this->request->getClientIp(),
-                userAgent: $this->request->headers->get('User-Agent'),
-                requestId: $this->request->headers->get('X-Request-ID')
-            );
+            $auditContext = $this->getCachedAuditContext(array_merge([
+                'permission' => $permission,
+                'resource' => $resource
+            ], $context));
 
             $this->asyncAudit(
                 'security',
                 'permission_denied',
                 AuditEvent::SEVERITY_WARNING,
-                $permissionContext->toArray()
+                $auditContext
             );
 
             throw new UnauthorizedException(
-                $this->currentUser->uuid,
+                $this->getCachedUserUuid(),
                 $permission,
                 $resource,
                 sprintf('You do not have permission to %s on %s', $permission, $resource)
@@ -192,12 +162,12 @@ abstract class BaseController
      */
     protected function canAny(array $permissions, string $resource = 'system', array $context = []): bool
     {
-        if (!$this->currentUser) {
+        if (!$this->isCachedAuthenticated()) {
             return false;
         }
 
         // Admin users have all permissions
-        if ($this->isAdmin()) {
+        if ($this->isCachedAdmin()) {
             return true;
         }
 
@@ -214,7 +184,7 @@ abstract class BaseController
         );
 
         return PermissionHelper::hasAnyPermission(
-            $this->currentUser->uuid,
+            $this->getCachedUserUuid(),
             $permissions,
             $resource,
             $permissionContext->toArray()
@@ -237,11 +207,10 @@ abstract class BaseController
                 AuditEvent::CATEGORY_SYSTEM,
                 $action ?? 'permission_provider_check',
                 AuditEvent::SEVERITY_WARNING,
-                [
-                    'user_uuid' => $this->currentUser?->uuid,
+                $this->getCachedAuditContext([
                     'message' => 'No permission provider available',
                     'controller' => static::class
-                ]
+                ])
             );
             return false;
         }
@@ -256,9 +225,8 @@ abstract class BaseController
      */
     protected function isAdmin(): bool
     {
-        $user = $this->getCurrentUser();
-        $userData = $user?->toArray() ?? [];
-        return $this->authManager->isAdmin($userData);
+        // Use cached admin check from CachedUserContextTrait
+        return $this->isCachedAdmin();
     }
 
     /**
@@ -268,7 +236,8 @@ abstract class BaseController
      */
     protected function getCurrentUser(): ?User
     {
-        return $this->currentUser;
+        // Use cached user from CachedUserContextTrait for consistency
+        return $this->getCachedUser();
     }
 
     /**
@@ -278,7 +247,8 @@ abstract class BaseController
      */
     protected function getCurrentUserUuid(): ?string
     {
-        return $this->currentUser?->uuid;
+        // Use cached UUID from CachedUserContextTrait for consistency
+        return $this->getCachedUserUuid();
     }
 
     /**
@@ -323,7 +293,7 @@ abstract class BaseController
             '%s:%s:%s',
             static::class,
             $action,
-            $this->currentUser?->uuid ?? $this->request->getClientIp()
+            $this->getCachedUserUuid() ?? $this->request->getClientIp()
         );
 
         if ($useAdaptive && config('security.rate_limiter.enable_adaptive', true)) {
@@ -335,7 +305,7 @@ abstract class BaseController
                 [
                     'controller' => static::class,
                     'action' => $action,
-                    'user_uuid' => $this->currentUser?->uuid,
+                    'user_uuid' => $this->getCachedUserUuid(),
                     'ip' => $this->request->getClientIp(),
                     'user_agent' => $this->request->headers->get('User-Agent'),
                 ],
@@ -1115,5 +1085,32 @@ abstract class BaseController
         }
 
         return $results;
+    }
+
+    /**
+     * Log resource access for audit trail
+     *
+     * This method can be overridden by child controllers to provide
+     * specific resource access logging behavior.
+     *
+     * @param string $operation Operation performed
+     * @param string $table Table/resource name
+     * @param string|null $uuid Resource UUID
+     * @return void
+     */
+    protected function logResourceAccess(string $operation, string $table, ?string $uuid = null): void
+    {
+        // Default implementation uses high-volume async audit logging
+        $this->asyncAudit(
+            'resource_access',
+            $operation,
+            AuditEvent::SEVERITY_INFO,
+            [
+                'table' => $table,
+                'uuid' => $uuid,
+                'user_uuid' => $this->getCurrentUserUuid(),
+                'operation' => $operation
+            ]
+        );
     }
 }

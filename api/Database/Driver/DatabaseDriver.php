@@ -93,4 +93,37 @@ interface DatabaseDriver
      * @return string SQL query to retrieve column information
      */
     public function getTableColumnsQuery(string $table): string;
+
+    /**
+     * Format current datetime for database storage
+     *
+     * Returns database-agnostic datetime formatting that ensures consistent
+     * datetime storage across different database engines while maintaining
+     * proper timezone handling and precision.
+     *
+     * Implementation examples:
+     * - MySQL:      Returns datetime in 'Y-m-d H:i:s' format
+     * - PostgreSQL: Returns datetime in 'Y-m-d H:i:s' format with timezone awareness
+     * - SQLite:     Returns datetime in 'Y-m-d H:i:s' format (stored as TEXT)
+     *
+     * @param \DateTime|string|null $datetime Optional datetime to format (defaults to current time)
+     * @return string Formatted datetime string ready for database storage
+     * @throws \InvalidArgumentException If provided datetime string is invalid
+     */
+    public function formatDateTime($datetime = null): string;
+
+    /**
+     * Get database-specific ping query for health checks
+     *
+     * Returns an optimized, lightweight query that can be used to verify
+     * database connectivity and responsiveness during connection health checks.
+     *
+     * Implementation examples:
+     * - MySQL:      SELECT 1
+     * - PostgreSQL: SELECT 1
+     * - SQLite:     SELECT 1
+     *
+     * @return string Lightweight SQL query for connectivity testing
+     */
+    public function getPingQuery(): string;
 }

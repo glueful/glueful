@@ -7,6 +7,7 @@ use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
 use Glueful\Database\RawExpression;
+use Glueful\Database\PooledConnection;
 
 /**
  * Database Query Builder
@@ -47,6 +48,9 @@ class QueryBuilder
 {
     /** @var PDO Active database connection */
     protected PDO $pdo;
+
+    /** @var PooledConnection|null Pooled connection wrapper if using connection pooling */
+    protected ?PooledConnection $pooledConnection = null;
 
     /** @var DatabaseDriver Database-specific driver implementation */
     protected DatabaseDriver $driver;
@@ -114,16 +118,41 @@ class QueryBuilder
     /**
      * Initialize query builder
      *
-     * @param PDO $pdo Active database connection
+     * Supports both traditional PDO connections and pooled connections.
+     * When a PooledConnection is provided, it automatically handles connection
+     * lifecycle management including release back to the pool.
+     *
+     * @param PDO|PooledConnection $connection Database connection
      * @param DatabaseDriver $driver Database-specific driver
      * @param QueryLogger|null $logger Query logger
      *
      */
-    public function __construct(PDO $pdo, DatabaseDriver $driver, ?QueryLogger $logger = null)
+    public function __construct($connection, DatabaseDriver $driver, ?QueryLogger $logger = null)
     {
-        $this->pdo = $pdo;
+        if ($connection instanceof PooledConnection) {
+            $this->pooledConnection = $connection;
+            $this->pdo = $connection->getPDO(); // Get underlying PDO instance
+        } elseif ($connection instanceof PDO) {
+            $this->pdo = $connection;
+        } else {
+            throw new \InvalidArgumentException('Connection must be PDO or PooledConnection instance');
+        }
+
         $this->driver = $driver;
         $this->logger = $logger ?? new QueryLogger();
+    }
+
+    /**
+     * Destructor - ensures proper cleanup of pooled connections
+     *
+     * Automatically releases pooled connections back to the pool when
+     * the QueryBuilder instance is destroyed, preventing connection leaks.
+     */
+    public function __destruct()
+    {
+        // Release pooled connection back to pool
+        // The PooledConnection destructor will handle the actual release
+        $this->pooledConnection = null;
     }
 
    /**
@@ -803,6 +832,82 @@ class QueryBuilder
         }
 
         return $this->whereRaw("$wrappedColumn LIKE ?", [$pattern]);
+    }
+
+    /**
+     * Add WHERE column < value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereLessThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn < ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column > value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereGreaterThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn > ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column <= value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereLessThanOrEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn <= ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column >= value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereGreaterThanOrEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn >= ?", [$value]);
     }
 
     /**
@@ -1780,5 +1885,88 @@ class QueryBuilder
         }
 
         return $this;
+    }
+
+    /**
+     * Get the database driver instance
+     *
+     * Provides access to database-specific operations like identifier quoting
+     * and datetime formatting for repository implementations.
+     *
+     * @return DatabaseDriver The database driver instance
+     */
+    public function getDriver(): DatabaseDriver
+    {
+        return $this->driver;
+    }
+
+    /**
+     * Check if using a pooled connection
+     *
+     * @return bool True if using connection pooling
+     */
+    public function isUsingPooledConnection(): bool
+    {
+        return $this->pooledConnection !== null;
+    }
+
+    /**
+     * Get pooled connection instance
+     *
+     * @return PooledConnection|null Pooled connection or null if not using pooling
+     */
+    public function getPooledConnection(): ?PooledConnection
+    {
+        return $this->pooledConnection;
+    }
+
+    /**
+     * Get connection statistics (if using pooled connection)
+     *
+     * @return array Connection statistics or empty array
+     */
+    public function getConnectionStats(): array
+    {
+        return $this->pooledConnection ? $this->pooledConnection->getStats() : [];
+    }
+
+    /**
+     * Get raw PDO connection
+     *
+     * Provides direct access to the underlying PDO instance for cases
+     * where direct PDO methods are needed.
+     *
+     * @return PDO The PDO connection instance
+     */
+    public function getPDO(): PDO
+    {
+        return $this->pdo;
+    }
+
+    /**
+     * Force release of pooled connection
+     *
+     * Manually releases the pooled connection back to the pool.
+     * Useful for long-running processes that want to release connections early.
+     *
+     * @return void
+     */
+    public function releaseConnection(): void
+    {
+        if ($this->pooledConnection) {
+            // Check if in transaction - don't release if so
+            if ($this->transactionLevel > 0) {
+                $this->logger->logEvent("Cannot release pooled connection - transaction active", [
+                    'transaction_level' => $this->transactionLevel
+                ]);
+                return;
+            }
+
+            $this->logger->logEvent("Manually releasing pooled connection", [
+                'connection_id' => $this->pooledConnection->getId()
+            ]);
+
+            $this->pooledConnection = null;
+        }
     }
 }

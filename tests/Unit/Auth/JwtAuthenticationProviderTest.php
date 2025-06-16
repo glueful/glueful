@@ -45,6 +45,20 @@ class JwtAuthenticationProviderTest extends TestCase
         $_ENV['DB_ENGINE'] = 'sqlite';
         $_ENV['DB_SQLITE_DATABASE'] = ':memory:';
 
+        // Disable connection pooling for tests to ensure single connection
+        $_ENV['DB_POOLING_ENABLED'] = 'false';
+
+        // Clear any existing database connections to ensure fresh state
+        $reflection = new \ReflectionClass(\Glueful\Database\Connection::class);
+        $instancesProp = $reflection->getProperty('instances');
+        $instancesProp->setAccessible(true);
+        $instancesProp->setValue(null, []);
+
+        // Also clear the pool manager if it exists
+        $poolManagerProp = $reflection->getProperty('poolManager');
+        $poolManagerProp->setAccessible(true);
+        $poolManagerProp->setValue(null, null);
+
         // Mock the AuditLogger to prevent database connections
         $this->mockAuditLogger = AuditLoggerMock::setup($this);
 
@@ -80,7 +94,8 @@ class JwtAuthenticationProviderTest extends TestCase
         // Get a database connection to create tables
         $connection = new \Glueful\Database\Connection();
         $pdo = $connection->getPDO();
-        // Create auth_sessions table
+
+        // Create auth_sessions table with all required columns
         $pdo->exec("CREATE TABLE IF NOT EXISTS auth_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uuid TEXT NOT NULL,
@@ -96,7 +111,11 @@ class JwtAuthenticationProviderTest extends TestCase
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_token_refresh DATETIME DEFAULT CURRENT_TIMESTAMP,
-            token_fingerprint TEXT NOT NULL
+            token_fingerprint TEXT NOT NULL,
+            remember_me INTEGER DEFAULT 0,
+            revoked_at DATETIME,
+            expired_at DATETIME,
+            session_id TEXT
         )");
     }
 

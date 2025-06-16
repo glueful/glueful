@@ -86,10 +86,8 @@ class AuthenticationMiddleware implements MiddlewareInterface
             throw new AuthenticationException('Insufficient permissions, admin access required');
         }
 
-        // Log successful authentication if logging is enabled
-        if (method_exists($this->authManager, 'logAccess')) {
-            $this->authManager->logAccess($userData, $request);
-        }
+        // Log successful authentication
+        $this->authManager->logAccess($userData, $request);
 
         // Authentication passed, continue to next middleware
         return $handler->handle($request);
@@ -124,13 +122,15 @@ class AuthenticationMiddleware implements MiddlewareInterface
      * Validate token expiration from user data
      *
      * @param array $userData User session data
-     * @param Request $request The HTTP request (unused but kept for future use)
+     * @param Request $request The HTTP request
      * @throws AuthenticationException If tokens are expired
      */
     private function validateTokenExpiration(array $userData, Request $request): void
     {
+        // Acknowledge unused parameter for future enhancement
+        unset($request);
+
         $now = time();
-        $currentTime = date('Y-m-d H:i:s');
 
         // Check access token expiration
         if (isset($userData['access_expires_at'])) {

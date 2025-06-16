@@ -32,7 +32,14 @@ class RBACPermissionProvider implements PermissionProviderInterface
     private ?UserRoleRepository $userRoleRepository = null;
     private ?UserPermissionRepository $userPermissionRepository = null;
     private ?RolePermissionRepository $rolePermissionRepository = null;
-    private array $config;
+    private array $config = [
+        'cache_ttl' => 3600,
+        'cache_enabled' => true,
+        'cache_prefix' => 'rbac:',
+        'enable_hierarchy' => true,
+        'enable_inheritance' => true,
+        'max_hierarchy_depth' => 10
+    ];
     private array $permissionCache = [];
     private string $cachePrefix = 'rbac:';
     private bool $cacheEnabled = true;

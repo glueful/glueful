@@ -9,6 +9,7 @@ use Glueful\Queue\Contracts\HealthStatus;
 use Glueful\Queue\Jobs\DatabaseJob;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
+use Glueful\Database\Schema\SchemaManager;
 use Glueful\Helpers\Utils;
 
 /**
@@ -38,6 +39,9 @@ class DatabaseQueue implements QueueDriverInterface
 {
     /** @var QueryBuilder Database query builder */
     private QueryBuilder $db;
+
+    /** @var SchemaManager Schema manager for table creation */
+    private SchemaManager $schema;
 
     /** @var string Queue jobs table name */
     private string $table;
@@ -86,9 +90,13 @@ class DatabaseQueue implements QueueDriverInterface
     {
         $this->connection = new Connection();
         $this->db = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
-        $this->table = $config['table'] ?? 'queue_jobs';
-        $this->failedTable = $config['failed_table'] ?? 'queue_failed_jobs';
-        $this->retryAfter = $config['retry_after'] ?? 90;
+        $this->schema = $this->connection->getSchemaManager();
+        $this->table = config('queue.connections.database.table') ?? 'queue_jobs';
+        $this->failedTable = config('queue.connections.database.failed_table') ?? 'queue_failed_jobs';
+        $this->retryAfter = config('queue.connections.database.retry_after') ?? 90;
+
+        // Ensure queue tables exist
+        $this->ensureQueueTables();
     }
 
     /**
@@ -557,5 +565,53 @@ class DatabaseQueue implements QueueDriverInterface
             // Remove from main queue
             $this->delete($job);
         });
+    }
+
+    /**
+     * Ensure queue tables exist
+     *
+     * Creates the queue_jobs and queue_failed_jobs tables if they don't exist.
+     * Uses SchemaManager's createTable method which checks for table existence.
+     *
+     * @return void
+     */
+    private function ensureQueueTables(): void
+    {
+        // Create main queue jobs table
+        $this->schema->createTable($this->table, [
+            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(21) NOT NULL',
+            'queue' => 'VARCHAR(100) NOT NULL',
+            'payload' => 'LONGTEXT NOT NULL',
+            'attempts' => 'INTEGER DEFAULT 0',
+            'reserved_at' => 'INTEGER NULL',
+            'available_at' => 'INTEGER NOT NULL',
+            'created_at' => 'INTEGER NOT NULL',
+            'priority' => 'INTEGER DEFAULT 0',
+            'batch_id' => 'CHAR(21) NULL'
+        ], [
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => ['queue', 'reserved_at', 'available_at', 'priority']],
+            ['type' => 'INDEX', 'column' => 'batch_id']
+        ]);
+
+        // Create failed jobs table
+        $this->schema->createTable($this->failedTable, [
+            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+            'uuid' => 'CHAR(12) NOT NULL',
+            'connection' => 'VARCHAR(255) NOT NULL',
+            'queue' => 'VARCHAR(255) NOT NULL',
+            'payload' => 'TEXT NOT NULL',
+            'exception' => 'TEXT NOT NULL',
+            'batch_uuid' => 'CHAR(12) NULL',
+            'failed_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        ], [
+           ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'connection'],
+            ['type' => 'INDEX', 'column' => 'queue'],
+            ['type' => 'INDEX', 'column' => 'batch_uuid'],
+            ['type' => 'INDEX', 'column' => 'failed_at'],
+            ['type' => 'INDEX', 'column' => ['connection', 'queue'], 'name' => 'idx_failed_connection_queue']
+        ]);
     }
 }

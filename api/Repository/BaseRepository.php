@@ -68,14 +68,18 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * Get new query builder instance
      *
-     * Returns a new query builder instance for clean queries.
-     * This prevents query state from persisting between operations.
+     * Returns a new query builder instance for clean queries with pooled connection support.
+     * This prevents query state from persisting between operations while enabling connection
+     * pooling when available.
      *
      * @return QueryBuilder A new query builder instance
      */
     protected static function getNewQueryBuilder(): QueryBuilder
     {
         $conn = self::getSharedConnection();
+
+        // Pass the PDO connection (which may be pooled) directly to QueryBuilder
+        // QueryBuilder will detect if it's a PooledConnection and handle appropriately
         $queryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
 
         // Enable debug mode if app is in debug mode
@@ -161,10 +165,10 @@ abstract class BaseRepository implements RepositoryInterface
 
         // Add timestamps if not present
         if (!isset($data['created_at'])) {
-            $data['created_at'] = date('Y-m-d H:i:s');
+            $data['created_at'] = $this->db->getDriver()->formatDateTime();
         }
         if ($this->hasUpdatedAt && !isset($data['updated_at'])) {
-            $data['updated_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
         // Execute the insert
@@ -189,7 +193,7 @@ abstract class BaseRepository implements RepositoryInterface
     {
         // Add updated timestamp if table has this column
         if ($this->hasUpdatedAt) {
-            $data['updated_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
         // Execute the update
@@ -335,14 +339,54 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function bulkCreate(array $records): array
     {
+        if (empty($records)) {
+            return [];
+        }
+
         $uuids = [];
+        $bulkData = [];
+
+        // Prepare data and generate UUIDs
+        foreach ($records as $record) {
+            if (!isset($record[$this->primaryKey])) {
+                $record[$this->primaryKey] = Utils::generateNanoID();
+            }
+            $uuids[] = $record[$this->primaryKey];
+
+            // Add timestamps if needed
+            if (!isset($record['created_at'])) {
+                $record['created_at'] = date('Y-m-d H:i:s');
+            }
+            if ($this->hasUpdatedAt && !isset($record['updated_at'])) {
+                $record['updated_at'] = date('Y-m-d H:i:s');
+            }
+
+            $bulkData[] = $record;
+        }
 
         $this->beginTransaction();
         try {
-            foreach ($records as $record) {
-                $uuids[] = $this->create($record);
+            // Use database bulk insert for better performance
+            $success = $this->db->insertBatch($this->table, $bulkData);
+            if (!$success) {
+                throw new \RuntimeException('Bulk insert failed');
             }
+
             $this->commit();
+
+            // Single audit log for bulk operation
+            if ($this->auditLogger) {
+                $this->auditLogger->audit(
+                    AuditEvent::CATEGORY_DATA,
+                    'bulk_create',
+                    AuditEvent::SEVERITY_INFO,
+                    [
+                        'table' => $this->table,
+                        'record_count' => count($records),
+                        'uuids' => $uuids
+                    ]
+                );
+            }
         } catch (\Exception $e) {
             $this->rollBack();
             throw $e;
@@ -361,7 +405,7 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         if ($this->hasUpdatedAt && !isset($data['updated_at'])) {
-            $data['updated_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
         $affectedRows = $this->db->update(
@@ -406,7 +450,7 @@ abstract class BaseRepository implements RepositoryInterface
     {
         $updateData = [$statusColumn => $deletedValue];
         if ($this->hasUpdatedAt) {
-            $updateData['updated_at'] = date('Y-m-d H:i:s');
+            $updateData['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
         $success = $this->update($uuid, $updateData);
 

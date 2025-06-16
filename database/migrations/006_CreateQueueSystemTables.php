@@ -79,11 +79,13 @@ class CreateQueueSystemTables implements MigrationInterface
             'queue' => 'VARCHAR(255) NOT NULL',
             'payload' => 'TEXT NOT NULL',
             'exception' => 'TEXT NOT NULL',
+            'batch_uuid' => 'CHAR(12) NULL',
             'failed_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'connection'],
             ['type' => 'INDEX', 'column' => 'queue'],
+            ['type' => 'INDEX', 'column' => 'batch_uuid'],
             ['type' => 'INDEX', 'column' => 'failed_at'],
             ['type' => 'INDEX', 'column' => ['connection', 'queue'], 'name' => 'idx_failed_connection_queue']
         ]);

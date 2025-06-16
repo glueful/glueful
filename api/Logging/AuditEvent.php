@@ -32,6 +32,8 @@ class AuditEvent implements JsonSerializable
     public const CATEGORY_ADMIN = 'administrative';
     public const CATEGORY_CONFIG = 'configuration';
     public const CATEGORY_SYSTEM = 'system';
+    public const CATEGORY_USER = 'user_management';
+    public const CATEGORY_FILE = 'file_operations';
 
     // Event severity levels (aligned with PSR-3 log levels)
     public const SEVERITY_INFO = 'info';

@@ -152,6 +152,11 @@ class Response
         return self::error($message, self::HTTP_UNAUTHORIZED, self::ERROR_AUTHENTICATION);
     }
 
+    public static function forbidden(mixed $data = null, string $message = 'Forbidden'): self
+    {
+        return new self($data, self::HTTP_FORBIDDEN, $message, false);
+    }
+
     /**
      * Get error type based on HTTP status code
      *

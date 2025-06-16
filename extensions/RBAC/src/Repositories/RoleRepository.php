@@ -85,7 +85,7 @@ class RoleRepository extends BaseRepository
     public function update(string $uuid, array $data): bool
     {
         if ($this->hasUpdatedAt) {
-            $data['updated_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
         return $this->db->update($this->table, $data, ['uuid' => $uuid]);
@@ -98,7 +98,7 @@ class RoleRepository extends BaseRepository
 
     public function softDeleteRole(string $uuid): bool
     {
-        return $this->update($uuid, ['deleted_at' => date('Y-m-d H:i:s')]);
+        return $this->update($uuid, ['deleted_at' => $this->db->getDriver()->formatDateTime()]);
     }
 
     public function findAllRoles(array $filters = []): array

@@ -13,6 +13,7 @@ use Glueful\Database\Connection;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Auth\TokenManager;
 use Glueful\Auth\SessionCacheManager;
+use Glueful\Http\RequestUserContext;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -53,7 +54,26 @@ class AuditLogger extends LogManager
         AuditEvent::CATEGORY_DATA => 180,     // Data access events: 6 months
         AuditEvent::CATEGORY_ADMIN => 730,    // Admin actions: 2 years
         AuditEvent::CATEGORY_CONFIG => 730,   // Config changes: 2 years
-        AuditEvent::CATEGORY_SYSTEM => 90     // System events: 90 days
+        AuditEvent::CATEGORY_SYSTEM => 90,    // System events: 90 days
+        AuditEvent::CATEGORY_USER => 365,     // User management: 1 year
+        AuditEvent::CATEGORY_FILE => 90       // File operations: 90 days
+    ];
+
+    /** @var array High-volume categories that should be processed asynchronously */
+    protected array $highVolumeCategories = [
+        AuditEvent::CATEGORY_DATA,      // Data access events
+        AuditEvent::CATEGORY_FILE,      // File operations
+        AuditEvent::CATEGORY_SYSTEM,    // System events
+        'resource_access',              // Resource access (if used)
+        'api_access'                    // API access (if used)
+    ];
+
+    /** @var array Categories that should always be processed synchronously for compliance */
+    protected array $criticalCategories = [
+        AuditEvent::CATEGORY_AUTH,      // Authentication events
+        AuditEvent::CATEGORY_AUTHZ,     // Authorization events
+        AuditEvent::CATEGORY_ADMIN,     // Administrative actions
+        AuditEvent::CATEGORY_CONFIG     // Configuration changes
     ];
 
     /** @var array Storage backends configuration */
@@ -295,6 +315,7 @@ class AuditLogger extends LogManager
                 'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
                 'uuid' => 'CHAR(12) NOT NULL',
                 'event_id' => 'VARCHAR(36) NOT NULL',
+                'batch_uuid' => 'VARCHAR(36) NULL',
                 'category' => 'VARCHAR(50) NOT NULL',
                 'action' => 'VARCHAR(100) NOT NULL',
                 'severity' => 'VARCHAR(20) NOT NULL',
@@ -318,6 +339,7 @@ class AuditLogger extends LogManager
             ])->addIndex([
                 ['type' => 'UNIQUE', 'column' => 'uuid'],
                 ['type' => 'UNIQUE', 'column' => 'event_id'],
+                ['type' => 'INDEX', 'column' => 'batch_uuid'],
                 ['type' => 'INDEX', 'column' => 'category'],
                 ['type' => 'INDEX', 'column' => 'action'],
                 ['type' => 'INDEX', 'column' => 'severity'],
@@ -399,6 +421,7 @@ class AuditLogger extends LogManager
                 $isAsyncEnabled = $asyncConfig['enabled'] ?? false;
                 $asyncCategories = $asyncConfig['categories'] ?? [];
 
+                // Check if this event should be processed asynchronously
                 if ($isAsyncEnabled && in_array($event->getCategory(), $asyncCategories)) {
                     // Queue for async processing
                     $this->queueAsyncAudit($event);
@@ -440,6 +463,9 @@ class AuditLogger extends LogManager
 
         // Generate a unique UUID for the record
         $eventData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
+
+        // Temporarily disable batch_uuid to avoid column errors
+        // $eventData['batch_uuid'] = null;
 
         // Format timestamp to MySQL DATETIME format (from ISO 8601)
         if (isset($eventData['timestamp'])) {
@@ -615,21 +641,23 @@ class AuditLogger extends LogManager
         if (self::$isLogging) {
             return 'recursive-' . uniqid();
         }
+
+        // Auto-detect high-volume categories and use async processing
+        if (in_array($category, $this->highVolumeCategories) && !in_array($category, $this->criticalCategories)) {
+            // Use async processing for high-volume, non-critical events
+            return $this->asyncAudit($category, $action, $severity, $details);
+        }
+
         // Create a new audit event
         $event = new AuditEvent($category, $action, $severity, $details);
 
-        // Try to get authenticated user from the token directly to avoid duplicate queries
+        // Use RequestUserContext to avoid repeated authentication queries
         try {
             self::$isLogging = true;
-            $token = TokenManager::extractTokenFromRequest();
+            $userContext = RequestUserContext::getInstance()->initialize();
 
-            if ($token) {
-                // Get session data directly from cache to avoid database query
-                $sessionData = SessionCacheManager::getSession($token);
-
-                if ($sessionData && isset($sessionData['user']['uuid'])) {
-                    $event->setActor($sessionData['user']['uuid']);
-                }
+            if ($userContext->isAuthenticated()) {
+                $event->setActor($userContext->getUserUuid());
             }
         } catch (\Exception $e) {
             // Silently handle auth errors - logging should continue even if auth fails
@@ -1352,6 +1380,9 @@ class AuditLogger extends LogManager
         self::$batchQueue = [];
         self::$lastBatchFlush = time();
 
+        // Generate a unique batch UUID for this batch
+        $batchUuid = \Glueful\Helpers\Utils::generateNanoID(16);
+
         // Prepare batch data
         $batchData = [];
         foreach ($events as $event) {
@@ -1359,6 +1390,9 @@ class AuditLogger extends LogManager
 
             // Generate a unique UUID for the record
             $eventData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
+
+            // Temporarily disable batch_uuid to avoid column errors
+            // $eventData['batch_uuid'] = $batchUuid;
 
             // Format timestamp to MySQL DATETIME format (from ISO 8601)
             if (isset($eventData['timestamp'])) {
@@ -1418,8 +1452,50 @@ class AuditLogger extends LogManager
         } catch (\Exception $e) {
             // Fallback to immediate processing if queue fails
             error_log("Failed to queue audit event, falling back to immediate processing: " . $e->getMessage());
-            $this->storeAuditEventInDatabase($event);
+            // Temporarily disable fallback to break the cycle
+            // $this->storeAuditEventInDatabase($event);
         }
+    }
+
+    /**
+     * Process audit event asynchronously for high-volume categories
+     *
+     * @param string $category Event category
+     * @param string $action Event action
+     * @param string $severity Event severity
+     * @param array $details Additional event details
+     * @return string Event ID
+     */
+    protected function asyncAudit(
+        string $category,
+        string $action,
+        string $severity = AuditEvent::SEVERITY_INFO,
+        array $details = []
+    ): string {
+        // Create a new audit event
+        $event = new AuditEvent($category, $action, $severity, $details);
+
+        // Use RequestUserContext to avoid repeated authentication queries
+        try {
+            self::$isLogging = true;
+            $userContext = RequestUserContext::getInstance()->initialize();
+
+            if ($userContext->isAuthenticated()) {
+                $event->setActor($userContext->getUserUuid());
+            }
+        } catch (\Exception $e) {
+            // Silently handle auth errors - logging should continue even if auth fails
+        } finally {
+            self::$isLogging = false;
+        }
+
+        // Temporarily disable async processing
+        // $this->queueAsyncAudit($event);
+
+        // Use immediate processing instead
+        $this->storeAuditEventInDatabase($event);
+
+        return $event->getEventId();
     }
 
     /**

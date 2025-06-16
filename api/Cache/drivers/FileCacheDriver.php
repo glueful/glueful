@@ -144,6 +144,41 @@ class FileCacheDriver implements CacheDriverInterface
     }
 
     /**
+     * Get multiple cached values
+     *
+     * @param array $keys Array of cache keys
+     * @return array Indexed array of values (same order as keys, null for missing keys)
+     */
+    public function mget(array $keys): array
+    {
+        $result = [];
+
+        foreach ($keys as $key) {
+            $result[] = $this->get($key);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Store multiple values in cache
+     *
+     * @param array $values Associative array of key => value pairs
+     * @param int $ttl Time to live in seconds
+     * @return bool True if all values stored successfully
+     */
+    public function mset(array $values, int $ttl = 3600): bool
+    {
+        $success = true;
+
+        foreach ($values as $key => $value) {
+            $success = $success && $this->set($key, $value, $ttl);
+        }
+
+        return $success;
+    }
+
+    /**
      * Delete cached value
      *
      * @param string $key Cache key

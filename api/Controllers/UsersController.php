@@ -584,31 +584,40 @@ class UsersController extends BaseController
             'errors' => []
         ];
 
+        // Batch find users to avoid N+1 queries
+        $users = $this->userRepository->findMultiple($data['user_ids']);
+        $usersByUuid = array_column($users, null, 'uuid');
+
+        // Prepare batch updates and session revocations
+        $batchUpdates = [];
+        $sessionsToRevoke = [];
+
         foreach ($data['user_ids'] as $userUuid) {
             try {
-                $user = $this->userRepository->find($userUuid);
-                if (!$user) {
+                if (!isset($usersByUuid[$userUuid])) {
                     $results['failed']++;
                     $results['errors'][] = "User {$userUuid} not found";
                     continue;
                 }
+
+                $user = $usersByUuid[$userUuid];
 
                 switch ($data['action']) {
                     case 'delete':
                         $this->userRepository->delete($user['uuid']);
                         break;
                     case 'restore':
-                        $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
+                        $batchUpdates[$userUuid] = ['deleted_at' => null];
                         break;
                     case 'activate':
-                        $this->userRepository->update($user['uuid'], ['status' => 'active']);
+                        $batchUpdates[$userUuid] = ['status' => 'active'];
                         break;
                     case 'deactivate':
-                        $this->userRepository->update($user['uuid'], ['status' => 'inactive']);
+                        $batchUpdates[$userUuid] = ['status' => 'inactive'];
                         break;
                     case 'suspend':
-                        $this->userRepository->update($user['uuid'], ['status' => 'suspended']);
-                        $this->tokenStorage->revokeAllUserSessions($user['uuid']);
+                        $batchUpdates[$userUuid] = ['status' => 'suspended'];
+                        $sessionsToRevoke[] = $userUuid;
                         break;
                     case 'assign_role':
                     case 'remove_role':
@@ -624,6 +633,48 @@ class UsersController extends BaseController
                 $results['errors'][] = "Failed for user {$userUuid}: " . $e->getMessage();
             }
         }
+
+        // Execute batch updates by grouping similar operations
+        if (!empty($batchUpdates)) {
+            // Group updates by the data being changed to enable true bulk operations
+            $updateGroups = [];
+            foreach ($batchUpdates as $userUuid => $updateData) {
+                $dataKey = serialize($updateData);
+                if (!isset($updateGroups[$dataKey])) {
+                    $updateGroups[$dataKey] = [
+                        'uuids' => [],
+                        'data' => $updateData
+                    ];
+                }
+                $updateGroups[$dataKey]['uuids'][] = $userUuid;
+            }
+
+            // Execute bulk updates for each group
+            foreach ($updateGroups as $group) {
+                $this->userRepository->bulkUpdate($group['uuids'], $group['data']);
+            }
+        }
+
+        // Execute batch session revocations
+        if (!empty($sessionsToRevoke)) {
+            foreach ($sessionsToRevoke as $userUuid) {
+                $this->tokenStorage->revokeAllUserSessions($userUuid);
+            }
+        }
+
+        // Single audit log for the entire bulk operation
+        $this->asyncAudit(
+            AuditEvent::CATEGORY_USER,
+            'bulk_user_action',
+            AuditEvent::SEVERITY_INFO,
+            [
+                'action' => $data['action'],
+                'total_users' => count($data['user_ids']),
+                'successful' => $results['success'],
+                'failed' => $results['failed'],
+                'user_ids' => $data['user_ids']
+            ]
+        );
 
         // Audit log bulk operation
         $this->auditLogger->audit(

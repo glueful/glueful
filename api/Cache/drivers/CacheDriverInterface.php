@@ -31,6 +31,23 @@ interface CacheDriverInterface
     public function set(string $key, mixed $value, int $ttl = 3600): bool;
 
     /**
+     * Get multiple cached values
+     *
+     * @param array $keys Array of cache keys
+     * @return array Indexed array of values (same order as keys, null for missing keys)
+     */
+    public function mget(array $keys): array;
+
+    /**
+     * Store multiple values in cache
+     *
+     * @param array $values Associative array of key => value pairs
+     * @param int $ttl Time to live in seconds
+     * @return bool True if all values stored successfully
+     */
+    public function mset(array $values, int $ttl = 3600): bool;
+
+    /**
      * Delete cached value
      *
      * @param string $key Cache key

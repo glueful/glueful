@@ -11,6 +11,8 @@ use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Schema\MySQLSchemaManager;
 use Glueful\Database\Schema\PostgreSQLSchemaManager;
 use Glueful\Database\Schema\SQLiteSchemaManager;
+use Glueful\Database\ConnectionPoolManager;
+use Glueful\Database\PooledConnection;
 use Exception;
 
 /**
@@ -39,45 +41,60 @@ class Connection
     /** @var array<string, PDO> Connection pool indexed by engine type */
     protected static array $instances = [];
 
+    /** @var ConnectionPoolManager|null Pool manager instance */
+    private static ?ConnectionPoolManager $poolManager = null;
+
     /** @var PDO Active database connection */
     protected PDO $pdo;
 
     /** @var DatabaseDriver Database-specific driver instance */
     protected DatabaseDriver $driver;
 
-    protected SchemaManager $schemaManager;
+    /** @var SchemaManager|null Schema manager instance (initialized lazily) */
+    protected ?SchemaManager $schemaManager = null;
+
+    /** @var string Current database engine */
+    protected string $engine;
+
+    /** @var array Database configuration */
+    protected array $config;
+
+    /** @var ConnectionPool|null Active connection pool */
+    private ?ConnectionPool $pool = null;
+
+    /** @var PooledConnection|null Current pooled connection */
+    private ?PooledConnection $pooledConnection = null;
 
 
     /**
-     * Initialize database connection with pooling
+     * Initialize database connection with optional pooling
      *
      * Creates or reuses database connections based on engine type.
-     * Implements connection pooling to minimize resource usage.
+     * Supports both legacy connection reuse and modern connection pooling.
      * Automatically resolves appropriate driver and schema manager.
      *
      * Connection lifecycle:
-     * 1. Check pool for existing connection
-     * 2. Create new connection if needed
-     * 3. Initialize driver and schema manager
-     * 4. Store connection in pool
+     * 1. Check if pooling is enabled
+     * 2. Use connection pool if available
+     * 3. Fall back to legacy connection reuse
+     * 4. Initialize driver and schema manager
      *
+     * @param array $config Optional configuration override
      * @throws Exception On connection failure or invalid configuration
      */
-    public function __construct()
+    public function __construct(array $config = [])
     {
-        // $this->config = $config;
-        $engine = config('database.engine');
+        $this->config = array_merge($this->loadConfig(), $config);
+        $this->engine = $this->config['engine'] ?? config('database.engine');
 
-        // Use existing connection if available (Pooling)
-        if (isset(self::$instances[$engine])) {
-            $this->pdo = self::$instances[$engine];
-        } else {
-            $this->pdo = $this->createPDOConnection($engine);
-            self::$instances[$engine] = $this->pdo; // Store connection
+        // Initialize pool manager if pooling is enabled
+        if ($this->config['pooling']['enabled'] ?? false) {
+            self::$poolManager ??= new ConnectionPoolManager();
+            $this->pool = self::$poolManager->getPool($this->engine);
         }
 
-        $this->driver = $this->resolveDriver($engine);
-        $this->schemaManager = $this->resolveSchemaManager($engine);
+        $this->driver = $this->resolveDriver($this->engine);
+        // Note: Schema manager is initialized lazily when first accessed
     }
 
     /**
@@ -94,6 +111,16 @@ class Connection
      * @return PDO Configured PDO instance
      * @throws Exception On connection failure or invalid credentials
      */
+    /**
+     * Load database configuration
+     *
+     * @return array Complete database configuration
+     */
+    private function loadConfig(): array
+    {
+        return config('database', []);
+    }
+
     private function createPDOConnection(string $engine): PDO
     {
         // Get engine-specific configuration
@@ -219,9 +246,9 @@ class Connection
     private function resolveSchemaManager(string $engine): SchemaManager
     {
         return match ($engine) {
-            'mysql' => new MySQLSchemaManager($this->pdo),
-            'pgsql' => new PostgreSQLSchemaManager($this->pdo),
-            'sqlite' => new SQLiteSchemaManager($this->pdo),
+            'mysql' => new MySQLSchemaManager($this->getPDO()),
+            'pgsql' => new PostgreSQLSchemaManager($this->getPDO()),
+            'sqlite' => new SQLiteSchemaManager($this->getPDO()),
             default => throw new Exception("Unsupported database engine: {$engine}"),
         };
     }
@@ -229,11 +256,17 @@ class Connection
     /**
      * Access active schema manager instance
      *
+     * Initializes schema manager lazily on first access to ensure
+     * PDO connection is available.
+     *
      * @return SchemaManager Current schema manager
-     * @throws Exception If schema manager not initialized
+     * @throws Exception If schema manager initialization fails
      */
     public function getSchemaManager(): SchemaManager
     {
+        if (!isset($this->schemaManager)) {
+            $this->schemaManager = $this->resolveSchemaManager($this->engine);
+        }
         return $this->schemaManager;
     }
 
@@ -241,14 +274,33 @@ class Connection
     /**
      * Access active PDO connection
      *
-     * Returns pooled connection instance.
-     * Ensures connection is active.
+     * Returns the underlying PDO instance from pooled connection if available,
+     * otherwise falls back to legacy connection.
      *
      * @return PDO Active database connection
      * @throws Exception If connection lost
      */
     public function getPDO(): PDO
     {
+        // Use pooled connection if available
+        if ($this->pool) {
+            if (!$this->pooledConnection) {
+                $this->pooledConnection = $this->pool->acquire();
+            }
+            return $this->pooledConnection->getPDO();
+        }
+
+        // Fallback to legacy connection reuse
+        if (!isset($this->pdo)) {
+            // Use existing connection if available (Legacy Pooling)
+            if (isset(self::$instances[$this->engine])) {
+                $this->pdo = self::$instances[$this->engine];
+            } else {
+                $this->pdo = $this->createPDOConnection($this->engine);
+                self::$instances[$this->engine] = $this->pdo; // Store connection
+            }
+        }
+
         return $this->pdo;
     }
 
@@ -280,5 +332,27 @@ class Connection
             $this->driver instanceof SQLiteDriver => 'sqlite',
             default => 'unknown'
         };
+    }
+
+    /**
+     * Get connection pool manager
+     *
+     * @return ConnectionPoolManager|null Pool manager instance
+     */
+    public static function getPoolManager(): ?ConnectionPoolManager
+    {
+        return self::$poolManager;
+    }
+
+    /**
+     * Destructor - Release pooled connection
+     */
+    public function __destruct()
+    {
+        // Release pooled connection
+        if ($this->pooledConnection && $this->pool) {
+            $this->pool->release($this->pooledConnection);
+            $this->pooledConnection = null;
+        }
     }
 }
