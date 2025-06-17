@@ -2,6 +2,8 @@
 
 use Glueful\Http\Router;
 use Glueful\Controllers\AuthController;
+use Glueful\Http\Response;
+use Glueful\Helpers\Utils;
 use Symfony\Component\HttpFoundation\Request;
 
 // Get the container from the global app() helper
@@ -204,4 +206,31 @@ Router::group('/auth', function () use ($container) {
         $authController = $container->get(AuthController::class);
         return $authController->logout();
     });
+});
+
+/**
+ * @route GET /csrf-token
+ * @summary Get CSRF Token
+ * @description Retrieves a CSRF token for form and AJAX request protection
+ * @tag Security
+ * @response 200 application/json "CSRF token retrieved successfully" {
+ *   success:boolean="Success status",
+ *   message:string="Success message",
+ *   data:{
+ *     token:string="CSRF token value",
+ *     header:string="Header name for CSRF token (X-CSRF-Token)",
+ *     field:string="Form field name for CSRF token (_token)",
+ *     expires_at:integer="Token expiration timestamp"
+ *   },
+ *   code:integer="HTTP status code"
+ * }
+ * @response 500 "Failed to generate CSRF token"
+ */
+Router::get('/csrf-token', function (Request $request) {
+    try {
+        $tokenData = Utils::csrfTokenData($request);
+        return Response::ok($tokenData, 'CSRF token retrieved successfully');
+    } catch (\Exception $e) {
+        return Response::error('Failed to generate CSRF token: ' . $e->getMessage(), 500);
+    }
 });

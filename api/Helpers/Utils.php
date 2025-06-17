@@ -704,4 +704,40 @@ class Utils
 
         return array_merge($context, $additionalContext);
     }
+
+    /**
+     * Generate CSRF token for the current request
+     *
+     * @param \Symfony\Component\HttpFoundation\Request $request Request instance
+     * @return string CSRF token
+     */
+    public static function csrfToken(\Symfony\Component\HttpFoundation\Request $request): string
+    {
+        $middleware = new \Glueful\Http\Middleware\CSRFMiddleware();
+        return $middleware->getToken($request) ?? $middleware->generateToken($request);
+    }
+
+    /**
+     * Generate CSRF token field for forms
+     *
+     * @param \Symfony\Component\HttpFoundation\Request $request Request instance
+     * @return string HTML hidden input field
+     */
+    public static function csrfField(\Symfony\Component\HttpFoundation\Request $request): string
+    {
+        $middleware = new \Glueful\Http\Middleware\CSRFMiddleware();
+        return $middleware->getTokenField($request);
+    }
+
+    /**
+     * Get CSRF token data for JavaScript usage
+     *
+     * @param \Symfony\Component\HttpFoundation\Request $request Request instance
+     * @return array Token data for JSON response
+     */
+    public static function csrfTokenData(\Symfony\Component\HttpFoundation\Request $request): array
+    {
+        $middleware = new \Glueful\Http\Middleware\CSRFMiddleware();
+        return $middleware->getTokenData($request);
+    }
 }

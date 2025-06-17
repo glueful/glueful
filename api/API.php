@@ -10,49 +10,35 @@ use Glueful\Scheduler\JobScheduler;
 use Glueful\Logging\LogManager;
 
 /**
- * Main API Initialization and Request Handler
+ * Main API Initialization and Request Handler (Cleaned)
  *
- * Core class responsible for bootstrapping the API framework:
- * - Initializes the routing system
- * - Loads extensions and plugins
- * - Handles incoming API requests
- * - Delegates request processing to appropriate controllers
- * - Provides centralized error handling
- *
- * This class implements a fully modular architecture where:
- * - Routes are defined in separate route files
- * - Controllers handle domain-specific logic
- * - Extensions can hook into the system to add functionality
- *
- * @package Glueful\Api
- * @author Glueful Core Team
+ * Refactored to eliminate duplicate middleware registration.
+ * Middleware is now managed centrally through MiddlewareRegistry.
  */
 class API
 {
-    /** @var LogManager|null Central logger instance - making it nullable for testing */
+    /** @var LogManager|null Central logger instance */
     private static ?LogManager $logger = null;
 
     /**
      * Initialize the API Framework
      *
      * Bootstrap sequence for the API:
-     * 1. Load API extensions to register custom functionality
-     * 2. Load route definitions from route files
-     * 3. Set up middleware pipeline
-     * 4. Configure dependency containers
-     *
-     * This modular approach allows for easy customization and extension
-     * of the API without modifying core files.
-     *
-     * @return void
+     * 1. Initialize core components (without middleware duplication)
+     * 2. Register middleware from configuration
+     * 3. Load extensions and routes
      */
     public static function init(): void
     {
         // Log initialization start
         self::getLogger()->info("API initialization started");
 
-        // Initialize core components
+        // Initialize core components (without manual middleware registration)
         self::initializeCore();
+
+        // Register ALL middleware from configuration in one place
+        self::getLogger()->debug("Registering middleware from configuration...");
+        \Glueful\Http\MiddlewareRegistry::registerFromConfig();
 
         // Load enabled extensions first - they may register routes
         self::getLogger()->debug("Loading extensions...");
@@ -66,10 +52,9 @@ class API
         self::getLogger()->debug("Loading core routes...");
         RoutesManager::loadRoutes();
 
-        // Initialize scheduler only for CLI (not for admin web requests)
+        // Initialize scheduler only for CLI
         if (PHP_SAPI === 'cli') {
             self::getLogger()->debug("Initializing job scheduler for CLI...");
-            // Initialize scheduler only when needed
             JobScheduler::getInstance();
         }
 
@@ -78,74 +63,50 @@ class API
     }
 
     /**
-     * Initialize core API components
+     * Initialize core API components (WITHOUT middleware)
      *
-     * Sets up essential services that extensions and routes might depend on:
-     * - Authentication providers
-     * - Database connections
-     * - Cache services
-     * - Configuration
-     * - API metrics collection
-     *
-     * @return void
+     * Sets up essential services that extensions and routes might depend on.
+     * Middleware registration is now handled separately by MiddlewareRegistry.
      */
     private static function initializeCore(): void
     {
         // Initialize configuration first
         self::getLogger()->debug("Loading configuration...");
-        // Load critical configurations if not already loaded
         if (!defined('CONFIG_LOADED')) {
-            // Ensure paths are configured
-            config('paths');
-            // Ensure database connection is ready
-            config('database');
-            // Load security settings
-            config('security');
+            // Load critical configurations
+            config('app');        // Application settings
+            config('database');   // Database connection
+            config('security');   // Security settings
+            config('cache');      // Cache configuration
+            config('session');    // Session/JWT settings
 
             define('CONFIG_LOADED', true);
         }
 
-        // Initialize API metrics middleware for tracking and analyzing API usage
-        self::getLogger()->debug("Initializing API metrics collection...");
-        $apiMetricsMiddleware = new \Glueful\Http\Middleware\ApiMetricsMiddleware();
-        \Glueful\Http\Router::addMiddleware($apiMetricsMiddleware);
-
-        // Initialize rate limiter middleware for API protection
-        self::getLogger()->debug("Initializing rate limiter middleware...");
-        $rateLimiterConfig = config('security.rate_limiter.defaults', []);
-        $rateLimiterMiddleware = new \Glueful\Http\Middleware\RateLimiterMiddleware(
-            $rateLimiterConfig['ip']['max_attempts'] ?? 60,
-            $rateLimiterConfig['ip']['window_seconds'] ?? 60,
-            'ip',
-            config('security.rate_limiter.enable_adaptive', true),
-            config('security.rate_limiter.enable_distributed', false)
-        );
-        \Glueful\Http\Router::addMiddleware($rateLimiterMiddleware);
-
-        // Initialize security headers middleware for web security
-        self::getLogger()->debug("Initializing security headers middleware...");
-        $securityHeadersConfig = config('security.headers', []);
-        $securityHeadersMiddleware = new \Glueful\Http\Middleware\SecurityHeadersMiddleware($securityHeadersConfig);
-        \Glueful\Http\Router::addMiddleware($securityHeadersMiddleware);
-
         // Initialize authentication providers
         self::getLogger()->debug("Initializing authentication services...");
-        // This ensures auth services are available to routes and extensions
         \Glueful\Auth\AuthBootstrap::initialize();
 
-        // Initialize DB connection if it will be needed
+        // Initialize database connection if needed
         if (!defined('SKIP_DB_INIT') && config('database.auto_connect', true)) {
             self::getLogger()->debug("Initializing database connection...");
-            // Create a new Connection instance (which will be pooled internally)
             new \Glueful\Database\Connection();
         }
+
+        // Initialize cache if enabled
+        if (config('cache.enabled', true)) {
+            self::getLogger()->debug("Initializing cache services...");
+            \Glueful\Helpers\Utils::initializeCacheEngine(config('cache.prefix', 'glueful:'));
+        }
+
+        self::getLogger()->debug("Core initialization completed without middleware conflicts");
     }
 
-     /**
-      * Get logger instance
-      *
-      * @return LogManager
-      */
+    /**
+     * Get logger instance
+     *
+     * @return LogManager
+     */
     public static function getLogger(): LogManager
     {
         if (!isset(self::$logger)) {
@@ -158,17 +119,7 @@ class API
     /**
      * Process API Request
      *
-     * Main entry point for handling API requests:
-     * 1. Sets appropriate response headers
-     * 2. Initializes API framework components
-     * 3. Routes request to appropriate handler
-     * 4. Processes response through middleware
-     * 5. Returns formatted JSON response
-     *
-     * Error handling is delegated to the global exception handler,
-     * ensuring consistent error responses across the API.
-     *
-     * @return void No direct return, outputs API response with status and data
+     * Main entry point for handling API requests with proper middleware order.
      */
     public static function processRequest(): void
     {
@@ -187,10 +138,11 @@ class API
 
         // Get router instance
         $router = Router::getInstance();
-        // Initialize API
+
+        // Initialize API (this registers middleware in correct order)
         self::init();
 
-        // Let router handle the request
+        // Let router handle the request through middleware pipeline
         $response = $router->handleRequest();
 
         // Output the response
@@ -203,5 +155,19 @@ class API
             'time_ms' => $totalTime,
             'status' => $response['code'] ?? 200
         ]);
+    }
+
+    /**
+     * Get registration status for debugging
+     *
+     * @return array Status information
+     */
+    public static function getStatus(): array
+    {
+        return [
+            'config_loaded' => defined('CONFIG_LOADED'),
+            'middleware_registered' => \Glueful\Http\MiddlewareRegistry::isRegistered(),
+            'registered_middleware' => \Glueful\Http\MiddlewareRegistry::getRegisteredMiddleware(),
+        ];
     }
 }

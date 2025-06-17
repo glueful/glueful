@@ -101,6 +101,23 @@ class AuthController
             AuditEvent::SEVERITY_INFO
         );
 
+        // Add CSRF token to login response only if CSRF protection is enabled
+        if (env('CSRF_PROTECTION_ENABLED', true)) {
+            try {
+                $csrfMiddleware = new \Glueful\Http\Middleware\CSRFMiddleware();
+                $csrfToken = $csrfMiddleware->generateToken($request);
+                $result['csrf_token'] = [
+                    'token' => $csrfToken,
+                    'header' => 'X-CSRF-Token',
+                    'field' => '_token',
+                    'expires_at' => time() + (int)env('CSRF_TOKEN_LIFETIME', 3600)
+                ];
+            } catch (\Exception $e) {
+                // Don't fail login if CSRF token generation fails
+                error_log('Failed to generate CSRF token during login: ' . $e->getMessage());
+            }
+        }
+
         return Response::ok($result, 'Login successful')->send();
     }
 
