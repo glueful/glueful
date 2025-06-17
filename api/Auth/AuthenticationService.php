@@ -177,7 +177,7 @@ class AuthenticationService
         if (!$token) {
             return false;
         }
-        TokenManager::revokeSession($token);
+        // SessionCacheManager::destroySession() handles token revocation
         return SessionCacheManager::destroySession($token);
     }
 

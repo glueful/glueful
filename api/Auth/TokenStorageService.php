@@ -304,10 +304,9 @@ class TokenStorageService implements TokenStorageInterface
             $success = $this->queryBuilder->update(
                 $this->sessionTable,
                 [
-                    'status' => 'revoked',
-                    'revoked_at' => date('Y-m-d H:i:s')
+                    'status' => 'revoked'
                 ],
-                ['session_id' => $session['session_id']]
+                ['uuid' => $session['uuid']]
             );
 
             if (!$success) {
@@ -329,7 +328,7 @@ class TokenStorageService implements TokenStorageInterface
                 AuditEvent::SEVERITY_INFO,
                 [
                     'user_id' => $session['user_uuid'],
-                    'session_id' => $session['session_id'],
+                    'session_id' => $session['uuid'],
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
                 ]
             );

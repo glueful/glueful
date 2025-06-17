@@ -378,7 +378,27 @@ class DevelopmentQueryMonitor
                 foreach ($queries as $i => $query) {
                     $backtrace = $query['backtrace'] ?? [];
                     if (!empty($backtrace)) {
-                        $trace = "  Instance " . ($i + 1) . ": " . implode(' -> ', array_slice($backtrace, 0, 3));
+                        $traceItems = array_map(function ($frame) {
+                            if (is_string($frame)) {
+                                return $frame;
+                            }
+                            if (is_array($frame)) {
+                                $location = '';
+                                if (isset($frame['file']) && isset($frame['line'])) {
+                                    $location = basename($frame['file']) . ':' . $frame['line'];
+                                }
+                                if (isset($frame['function'])) {
+                                    $function = $frame['function'];
+                                    if (isset($frame['class'])) {
+                                        $function = $frame['class'] . $frame['type'] . $function;
+                                    }
+                                    return $function . ($location ? ' (' . $location . ')' : '');
+                                }
+                                return $location ?: 'Unknown';
+                            }
+                            return 'Unknown';
+                        }, array_slice($backtrace, 0, 3));
+                        $trace = "  Instance " . ($i + 1) . ": " . implode(' -> ', $traceItems);
                         error_log($trace);
                     }
                 }

@@ -549,7 +549,7 @@ class TokenManager
             ->where(['access_token' => $token])
             ->get();
 
-        $result = $queryBuilder->upsert(
+        $result = $queryBuilder->update(
             'auth_sessions',
             ['status' => 'revoked'],
             ['access_token' => $token]
