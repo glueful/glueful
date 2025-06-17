@@ -421,7 +421,7 @@ class EmailNotificationProvider implements NotificationExtension
             // Count total emails sent through email channel
             $sentEmails = $queryBuilder
                 ->select('notifications')
-                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('sent_at')
                 ->count('notifications');
 
@@ -430,8 +430,8 @@ class EmailNotificationProvider implements NotificationExtension
             // Count failed emails (those with error data)
             $failedEmails = $queryBuilder
                 ->select('notifications')
-                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
-                ->whereRaw("JSON_CONTAINS(data, 'true', '$.error')")
+                ->whereJsonContains('data', 'email', '$.channels')
+                ->whereJsonContains('data', 'true', '$.error')
                 ->count('notifications');
 
             $metrics['emails_failed'] = $failedEmails;
@@ -447,7 +447,7 @@ class EmailNotificationProvider implements NotificationExtension
             // Get last sent email timestamp
             $lastSentEmail = $queryBuilder
                 ->select('notifications', ['sent_at'])
-                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('sent_at')
                 ->orderBy(['sent_at' => 'DESC'])
                 ->limit(1)
@@ -458,7 +458,7 @@ class EmailNotificationProvider implements NotificationExtension
             // Calculate read rate
             $readEmails = $queryBuilder
                 ->select('notifications')
-                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('read_at')
                 ->count('notifications');
 
@@ -482,7 +482,7 @@ class EmailNotificationProvider implements NotificationExtension
             // Get email queue size - scheduled emails not yet sent
             $queueSize = $queryBuilder
                 ->select('notifications')
-                ->whereRaw("JSON_CONTAINS(data, '\"email\"', '$.channels')")
+                ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('scheduled_at')
                 ->whereNull('sent_at')
                 ->count('notifications');

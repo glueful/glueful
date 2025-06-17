@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Extensions\RBAC\Services\RoleService;
 use Glueful\Extensions\RBAC\Services\PermissionAssignmentService;
 use Glueful\Extensions\RBAC\Repositories\UserRoleRepository;
-use Glueful\Exceptions\NotFoundException;
 use Glueful\Helpers\DatabaseConnectionTrait;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -437,15 +436,18 @@ class UserRoleController
                 ->get();
             $stats['total_assignments'] = $totalAssignments[0]['total'] ?? 0;
 
+            $currentTime = date('Y-m-d H:i:s');
             $activeAssignments = $this->getQueryBuilder()->select('user_roles', ['COUNT(*) as total'])
                 ->where(['deleted_at' => null])
-                ->whereRaw('(expires_at IS NULL OR expires_at > NOW())')
+                ->whereNull('expires_at')
+                ->orWhereGreaterThan('expires_at', $currentTime)
                 ->get();
             $stats['active_assignments'] = $activeAssignments[0]['total'] ?? 0;
 
             $expiredAssignments = $this->getQueryBuilder()->select('user_roles', ['COUNT(*) as total'])
                 ->where(['deleted_at' => null])
-                ->whereRaw('expires_at IS NOT NULL AND expires_at <= NOW()')
+                ->whereNotNull('expires_at')
+                ->whereLessThanOrEqual('expires_at', $currentTime)
                 ->get();
             $stats['expired_assignments'] = $expiredAssignments[0]['total'] ?? 0;
 

@@ -11,8 +11,6 @@ use Monolog\Handler\RotatingFileHandler;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
 use Glueful\Database\Schema\SchemaManager;
-use Glueful\Auth\TokenManager;
-use Glueful\Auth\SessionCacheManager;
 use Glueful\Http\RequestUserContext;
 use Psr\Log\LoggerInterface;
 
@@ -893,13 +891,7 @@ class AuditLogger extends LogManager
 
         // Search in details JSON
         if (!empty($filters['details_search'])) {
-            // Check database driver type using the Connection instance
-            $connection = new Connection();
-            $isMysql = $connection->getDriver() instanceof \Glueful\Database\Driver\MySQLDriver;
-            $jsonSearch = $isMysql
-                ? "JSON_CONTAINS(details, '\"{$filters['details_search']}\"')"
-                : "details::text LIKE '%{$filters['details_search']}%'";
-            $query->whereRaw($jsonSearch);
+            $query->whereJsonContains('details', $filters['details_search']);
         }
 
         // Add sorting

@@ -156,24 +156,23 @@ class NotificationRepository extends BaseRepository
                 foreach ($value as $operator => $val) {
                     switch ($operator) {
                         case 'gte':
-                            $query->whereRaw("{$field} >= ?", [$val]);
+                            $query->whereGreaterThanOrEqual($field, $val);
                             break;
                         case 'lte':
-                            $query->whereRaw("{$field} <= ?", [$val]);
+                            $query->whereLessThanOrEqual($field, $val);
                             break;
                         case 'gt':
-                            $query->whereRaw("{$field} > ?", [$val]);
+                            $query->whereGreaterThan($field, $val);
                             break;
                         case 'lt':
-                            $query->whereRaw("{$field} < ?", [$val]);
+                            $query->whereLessThan($field, $val);
                             break;
                         case 'like':
-                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
+                            $query->whereLike($field, "%{$val}%");
                             break;
                         case 'in':
                             if (is_array($val) && !empty($val)) {
-                                $placeholders = implode(',', array_fill(0, count($val), '?'));
-                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
+                                $query->whereIn($field, $val);
                             }
                             break;
                     }
@@ -223,7 +222,7 @@ class NotificationRepository extends BaseRepository
         $query = $this->db->select($this->table, ['*'])
             ->whereNotNull('scheduled_at')
             ->whereNull('sent_at')
-            ->whereRaw("scheduled_at <= ?", [$currentTime]);
+            ->whereLessThanOrEqual('scheduled_at', $currentTime);
 
         if ($limit !== null) {
             $query->limit($limit);
@@ -562,24 +561,23 @@ class NotificationRepository extends BaseRepository
                 foreach ($value as $operator => $val) {
                     switch ($operator) {
                         case 'gte':
-                            $query->whereRaw("{$field} >= ?", [$val]);
+                            $query->whereGreaterThanOrEqual($field, $val);
                             break;
                         case 'lte':
-                            $query->whereRaw("{$field} <= ?", [$val]);
+                            $query->whereLessThanOrEqual($field, $val);
                             break;
                         case 'gt':
-                            $query->whereRaw("{$field} > ?", [$val]);
+                            $query->whereGreaterThan($field, $val);
                             break;
                         case 'lt':
-                            $query->whereRaw("{$field} < ?", [$val]);
+                            $query->whereLessThan($field, $val);
                             break;
                         case 'like':
-                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
+                            $query->whereLike($field, "%{$val}%");
                             break;
                         case 'in':
                             if (is_array($val) && !empty($val)) {
-                                $placeholders = implode(',', array_fill(0, count($val), '?'));
-                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
+                                $query->whereIn($field, $val);
                             }
                             break;
                     }
@@ -656,7 +654,7 @@ class NotificationRepository extends BaseRepository
 
         // First find the notifications to delete (to ensure proper audit logging)
         $oldNotifications = $this->db->select($this->table, ['uuid'])
-            ->whereRaw("created_at < ?", [$cutoffDate])
+            ->whereLessThan('created_at', $cutoffDate)
             ->limit($limit)
             ->get();
 

@@ -255,9 +255,10 @@ class CacheWarmupService
 
         try {
             // Cache recently active users (last 24 hours)
+            $twentyFourHoursAgo = date('Y-m-d H:i:s', strtotime('-24 hours'));
             $activeUsers = $queryBuilder->select('users', ['id', 'uuid', 'username', 'email', 'status'])
                 ->where(['status' => 'active'])
-                ->whereRaw("last_login_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)")
+                ->whereGreaterThan('last_login_at', $twentyFourHoursAgo)
                 ->limit(100) // Limit to most recent 100 active users
                 ->get();
 

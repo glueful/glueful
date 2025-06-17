@@ -911,6 +911,207 @@ class QueryBuilder
     }
 
     /**
+     * Add WHERE NOT EQUAL condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereNotEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn != ?", [$value]);
+    }
+
+    /**
+     * Add OR WHERE NOT NULL condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @return self Builder instance for chaining
+     */
+    public function orWhereNotNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build OR WHERE NOT NULL clause
+        $condition = "$wrappedColumn IS NOT NULL";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add OR WHERE GREATER THAN condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function orWhereGreaterThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        $this->bindings[] = $value;
+        $condition = "$wrappedColumn > ?";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add complex OR condition to the query
+     *
+     * Allows building complex OR conditions like "(field IS NULL OR field > value)"
+     *
+     * @param callable $callback Callback function that receives a new QueryBuilder instance
+     * @return self Builder instance for chaining
+     *
+     * @example
+     * ```php
+     * $query->whereOr(function($q) {
+     *     $q->whereNull('expires_at')->orWhereGreaterThan('expires_at', $currentTime);
+     * });
+     * ```
+     */
+    public function whereOr(callable $callback): self
+    {
+        // Create a new QueryBuilder instance for the OR group
+        $orQuery = new self($this->pdo, $this->driver, $this->logger);
+
+        // Execute the callback to build the OR conditions
+        $callback($orQuery);
+
+        // Extract the WHERE part from the built query
+        $orQueryString = $orQuery->getQueryString();
+        $pattern = '/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+GROUP\s+BY|\s+HAVING|\s+LIMIT|$)/i';
+        if (preg_match($pattern, $orQueryString, $matches)) {
+            $orCondition = trim($matches[1]);
+
+            // Add the OR condition as a group
+            if (strpos($this->query, 'WHERE') === false) {
+                $this->query .= " WHERE (" . $orCondition . ")";
+            } else {
+                $this->query .= " AND (" . $orCondition . ")";
+            }
+
+            // Merge bindings
+            $this->bindings = array_merge($this->bindings, $orQuery->getBindings());
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get current query string (for internal use)
+     *
+     * @return string Current query string
+     */
+    protected function getQueryString(): string
+    {
+        return $this->query;
+    }
+
+    /**
+     * Get current bindings (for internal use)
+     *
+     * @return array Current parameter bindings
+     */
+    protected function getBindings(): array
+    {
+        return $this->bindings;
+    }
+
+    /**
+     * Add WHERE JSON contains condition to the query
+     *
+     * Provides database-agnostic JSON searching with proper parameter binding.
+     * Uses the appropriate JSON functions based on the database driver.
+     *
+     * @param string $column JSON column name (supports table.column format)
+     * @param string $searchValue Value to search for within the JSON
+     * @param string $path JSON path (optional, defaults to searching entire JSON)
+     * @return self Builder instance for chaining
+     *
+     * @example
+     * ```php
+     * // Search for a value anywhere in JSON column
+     * $query->whereJsonContains('details', 'login_failed');
+     *
+     * // Search within a specific JSON path (MySQL only)
+     * $query->whereJsonContains('metadata', 'active', '$.status');
+     * ```
+     */
+    public function whereJsonContains(string $column, string $searchValue, ?string $path = null): self
+    {
+        // Wrap column identifier properly
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build database-specific JSON search condition
+        $driverClass = get_class($this->driver);
+
+        if (strpos($driverClass, 'MySQL') !== false) {
+            // MySQL: Use JSON_CONTAINS or JSON_SEARCH
+            if ($path !== null) {
+                // Search at specific path
+                $condition = "JSON_CONTAINS($wrappedColumn, ?, '$path')";
+                return $this->whereRaw($condition, [json_encode($searchValue)]);
+            } else {
+                // Search anywhere in JSON using JSON_SEARCH
+                $condition = "JSON_SEARCH($wrappedColumn, 'one', ?) IS NOT NULL";
+                return $this->whereRaw($condition, [$searchValue]);
+            }
+        } elseif (strpos($driverClass, 'PostgreSQL') !== false) {
+            // PostgreSQL: Use jsonb operators or text casting
+            if ($path !== null) {
+                // Search at specific path using #>> operator
+                $condition = "$wrappedColumn #>> ? = ?";
+                return $this->whereRaw($condition, [$path, $searchValue]);
+            } else {
+                // Search anywhere using text casting and LIKE
+                $condition = "$wrappedColumn::text LIKE ?";
+                return $this->whereRaw($condition, ["%$searchValue%"]);
+            }
+        } else {
+            // Generic fallback: Cast to text and use LIKE
+            $condition = "CAST($wrappedColumn AS TEXT) LIKE ?";
+            return $this->whereRaw($condition, ["%$searchValue%"]);
+        }
+    }
+
+    /**
      * Delete records from database
      *
      * @param string $table Target table

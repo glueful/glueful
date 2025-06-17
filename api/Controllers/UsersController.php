@@ -752,7 +752,7 @@ class UsersController extends BaseController
 
         $newUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
             ->where(['deleted_at' => null])
-            ->whereRaw('created_at >= ?', [$dateThreshold])
+            ->whereGreaterThanOrEqual('created_at', $dateThreshold)
             ->get();
         $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
 
@@ -809,7 +809,7 @@ class UsersController extends BaseController
 
         // Apply text search
         if ($query) {
-            $searchQuery->whereRaw("(users.username LIKE ? OR users.email LIKE ?)", ["%{$query}%", "%{$query}%"]);
+            $searchQuery->search(['users.username', 'users.email'], $query, 'OR');
         }
 
         // Apply filters
@@ -818,16 +818,16 @@ class UsersController extends BaseController
             $whereConditions['status'] = $filters['status'];
         }
         if ($filters['created_after']) {
-            $searchQuery->whereRaw("users.created_at >= ?", [$filters['created_after']]);
+            $searchQuery->whereGreaterThanOrEqual('users.created_at', $filters['created_after']);
         }
         if ($filters['created_before']) {
-            $searchQuery->whereRaw("users.created_at <= ?", [$filters['created_before']]);
+            $searchQuery->whereLessThanOrEqual('users.created_at', $filters['created_before']);
         }
         if ($filters['last_login_after']) {
-            $searchQuery->whereRaw("users.last_login_date >= ?", [$filters['last_login_after']]);
+            $searchQuery->whereGreaterThanOrEqual('users.last_login_date', $filters['last_login_after']);
         }
         if ($filters['last_login_before']) {
-            $searchQuery->whereRaw("users.last_login_date <= ?", [$filters['last_login_before']]);
+            $searchQuery->whereLessThanOrEqual('users.last_login_date', $filters['last_login_before']);
         }
 
         $searchQuery->where($whereConditions);

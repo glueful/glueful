@@ -252,7 +252,7 @@ class DatabaseQueue implements QueueDriverInterface
                 'queue' => $queue
             ])
             ->whereNull('reserved_at')
-            ->whereRaw('available_at <= ?', [date('Y-m-d H:i:s')])
+            ->whereLessThanOrEqual('available_at', date('Y-m-d H:i:s'))
             ->orderBy(['priority' => 'DESC', 'available_at' => 'ASC'])
             ->limit(1)
             ->first();

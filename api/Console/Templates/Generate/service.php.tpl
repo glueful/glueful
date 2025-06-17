@@ -340,17 +340,9 @@ class {{SERVICE_NAME}}
     public function search{{RESOURCE_CLASS}}s(string $query, array $fields = ['name']): array
     {
         // TODO: Implement search logic
-        // This is a basic example - you might want to use full-text search
-        $conditions = [];
-        foreach ($fields as $field) {
-            $conditions[] = "{$field} LIKE '%{$query}%'";
-        }
-        
-        $whereClause = implode(' OR ', $conditions);
-        
-        // Note: This is a simplified example. Use proper query building for production
+        // Using the QueryBuilder's search method for better SQL safety
         return $this->db->select('{{TABLE_NAME}}', ['*'])
-            ->whereRaw($whereClause)
+            ->search($fields, $query, 'OR')
             ->get();
     }
 }

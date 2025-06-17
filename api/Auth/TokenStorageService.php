@@ -231,7 +231,7 @@ class TokenStorageService implements TokenStorageInterface
         $result = $this->queryBuilder
             ->select($this->sessionTable, ['*'])
             ->where(['access_token' => $accessToken, 'status' => 'active'])
-            ->whereRaw('access_expires_at > ?', [$now])
+            ->whereGreaterThan('access_expires_at', $now)
             ->get();
 
         if (empty($result)) {
@@ -417,7 +417,7 @@ class TokenStorageService implements TokenStorageInterface
             // Get expired sessions for cache cleanup using QueryBuilder
             $expiredSessions = $this->queryBuilder
                 ->select($this->sessionTable, ['*'])
-                ->whereRaw('refresh_expires_at < ?', [$now])
+                ->whereLessThan('refresh_expires_at', $now)
                 ->where(['status' => 'active'])
                 ->get();
 

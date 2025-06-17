@@ -2,7 +2,6 @@
 
 namespace Glueful\Queue\Failed;
 
-use Glueful\Queue\Contracts\JobInterface;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
@@ -619,7 +618,34 @@ class FailedJobProvider
     {
         foreach ($conditions as $key => $value) {
             if (str_contains($key, ' ')) {
-                $query->whereRaw($key . ' ?', [$value]);
+                // Parse operator from key
+                $parts = explode(' ', $key, 2);
+                $column = $parts[0];
+                $operator = $parts[1] ?? '=';
+
+                switch ($operator) {
+                    case '>=':
+                        $query->whereGreaterThanOrEqual($column, $value);
+                        break;
+                    case '>':
+                        $query->whereGreaterThan($column, $value);
+                        break;
+                    case '<=':
+                        $query->whereLessThanOrEqual($column, $value);
+                        break;
+                    case '<':
+                        $query->whereLessThan($column, $value);
+                        break;
+                    case '!=':
+                    case '<>':
+                        $query->whereNotEqual($column, $value);
+                        break;
+                    case 'LIKE':
+                        $query->whereLike($column, $value);
+                        break;
+                    default:
+                        $query->where([$column => $value]);
+                }
             } else {
                 $query->where([$key => $value]);
             }
