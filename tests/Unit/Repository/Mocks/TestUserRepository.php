@@ -180,19 +180,10 @@ class TestUserRepository extends UserRepository
      * @param string $uuid UUID to search for
      * @return array|null User data or null if not found
      */
-    public function findByUUID(string $uuid): ?array
+    public function findByUuid(string $uuid, ?array $fields = null): ?array
     {
-        // Query database for user
-        $query = $this->testDb->select('users', $this->userFields)
-            ->where(['uuid' => $uuid])
-            ->limit(1)
-            ->get();
-
-        if (!empty($query)) {
-            return $query[0];
-        }
-
-        return null;
+        // Use BaseRepository's findRecordByUuid equivalent logic
+        return $this->findBy('uuid', $uuid, $fields ?? $this->userFields);
     }
 
     /**

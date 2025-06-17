@@ -772,7 +772,7 @@ class FilesController extends BaseController
         }
 
         // Apply multi-level rate limiting for uploads
-        $this->multiLevelRateLimit([
+        $this->multiLevelRateLimit('file_upload', [
             'ip' => ['attempts' => 15, 'window' => 300, 'adaptive' => true], // 15 per 5min per IP
             'user' => ['attempts' => 10, 'window' => 300, 'adaptive' => true], // 10 per 5min per user
             'endpoint' => ['attempts' => 100, 'window' => 300, 'adaptive' => false] // 100 per 5min global

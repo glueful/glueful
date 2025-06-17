@@ -190,7 +190,7 @@ class SamlAuthenticationProvider implements AuthenticationProviderInterface
                 return false;
             }
             // Validate the user exists
-            $user = $this->userRepository->findByUUID($payload['sub']);
+            $user = $this->userRepository->findByUuid($payload['sub']);
             if (!$user) {
                 $this->lastError = 'User not found';
                 return false;
@@ -316,7 +316,7 @@ class SamlAuthenticationProvider implements AuthenticationProviderInterface
             }
 
             // Find the user
-            $user = $this->userRepository->findByUUID($payload['sub']);
+            $user = $this->userRepository->findByUuid($payload['sub']);
             if (!$user) {
                 $this->lastError = 'User not found';
                 return null;

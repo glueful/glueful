@@ -200,7 +200,7 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
             }
 
             // Validate the user exists
-            $user = $this->userRepository->findByUUID($payload['sub']);
+            $user = $this->userRepository->findByUuid($payload['sub']);
             if (!$user) {
                 $this->lastError = 'User not found';
                 return false;
@@ -318,7 +318,7 @@ class LdapAuthenticationProvider implements AuthenticationProviderInterface
             }
 
             // Find the user
-            $user = $this->userRepository->findByUUID($payload['sub']);
+            $user = $this->userRepository->findByUuid($payload['sub']);
             if (!$user) {
                 $this->lastError = 'User not found';
                 return null;

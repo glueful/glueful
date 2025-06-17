@@ -49,27 +49,19 @@ class RoleRepository extends BaseRepository
     public function createRole(array $data): ?Role
     {
         $uuid = $this->create($data);
-        return $this->findByUuid($uuid);
+        return $this->findRoleByUuid($uuid);
     }
 
-    public function findByUuid(string $uuid): ?Role
+    public function findRoleByUuid(string $uuid): ?Role
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
-            ->where(['uuid' => $uuid])
-            ->limit(1)
-            ->get();
-
-        return $result ? new Role($result[0]) : null;
+        $result = $this->findRecordByUuid($uuid, $this->defaultFields);
+        return $result ? new Role($result) : null;
     }
 
-    public function findBySlug(string $slug): ?Role
+    public function findRoleBySlug(string $slug): ?Role
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
-            ->where(['slug' => $slug])
-            ->limit(1)
-            ->get();
-
-        return $result ? new Role($result[0]) : null;
+        $result = $this->findBySlug($slug, $this->defaultFields);
+        return $result ? new Role($result) : null;
     }
 
     public function findByName(string $name): ?Role
@@ -160,13 +152,13 @@ class RoleRepository extends BaseRepository
     public function getRoleHierarchy(string $roleUuid): array
     {
         $hierarchy = [];
-        $currentRole = $this->findByUuid($roleUuid);
+        $currentRole = $this->findRoleByUuid($roleUuid);
 
         while ($currentRole && !in_array($currentRole->getUuid(), array_column($hierarchy, 'uuid'))) {
             $hierarchy[] = $currentRole;
 
             if ($currentRole->hasParent()) {
-                $currentRole = $this->findByUuid($currentRole->getParentUuid());
+                $currentRole = $this->findRoleByUuid($currentRole->getParentUuid());
             } else {
                 break;
             }

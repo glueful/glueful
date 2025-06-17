@@ -49,10 +49,10 @@ class UserRoleRepository extends BaseRepository
     public function createUserRole(array $data): ?UserRole
     {
         $uuid = $this->create($data);
-        return $this->findByUuid($uuid);
+        return $this->findUserRoleByUuid($uuid);
     }
 
-    public function findByUuid(string $uuid): ?UserRole
+    public function findUserRoleByUuid(string $uuid): ?UserRole
     {
         $result = $this->db->select($this->table, $this->defaultFields)
             ->where(['uuid' => $uuid])

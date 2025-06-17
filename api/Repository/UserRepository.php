@@ -118,10 +118,10 @@ class UserRepository extends BaseRepository
      * @param string $uuid User UUID to search for
      * @return array|null User data or null if not found
      */
-    public function findByUUID(string $uuid): ?array
+    public function findByUuid(string $uuid, ?array $fields = null): ?array
     {
-        // Use BaseRepository's findById method since UUID is our primary key
-        return $this->findBy($this->primaryKey, $uuid);
+        // Use BaseRepository's findRecordByUuid method since UUID is our primary key
+        return $this->findRecordByUuid($uuid, $fields);
     }
 
     /**
@@ -173,7 +173,7 @@ class UserRepository extends BaseRepository
         if ($identifierType === 'email') {
             $user = $this->findByEmail($identifier);
         } else {
-            $user = $this->findByUUID($identifier);
+            $user = $this->findByUuid($identifier);
         }
         if (!$user) {
             return false; // User not found
@@ -286,7 +286,7 @@ class UserRepository extends BaseRepository
     public function updateProfile(string $uuid, array $profileData, ?string $updatedByUserId = null): bool
     {
         // Ensure user exists
-        $user = $this->findByUUID($uuid);
+        $user = $this->findByUuid($uuid);
         if (!$user) {
             return false;
         }
@@ -482,7 +482,7 @@ class UserRepository extends BaseRepository
                 $this->update($user['uuid'], $updates);
 
                 // Reload the user to get updated data
-                $user = $this->findByUUID($user['uuid']);
+                $user = $this->findByUuid($user['uuid']);
 
                 // Note: Role synchronization moved to RBAC extension
                 // Use RBAC extension APIs for role assignment
@@ -521,7 +521,7 @@ class UserRepository extends BaseRepository
             // Use RBAC extension APIs for default role assignment
 
             // Return the newly created user with roles
-            $user = $this->findByUUID($newUser['uuid']);
+            $user = $this->findByUuid($newUser['uuid']);
             $user['roles'] = []; // Roles managed by RBAC extension
 
             return $user;

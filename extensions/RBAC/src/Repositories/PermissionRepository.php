@@ -49,27 +49,19 @@ class PermissionRepository extends BaseRepository
     public function createPermission(array $data): ?Permission
     {
         $uuid = $this->create($data);
-        return $this->findByUuid($uuid);
+        return $this->findPermissionByUuid($uuid);
     }
 
-    public function findByUuid(string $uuid): ?Permission
+    public function findPermissionByUuid(string $uuid): ?Permission
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
-            ->where(['uuid' => $uuid])
-            ->limit(1)
-            ->get();
-
-        return $result ? new Permission($result[0]) : null;
+        $result = $this->findRecordByUuid($uuid, $this->defaultFields);
+        return $result ? new Permission($result) : null;
     }
 
-    public function findBySlug(string $slug): ?Permission
+    public function findPermissionBySlug(string $slug): ?Permission
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
-            ->where(['slug' => $slug])
-            ->limit(1)
-            ->get();
-
-        return $result ? new Permission($result[0]) : null;
+        $result = $this->findBySlug($slug, $this->defaultFields);
+        return $result ? new Permission($result) : null;
     }
 
     public function findByName(string $name): ?Permission

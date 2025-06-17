@@ -741,7 +741,7 @@ class SecurityCommand extends Command
                 $identifier = $username;
                 $identifierType = 'username';
             } elseif ($uuid) {
-                $user = $userRepository->findByUUID($uuid);
+                $user = $userRepository->findByUuid($uuid);
                 $identifier = $uuid;
                 $identifierType = 'uuid';
             }

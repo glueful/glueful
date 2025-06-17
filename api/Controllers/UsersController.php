@@ -292,7 +292,7 @@ class UsersController extends BaseController
         }
 
         // Fetch created user
-        $user = $this->getUserRepository()->findByUUID($userUuid);
+        $user = $this->getUserRepository()->findByUuid($userUuid);
         // Fetch newly assigned roles from RBAC extension if available
         $container = app();
         try {
@@ -363,7 +363,7 @@ class UsersController extends BaseController
         // Moderate rate limiting for user updates
         $this->rateLimitResource('users', 'write', 20, 300);
 
-        $user = $this->getUserRepository()->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUuid($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -410,7 +410,7 @@ class UsersController extends BaseController
         }
 
         // Fetch updated user
-        $updatedUser = $this->getUserRepository()->findByUUID($user['uuid']);
+        $updatedUser = $this->getUserRepository()->findByUuid($user['uuid']);
         // Fetch updated roles from RBAC extension if available
         $container = app();
         try {
@@ -479,7 +479,7 @@ class UsersController extends BaseController
         // Require low risk behavior for destructive operations
         $this->requireLowRiskBehavior(0.4, 'user_deletion');
 
-        $user = $this->getUserRepository()->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUuid($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -530,7 +530,7 @@ class UsersController extends BaseController
         // Strict rate limiting for user restoration
         $this->rateLimitResource('users', 'restore', 5, 600);
 
-        $user = $this->getUserRepository()->findByUUID($uuid); // For restore, check if user exists
+        $user = $this->getUserRepository()->findByUuid($uuid); // For restore, check if user exists
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -1048,7 +1048,7 @@ class UsersController extends BaseController
         $page = (int) $request->query->get('page', 1);
         $perPage = (int) $request->query->get('per_page', 50);
 
-        $user = $this->getUserRepository()->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUuid($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -1102,7 +1102,7 @@ class UsersController extends BaseController
         // Rate limiting for session viewing
         $this->rateLimitResource('users', 'sessions', 50, 300);
 
-        $user = $this->getUserRepository()->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUuid($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }
@@ -1166,7 +1166,7 @@ class UsersController extends BaseController
         $this->rateLimitResource('users', 'terminate_sessions', 10, 300);
         $sessionId = $request->get('session_id'); // Optional: terminate specific session
 
-        $user = $this->getUserRepository()->findByUUID($uuid);
+        $user = $this->getUserRepository()->findByUuid($uuid);
         if (!$user) {
             throw new NotFoundException('User not found');
         }

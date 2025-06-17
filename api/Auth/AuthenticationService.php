@@ -391,7 +391,7 @@ class AuthenticationService
         // Attempt to find the user based on identifier type
         $user = $identifierType === 'email'
             ? $this->userRepository->findByEmail($identifier)
-            : $this->userRepository->findByUUID($identifier);
+            : $this->userRepository->findByUuid($identifier);
 
         // Return true if user was found and is properly formatted
         return !empty($user) && is_array($user);
@@ -499,7 +499,7 @@ class AuthenticationService
         }
 
         $userUuid = $result[0]['user_uuid'];
-        $user = $this->userRepository->findByUUID($userUuid);
+        $user = $this->userRepository->findByUuid($userUuid);
 
         if (empty($user)) {
             return null;

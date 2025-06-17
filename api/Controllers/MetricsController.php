@@ -193,7 +193,7 @@ class MetricsController extends BaseController
     public function systemHealth(): mixed
     {
         $this->requirePermission('system.health.view', 'metrics:system');
-        $this->multiLevelRateLimit([
+        $this->multiLevelRateLimit('system_health', [
             'user' => ['attempts' => 60, 'window' => 60, 'adaptive' => true],
             'ip' => ['attempts' => 100, 'window' => 60, 'adaptive' => false]
         ]);

@@ -1026,7 +1026,7 @@ class ConfigController extends BaseController
             ]
         ];
 
-        $this->multiLevelRateLimit($limits);
+        $this->multiLevelRateLimit($operation, $limits);
     }
 
     /**

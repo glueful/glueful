@@ -132,6 +132,38 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
+     * Find record by UUID (standardized method)
+     *
+     * This method provides a consistent interface for finding records by UUID
+     * across all repositories, eliminating duplication and providing a standard
+     * naming convention. Uses a different name to avoid conflicts with existing
+     * repository implementations that return model objects.
+     *
+     * @param string $uuid The UUID to search for
+     * @param array|null $fields Fields to retrieve (optional, defaults to defaultFields)
+     * @return array|null Record data or null if not found
+     */
+    public function findRecordByUuid(string $uuid, ?array $fields = null): ?array
+    {
+        return $this->findBy($this->primaryKey, $uuid, $fields);
+    }
+
+    /**
+     * Find record by slug (standardized method)
+     *
+     * This method provides a consistent interface for finding records by slug
+     * across all repositories that have slug fields, eliminating duplication.
+     *
+     * @param string $slug The slug to search for
+     * @param array|null $fields Fields to retrieve (optional, defaults to defaultFields)
+     * @return array|null Record data or null if not found
+     */
+    public function findBySlug(string $slug, ?array $fields = null): ?array
+    {
+        return $this->findBy('slug', $slug, $fields);
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function findAll(array $conditions = [], array $orderBy = [], ?int $limit = null, ?int $offset = null): array

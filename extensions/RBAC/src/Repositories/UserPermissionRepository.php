@@ -49,10 +49,10 @@ class UserPermissionRepository extends BaseRepository
     public function createUserPermission(array $data): ?UserPermission
     {
         $uuid = $this->create($data);
-        return $this->findByUuid($uuid);
+        return $this->findUserPermissionByUuid($uuid);
     }
 
-    public function findByUuid(string $uuid): ?UserPermission
+    public function findUserPermissionByUuid(string $uuid): ?UserPermission
     {
         $result = $this->db->select($this->table, $this->defaultFields)
             ->where(['uuid' => $uuid])

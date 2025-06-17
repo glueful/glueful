@@ -609,7 +609,7 @@ class NotificationService
             case 'user':
                 // For users, use the UserRepository
                 $userRepository = new \Glueful\Repository\UserRepository();
-                $userData = $userRepository->findByUUID($id);
+                $userData = $userRepository->findByUuid($id);
 
                 if (!$userData) {
                     return null;

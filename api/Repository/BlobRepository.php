@@ -62,10 +62,24 @@ class BlobRepository extends BaseRepository
      * Returns null if blob doesn't exist or is marked as deleted.
      *
      * @param string $uuid Blob UUID to search for
+     * @param array|null $fields Optional array of specific fields to retrieve
+     * @return array|null Blob data or null if not found
+     */
+    public function findByUuid(string $uuid, ?array $fields = null): ?array
+    {
+        return parent::findRecordByUuid($uuid, $fields);
+    }
+
+    /**
+     * Find blob by UUID with delete filtering
+     *
+     * Extended version that allows filtering of deleted blobs
+     *
+     * @param string $uuid The UUID to search for
      * @param bool $includeDeleted Whether to include deleted blobs
      * @return array|null Blob data or null if not found
      */
-    public function findByUuid(string $uuid, bool $includeDeleted = false): ?array
+    public function findByUuidWithDeleteFilter(string $uuid, bool $includeDeleted = false): ?array
     {
         $conditions = ['uuid' => $uuid];
 
