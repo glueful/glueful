@@ -330,4 +330,62 @@ class RoleService
 
         return $tree;
     }
+
+    /**
+     * Get roles for multiple users efficiently (avoids N+1 queries)
+     *
+     * @param array $userUuids Array of user UUIDs
+     * @param array $scope Optional scope filter
+     * @return array Associative array with user_uuid as key and array of roles as value
+     */
+    public function getBulkUserRoles(array $userUuids, array $scope = []): array
+    {
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        // Get all user roles for the given users
+        $allUserRoles = $this->userRoleRepository->getBulkUserRoles($userUuids, $scope);
+
+        // Extract unique role UUIDs
+        $roleUuids = array_unique(array_map(function ($userRole) {
+            return $userRole->getRoleUuid();
+        }, $allUserRoles));
+
+        // Fetch all roles in a single query
+        $rolesMap = [];
+        if (!empty($roleUuids)) {
+            $roles = $this->roleRepository->findByUuids($roleUuids);
+            foreach ($roles as $role) {
+                $rolesMap[$role->getUuid()] = $role;
+            }
+        }
+
+        // Group user roles by user UUID and attach role data
+        $result = [];
+        foreach ($allUserRoles as $userRole) {
+            $userUuid = $userRole->getUserUuid();
+            $roleUuid = $userRole->getRoleUuid();
+
+            if (isset($rolesMap[$roleUuid])) {
+                if (!isset($result[$userUuid])) {
+                    $result[$userUuid] = [];
+                }
+
+                $result[$userUuid][] = [
+                    'role' => $rolesMap[$roleUuid],
+                    'assignment' => $userRole
+                ];
+            }
+        }
+
+        // Ensure all requested users have an entry (even if empty)
+        foreach ($userUuids as $userUuid) {
+            if (!isset($result[$userUuid])) {
+                $result[$userUuid] = [];
+            }
+        }
+
+        return $result;
+    }
 }

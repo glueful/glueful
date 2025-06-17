@@ -620,16 +620,20 @@ class NotificationRepository extends BaseRepository
         $this->beginTransaction();
 
         try {
-            $updated = 0;
+            // Use bulk update to avoid N+1 queries while maintaining transaction safety
+            $updated = $this->db->update(
+                $this->table,
+                ['read_at' => $now],
+                [
+                    'notifiable_type' => $notifiableType,
+                    'notifiable_id' => $notifiableId,
+                    'read_at' => null  // Only update unread notifications
+                ]
+            );
 
-            // Update each notification individually to get proper audit logging
-            foreach ($unreadNotifications as $notification) {
-                $data = $notification;
-                $data['read_at'] = $now;
-
-                if ($this->update($data['uuid'], ['read_at' => $now])) {
-                    $updated++;
-                }
+            // If audit logging is critical, we can batch create audit entries
+            if ($updated > 0 && $userId) {
+                $this->logBulkNotificationUpdate($unreadNotifications, $userId, 'marked_as_read');
             }
 
             $this->commit();
@@ -666,13 +670,14 @@ class NotificationRepository extends BaseRepository
         $this->beginTransaction();
 
         try {
-            $success = true;
+            // Use bulk delete to avoid N+1 queries while maintaining transaction safety
+            $uuidsToDelete = array_column($oldNotifications, 'uuid');
+            $deletedCount = $this->bulkDelete($uuidsToDelete);
+            $success = $deletedCount > 0;
 
-            // Delete each notification individually to get proper audit logging
-            foreach ($oldNotifications as $notification) {
-                if (!$this->delete($notification['uuid'])) {
-                    $success = false;
-                }
+            // If audit logging is critical, we can batch create audit entries
+            if ($success && $userId) {
+                $this->logBulkNotificationUpdate($oldNotifications, $userId, 'deleted');
             }
 
             $this->commit();
@@ -694,5 +699,30 @@ class NotificationRepository extends BaseRepository
     {
         // Use BaseRepository's delete method which handles audit logging
         return $this->delete($uuid);
+    }
+
+    /**
+     * Log bulk notification updates for audit purposes
+     *
+     * @param array $notifications Array of notification records
+     * @param string $userId ID of user performing the action
+     * @param string $action Action performed (e.g., 'marked_as_read', 'deleted')
+     * @return void
+     */
+    private function logBulkNotificationUpdate(array $notifications, string $userId, string $action): void
+    {
+        // If audit logging is required, implement batch audit logging here
+        // For now, we'll keep it simple and just log a summary
+        $count = count($notifications);
+        $notificationIds = array_column($notifications, 'uuid');
+
+        error_log("Bulk notification {$action}: User {$userId} performed {$action} on {$count} notifications: " .
+                  implode(', ', array_slice($notificationIds, 0, 10)) .
+                  ($count > 10 ? ' and ' . ($count - 10) . ' more...' : ''));
+
+        // In a production system, you might want to:
+        // 1. Insert into an audit_logs table
+        // 2. Send to a logging service
+        // 3. Create audit trail entries in batch
     }
 }

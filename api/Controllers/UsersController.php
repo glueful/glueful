@@ -112,37 +112,42 @@ class UsersController extends BaseController
 
         $paginatedResult = $query->paginate($page, $perPage);
 
-        // Fetch roles from RBAC extension if available
+        // Fetch roles from RBAC extension if available (optimized to avoid N+1 queries)
         $users = $paginatedResult['data'] ?? [];
         $container = app();
 
-        foreach ($users as &$user) {
-            try {
-                // Check if RBAC role service is available in container
-                if ($container->has('rbac.role_service')) {
-                    $roleService = $container->get('rbac.role_service');
-                    $userRoles = $roleService->getUserRoles($user['uuid']);
+        // Extract user UUIDs for bulk role fetching
+        $userUuids = array_column($users, 'uuid');
+        $allUserRoles = [];
 
-                    // Format roles for API response
-                    $user['roles'] = array_map(function ($roleData) {
-                        return [
-                            'uuid' => $roleData['role']->getUuid(),
-                            'name' => $roleData['role']->getName(),
-                            'slug' => $roleData['role']->getSlug(),
-                            'level' => $roleData['role']->getLevel(),
-                            'is_system' => $roleData['role']->isSystem(),
-                            'assigned_at' => $roleData['assignment']->getCreatedAt()
-                        ];
-                    }, $userRoles);
-                } else {
-                    // Fallback when RBAC extension is not available
-                    $user['roles'] = [];
-                }
-            } catch (\Exception $e) {
-                // Log error and gracefully fallback
-                error_log("Failed to fetch roles for user {$user['uuid']}: " . $e->getMessage());
-                $user['roles'] = [];
+        try {
+            // Check if RBAC role service is available in container
+            if ($container->has('rbac.role_service') && !empty($userUuids)) {
+                $roleService = $container->get('rbac.role_service');
+                // Use bulk method to fetch roles for all users in one go
+                $allUserRoles = $roleService->getBulkUserRoles($userUuids);
             }
+        } catch (\Exception $e) {
+            // Log error and gracefully fallback
+            error_log("Failed to bulk fetch roles for users: " . $e->getMessage());
+        }
+
+        // Attach roles to each user
+        foreach ($users as &$user) {
+            $userUuid = $user['uuid'];
+            $userRoles = $allUserRoles[$userUuid] ?? [];
+
+            // Format roles for API response
+            $user['roles'] = array_map(function ($roleData) {
+                return [
+                    'uuid' => $roleData['role']->getUuid(),
+                    'name' => $roleData['role']->getName(),
+                    'slug' => $roleData['role']->getSlug(),
+                    'level' => $roleData['role']->getLevel(),
+                    'is_system' => $roleData['role']->isSystem(),
+                    'assigned_at' => $roleData['assignment']->getCreatedAt()
+                ];
+            }, $userRoles);
         }
 
         // Update the data in the pagination result and return it directly

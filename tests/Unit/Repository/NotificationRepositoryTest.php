@@ -243,11 +243,11 @@ class NotificationRepositoryTest extends TestCase
         $this->mockQueryBuilder
             ->method('get')
             ->willReturn($unreadNotifications);
-        // Mock update method to simulate successful updates
+        // Mock update method to simulate successful bulk update
         $this->mockQueryBuilder
-            ->expects($this->exactly(2))
+            ->expects($this->once())
             ->method('update')
-            ->willReturn(1); // Each update returns 1 row affected
+            ->willReturn(2); // Bulk update returns total rows affected
 
         // Mock transaction methods - void methods don't return values
         $this->mockQueryBuilder

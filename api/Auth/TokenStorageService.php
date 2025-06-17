@@ -421,25 +421,17 @@ class TokenStorageService implements TokenStorageInterface
                 ->where(['status' => 'active'])
                 ->get();
 
-            // Update expired sessions using QueryBuilder with raw conditions
+            // Update expired sessions using bulk update to avoid N+1 queries
             if (!empty($expiredSessions)) {
-                // Since QueryBuilder update doesn't support whereRaw directly,
-                // we'll update each session individually for database portability
-                $successCount = 0;
-                foreach ($expiredSessions as $session) {
-                    $updateSuccess = $this->queryBuilder->update(
-                        $this->sessionTable,
-                        [
-                            'status' => 'expired',
-                            'expired_at' => $now
-                        ],
-                        ['session_id' => $session['session_id']]
-                    );
-                    if ($updateSuccess) {
-                        $successCount++;
-                    }
-                }
-                $success = $successCount > 0;
+                // Use raw SQL for efficient bulk update with IN clause
+                $sessionIds = array_column($expiredSessions, 'session_id');
+                $placeholders = str_repeat('?,', count($sessionIds) - 1) . '?';
+                $sql = "UPDATE {$this->sessionTable} SET status = 'expired', expired_at = ? " .
+                       "WHERE session_id IN ({$placeholders})";
+                $params = array_merge([$now], $sessionIds);
+
+                $stmt = $this->connection->getPDO()->prepare($sql);
+                $success = $stmt->execute($params);
             } else {
                 $success = true; // No sessions to update
             }

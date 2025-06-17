@@ -85,7 +85,7 @@ class PermissionAssignmentService
         try {
             $result = $this->userPermissionRepository->create($data);
             return !empty($result);
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return false;
         }
     }
@@ -197,10 +197,32 @@ class PermissionAssignmentService
     public function getUserDirectPermissions(string $userUuid, array $filters = []): array
     {
         $userPermissions = $this->userPermissionRepository->findByUser($userUuid, $filters);
-        $permissions = [];
 
+        if (empty($userPermissions)) {
+            return [];
+        }
+
+        // Extract permission UUIDs for bulk fetching to avoid N+1 queries
+        $permissionUuids = array_map(function ($userPermission) {
+            return $userPermission->getPermissionUuid();
+        }, $userPermissions);
+
+        // Fetch all permissions in a single query
+        $permissionsMap = [];
+        if (!empty($permissionUuids)) {
+            $permissionUuids = array_unique($permissionUuids); // Remove duplicates
+            $permissions = $this->permissionRepository->findByUuids($permissionUuids);
+
+            // Create a map for quick lookup
+            foreach ($permissions as $permission) {
+                $permissionsMap[$permission->getUuid()] = $permission;
+            }
+        }
+
+        // Build the result array with permission data
+        $permissions = [];
         foreach ($userPermissions as $userPermission) {
-            $permission = $this->permissionRepository->findByUuid($userPermission->getPermissionUuid());
+            $permission = $permissionsMap[$userPermission->getPermissionUuid()] ?? null;
             if ($permission) {
                 $permissions[] = [
                     'permission' => $permission,

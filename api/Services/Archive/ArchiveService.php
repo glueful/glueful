@@ -217,20 +217,26 @@ class ArchiveService implements ArchiveServiceInterface
             $this->addToSearchIndex($indexes, 'status', $record['status'] ?? null, $record);
         }
 
-        // Bulk insert search indexes
+        // Collect all index entries for bulk insert to avoid N+1 queries
+        $indexEntries = [];
         foreach ($indexes as $entityType => $entities) {
             foreach ($entities as $entityValue => $indexData) {
                 if ($entityValue && $indexData['count'] > 0) {
-                    $this->queryBuilder->insert('archive_search_index', [
+                    $indexEntries[] = [
                         'archive_uuid' => $archiveUuid,
                         'entity_type' => $entityType,
                         'entity_value' => $entityValue,
                         'record_count' => $indexData['count'],
                         'first_occurrence' => $indexData['first'],
                         'last_occurrence' => $indexData['last']
-                    ]);
+                    ];
                 }
             }
+        }
+
+        // Perform bulk insert if we have entries
+        if (!empty($indexEntries)) {
+            $this->insertBatchSearchIndexes($indexEntries);
         }
     }
 
@@ -496,7 +502,7 @@ class ArchiveService implements ArchiveServiceInterface
         try {
             $this->schemaManager->getTableColumns($table);
             return true;
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return false;
         }
     }
@@ -832,7 +838,7 @@ class ArchiveService implements ArchiveServiceInterface
             if (isset($record[$field])) {
                 try {
                     return new \DateTime($record[$field]);
-                } catch (\Exception $e) {
+                } catch (\Exception) {
                     // Try next field if date parsing fails
                     continue;
                 }
@@ -840,5 +846,27 @@ class ArchiveService implements ArchiveServiceInterface
         }
 
         return null;
+    }
+
+    /**
+     * Insert multiple search index entries in a single batch operation
+     *
+     * @param array $indexEntries Array of index entry data
+     * @return bool Success status
+     */
+    private function insertBatchSearchIndexes(array $indexEntries): bool
+    {
+        if (empty($indexEntries)) {
+            return true;
+        }
+
+        try {
+            // Use insertBatch for efficient bulk insert
+            $result = $this->queryBuilder->insertBatch('archive_search_index', $indexEntries);
+            return $result > 0;
+        } catch (\Exception $e) {
+            error_log("Failed to insert batch search indexes: " . $e->getMessage());
+            return false;
+        }
     }
 }

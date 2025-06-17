@@ -316,4 +316,29 @@ class RoleRepository extends BaseRepository
 
         return array_column($results, 'user_uuid');
     }
+
+    /**
+     * Find roles by multiple UUIDs efficiently
+     *
+     * @param array $uuids Array of role UUIDs
+     * @return array Array of Role objects
+     */
+    public function findByUuids(array $uuids): array
+    {
+        if (empty($uuids)) {
+            return [];
+        }
+
+        $results = $this->db->select($this->table, $this->defaultFields)
+            ->whereIn('uuid', $uuids)
+            ->whereNull('deleted_at')
+            ->get();
+
+        $roles = [];
+        foreach ($results as $row) {
+            $roles[] = new Role($row);
+        }
+
+        return $roles;
+    }
 }

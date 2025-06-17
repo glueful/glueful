@@ -354,6 +354,10 @@ class UserRoleRepository extends BaseRepository
         // Transform data to include role information
         $transformedData = [];
         $currentTime = $this->db->getDriver()->formatDateTime();
+
+        // First pass: collect valid user roles and their role UUIDs
+        $validUserRoles = [];
+        $roleUuids = [];
         foreach ($result['data'] as $row) {
             $userRole = new UserRole($row);
 
@@ -365,10 +369,29 @@ class UserRoleRepository extends BaseRepository
                 }
             }
 
-            // Get role details separately to avoid complex joins
-            $roleData = $this->db->select('roles', ['name', 'slug', 'description'])
-                ->where(['uuid' => $row['role_uuid']])
-                ->first();
+            $validUserRoles[] = ['row' => $row, 'userRole' => $userRole];
+            $roleUuids[] = $row['role_uuid'];
+        }
+
+        // Fetch all role data in a single query to avoid N+1 problem
+        $rolesMap = [];
+        if (!empty($roleUuids)) {
+            $roleUuids = array_unique($roleUuids); // Remove duplicates
+            $roles = $this->db->select('roles', ['uuid', 'name', 'slug', 'description'])
+                ->whereIn('uuid', $roleUuids)
+                ->get();
+
+            // Create a map for quick lookup
+            foreach ($roles as $role) {
+                $rolesMap[$role['uuid']] = $role;
+            }
+        }
+
+        // Second pass: build final transformed data with role information
+        foreach ($validUserRoles as $item) {
+            $row = $item['row'];
+            $userRole = $item['userRole'];
+            $roleData = $rolesMap[$row['role_uuid']] ?? null;
 
             $transformedData[] = [
                 'uuid' => $userRole->getUuid(),
@@ -391,5 +414,37 @@ class UserRoleRepository extends BaseRepository
             'data' => $transformedData,
             'pagination' => $result['pagination']
         ];
+    }
+
+    /**
+     * Get user roles for multiple users efficiently
+     *
+     * @param array $userUuids Array of user UUIDs
+     * @param array $scope Optional scope filter
+     * @return array Array of UserRole objects
+     */
+    public function getBulkUserRoles(array $userUuids, array $scope = []): array
+    {
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        $query = $this->db->select($this->table, $this->defaultFields)
+            ->whereIn('user_uuid', $userUuids)
+            ->whereNull('deleted_at');
+
+        // Apply scope filters if provided
+        if (!empty($scope)) {
+            $query->where(['scope' => $scope]);
+        }
+
+        $results = $query->get();
+        $userRoles = [];
+
+        foreach ($results as $row) {
+            $userRoles[] = new UserRole($row);
+        }
+
+        return $userRoles;
     }
 }

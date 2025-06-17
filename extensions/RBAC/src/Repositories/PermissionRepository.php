@@ -300,4 +300,28 @@ class PermissionRepository extends BaseRepository
 
         return array_column($results, 'user_uuid');
     }
+
+    /**
+     * Find permissions by multiple UUIDs efficiently
+     *
+     * @param array $uuids Array of permission UUIDs
+     * @return array Array of Permission objects
+     */
+    public function findByUuids(array $uuids): array
+    {
+        if (empty($uuids)) {
+            return [];
+        }
+
+        $results = $this->db->select($this->table, $this->defaultFields)
+            ->whereIn('uuid', $uuids)
+            ->get();
+
+        $permissions = [];
+        foreach ($results as $row) {
+            $permissions[] = new Permission($row);
+        }
+
+        return $permissions;
+    }
 }
