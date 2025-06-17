@@ -8,6 +8,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Middleware for tracking memory usage during HTTP requests
@@ -38,12 +39,12 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
      * Create a new memory tracking middleware instance
      *
      * @param MemoryManager $memoryManager
-     * @param LoggerInterface $logger
+     * @param LoggerInterface|null $logger Optional logger instance, uses NullLogger if not provided
      */
-    public function __construct(MemoryManager $memoryManager, LoggerInterface $logger)
+    public function __construct(MemoryManager $memoryManager, ?LoggerInterface $logger = null)
     {
         $this->memoryManager = $memoryManager;
-        $this->logger = $logger;
+        $this->logger = $logger ?? new NullLogger();
         $this->enabled = config('app.performance.memory.monitoring.enabled', true);
         $this->sampleRate = config('app.performance.memory.monitoring.sample_rate', 0.01);
     }

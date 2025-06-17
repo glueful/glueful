@@ -150,26 +150,32 @@ class ApiMetricsService
             // if an error occurs during processing
             CacheEngine::set($cacheKey, []);
 
-            // Process each metric
+            // Insert raw metrics in batch
+            $rawMetricsToInsert = [];
             foreach ($pendingMetrics as $metric) {
-                try {
-                    $this->db->insert($this->metricsTable, [
-                        'uuid' => Utils::generateNanoID(),
-                        'endpoint' => $metric['endpoint'],
-                        'method' => $metric['method'],
-                        'response_time' => $metric['response_time'],
-                        'status_code' => $metric['status_code'],
-                        'is_error' => $metric['is_error'] ? 1 : 0,
-                        'timestamp' => date('Y-m-d H:i:s', $metric['timestamp']),
-                        'ip' => $metric['ip']
-                    ]);
+                $rawMetricsToInsert[] = [
+                    'uuid' => Utils::generateNanoID(),
+                    'endpoint' => $metric['endpoint'],
+                    'method' => $metric['method'],
+                    'response_time' => $metric['response_time'],
+                    'status_code' => $metric['status_code'],
+                    'is_error' => $metric['is_error'] ? 1 : 0,
+                    'timestamp' => date('Y-m-d H:i:s', $metric['timestamp']),
+                    'ip' => $metric['ip']
+                ];
+            }
 
-                    // Update daily aggregates
-                    $this->updateDailyAggregate($metric);
+            // Batch insert raw metrics
+            if (!empty($rawMetricsToInsert)) {
+                try {
+                    $this->db->insertBatch($this->metricsTable, $rawMetricsToInsert);
                 } catch (Exception $e) {
-                    error_log("API Metrics ERROR: Database error: " . $e->getMessage());
+                    error_log("API Metrics ERROR: Batch insert failed: " . $e->getMessage());
                 }
             }
+
+            // Update daily aggregates in bulk to avoid N+1 queries
+            $this->updateDailyAggregatesBulk($pendingMetrics);
 
             // Purge old metrics to keep the database size manageable
             $this->purgeOldMetrics();
@@ -183,42 +189,122 @@ class ApiMetricsService
     }
 
     /**
-     * Update daily aggregates for the metrics
+     * Update daily aggregates for the metrics in bulk to avoid N+1 queries
      *
-     * @param array $metric The metric data
+     * @param array $metrics Array of metric data
      */
-    private function updateDailyAggregate(array $metric): void
+    private function updateDailyAggregatesBulk(array $metrics): void
     {
-        $date = date('Y-m-d', $metric['timestamp']);
-        $key = $metric['endpoint'] . '|' . $metric['method'];
+        if (empty($metrics)) {
+            return;
+        }
 
-        // Check if we have an aggregate for today for this endpoint+method
-        $aggregate = $this->db->select($this->dailyMetricsTable, ['*'])
-            ->where(['date' => $date])
-            ->where(['endpoint_key' => $key])
-            ->first();
+        // Group metrics by date and endpoint_key
+        $aggregates = [];
+        foreach ($metrics as $metric) {
+            $date = date('Y-m-d', $metric['timestamp']);
+            $key = $metric['endpoint'] . '|' . $metric['method'];
+            $combinedKey = $date . '|' . $key;
 
-        if ($aggregate) {
-            // Update existing aggregate
-            $this->db->update($this->dailyMetricsTable, [
-                'calls' => $aggregate['calls'] + 1,
-                'total_response_time' => $aggregate['total_response_time'] + $metric['response_time'],
-                'error_count' => $aggregate['error_count'] + ($metric['is_error'] ? 1 : 0),
-                'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
-            ], ['id' => $aggregate['id']]);
-        } else {
-            // Create new aggregate
-            $this->db->insert($this->dailyMetricsTable, [
-                'uuid' => Utils::generateNanoID(),
-                'date' => $date,
-                'endpoint' => $metric['endpoint'],
-                'method' => $metric['method'],
-                'endpoint_key' => $key,
-                'calls' => 1,
-                'total_response_time' => $metric['response_time'],
-                'error_count' => $metric['is_error'] ? 1 : 0,
-                'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
-            ]);
+            if (!isset($aggregates[$combinedKey])) {
+                $aggregates[$combinedKey] = [
+                    'date' => $date,
+                    'endpoint' => $metric['endpoint'],
+                    'method' => $metric['method'],
+                    'endpoint_key' => $key,
+                    'calls' => 0,
+                    'total_response_time' => 0,
+                    'error_count' => 0,
+                    'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
+                ];
+            }
+
+            // Aggregate the metrics
+            $aggregates[$combinedKey]['calls']++;
+            $aggregates[$combinedKey]['total_response_time'] += $metric['response_time'];
+            $aggregates[$combinedKey]['error_count'] += $metric['is_error'] ? 1 : 0;
+
+            // Keep the latest timestamp
+            $currentTimestamp = date('Y-m-d H:i:s', $metric['timestamp']);
+            if (strtotime($currentTimestamp) > strtotime($aggregates[$combinedKey]['last_called'])) {
+                $aggregates[$combinedKey]['last_called'] = $currentTimestamp;
+            }
+        }
+
+        // Get unique date-endpoint_key combinations to check for existing records
+        $dateEndpointKeys = [];
+        foreach ($aggregates as $aggregate) {
+            $dateEndpointKeys[] = [
+                'date' => $aggregate['date'],
+                'endpoint_key' => $aggregate['endpoint_key']
+            ];
+        }
+
+        // Fetch existing aggregates in bulk using QueryBuilder methods
+        $existingAggregates = [];
+        if (count($dateEndpointKeys) > 0) {
+            // Group combinations by date for more efficient querying
+            $dateGroups = [];
+            foreach ($dateEndpointKeys as $combo) {
+                $dateGroups[$combo['date']][] = $combo['endpoint_key'];
+            }
+
+            // Query each date group separately and combine results
+            foreach ($dateGroups as $date => $endpointKeys) {
+                $results = $this->db->select($this->dailyMetricsTable, ['*'])
+                    ->where(['date' => $date])
+                    ->whereIn('endpoint_key', $endpointKeys)
+                    ->get();
+
+                foreach ($results as $existing) {
+                    $key = $existing['date'] . '|' . $existing['endpoint_key'];
+                    $existingAggregates[$key] = $existing;
+                }
+            }
+        }
+
+        // Process updates and inserts
+        $toUpdate = [];
+        $toInsert = [];
+
+        foreach ($aggregates as $combinedKey => $aggregate) {
+            if (isset($existingAggregates[$combinedKey])) {
+                // Update existing aggregate
+                $existing = $existingAggregates[$combinedKey];
+                $toUpdate[] = [
+                    'id' => $existing['id'],
+                    'calls' => $existing['calls'] + $aggregate['calls'],
+                    'total_response_time' => $existing['total_response_time'] + $aggregate['total_response_time'],
+                    'error_count' => $existing['error_count'] + $aggregate['error_count'],
+                    'last_called' => $aggregate['last_called']
+                ];
+            } else {
+                // Insert new aggregate
+                $toInsert[] = [
+                    'uuid' => Utils::generateNanoID(),
+                    'date' => $aggregate['date'],
+                    'endpoint' => $aggregate['endpoint'],
+                    'method' => $aggregate['method'],
+                    'endpoint_key' => $aggregate['endpoint_key'],
+                    'calls' => $aggregate['calls'],
+                    'total_response_time' => $aggregate['total_response_time'],
+                    'error_count' => $aggregate['error_count'],
+                    'last_called' => $aggregate['last_called']
+                ];
+            }
+        }
+
+        // Perform bulk operations
+        if (!empty($toUpdate)) {
+            foreach ($toUpdate as $update) {
+                $id = $update['id'];
+                unset($update['id']);
+                $this->db->update($this->dailyMetricsTable, $update, ['id' => $id]);
+            }
+        }
+
+        if (!empty($toInsert)) {
+            $this->db->insertBatch($this->dailyMetricsTable, $toInsert);
         }
     }
 
@@ -304,12 +390,6 @@ class ApiMetricsService
         try {
             // Get the last 7 days of daily aggregates
             $sevenDaysAgo = date('Y-m-d', strtotime('-7 days'));
-
-            // Log the contents of the daily metrics table to see what's actually in there
-            $allMetrics = $this->db->select($this->dailyMetricsTable, ['id', 'date', 'endpoint', 'method', 'calls'])
-                ->orderBy(['date' => 'DESC'])
-                ->limit(10)
-                ->get();
 
             $dailyMetrics = $this->db->select($this->dailyMetricsTable, ['*'])
                 ->where(['date' => ['>=', $sevenDaysAgo]])

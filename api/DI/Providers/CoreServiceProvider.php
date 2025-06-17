@@ -16,6 +16,7 @@ use Glueful\Auth\TokenManager;
 use Glueful\Helpers\ConfigManager;
 use Glueful\Security\RandomStringGenerator;
 use Glueful\Permissions\PermissionManager;
+use Glueful\Performance\MemoryManager;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -80,6 +81,13 @@ class CoreServiceProvider implements ServiceProviderInterface
         // Also register with string key for backward compatibility
         $container->singleton('permission.manager', function ($container) {
             return PermissionManager::getInstance();
+        });
+
+        // Performance services
+        $container->singleton(MemoryManager::class, function () {
+            // MemoryManager constructor takes optional LoggerInterface
+            // Let it use NullLogger fallback since we don't have LoggerInterface registered yet
+            return new MemoryManager();
         });
     }
 

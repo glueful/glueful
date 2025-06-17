@@ -163,11 +163,19 @@ class MiddlewareRegistry
                     return new SecurityHeadersMiddleware($config);
 
                 case MemoryTrackingMiddleware::class:
-                    // MemoryTrackingMiddleware requires MemoryManager and LoggerInterface
+                    // MemoryTrackingMiddleware requires MemoryManager, LoggerInterface is optional
                     if (self::$container) {
                         try {
                             $memoryManager = self::$container->get('Glueful\\Performance\\MemoryManager');
-                            $logger = self::$container->get('Psr\\Log\\LoggerInterface');
+
+                            // Try to get logger, but don't fail if it's not available
+                            $logger = null;
+                            try {
+                                $logger = self::$container->get('Psr\\Log\\LoggerInterface');
+                            } catch (\Exception) {
+                                // Logger not available, will use NullLogger fallback
+                            }
+
                             $instance = new MemoryTrackingMiddleware($memoryManager, $logger);
                             return $instance instanceof MiddlewareInterface ? $instance : null;
                         } catch (\Exception $e) {
@@ -275,7 +283,7 @@ class MiddlewareRegistry
         if (function_exists('app')) {
             try {
                 return app();
-            } catch (\Exception $e) {
+            } catch (\Exception) {
                 return null;
             }
         }
