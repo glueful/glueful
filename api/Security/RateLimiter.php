@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Security;
 
 use Glueful\Cache\CacheEngine;
+use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditEvent;
 use Glueful\Logging\AuditLogger;
 
@@ -29,8 +30,10 @@ class RateLimiter
     public function __construct(
         private readonly string $key,
         private readonly int $maxAttempts,
-        private readonly int $windowSeconds
+        private readonly int $windowSeconds,
+        private ?RequestContext $requestContext = null
     ) {
+        $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
         CacheEngine::initialize('Glueful:', config('cache.default'));
     }
 
@@ -61,7 +64,7 @@ class RateLimiter
                     'key' => $this->key,
                     'max_attempts' => $this->maxAttempts,
                     'window_seconds' => $this->windowSeconds,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $this->requestContext->getClientIp(),
                 ]
             );
             return false;

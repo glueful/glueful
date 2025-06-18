@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Security;
 
 use Glueful\Cache\CacheEngine;
+use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditEvent;
 use Glueful\Logging\AuditLogger;
 
@@ -40,6 +41,9 @@ class AdaptiveRateLimiter extends RateLimiter
     /** @var array Request context information */
     private array $context = [];
 
+    /** @var RequestContext Request context service */
+    private RequestContext $requestContext;
+
     /** @var bool Whether machine learning features are enabled */
     private bool $mlEnabled = false;
 
@@ -69,7 +73,8 @@ class AdaptiveRateLimiter extends RateLimiter
         int $maxAttempts,
         int $windowSeconds,
         array $context = [],
-        bool $enableDistributed = false
+        bool $enableDistributed = false,
+        ?RequestContext $requestContext = null
     ) {
         parent::__construct($key, $maxAttempts, $windowSeconds);
 
@@ -80,6 +85,7 @@ class AdaptiveRateLimiter extends RateLimiter
 
         // Store request context
         $this->context = $context;
+        $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
 
         // Extract tracking ID from key
         $parts = explode(':', $key);
@@ -479,7 +485,7 @@ class AdaptiveRateLimiter extends RateLimiter
         // Update basic metrics
         $profile['request_count'] = ($profile['request_count'] ?? 0) + 1;
         $profile['last_seen'] = time();
-        $profile['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $profile['user_agent'] = $this->requestContext->getUserAgent();
 
         // Calculate time since last request
         $lastRequestTime = $profile['last_request_time'] ?? 0;
@@ -579,7 +585,7 @@ class AdaptiveRateLimiter extends RateLimiter
                 'key' => $this->limitKey,
                 'max_attempts' => $this->maxAttempts,
                 'window_seconds' => $this->windowSeconds,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $this->requestContext->getClientIp(),
             ], $context)
         );
     }
@@ -609,10 +615,11 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
             'ip' => $ip,
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'user_agent' => $requestContext->getUserAgent(),
+            'request_uri' => $requestContext->getRequestUri(),
         ];
 
         $auditLogger = new AuditLogger();
@@ -628,7 +635,7 @@ class AdaptiveRateLimiter extends RateLimiter
             ]
         );
 
-        return new self("ip:$ip", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self("ip:$ip", $maxAttempts, $windowSeconds, $context, $distributed, $requestContext);
     }
 
     /**
@@ -646,10 +653,11 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'ip' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
+            'request_uri' => $requestContext->getRequestUri(),
         ];
 
         $auditLogger = new AuditLogger();
@@ -665,7 +673,7 @@ class AdaptiveRateLimiter extends RateLimiter
             ]
         );
 
-        return new self("user:$userId", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self("user:$userId", $maxAttempts, $windowSeconds, $context, $distributed, $requestContext);
     }
 
     /**
@@ -685,9 +693,10 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'ip' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
             'endpoint' => $endpoint,
         ];
 
@@ -705,6 +714,13 @@ class AdaptiveRateLimiter extends RateLimiter
             ]
         );
 
-        return new self("endpoint:$endpoint:$identifier", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self(
+            "endpoint:$endpoint:$identifier",
+            $maxAttempts,
+            $windowSeconds,
+            $context,
+            $distributed,
+            $requestContext
+        );
     }
 }

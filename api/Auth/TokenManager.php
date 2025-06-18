@@ -8,6 +8,7 @@ use Glueful\Cache\CacheEngine;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
+use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 
@@ -133,9 +134,10 @@ class TokenManager
      * @param string $token Authentication token
      * @return bool Success status
      */
-    public static function removeTokenMapping(string $token): bool
+    public static function removeTokenMapping(string $token, ?RequestContext $requestContext = null): bool
     {
         self::initialize();
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
 
         // Log token mapping removal
         $auditLogger = AuditLogger::getInstance();
@@ -146,7 +148,7 @@ class TokenManager
             AuditEvent::SEVERITY_INFO,
             [
                 'session_id' => $sessionId,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $requestContext->getClientIp(),
             ]
         );
 
@@ -163,8 +165,13 @@ class TokenManager
      * @param string|null $provider Optional provider name to use for validation
      * @return bool Validity status
      */
-    public static function validateAccessToken(string $token, ?string $provider = null): bool
-    {
+    public static function validateAccessToken(
+        string $token,
+        ?string $provider = null,
+        ?RequestContext $requestContext = null
+    ): bool {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
+
         // Get the authentication manager instance
         $authManager = self::getAuthManager();
 
@@ -199,7 +206,7 @@ class TokenManager
                 'provider' => $provider ?? 'auto-detect',
                 'is_valid' => $isValid,
                 'is_revoked' => self::isTokenRevoked($token),
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $requestContext->getClientIp(),
             ]
         );
 
@@ -216,8 +223,12 @@ class TokenManager
      * @param string|null $provider Optional provider name to use
      * @return array|null New token pair or null if invalid
      */
-    public static function refreshTokens(string $refreshToken, ?string $provider = null): ?array
-    {
+    public static function refreshTokens(
+        string $refreshToken,
+        ?string $provider = null,
+        ?RequestContext $requestContext = null
+    ): ?array {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         // Get session data from refresh token
         $sessionData = self::getSessionFromRefreshToken($refreshToken);
 
@@ -234,7 +245,7 @@ class TokenManager
                 [
                     'reason' => 'invalid_refresh_token',
                     'provider' => $provider ?? 'auto-detect',
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $requestContext->getClientIp(),
                 ]
             );
             return null;
@@ -298,7 +309,7 @@ class TokenManager
             [
                 'user_id' => $sessionData['uuid'] ?? null,
                 'provider' => $provider ?? $result[0]['provider'] ?? 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $requestContext->getClientIp(),
             ]
         );
 
@@ -500,8 +511,13 @@ class TokenManager
      * @param int|null $refreshTokenLifetime Optional refresh token lifetime
      * @return int Number of rows affected
      */
-    public static function storeSession(string $userUuid, array $tokens, ?int $refreshTokenLifetime = null): int
-    {
+    public static function storeSession(
+        string $userUuid,
+        array $tokens,
+        ?int $refreshTokenLifetime = null,
+        ?RequestContext $requestContext = null
+    ): int {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $uuid = Utils::generateNanoID();
@@ -519,8 +535,8 @@ class TokenManager
             'access_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600)),
             'refresh_expires_at' => date('Y-m-d H:i:s', time() + $refreshTokenLifetime),
             'status' => 'active',
-            'ip_address' => $_SERVER['REMOTE_ADDR'],
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'],
+            'ip_address' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
             'last_token_refresh' => date('Y-m-d H:i:s'),
             'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
         ]);
@@ -539,8 +555,9 @@ class TokenManager
      * @param string $token Access token to revoke
      * @return int Number of rows affected
      */
-    public static function revokeSession(string $token): int
+    public static function revokeSession(string $token, ?RequestContext $requestContext = null): int
     {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
@@ -565,7 +582,7 @@ class TokenManager
                 'user_id' => !empty($sessionDetails) ? $sessionDetails[0]['user_uuid'] : null,
                 'session_id' => !empty($sessionDetails) ? $sessionDetails[0]['uuid'] : null,
                 'provider' => !empty($sessionDetails) ? $sessionDetails[0]['provider'] : 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $requestContext->getClientIp(),
                 'result' => $result > 0 ? 'success' : 'no_changes',
             ]
         );
@@ -633,17 +650,10 @@ class TokenManager
      * }
      * ```
      */
-    public static function extractTokenFromRequest(): ?string
+    public static function extractTokenFromRequest(?RequestContext $requestContext = null): ?string
     {
-        $authorization_header = null;
-
-        // Check multiple possible locations in $_SERVER
-        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'Authorization'] as $key) {
-            if (isset($_SERVER[$key])) {
-                $authorization_header = $_SERVER[$key];
-                break;
-            }
-        }
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
+        $authorization_header = $requestContext->getAuthorizationHeader();
 
         // Fallback to getallheaders() (case-insensitive)
         if (!$authorization_header && function_exists('getallheaders')) {
@@ -671,7 +681,7 @@ class TokenManager
         }
 
         // Last fallback: Check query parameter `token`
-        return $_GET['token'] ?? null;
+        return $requestContext->getQueryParam('token');
     }
 
     /**

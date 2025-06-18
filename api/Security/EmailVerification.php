@@ -6,6 +6,7 @@ namespace Glueful\Security;
 
 use Glueful\Cache\CacheEngine;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
+use Glueful\Http\RequestContext;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Services\NotificationService;
 use Glueful\Repository\UserRepository;
@@ -48,13 +49,18 @@ class EmailVerification
     /** @var EmailNotificationProvider Email notification provider */
     private EmailNotificationProvider $emailProvider;
 
+    /** @var RequestContext Request context service */
+    private RequestContext $requestContext;
+
     /**
      * Constructor
      *
      * Initializes cache engine for OTP storage and notification service.
      */
-    public function __construct()
+    public function __construct(?RequestContext $requestContext = null)
     {
+        $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
+
         // Initialize CacheEngine with Redis driver
         CacheEngine::initialize('Glueful:', config('cache.default'));
 
@@ -235,8 +241,8 @@ class EmailVerification
                             'email' => $email,
                             'success' => $parsedResult['success'],
                             'error_code' => $parsedResult['error_code'] ?? null,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $e) {
@@ -265,8 +271,8 @@ class EmailVerification
                             'email' => $email,
                             'error' => $e->getMessage(),
                             'error_code' => 'system_error',
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $auditError) {
@@ -396,8 +402,8 @@ class EmailVerification
                         [
                             'email' => $email,
                             'reason' => 'expired_or_missing_otp',
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $e) {
@@ -441,8 +447,8 @@ class EmailVerification
                         \Glueful\Logging\AuditEvent::SEVERITY_INFO,
                         [
                             'email' => $email,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $e) {
@@ -468,8 +474,8 @@ class EmailVerification
                     [
                         'email' => $email,
                         'reason' => 'invalid_otp',
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                        'ip_address' => $this->requestContext->getClientIp(),
+                        'user_agent' => $this->requestContext->getUserAgent()
                     ]
                 );
             } catch (\Throwable $e) {
@@ -519,8 +525,8 @@ class EmailVerification
                             'email' => $email,
                             'attempts' => $attempts,
                             'cooldown_minutes' => self::COOLDOWN_MINUTES,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $e) {
@@ -565,8 +571,8 @@ class EmailVerification
                             'email' => $email,
                             'requests' => $requests,
                             'max_daily_requests' => self::MAX_DAILY_REQUESTS,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                            'ip_address' => $this->requestContext->getClientIp(),
+                            'user_agent' => $this->requestContext->getUserAgent(),
                             'date' => date('Y-m-d')
                         ]
                     );
@@ -607,7 +613,8 @@ class EmailVerification
     public static function sendPasswordResetEmail(string $email): array
     {
         try {
-            $verifier = new self();
+            $requestContext = RequestContext::fromGlobals();
+            $verifier = new self($requestContext);
 
             // Check if EmailNotification extension is enabled
             $extensionManager = new \Glueful\Helpers\ExtensionsManager();
@@ -631,8 +638,8 @@ class EmailVerification
                             \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
                             [
                                 'email' => $email,
-                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                                'ip_address' => $requestContext->getClientIp(),
+                                'user_agent' => $requestContext->getUserAgent()
                             ]
                         );
                     } catch (\Throwable $e) {
@@ -662,8 +669,8 @@ class EmailVerification
                             \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
                             [
                                 'email' => $email,
-                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                                'ip_address' => $requestContext->getClientIp(),
+                                'user_agent' => $requestContext->getUserAgent()
                             ]
                         );
                     } catch (\Throwable $e) {
@@ -691,8 +698,8 @@ class EmailVerification
                             \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
                             [
                                 'email' => $email,
-                                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                                'ip_address' => $requestContext->getClientIp(),
+                                'user_agent' => $requestContext->getUserAgent()
                             ]
                         );
                     } catch (\Throwable $e) {
@@ -807,8 +814,8 @@ class EmailVerification
                             'email' => $email,
                             'success' => $parsedResult['success'],
                             'error_code' => $parsedResult['error_code'] ?? null,
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                            'ip_address' => $requestContext->getClientIp(),
+                            'user_agent' => $requestContext->getUserAgent(),
                             'user_data' => isset($userData['uuid']) ? ['uuid' => $userData['uuid']] : null
                         ]
                     );
@@ -838,8 +845,8 @@ class EmailVerification
                             'email' => $email,
                             'error' => $e->getMessage(),
                             'error_code' => 'system_error',
-                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+                            'ip_address' => $requestContext->getClientIp(),
+                            'user_agent' => $requestContext->getUserAgent()
                         ]
                     );
                 } catch (\Throwable $auditError) {

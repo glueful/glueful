@@ -8,6 +8,7 @@ use Glueful\Auth\Interfaces\TokenStorageInterface;
 use Glueful\Cache\CacheEngine;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
+use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Helpers\Utils;
@@ -28,15 +29,18 @@ class TokenStorageService implements TokenStorageInterface
     private bool $cacheEnabled;
     private string $sessionTable = 'auth_sessions';
     private int $cacheDefaultTtl;
+    private ?RequestContext $requestContext;
 
     public function __construct(
         ?Connection $connection = null,
         bool $useTransactions = true,
-        bool $cacheEnabled = true
+        bool $cacheEnabled = true,
+        ?RequestContext $requestContext = null
     ) {
         $this->connection = $connection ?? new Connection();
         $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
         $this->auditLogger = AuditLogger::getInstance();
+        $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
 
         $this->useTransactions = $useTransactions;
         $this->cacheEnabled = $cacheEnabled;
@@ -72,8 +76,8 @@ class TokenStorageService implements TokenStorageInterface
                 'access_expires_at' => $accessExpiresAt,
                 'refresh_expires_at' => $refreshExpiresAt,
                 'provider' => $sessionData['provider'] ?? 'jwt',
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $this->requestContext->getUserAgent(),
+                'ip_address' => $this->requestContext->getClientIp(),
                 'status' => 'active',
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s'),
@@ -112,7 +116,7 @@ class TokenStorageService implements TokenStorageInterface
                     'user_id' => $sessionData['uuid'] ?? null,
                     'session_action' => 'store_new_session',
                     'error' => $e->getMessage(),
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $this->requestContext->getClientIp(),
                 ]
             );
 
@@ -132,7 +136,7 @@ class TokenStorageService implements TokenStorageInterface
             [
                 'session_identifier' => substr($sessionIdentifier, 0, 8) . '...',
                 'session_action' => 'update_tokens',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'ip_address' => $this->requestContext->getClientIp(),
             ]
         );
 
@@ -204,7 +208,7 @@ class TokenStorageService implements TokenStorageInterface
                     'session_identifier' => substr($sessionIdentifier, 0, 8) . '...',
                     'session_action' => 'update_tokens',
                     'error' => $e->getMessage(),
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $this->requestContext->getClientIp(),
                 ]
             );
 
@@ -329,7 +333,7 @@ class TokenStorageService implements TokenStorageInterface
                 [
                     'user_id' => $session['user_uuid'],
                     'session_id' => $session['uuid'],
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $this->requestContext->getClientIp(),
                 ]
             );
 
@@ -391,7 +395,7 @@ class TokenStorageService implements TokenStorageInterface
                 [
                     'user_id' => $userUuid,
                     'sessions_count' => count($sessions),
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                    'ip_address' => $this->requestContext->getClientIp(),
                 ]
             );
 
