@@ -14,6 +14,7 @@ use Glueful\Logging\{AuditLogger, AuditEvent};
 use Glueful\Permissions\Exceptions\UnauthorizedException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Constants\ErrorCodes;
+use Glueful\Http\SecureErrorResponse;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /**
@@ -444,11 +445,7 @@ class FilesController extends BaseController
                 ['file' => $fileParams]
             );
         } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Base64 upload failed: ' . $e->getMessage(),
-                'code' => 500
-            ];
+            return SecureErrorResponse::fileError($e, 'base64 upload');
         }
     }
 

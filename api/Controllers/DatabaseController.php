@@ -9,6 +9,7 @@ use Glueful\Helpers\Request;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{QueryBuilder};
 use Glueful\Logging\AuditEvent;
+use Glueful\Http\SecureErrorResponse;
 
 /**
  * Database Controller
@@ -1333,7 +1334,7 @@ class DatabaseController extends BaseController
                     }, $formattedIndexes);
                 } catch (\Exception $e) {
                     error_log("Failed to add indexes: " . $e->getMessage());
-                    $results['failed_operations'][] = "Failed to add indexes: " . $e->getMessage();
+                    $results['failed_operations'][] = "Failed to add indexes - database constraint error";
                 }
             }
 
@@ -1362,8 +1363,7 @@ class DatabaseController extends BaseController
                     } catch (\Exception $e) {
                         $columnName = $fk['column'];
                         error_log("Failed to add foreign key on column '$columnName': " . $e->getMessage());
-                        $errorMsg = "Failed to add foreign key: $columnName - " . $e->getMessage();
-                        $results['failed_operations'][] = $errorMsg;
+                        $results['failed_operations'][] = "Failed to add foreign key on column: $columnName";
                     }
                 }
             }

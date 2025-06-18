@@ -714,7 +714,11 @@ class ExceptionHandler
      */
     private static function shouldShowErrorDetails(): bool
     {
-        return config('app.debug', false) || env('APP_ENV', 'production') === 'development';
+        $environment = env('APP_ENV', 'production');
+        $debugMode = config('app.debug', false);
+
+        // Only show detailed errors in development environment with debug enabled
+        return $debugMode && ($environment === 'development' || $environment === 'local');
     }
 
     /**
@@ -809,25 +813,60 @@ class ExceptionHandler
      */
     private static function sanitizeErrorMessage(string $message): string
     {
-        // In production, sanitize sensitive information
-        if (env('APP_ENV', 'production') === 'production') {
-            // Remove file paths
-            $message = preg_replace('/\/[^\s]+\.php/', '[file]', $message);
+        $environment = env('APP_ENV', 'production');
+
+        // Always sanitize sensitive information unless in development/local
+        if (!in_array($environment, ['development', 'local']) || !config('app.debug', false)) {
+            // Remove all file paths (both Unix and Windows)
+            $message = preg_replace('/[\/\\\\][^\s]*\.php/', '[file]', $message);
+            $message = preg_replace('/[\/\\\\][^\s]*\.inc/', '[file]', $message);
 
             // Remove database connection details
-            $message = preg_replace('/password=[^\s;]+/', 'password=[REDACTED]', $message);
-            $message = preg_replace('/host=[^\s;]+/', 'host=[REDACTED]', $message);
+            $message = preg_replace('/password\s*=\s*[^\s;,)]+/i', 'password=[REDACTED]', $message);
+            $message = preg_replace('/pwd\s*=\s*[^\s;,)]+/i', 'pwd=[REDACTED]', $message);
+            $message = preg_replace('/host\s*=\s*[^\s;,)]+/i', 'host=[REDACTED]', $message);
+            $message = preg_replace('/server\s*=\s*[^\s;,)]+/i', 'server=[REDACTED]', $message);
+            $message = preg_replace('/database\s*=\s*[^\s;,)]+/i', 'database=[REDACTED]', $message);
+            $message = preg_replace('/dbname\s*=\s*[^\s;,)]+/i', 'dbname=[REDACTED]', $message);
 
-            // Remove internal class names and namespaces
-            $message = preg_replace('/\\\\[A-Za-z\\\\]+\\\\/', '', $message);
+            // Remove full namespaces and class paths
+            $message = preg_replace('/\\\\[A-Za-z\\\\]+\\\\[A-Za-z]+/', '[class]', $message);
+            $message = preg_replace('/[A-Za-z\\\\]+\\\\[A-Za-z]+::[A-Za-z]+/', '[method]', $message);
 
-            // Remove SQL query details
+            // Sanitize common database errors
             if (stripos($message, 'SQLSTATE') !== false) {
                 $message = 'Database operation failed';
             }
+            if (stripos($message, 'duplicate entry') !== false) {
+                $message = 'Data already exists';
+            }
+            if (stripos($message, 'foreign key constraint') !== false) {
+                $message = 'Data constraint violation';
+            }
+            if (stripos($message, 'table') !== false && stripos($message, "doesn't exist") !== false) {
+                $message = 'Resource not found';
+            }
+
+            // Remove internal configuration details
+            $message = preg_replace('/\.env.*/', '[config]', $message);
+            $message = preg_replace('/config\/.*\.php/', '[config]', $message);
+
+            // Remove stack trace indicators
+            $message = preg_replace('/Stack trace:.*$/s', '', $message);
+            $message = preg_replace('/#\d+.*$/m', '', $message);
+
+            // Sanitize common authentication errors
+            if (stripos($message, 'token') !== false && stripos($message, 'invalid') !== false) {
+                $message = 'Authentication failed';
+            }
+
+            // Generic fallback for remaining technical details
+            if (strlen($message) > 200) {
+                $message = 'An internal error occurred';
+            }
         }
 
-        return $message;
+        return trim($message);
     }
 
     /**

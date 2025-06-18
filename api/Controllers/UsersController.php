@@ -15,6 +15,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Glueful\Logging\AuditEvent;
 use Glueful\Constants\ErrorCodes;
 use Glueful\Helpers\ValidationHelper;
+use Glueful\Http\SecureErrorResponse;
 
 /**
  * UsersController
@@ -638,7 +639,7 @@ class UsersController extends BaseController
                 $results['success']++;
             } catch (\Exception $e) {
                 $results['failed']++;
-                $results['errors'][] = "Failed for user {$userUuid}: " . $e->getMessage();
+                $results['errors'][] = "Failed for user {$userUuid}: database operation error";
             }
         }
 
