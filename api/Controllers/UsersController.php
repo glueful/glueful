@@ -937,10 +937,13 @@ class UsersController extends BaseController
 
         $users = $exportQuery->get();
 
-        // Get profiles for each user
+        // Bulk fetch profiles for all users to avoid N+1 queries
+        $userUuids = array_column($users, 'uuid');
+        $profiles = $this->getUserRepository()->getProfilesForUsers($userUuids);
+        // Attach profiles to users
         foreach ($users as &$user) {
             $user['roles'] = []; // Roles managed by RBAC extension
-            $user['profile'] = $this->getUserRepository()->getProfile($user['uuid']) ?? [];
+            $user['profile'] = $profiles[$user['uuid']] ?? [];
         }
 
         // Audit log user export

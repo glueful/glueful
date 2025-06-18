@@ -145,6 +145,33 @@ class UserRepository extends BaseRepository
         return $query ? $query[0] : null;
     }
 
+    /**
+     * Get profiles for multiple users in a single query (bulk operation)
+     *
+     * @param array $userUuids Array of user UUIDs
+     * @return array Associative array indexed by user_uuid
+     */
+    public function getProfilesForUsers(array $userUuids): array
+    {
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        // Remove duplicates and ensure we have valid UUIDs
+        $userUuids = array_unique(array_filter($userUuids));
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        // Fetch all profiles in a single query
+        $profiles = $this->db->select('profiles', $this->userProfileFields)
+            ->whereIn('user_uuid', $userUuids)
+            ->get();
+
+        // Return indexed by user_uuid for easy lookup
+        return array_column($profiles, null, 'user_uuid');
+    }
+
 
    /**
      * Update user password
