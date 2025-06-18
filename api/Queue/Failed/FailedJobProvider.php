@@ -5,6 +5,7 @@ namespace Glueful\Queue\Failed;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
+use Glueful\Security\SecureSerializer;
 
 /**
  * Failed Job Provider
@@ -441,14 +442,19 @@ class FailedJobProvider
                 return $data;
             }
 
-            // Try PHP unserialize
-            $data = unserialize($payload);
+            // Try secure PHP deserialization
+            $serializer = SecureSerializer::forQueue();
+            $data = $serializer->unserialize($payload, [
+                'Glueful\\Queue\\Job',
+                'Glueful\\Queue\\Jobs\\*' // Allow job namespace
+            ]);
+
             if ($data !== false) {
-                return $data;
+                return is_array($data) ? $data : ['data' => $data];
             }
 
             return null;
-        } catch (\Exception $e) {
+        } catch (\Throwable) {
             return null;
         }
     }

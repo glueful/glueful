@@ -7,6 +7,7 @@ namespace Glueful\Auth;
 use Glueful\Cache\CacheEngine;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
+use Glueful\Security\SecureSerializer;
 
 /**
  * Session Cache Management System
@@ -675,7 +676,7 @@ class SessionCacheManager
             return array_merge($userData, [
             'permissions' => $permissions,
             'roles' => $roles,
-            'permission_hash' => hash('xxh3', serialize(array_merge($permissions, $roles)))
+            'permission_hash' => hash('xxh3', json_encode(array_merge($permissions, $roles)))
             ]);
         } catch (\Throwable $e) {
             // Log error but don't fail session creation
@@ -918,7 +919,7 @@ class SessionCacheManager
             // Update session data
             $session['user']['permissions'] = $permissions;
             $session['user']['roles'] = $roles;
-            $session['user']['permission_hash'] = hash('xxh3', serialize(array_merge($permissions, $roles)));
+            $session['user']['permission_hash'] = hash('xxh3', json_encode(array_merge($permissions, $roles)));
             $session['permissions_loaded_at'] = time();
 
             // Get session ID and update
@@ -1085,7 +1086,7 @@ class SessionCacheManager
 
         // Validate permission hash if available (integrity check)
         if (isset($session['user']['permission_hash'])) {
-            $currentHash = hash('xxh3', serialize(array_merge(
+            $currentHash = hash('xxh3', json_encode(array_merge(
                 $session['user']['permissions'] ?? [],
                 $session['user']['roles'] ?? []
             )));
@@ -1133,7 +1134,7 @@ class SessionCacheManager
                 // Update session with fresh permissions
                 $session['user']['permissions'] = $permissions;
                 $session['user']['roles'] = $roles;
-                $session['user']['permission_hash'] = hash('xxh3', serialize(array_merge($permissions, $roles)));
+                $session['user']['permission_hash'] = hash('xxh3', json_encode(array_merge($permissions, $roles)));
                 $session['permissions_loaded_at'] = time();
 
                 // Store updated session

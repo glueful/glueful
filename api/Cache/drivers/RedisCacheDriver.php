@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Cache\Drivers;
 
 use Redis;
+use Glueful\Security\SecureSerializer;
 
 /**
  * Redis Cache Driver
@@ -17,6 +18,9 @@ class RedisCacheDriver implements CacheDriverInterface
     /** @var Redis Redis connection instance */
     private Redis $redis;
 
+    /** @var SecureSerializer Secure serialization service */
+    private SecureSerializer $serializer;
+
     /**
      * Constructor
      *
@@ -25,6 +29,7 @@ class RedisCacheDriver implements CacheDriverInterface
     public function __construct(Redis $redis)
     {
         $this->redis = $redis;
+        $this->serializer = SecureSerializer::forCache();
     }
 
     /**
@@ -115,7 +120,7 @@ class RedisCacheDriver implements CacheDriverInterface
     public function get(string $key): mixed
     {
         $value = $this->redis->get($key);
-        return $value === false ? null : unserialize($value);
+        return $value === false ? null : $this->serializer->unserialize($value);
     }
 
     /**
@@ -130,7 +135,7 @@ class RedisCacheDriver implements CacheDriverInterface
      */
     public function set(string $key, mixed $value, int $ttl = 3600): bool
     {
-        return $this->redis->setex($key, $ttl, serialize($value));
+        return $this->redis->setex($key, $ttl, $this->serializer->serialize($value));
     }
 
     /**
@@ -150,7 +155,7 @@ class RedisCacheDriver implements CacheDriverInterface
 
         for ($i = 0; $i < count($keys); $i++) {
             if ($values[$i] !== false) {
-                $result[] = unserialize($values[$i]);
+                $result[] = $this->serializer->unserialize($values[$i]);
             } else {
                 $result[] = null;
             }
@@ -176,7 +181,7 @@ class RedisCacheDriver implements CacheDriverInterface
         $pipe = $this->redis->multi(\Redis::PIPELINE);
 
         foreach ($values as $key => $value) {
-            $pipe->setex($key, $ttl, serialize($value));
+            $pipe->setex($key, $ttl, $this->serializer->serialize($value));
         }
 
         $results = $pipe->exec();

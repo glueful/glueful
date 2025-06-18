@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Cache\Drivers;
 
 use InvalidArgumentException;
+use Glueful\Security\SecureSerializer;
 
 /**
  * File Cache Driver
@@ -16,6 +17,9 @@ class FileCacheDriver implements CacheDriverInterface
 {
     /** @var string Base directory for cache files */
     private string $directory;
+
+    /** @var SecureSerializer Secure serialization service */
+    private SecureSerializer $serializer;
 
     /** @var string File extension for cache files */
     private const FILE_EXT = '.cache';
@@ -35,6 +39,7 @@ class FileCacheDriver implements CacheDriverInterface
     public function __construct(string $directory)
     {
         $this->directory = rtrim($directory, '/') . '/';
+        $this->serializer = SecureSerializer::forCache();
 
         if (!is_dir($this->directory)) {
             if (!mkdir($this->directory, 0755, true)) {
@@ -67,7 +72,7 @@ class FileCacheDriver implements CacheDriverInterface
      */
     private function saveToFile(string $path, mixed $data): bool
     {
-        return file_put_contents($path, serialize($data)) !== false;
+        return file_put_contents($path, $this->serializer->serialize($data)) !== false;
     }
 
     /**
@@ -87,7 +92,7 @@ class FileCacheDriver implements CacheDriverInterface
             return null;
         }
 
-        return unserialize($data);
+        return $this->serializer->unserialize($data);
     }
 
     /**

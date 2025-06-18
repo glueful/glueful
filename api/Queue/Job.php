@@ -7,6 +7,7 @@ use Glueful\Queue\Contracts\QueueDriverInterface;
 use Glueful\Helpers\Utils;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Exceptions\DatabaseException;
+use Glueful\Security\SecureSerializer;
 
 /**
  * Base Job Class
@@ -394,13 +395,14 @@ abstract class Job implements JobInterface
      */
     public function serialize(): string
     {
-        return serialize([
+        $serializer = SecureSerializer::forQueue();
+        return $serializer->serialize([
             'class' => static::class,
             'uuid' => $this->uuid,
             'payload' => $this->payload,
             'attempts' => $this->attempts,
             'queue' => $this->queue
-        ]);
+        ], true); // Force PHP serialization for job objects
     }
 
     /**
@@ -412,7 +414,11 @@ abstract class Job implements JobInterface
      */
     public static function unserialize(string $data): self
     {
-        $props = unserialize($data);
+        $serializer = SecureSerializer::forQueue();
+        $props = $serializer->unserialize($data, [
+            'Glueful\\Queue\\Job',
+            static::class // Allow the specific job class being unserialized
+        ]);
 
         if (!is_array($props) || !isset($props['class'])) {
             throw BusinessLogicException::operationNotAllowed(

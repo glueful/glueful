@@ -699,7 +699,7 @@ class SessionAnalytics
      */
     private static function cacheAnalytics(array $analytics, array $filters): void
     {
-        $cacheKey = self::ANALYTICS_PREFIX . 'full:' . md5(serialize($filters));
+        $cacheKey = self::ANALYTICS_PREFIX . 'full:' . md5(json_encode($filters));
         CacheEngine::set($cacheKey, $analytics, self::METRICS_TTL);
     }
 

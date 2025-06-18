@@ -7,6 +7,7 @@ namespace Glueful\Http;
 use Glueful\Auth\TokenManager;
 use Glueful\Auth\SessionCacheManager;
 use Glueful\Models\User;
+use Glueful\Security\SecureSerializer;
 
 /**
  * Request User Context
@@ -222,7 +223,7 @@ class RequestUserContext
      */
     public function hasPermission(string $permission, string $resource = 'system', array $context = []): bool
     {
-        $cacheKey = sprintf('permission:%s:%s:%s', $permission, $resource, md5(serialize($context)));
+        $cacheKey = sprintf('permission:%s:%s:%s', $permission, $resource, md5(json_encode($context)));
 
         if (!isset($this->permissionCache[$cacheKey])) {
             $user = $this->getUser();
