@@ -220,7 +220,7 @@ class TokenStorageService implements TokenStorageInterface
         // Try cache first if enabled
         if ($this->cacheEnabled) {
             $cacheKey = "session_token:{$accessToken}";
-            $cachedSession = CacheEngine::get($cacheKey);
+            $cachedSession = $this->resolveCacheReference($cacheKey);
             if ($cachedSession) {
                 return json_decode($cachedSession, true);
             }
@@ -256,7 +256,7 @@ class TokenStorageService implements TokenStorageInterface
         // Try cache first if enabled
         if ($this->cacheEnabled) {
             $cacheKey = "session_refresh:{$refreshToken}";
-            $cachedSession = CacheEngine::get($cacheKey);
+            $cachedSession = $this->resolveCacheReference($cacheKey);
             if ($cachedSession) {
                 return json_decode($cachedSession, true);
             }
@@ -574,12 +574,18 @@ class TokenStorageService implements TokenStorageInterface
             'refresh_token' => $tokens['refresh_token']
         ]);
 
-        CacheEngine::set($accessCacheKey, json_encode($cacheData), $this->cacheDefaultTtl);
-        CacheEngine::set(
-            $refreshCacheKey,
-            json_encode($cacheData),
-            (int)config('session.refresh_token_lifetime', 604800)
-        );
+        // Store session data once with canonical key and use references
+        $canonicalKey = "session_data:{$cacheData['session_id']}";
+        $sessionDataJson = json_encode($cacheData);
+        $refreshTtl = (int)config('session.refresh_token_lifetime', 604800);
+        $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
+
+        // Store the actual data once with the longest TTL
+        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+
+        // Store references with appropriate TTLs
+        CacheEngine::set($accessCacheKey, $canonicalKey, $this->cacheDefaultTtl);
+        CacheEngine::set($refreshCacheKey, $canonicalKey, $refreshTtl);
     }
 
     private function updateSessionInCache(array $sessionData, array $newTokens): void
@@ -588,37 +594,71 @@ class TokenStorageService implements TokenStorageInterface
         CacheEngine::delete("session_token:{$sessionData['access_token']}");
         CacheEngine::delete("session_refresh:{$sessionData['refresh_token']}");
 
-        // Store new cache entries
+        // Store new cache entries using reference pattern
         $updatedData = array_merge($sessionData, [
             'access_token' => $newTokens['access_token'],
             'refresh_token' => $newTokens['refresh_token']
         ]);
 
-        CacheEngine::set(
-            "session_token:{$newTokens['access_token']}",
-            json_encode($updatedData),
-            $this->cacheDefaultTtl
-        );
-        CacheEngine::set(
-            "session_refresh:{$newTokens['refresh_token']}",
-            json_encode($updatedData),
-            (int)config('session.refresh_token_lifetime', 604800)
-        );
+        $canonicalKey = "session_data:{$updatedData['session_id']}";
+        $sessionDataJson = json_encode($updatedData);
+        $refreshTtl = (int)config('session.refresh_token_lifetime', 604800);
+        $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
+
+        // Store the actual data once with the longest TTL
+        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+
+        // Store references with appropriate TTLs
+        CacheEngine::set("session_token:{$newTokens['access_token']}", $canonicalKey, $this->cacheDefaultTtl);
+        CacheEngine::set("session_refresh:{$newTokens['refresh_token']}", $canonicalKey, $refreshTtl);
     }
 
     private function cacheSessionData(array $session, ?string $accessToken = null, ?string $refreshToken = null): void
     {
+        if (!$accessToken && !$refreshToken) {
+            return;
+        }
+
+        $canonicalKey = "session_data:{$session['session_id']}";
+        $sessionDataJson = json_encode($session);
+        $refreshTtl = (int)config('session.refresh_token_lifetime', 604800);
+        $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
+
+        // Store the actual data once with the longest TTL
+        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+
+        // Store references with appropriate TTLs
         if ($accessToken) {
-            CacheEngine::set("session_token:{$accessToken}", json_encode($session), $this->cacheDefaultTtl);
+            CacheEngine::set("session_token:{$accessToken}", $canonicalKey, $this->cacheDefaultTtl);
         }
 
         if ($refreshToken) {
-            CacheEngine::set(
-                "session_refresh:{$refreshToken}",
-                json_encode($session),
-                (int)config('session.refresh_token_lifetime', 604800)
-            );
+            CacheEngine::set("session_refresh:{$refreshToken}", $canonicalKey, $refreshTtl);
         }
+    }
+
+    /**
+     * Resolve cache reference to actual data
+     *
+     * @param string $key Cache key that may contain a reference
+     * @return string|null The actual cache data or null if not found
+     */
+    private function resolveCacheReference(string $key): ?string
+    {
+        $cachedValue = CacheEngine::get($key);
+
+        if ($cachedValue === null) {
+            return null;
+        }
+
+        // Check if this is a reference (starts with session_data:)
+        if (is_string($cachedValue) && strpos($cachedValue, 'session_data:') === 0) {
+            // This is a reference, resolve it
+            return CacheEngine::get($cachedValue);
+        }
+
+        // This is the actual data
+        return $cachedValue;
     }
 
     private function clearSessionCache(array $session): void
@@ -629,6 +669,11 @@ class TokenStorageService implements TokenStorageInterface
 
         if (isset($session['refresh_token'])) {
             CacheEngine::delete("session_refresh:{$session['refresh_token']}");
+        }
+
+        // Also clear the canonical session data
+        if (isset($session['session_id'])) {
+            CacheEngine::delete("session_data:{$session['session_id']}");
         }
     }
 

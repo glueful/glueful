@@ -243,28 +243,42 @@ class SeedDefaultRoles implements MigrationInterface
             ]
         ];
 
+        // Collect all role-permission assignments for bulk processing
+        $assignments = [];
         foreach ($rolePermissions as $roleSlug => $permissionKeys) {
             foreach ($permissionKeys as $permissionKey) {
-                // Check if role-permission assignment already exists using WHERE clauses
-                $existing = $this->db->select('role_permissions', ['id'])
-                    ->where([
-                        'role_uuid' => $roleUuids[$roleSlug],
-                        'permission_uuid' => $permissionUuids[$permissionKey]
-                    ])
-                    ->get();
-
-                if (empty($existing)) {
-                    $uuid = Utils::generateNanoID();
-                    $assignmentId = $this->db->insert('role_permissions', [
-                        'uuid' => $uuid,
-                        'role_uuid' => $roleUuids[$roleSlug],
-                        'permission_uuid' => $permissionUuids[$permissionKey]
-                    ]);
-                    if (!$assignmentId) {
-                        throw new \RuntimeException('Failed to assign permission to role');
-                    }
-                }
+                $assignments[] = [
+                    'role_uuid' => $roleUuids[$roleSlug],
+                    'permission_uuid' => $permissionUuids[$permissionKey]
+                ];
             }
+        }
+
+        // Check existing assignments in bulk
+        $existingPairs = [];
+        if (!empty($assignments)) {
+            $existing = $this->db->select('role_permissions', ['role_uuid', 'permission_uuid'])->get();
+            foreach ($existing as $row) {
+                $existingPairs[$row['role_uuid'] . '|' . $row['permission_uuid']] = true;
+            }
+        }
+
+        // Prepare new assignments for batch insert
+        $newAssignments = [];
+        foreach ($assignments as $assignment) {
+            $key = $assignment['role_uuid'] . '|' . $assignment['permission_uuid'];
+            if (!isset($existingPairs[$key])) {
+                $newAssignments[] = [
+                    'uuid' => Utils::generateNanoID(),
+                    'role_uuid' => $assignment['role_uuid'],
+                    'permission_uuid' => $assignment['permission_uuid']
+                ];
+            }
+        }
+
+        // Bulk insert new assignments
+        if (!empty($newAssignments)) {
+            $this->db->insertBatch('role_permissions', $newAssignments);
         }
     }
 

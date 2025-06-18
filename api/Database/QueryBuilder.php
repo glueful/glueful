@@ -266,6 +266,16 @@ class QueryBuilder
     }
 
     /**
+     * Check if a transaction is currently active
+     *
+     * @return bool True if a transaction is active, false otherwise
+     */
+    public function isTransactionActive(): bool
+    {
+        return $this->transactionLevel > 0;
+    }
+
+    /**
      * Insert new database record
      *
      * Features:

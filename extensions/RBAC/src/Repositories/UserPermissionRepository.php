@@ -212,9 +212,7 @@ class UserPermissionRepository extends BaseRepository
 
             $expiredUuids = array_column($deleteQuery->get(), 'uuid');
             if (!empty($expiredUuids)) {
-                foreach ($expiredUuids as $uuid) {
-                    $this->db->delete($this->table, ['uuid' => $uuid]);
-                }
+                $this->bulkDelete($expiredUuids);
             }
         }
 

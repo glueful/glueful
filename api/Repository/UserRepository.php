@@ -7,6 +7,7 @@ namespace Glueful\Repository;
 use Glueful\DTOs\{UsernameDTO, EmailDTO};
 use Glueful\Validation\Validator;
 use Glueful\Database\Connection;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * User Repository
@@ -351,12 +352,12 @@ class UserRepository extends BaseRepository
      */
     public function findOrCreateFromSaml(array $userData): ?array
     {
-        try {
-            // Email is required to identify the user
-            if (empty($userData['email'])) {
-                return null;
-            }
+        // Email is required to identify the user
+        if (empty($userData['email'])) {
+            return null;
+        }
 
+        return $this->executeInTransaction(function () use ($userData) {
             // Try to find the user by email
             $user = $this->findByEmail($userData['email']);
 
@@ -386,12 +387,9 @@ class UserRepository extends BaseRepository
                 $this->update($user['uuid'], $updates);
 
                 // Reload the user to get updated data
-                $user = $this->findByUUId($user['uuid']);
-
-                // Note: Role synchronization moved to RBAC extension
-                // Use RBAC extension APIs for role assignment
-                return $user;
+                return $this->findByUUId($user['uuid']);
             }
+
             // User doesn't exist, create a new one
             $newUser = [
                 'uuid' => \Glueful\Helpers\Utils::generateNanoID(),
@@ -412,7 +410,7 @@ class UserRepository extends BaseRepository
             // This will also handle the audit logging
             $userId = $this->create($newUser);
             if (!$userId) {
-                return null;
+                throw new DatabaseException('Failed to create user');
             }
 
             // Note: Role assignment moved to RBAC extension
@@ -420,12 +418,7 @@ class UserRepository extends BaseRepository
 
             // Return the newly created user
             return $this->findByUUId($newUser['uuid']);
-        } catch (\Throwable $e) {
-            // Log the error
-            error_log('Error in findOrCreateFromSaml: ' . $e->getMessage());
-
-            return null;
-        }
+        });
     }
 
 

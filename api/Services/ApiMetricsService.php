@@ -299,18 +299,20 @@ class ApiMetricsService
             }
         }
 
-        // Perform bulk operations
-        if (!empty($toUpdate)) {
-            foreach ($toUpdate as $update) {
-                $id = $update['id'];
-                unset($update['id']);
-                $this->db->update($this->dailyMetricsTable, $update, ['id' => $id]);
+        // Perform bulk operations in transaction for better performance
+        $this->db->transaction(function () use ($toUpdate, $toInsert) {
+            if (!empty($toUpdate)) {
+                foreach ($toUpdate as $update) {
+                    $id = $update['id'];
+                    unset($update['id']);
+                    $this->db->update($this->dailyMetricsTable, $update, ['id' => $id]);
+                }
             }
-        }
 
-        if (!empty($toInsert)) {
-            $this->db->insertBatch($this->dailyMetricsTable, $toInsert);
-        }
+            if (!empty($toInsert)) {
+                $this->db->insertBatch($this->dailyMetricsTable, $toInsert);
+            }
+        });
     }
 
     /**

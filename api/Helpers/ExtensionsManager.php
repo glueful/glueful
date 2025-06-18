@@ -533,17 +533,13 @@ class ExtensionsManager
             return $dependencyResults;
         }
 
-        // Get extension metadata
+        // Get extension metadata with caching
         $version = '1.0.0';
         $installPath = "extensions/$extensionName";
-        try {
-            if (method_exists($extensionClass, 'getMetadata')) {
-                $metadata = $extensionClass::getMetadata();
-                $version = $metadata['version'] ?? $version;
-                $installPath = $metadata['installPath'] ?? $installPath;
-            }
-        } catch (\Throwable $e) {
-            self::debug("Error getting metadata for $extensionName: " . $e->getMessage());
+        $metadata = self::getExtensionMetadataWithCaching($extensionName, $extensionClass);
+        if ($metadata) {
+            $version = $metadata['version'] ?? $version;
+            $installPath = $metadata['installPath'] ?? $installPath;
         }
 
         // Add/update extension in config
@@ -771,6 +767,12 @@ class ExtensionsManager
             return null;
         }
 
+        // Check cache first
+        $cacheKey = $extensionName . ($checkFilesOnly ? ':files' : ':full');
+        if (isset(self::$extensionExistsCache[$cacheKey])) {
+            return self::$extensionExistsCache[$cacheKey];
+        }
+
         // Get extensions path
         $extensionsPath = config('services.extensions.extensions_dir');
         if (empty($extensionsPath)) {
@@ -786,18 +788,22 @@ class ExtensionsManager
             // Extension files exist
             $expectedClass = 'Glueful\\Extensions\\' . $extensionName . '\\' . $extensionName;
 
-            // If we're only checking files, return the expected class name
+            // If we're only checking files, cache and return the expected class name
             if ($checkFilesOnly) {
+                self::$extensionExistsCache[$cacheKey] = $expectedClass;
                 return $expectedClass;
             }
 
             // If we need to check if the class is loaded/loadable,
             // we can try to load it or verify it exists
             if (class_exists($expectedClass)) {
+                self::$extensionExistsCache[$cacheKey] = $expectedClass;
                 return $expectedClass;
             }
         }
 
+        // Cache null result and return
+        self::$extensionExistsCache[$cacheKey] = null;
         return null;
     }
 
@@ -837,14 +843,44 @@ class ExtensionsManager
         return config('services.extensions.config_file');
     }
 
+    /** @var array|null Static cache for extensions config */
+    private static ?array $configCache = null;
+
+    /** @var string|null Cached config file path */
+    private static ?string $configFilePath = null;
+
+    /** @var int|null Cached config file modification time */
+    private static ?int $configFileMtime = null;
+
+    /** @var array Cache for extension metadata */
+    private static array $metadataCache = [];
+
+    /** @var array Cache for extension existence checks */
+    private static array $extensionExistsCache = [];
+
     public static function loadExtensionsConfig(): array
     {
         $configFile = config('services.extensions.config_file');
 
-        if (!file_exists($configFile)) {
-            return self::createDefaultExtensionsJson();
+        // Check if we have cached config and if file hasn't changed
+        if (self::$configCache !== null && self::$configFilePath === $configFile) {
+            // Verify file hasn't been modified (lightweight check)
+            if (file_exists($configFile)) {
+                $currentMtime = filemtime($configFile);
+                if ($currentMtime === self::$configFileMtime) {
+                    return self::$configCache;
+                }
+            }
         }
 
+        // File doesn't exist, return default
+        if (!file_exists($configFile)) {
+            $defaultConfig = self::createDefaultExtensionsJson();
+            self::cacheConfig($configFile, $defaultConfig, 0);
+            return $defaultConfig;
+        }
+
+        // Load and parse config file
         $content = file_get_contents($configFile);
         $config = json_decode($content, true);
 
@@ -852,7 +888,107 @@ class ExtensionsManager
             throw new \RuntimeException('Invalid JSON in extensions config: ' . json_last_error_msg());
         }
 
-        return $config ?: [];
+        $config = $config ?: [];
+
+        // Cache the result
+        self::cacheConfig($configFile, $config, filemtime($configFile));
+        return $config;
+    }
+
+    /**
+     * Cache configuration data in memory
+     */
+    private static function cacheConfig(string $configFile, array $config, int $mtime): void
+    {
+        self::$configCache = $config;
+        self::$configFilePath = $configFile;
+        self::$configFileMtime = $mtime;
+    }
+
+    /**
+     * Clear the configuration cache
+     */
+    public static function clearConfigCache(): void
+    {
+        self::$configCache = null;
+        self::$configFilePath = null;
+        self::$configFileMtime = null;
+    }
+
+    /**
+     * Get cached extension metadata
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @return array|null Cached metadata or null if not cached
+     */
+    private static function getCachedMetadata(string $extensionName, string $extensionClass): ?array
+    {
+        $cacheKey = $extensionName . '::' . $extensionClass;
+        return self::$metadataCache[$cacheKey] ?? null;
+    }
+
+    /**
+     * Cache extension metadata
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @param array $metadata Metadata to cache
+     */
+    private static function cacheMetadata(string $extensionName, string $extensionClass, array $metadata): void
+    {
+        $cacheKey = $extensionName . '::' . $extensionClass;
+        self::$metadataCache[$cacheKey] = $metadata;
+    }
+
+    /**
+     * Get extension metadata with caching
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @return array|null Extension metadata
+     */
+    private static function getExtensionMetadataWithCaching(string $extensionName, string $extensionClass): ?array
+    {
+        // Check cache first
+        $cached = self::getCachedMetadata($extensionName, $extensionClass);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        // Load metadata from extension class
+        if (method_exists($extensionClass, 'getMetadata')) {
+            try {
+                $metadata = $extensionClass::getMetadata();
+                if (is_array($metadata)) {
+                    self::cacheMetadata($extensionName, $extensionClass, $metadata);
+                    return $metadata;
+                }
+            } catch (\Exception $e) {
+                // Log error but continue
+                error_log("Failed to load metadata for extension {$extensionName}: " . $e->getMessage());
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Clear all extension caches
+     */
+    public static function clearMetadataCache(): void
+    {
+        self::$metadataCache = [];
+        self::$extensionExistsCache = [];
+    }
+
+    /**
+     * Clear all caches
+     */
+    public static function clearAllCaches(): void
+    {
+        self::clearConfigCache();
+        self::clearMetadataCache();
     }
 
     /**

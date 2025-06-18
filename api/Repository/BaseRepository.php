@@ -9,6 +9,7 @@ use Glueful\Database\QueryBuilder;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Repository\Interfaces\RepositoryInterface;
+use Glueful\Repository\Traits\TransactionTrait;
 use Glueful\Helpers\Utils;
 use Glueful\Exceptions\DatabaseException;
 use Glueful\Exceptions\NotFoundException;
@@ -27,6 +28,8 @@ use Glueful\Exceptions\NotFoundException;
  */
 abstract class BaseRepository implements RepositoryInterface
 {
+    use TransactionTrait;
+
     /** @var QueryBuilder Database query builder instance */
     protected QueryBuilder $db;
 
