@@ -8,6 +8,8 @@ use PDO;
 use Glueful\Database\Exceptions\ConnectionPoolException;
 use Glueful\Database\PooledConnection;
 use Glueful\Database\Driver\DatabaseDriver;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * ConnectionPool
@@ -583,7 +585,10 @@ class ConnectionPool
                 );
                 $this->maintenanceWorkerRunning = true;
             } else {
-                throw new \Exception('ReactPHP event loop not available');
+                throw BusinessLogicException::operationNotAllowed(
+                    'maintenance_worker',
+                    'ReactPHP event loop not available'
+                );
             }
         } catch (\Exception $e) {
             error_log('Failed to start ReactPHP maintenance worker: ' . $e->getMessage());
@@ -639,7 +644,9 @@ class ConnectionPool
             $pid = pcntl_fork();
 
             if ($pid === -1) {
-                throw new \Exception('Failed to fork maintenance process');
+                throw DatabaseException::connectionFailed(
+                    'Failed to fork maintenance process'
+                );
             } elseif ($pid === 0) {
                 // Child process - run maintenance loop
                 $this->runMaintenanceLoop();

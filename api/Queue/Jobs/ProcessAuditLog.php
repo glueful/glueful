@@ -4,6 +4,7 @@ namespace Glueful\Queue\Jobs;
 
 use Glueful\Queue\Job;
 use Glueful\Logging\AuditLogger;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Process Audit Log Job
@@ -45,7 +46,10 @@ class ProcessAuditLog extends Job
 
         // Validate required data
         if (!isset($data['category'], $data['action'], $data['severity'])) {
-            throw new \Exception('Missing required audit log data: category, action, or severity');
+            throw BusinessLogicException::operationNotAllowed(
+                'audit_log_processing',
+                'Missing required audit log data: category, action, or severity'
+            );
         }
 
         // Get AuditLogger instance

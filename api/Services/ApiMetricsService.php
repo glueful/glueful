@@ -8,6 +8,8 @@ use Glueful\Cache\CacheEngine;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Helpers\Utils;
 use Exception;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Service for collecting and analyzing API metrics
@@ -43,7 +45,10 @@ class ApiMetricsService
             try {
                 // Check if CacheEngine class exists
                 if (!class_exists('\\Glueful\\Cache\\CacheEngine')) {
-                    throw new \Exception("CacheEngine class not found");
+                    throw BusinessLogicException::operationNotAllowed(
+                        'cache_initialization',
+                        'CacheEngine class not found'
+                    );
                 }
 
                 // Ensure CacheEngine is properly initialized for metrics

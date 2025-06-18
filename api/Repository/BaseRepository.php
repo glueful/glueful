@@ -10,6 +10,8 @@ use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Helpers\Utils;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\NotFoundException;
 
 /**
  * Base Repository
@@ -207,7 +209,7 @@ abstract class BaseRepository implements RepositoryInterface
         $success = $this->db->insert($this->table, $data);
 
         if (!$success) {
-            throw new \RuntimeException('Failed to create record');
+            throw DatabaseException::createFailed($this->table);
         }
 
         $uuid = $data[$this->primaryKey];

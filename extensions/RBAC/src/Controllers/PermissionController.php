@@ -9,6 +9,7 @@ use Glueful\Extensions\RBAC\Services\PermissionAssignmentService;
 use Glueful\Extensions\RBAC\Repositories\PermissionRepository;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -66,7 +67,7 @@ class PermissionController
 
             return Response::ok($permissions, 'Permissions retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -82,12 +83,12 @@ class PermissionController
         try {
             $uuid = $params['uuid'] ?? '';
 
-            $permission = $this->permissionRepository->findByUuid($uuid);
+            $permission = $this->permissionRepository->findRecordByUuid($uuid);
             if (!$permission) {
                 throw new NotFoundException('Permission not found');
             }
 
-            $permissionData = $permission->toArray();
+            $permissionData = $permission;
 
             $userCount = count($this->permissionRepository->getUsersWithPermission($uuid));
             $permissionData['user_count'] = $userCount;
@@ -96,7 +97,7 @@ class PermissionController
         } catch (NotFoundException $e) {
             return Response::notFound($e->getMessage())->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -115,20 +116,20 @@ class PermissionController
             if (empty($data['name']) || empty($data['slug'])) {
                 return Response::error(
                     'Permission name and slug are required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
             $permission = $this->permissionService->createPermission($data);
             if (!$permission) {
-                return Response::error('Failed to create permission', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+                return Response::error('Failed to create permission', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
             }
 
             return Response::created($permission->toArray(), 'Permission created successfully')->send();
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -148,15 +149,15 @@ class PermissionController
 
             $updated = $this->permissionService->updatePermission($uuid, $data);
             if (!$updated) {
-                return Response::error('Failed to update permission', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+                return Response::error('Failed to update permission', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
             }
 
-            $permission = $this->permissionRepository->findByUuid($uuid);
-            return Response::ok($permission->toArray(), 'Permission updated successfully')->send();
+            $permission = $this->permissionRepository->findRecordByUuid($uuid);
+            return Response::ok($permission, 'Permission updated successfully')->send();
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -176,14 +177,14 @@ class PermissionController
 
             $deleted = $this->permissionService->deletePermission($uuid, $force);
             if (!$deleted) {
-                return Response::error('Failed to delete permission', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+                return Response::error('Failed to delete permission', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
             }
 
             return Response::ok(null, 'Permission deleted successfully')->send();
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -204,11 +205,11 @@ class PermissionController
             if (empty($data['user_uuid'])) {
                 return Response::error(
                     'User UUID is required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
-            $permission = $this->permissionRepository->findByUuid($permissionUuid);
+            $permission = $this->permissionRepository->findRecordByUuid($permissionUuid);
             if (!$permission) {
                 throw new NotFoundException('Permission not found');
             }
@@ -222,22 +223,22 @@ class PermissionController
 
             $assigned = $this->permissionService->assignPermissionToUser(
                 $data['user_uuid'],
-                $permission->getSlug(),
+                $permission['slug'],
                 $resource,
                 $options
             );
 
             if (!$assigned) {
-                return Response::error('Failed to assign permission', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+                return Response::error('Failed to assign permission', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
             }
 
             return Response::ok(null, 'Permission assigned successfully')->send();
         } catch (NotFoundException $e) {
             return Response::notFound($e->getMessage())->send();
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -258,25 +259,25 @@ class PermissionController
             if (empty($data['user_uuid'])) {
                 return Response::error(
                     'User UUID is required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
-            $permission = $this->permissionRepository->findByUuid($permissionUuid);
+            $permission = $this->permissionRepository->findRecordByUuid($permissionUuid);
             if (!$permission) {
                 throw new NotFoundException('Permission not found');
             }
 
             $revoked = $this->permissionService->revokePermissionFromUser(
                 $data['user_uuid'],
-                $permission->getSlug()
+                $permission['slug']
             );
 
             return Response::ok(['revoked' => $revoked], 'Permission revocation processed')->send();
         } catch (NotFoundException $e) {
             return Response::notFound($e->getMessage())->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -295,7 +296,7 @@ class PermissionController
             if (empty($data['user_uuid']) || empty($data['permissions'])) {
                 return Response::error(
                     'User UUID and permissions array are required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
@@ -308,7 +309,7 @@ class PermissionController
 
             return Response::ok($results, 'Batch permission assignment completed')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -327,7 +328,7 @@ class PermissionController
             if (empty($data['user_uuid']) || empty($data['permission_slugs'])) {
                 return Response::error(
                     'User UUID and permission_slugs array are required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
@@ -338,7 +339,7 @@ class PermissionController
 
             return Response::ok($results, 'Batch permission revocation completed')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -365,7 +366,7 @@ class PermissionController
 
             return Response::ok($permissions, 'User direct permissions retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -390,7 +391,7 @@ class PermissionController
 
             return Response::ok($permissions, 'User effective permissions retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -409,7 +410,7 @@ class PermissionController
             if (empty($data['user_uuid']) || empty($data['permission'])) {
                 return Response::error(
                     'User UUID and permission are required',
-                    Response::HTTP_BAD_REQUEST
+                    ErrorCodes::BAD_REQUEST
                 )->send();
             }
 
@@ -427,7 +428,7 @@ class PermissionController
                 'resource' => $data['resource'] ?? '*'
             ], 'Permission check completed')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -474,7 +475,7 @@ class PermissionController
 
             return Response::ok($stats, 'Permission statistics retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -492,7 +493,7 @@ class PermissionController
 
             return Response::ok($results, "Cleaned up {$results['cleaned']} expired permissions")->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -515,7 +516,7 @@ class PermissionController
 
             return Response::ok($categoryList, 'Permission categories retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 
@@ -538,7 +539,7 @@ class PermissionController
 
             return Response::ok($typeList, 'Resource types retrieved successfully')->send();
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
     }
 }

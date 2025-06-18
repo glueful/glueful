@@ -8,6 +8,7 @@ use Glueful\Console\Command;
 use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Security\SecurityManager;
 use Glueful\Helpers\{DatabaseConnectionTrait};
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Security Management Command
@@ -2106,7 +2107,10 @@ HELP;
             'json' => $this->generateJsonReport($data),
             'csv' => $this->generateCsvReport($data),
             'txt' => $this->generateTextReport($data),
-            default => throw new \InvalidArgumentException("Unsupported format: $format")
+            default => throw BusinessLogicException::operationNotAllowed(
+                'report_generation',
+                "Unsupported format: $format"
+            )
         };
     }
 

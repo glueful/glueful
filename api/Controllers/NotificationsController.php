@@ -12,6 +12,7 @@ use Glueful\Notifications\Services\ChannelManager;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Logging\AuditLogger;
+use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /**
@@ -217,12 +218,12 @@ class NotificationsController extends BaseController
 
         // Check if notification exists
         if (!$notification) {
-            return Response::error('Notification not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Notification not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Check if notification belongs to the user
         if ($notification->getNotifiableId() !== $user->uuid) {
-            return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Forbidden', ErrorCodes::FORBIDDEN)->send();
         }
 
         return Response::ok($notification, 'Notification retrieved successfully')->send();
@@ -245,12 +246,12 @@ class NotificationsController extends BaseController
 
         // Check if notification exists
         if (!$notification) {
-            return Response::error('Notification not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Notification not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Check if notification belongs to the user
         if ($notification->getNotifiableId() !== $user->uuid) {
-            return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Forbidden', ErrorCodes::FORBIDDEN)->send();
         }
 
         // Mark as read
@@ -290,12 +291,12 @@ class NotificationsController extends BaseController
 
         // Check if notification exists
         if (!$notification) {
-            return Response::error('Notification not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Notification not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Check if notification belongs to the user
         if ($notification->getNotifiableId() !== $user->uuid) {
-            return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Forbidden', ErrorCodes::FORBIDDEN)->send();
         }
 
         // Mark as unread
@@ -379,7 +380,7 @@ class NotificationsController extends BaseController
 
         if (!isset($data['notification_type']) || !isset($data['channels'])) {
             $errorMsg = 'Notification type and channels are required';
-            return Response::error($errorMsg, Response::HTTP_BAD_REQUEST)->send();
+            return Response::error($errorMsg, ErrorCodes::BAD_REQUEST)->send();
         }
 
         // Create notifiable from user
@@ -417,19 +418,19 @@ class NotificationsController extends BaseController
 
         // Check if notification exists
         if (!$notification) {
-            return Response::error('Notification not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Notification not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Check if notification belongs to the user
         if ($notification->getNotifiableId() !== $user->uuid) {
-            return Response::error('Forbidden', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Forbidden', ErrorCodes::FORBIDDEN)->send();
         }
 
         // Delete notification using UUID-based method
         $success = $this->notificationService->getRepository()->deleteNotificationByUuid($notification->getUuid());
 
         if (!$success) {
-            return Response::error('Failed to delete notification', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::error('Failed to delete notification', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
         }
 
         // Invalidate user's notifications cache
@@ -482,7 +483,7 @@ class NotificationsController extends BaseController
         $this->rateLimitMethod('getChannelMetrics', ['attempts' => 10, 'window' => 60]);
 
         if (!isset($params['channel'])) {
-            return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Channel parameter is required', ErrorCodes::BAD_REQUEST)->send();
         }
 
         $channelName = $params['channel'];
@@ -495,7 +496,7 @@ class NotificationsController extends BaseController
             $errorMsg = "Channel '{$channelName}' not found or not available";
             return Response::error(
                 $errorMsg,
-                Response::HTTP_NOT_FOUND
+                ErrorCodes::NOT_FOUND
             )->send();
         }
 
@@ -523,7 +524,7 @@ class NotificationsController extends BaseController
         $this->rateLimitMethod('resetChannelMetrics', ['attempts' => 5, 'window' => 60]);
 
         if (!isset($params['channel'])) {
-            return Response::error('Channel parameter is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Channel parameter is required', ErrorCodes::BAD_REQUEST)->send();
         }
 
         $channelName = $params['channel'];
@@ -536,7 +537,7 @@ class NotificationsController extends BaseController
             $errorMsg = "Channel '{$channelName}' not found or not available";
             return Response::error(
                 $errorMsg,
-                Response::HTTP_NOT_FOUND
+                ErrorCodes::NOT_FOUND
             )->send();
         }
 
@@ -546,7 +547,7 @@ class NotificationsController extends BaseController
         if (!$success) {
             return Response::error(
                 "Failed to reset metrics for channel '{$channelName}'",
-                Response::HTTP_INTERNAL_SERVER_ERROR
+                ErrorCodes::INTERNAL_SERVER_ERROR
             )->send();
         }
 

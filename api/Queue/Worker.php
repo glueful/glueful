@@ -5,6 +5,7 @@ namespace Glueful\Queue;
 use Glueful\Queue\Contracts\JobInterface;
 use Glueful\Queue\Monitoring\WorkerMonitor;
 use Glueful\Helpers\Utils;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Queue Worker
@@ -428,7 +429,10 @@ class Worker
      */
     public function handleTimeout(int $signal): void
     {
-        throw new \Exception('Job exceeded timeout limit');
+        throw BusinessLogicException::operationNotAllowed(
+            'job_execution',
+            'Job exceeded timeout limit'
+        );
     }
 
     /**

@@ -430,8 +430,7 @@ class UserRoleRepository extends BaseRepository
         }
 
         $query = $this->db->select($this->table, $this->defaultFields)
-            ->whereIn('user_uuid', $userUuids)
-            ->whereNull('deleted_at');
+            ->whereIn('user_uuid', $userUuids);
 
         // Apply scope filters if provided
         if (!empty($scope)) {

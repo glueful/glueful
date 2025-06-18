@@ -5,6 +5,8 @@ namespace Glueful\Queue;
 use Glueful\Queue\Contracts\JobInterface;
 use Glueful\Queue\Contracts\QueueDriverInterface;
 use Glueful\Helpers\Utils;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Base Job Class
@@ -413,11 +415,17 @@ abstract class Job implements JobInterface
         $props = unserialize($data);
 
         if (!is_array($props) || !isset($props['class'])) {
-            throw new \Exception('Invalid serialized job data');
+            throw BusinessLogicException::operationNotAllowed(
+                'job_deserialization',
+                'Invalid serialized job data'
+            );
         }
 
         if (!class_exists($props['class'])) {
-            throw new \Exception("Job class '{$props['class']}' not found");
+            throw BusinessLogicException::operationNotAllowed(
+                'job_instantiation',
+                "Job class '{$props['class']}' not found"
+            );
         }
 
         $instance = new $props['class']($props['payload']['data'] ?? []);
@@ -439,7 +447,10 @@ abstract class Job implements JobInterface
     public static function fromArray(array $data): self
     {
         if (!isset($data['job']) || !class_exists($data['job'])) {
-            throw new \Exception("Job class '{$data['job']}' not found");
+            throw BusinessLogicException::operationNotAllowed(
+                'job_instantiation',
+                "Job class '{$data['job']}' not found"
+            );
         }
 
         $instance = new $data['job']($data['data'] ?? []);

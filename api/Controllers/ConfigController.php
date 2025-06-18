@@ -8,7 +8,9 @@ use Glueful\Helpers\ConfigManager;
 use Glueful\Logging\AuditEvent;
 use Glueful\Cache\CacheEngine;
 use Glueful\Exceptions\SecurityException;
-use InvalidArgumentException;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Constants\ErrorCodes;
+use Glueful\Helpers\ValidationHelper;
 
 class ConfigController extends BaseController
 {
@@ -149,7 +151,10 @@ class ConfigController extends BaseController
         $config = include $realPath;
 
         if (!is_array($config)) {
-            throw new InvalidArgumentException("Config file {$file} must return an array");
+            throw BusinessLogicException::operationNotAllowed(
+                'load_config',
+                "Config file {$file} must return an array"
+            );
         }
 
         return $config;
@@ -812,7 +817,15 @@ class ConfigController extends BaseController
      */
     private function validateConfigName(string $name): bool
     {
-        return preg_match('/^[a-zA-Z0-9_-]+$/', $name) === 1;
+        try {
+            ValidationHelper::validateLength($name, 1, 50, 'config_name');
+            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $name)) {
+                return false;
+            }
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**
@@ -820,7 +833,15 @@ class ConfigController extends BaseController
      */
     private function validateConfigKey(string $key): bool
     {
-        return preg_match('/^[a-z0-9_.-]+$/', $key) === 1;
+        try {
+            ValidationHelper::validateLength($key, 1, 100, 'config_key');
+            if (!preg_match('/^[a-z0-9_.-]+$/', $key)) {
+                return false;
+            }
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**

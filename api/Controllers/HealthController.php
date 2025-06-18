@@ -9,6 +9,7 @@ use Glueful\Services\HealthService;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Logging\AuditLogger;
+use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request;
 
 class HealthController extends BaseController
@@ -64,7 +65,7 @@ class HealthController extends BaseController
             if ($health['status'] === 'error') {
                 return [
                     'error' => true,
-                    'status' => Response::HTTP_SERVICE_UNAVAILABLE,
+                    'status' => ErrorCodes::SERVICE_UNAVAILABLE,
                     'message' => 'System health check failed',
                     'data' => $health
                 ];
@@ -72,7 +73,7 @@ class HealthController extends BaseController
 
             return [
                 'error' => false,
-                'status' => Response::HTTP_OK,
+                'status' => ErrorCodes::SUCCESS,
                 'message' => 'System health check completed',
                 'data' => $health
             ];
@@ -104,7 +105,7 @@ class HealthController extends BaseController
         if ($health['status'] === 'error') {
             return Response::error(
                 'Database health check failed',
-                Response::HTTP_SERVICE_UNAVAILABLE,
+                ErrorCodes::SERVICE_UNAVAILABLE,
                 null,
                 null,
                 $health
@@ -126,7 +127,7 @@ class HealthController extends BaseController
         if ($health['status'] === 'error') {
             return Response::error(
                 'Cache health check failed',
-                Response::HTTP_SERVICE_UNAVAILABLE,
+                ErrorCodes::SERVICE_UNAVAILABLE,
                 null,
                 null,
                 $health

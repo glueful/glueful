@@ -8,10 +8,13 @@ use Glueful\Http\Response;
 use Glueful\Repository\UserRepository;
 use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Exceptions\NotFoundException;
+use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Auth\TokenStorageService;
 use Glueful\Database\RawExpression;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Logging\AuditEvent;
+use Glueful\Constants\ErrorCodes;
+use Glueful\Helpers\ValidationHelper;
 
 /**
  * UsersController
@@ -1265,76 +1268,63 @@ class UsersController extends BaseController
      */
     private function validateUserInput(array $data, string $operation): array
     {
-        $errors = [];
-
-        // Required fields for creation
+        $rules = [];
+        // Define validation rules based on operation
         if ($operation === 'create') {
-            if (empty($data['username'])) {
-                $errors[] = 'Username is required';
-            }
-            if (empty($data['email'])) {
-                $errors[] = 'Email is required';
-            }
-            if (empty($data['password'])) {
-                $errors[] = 'Password is required';
-            }
+            $rules = [
+                'username' => [
+                    'required' => true,
+                    'type' => 'string',
+                    'min_length' => 3,
+                    'max_length' => 50,
+                    'pattern' => '/^[a-zA-Z0-9_.-]+$/'
+                ],
+                'email' => [
+                    'required' => true,
+                    'type' => 'email',
+                    'max_length' => 255
+                ],
+                'password' => [
+                    'required' => true,
+                    'type' => 'string',
+                    'min_length' => 8,
+                    'max_length' => 255,
+                    'pattern' => '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/'
+                ],
+                'status' => [
+                    'allowed' => ['active', 'inactive', 'suspended', 'pending']
+                ]
+            ];
+        } else {
+            $rules = [
+                'username' => [
+                    'type' => 'string',
+                    'min_length' => 3,
+                    'max_length' => 50,
+                    'pattern' => '/^[a-zA-Z0-9_.-]+$/'
+                ],
+                'email' => [
+                    'type' => 'email',
+                    'max_length' => 255
+                ],
+                'password' => [
+                    'type' => 'string',
+                    'min_length' => 8,
+                    'max_length' => 255,
+                    'pattern' => '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/'
+                ],
+                'status' => [
+                    'allowed' => ['active', 'inactive', 'suspended', 'pending']
+                ]
+            ];
         }
 
-        // Username validation
-        if (isset($data['username'])) {
-            if (strlen($data['username']) < 3) {
-                $errors[] = 'Username must be at least 3 characters';
-            }
-            if (strlen($data['username']) > 50) {
-                $errors[] = 'Username cannot exceed 50 characters';
-            }
-            if (!preg_match('/^[a-zA-Z0-9_.-]+$/', $data['username'])) {
-                $errors[] = 'Username can only contain letters, numbers, dots, hyphens, and underscores';
-            }
+        try {
+            ValidationHelper::validateAndSanitize($data, $rules);
+            return []; // No errors
+        } catch (\Glueful\Exceptions\ValidationException $e) {
+            return array_values($e->getErrors());
         }
-
-        // Email validation
-        if (isset($data['email'])) {
-            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                $errors[] = 'Invalid email format';
-            }
-            if (strlen($data['email']) > 255) {
-                $errors[] = 'Email cannot exceed 255 characters';
-            }
-        }
-
-        // Password validation
-        if (isset($data['password'])) {
-            if (strlen($data['password']) < 8) {
-                $errors[] = 'Password must be at least 8 characters';
-            }
-            if (strlen($data['password']) > 255) {
-                $errors[] = 'Password cannot exceed 255 characters';
-            }
-            if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/', $data['password'])) {
-                $errors[] = 'Password must contain at least one lowercase letter, one uppercase letter, and one number';
-            }
-        }
-
-        // Status validation
-        if (isset($data['status'])) {
-            $validStatuses = ['active', 'inactive', 'suspended', 'pending'];
-            if (!in_array($data['status'], $validStatuses)) {
-                $errors[] = 'Invalid status. Must be one of: ' . implode(', ', $validStatuses);
-            }
-        }
-
-        // Profile validation
-        if (isset($data['profile']) && is_array($data['profile'])) {
-            if (isset($data['profile']['first_name']) && strlen($data['profile']['first_name']) > 100) {
-                $errors[] = 'First name cannot exceed 100 characters';
-            }
-            if (isset($data['profile']['last_name']) && strlen($data['profile']['last_name']) > 100) {
-                $errors[] = 'Last name cannot exceed 100 characters';
-            }
-        }
-
-        return $errors;
     }
 
     /**
@@ -1395,6 +1385,9 @@ class UsersController extends BaseController
         }
 
         // This should not happen in practice, but provides type safety
-        throw new \RuntimeException('UserRepository not available');
+        throw BusinessLogicException::operationNotAllowed(
+            'access_repository',
+            'UserRepository not available'
+        );
     }
 }

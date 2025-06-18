@@ -7,6 +7,8 @@ use Glueful\Queue\Registry\DriverRegistry;
 use Glueful\Queue\Plugins\PluginManager;
 use Glueful\Queue\Exceptions\DriverNotFoundException;
 use Glueful\Queue\Exceptions\InvalidConfigurationException;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Queue Manager
@@ -408,13 +410,19 @@ class QueueManager
     public static function fromConfigFile(string $configPath): self
     {
         if (!file_exists($configPath)) {
-            throw new \Exception("Queue configuration file not found: {$configPath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'queue_configuration',
+                "Queue configuration file not found: {$configPath}"
+            );
         }
 
         $config = require $configPath;
 
         if (!is_array($config)) {
-            throw new \Exception("Queue configuration must return an array");
+            throw BusinessLogicException::operationNotAllowed(
+                'queue_configuration',
+                'Queue configuration must return an array'
+            );
         }
 
         return new self($config);

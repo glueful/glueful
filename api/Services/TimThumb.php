@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Glueful\ImageProcessing;
 
-use RuntimeException;
-use InvalidArgumentException;
 use GdImage;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * TimThumb Image Processor
@@ -49,7 +49,7 @@ final class TimThumb implements ImageProcessorInterface
      *
      * @param array $config Configuration options
      * @param CacheInterface|null $cache Optional cache implementation
-     * @throws InvalidArgumentException If configuration is invalid
+     * @throws \Glueful\Exceptions\BusinessLogicException If configuration is invalid
      */
     public function __construct(
         private readonly array $config,
@@ -83,7 +83,10 @@ final class TimThumb implements ImageProcessorInterface
         $required = ['maxWidth', 'maxHeight', 'quality'];
         foreach ($required as $key) {
             if (!isset($this->config[$key])) {
-                throw new InvalidArgumentException("Missing required config: {$key}");
+                throw BusinessLogicException::operationNotAllowed(
+                    'config_validation',
+                    "Missing required config: {$key}"
+                );
             }
         }
     }
@@ -117,11 +120,17 @@ final class TimThumb implements ImageProcessorInterface
         $cacheDir = $this->config['cacheDir'] ?? sys_get_temp_dir() . '/timthumb-cache';
 
         if (!is_dir($cacheDir) && !mkdir($cacheDir, 0755, true)) {
-            throw new RuntimeException("Failed to create cache directory: $cacheDir");
+            throw BusinessLogicException::operationNotAllowed(
+                'cache_setup',
+                "Failed to create cache directory: $cacheDir"
+            );
         }
 
         if (!is_writable($cacheDir)) {
-            throw new RuntimeException("Cache directory is not writable: $cacheDir");
+            throw BusinessLogicException::operationNotAllowed(
+                'cache_setup',
+                "Cache directory is not writable: $cacheDir"
+            );
         }
 
         $this->cacheDirectory = $cacheDir;
@@ -140,7 +149,7 @@ final class TimThumb implements ImageProcessorInterface
      *
      * @param string $source Image source path or URL
      * @return bool True if processing successful
-     * @throws RuntimeException On processing failure
+     * @throws \Glueful\Exceptions\BusinessLogicException On processing failure
      */
     public function processImage(string $source): bool
     {
@@ -160,11 +169,17 @@ final class TimThumb implements ImageProcessorInterface
     private function validateSource(): bool
     {
         if (strlen($this->source) < 3) {
-            throw new InvalidArgumentException("Invalid source image specified");
+            throw BusinessLogicException::operationNotAllowed(
+                'image_validation',
+                'Invalid source image specified'
+            );
         }
 
         if ($this->isExternalSource() && !$this->config['allowExternal']) {
-            throw new RuntimeException("External images are not allowed");
+            throw BusinessLogicException::operationNotAllowed(
+                'external_image_processing',
+                'External images are not allowed'
+            );
         }
 
         return true;
@@ -205,7 +220,10 @@ final class TimThumb implements ImageProcessorInterface
     {
         $path = $this->getLocalImagePath($this->source);
         if (!$path || !is_readable($path)) {
-            throw new RuntimeException("Cannot read local image");
+            throw BusinessLogicException::operationNotAllowed(
+                'image_processing',
+                'Cannot read local image'
+            );
         }
 
         return $this->createImage($path);
@@ -215,14 +233,20 @@ final class TimThumb implements ImageProcessorInterface
     {
         $mime = $this->getMimeType($path);
         if (!in_array($mime, self::ALLOWED_MIME_TYPES)) {
-            throw new RuntimeException("Invalid image type");
+            throw BusinessLogicException::operationNotAllowed(
+                'image_processing',
+                'Invalid image type'
+            );
         }
 
         return match ($mime) {
             'image/jpeg' => imagecreatefromjpeg($path),
             'image/png' => $this->createPngImage($path),
             'image/gif' => imagecreatefromgif($path),
-            default => throw new RuntimeException("Unsupported image type")
+            default => throw BusinessLogicException::operationNotAllowed(
+                'image_processing',
+                'Unsupported image type'
+            )
         };
     }
 
@@ -230,7 +254,10 @@ final class TimThumb implements ImageProcessorInterface
     {
         $image = imagecreatefrompng($path);
         if (!$image) {
-            throw new RuntimeException("Failed to create PNG image");
+            throw DatabaseException::queryFailed(
+                'CREATE',
+                'Failed to create PNG image'
+            );
         }
 
         imagealphablending($image, true);
@@ -250,7 +277,10 @@ final class TimThumb implements ImageProcessorInterface
         // Create new image
         $resized = imagecreatetruecolor($width, $height);
         if (!$resized) {
-            throw new RuntimeException("Failed to create resized image");
+            throw DatabaseException::queryFailed(
+                'CREATE',
+                'Failed to create resized image'
+            );
         }
 
         // Handle transparency
@@ -324,13 +354,16 @@ final class TimThumb implements ImageProcessorInterface
      *
      * Sends image to browser with appropriate headers.
      *
-     * @throws RuntimeException If no cached image exists
+     * @throws \Glueful\Exceptions\BusinessLogicException If no cached image exists
      */
     public function outputImage(): void
     {
         $data = $this->cache->get($this->getCacheKey());
         if (!$data) {
-            throw new RuntimeException("No cached image found");
+            throw BusinessLogicException::operationNotAllowed(
+                'cache_access',
+                'No cached image found'
+            );
         }
 
         $this->sendHeaders();
@@ -377,7 +410,7 @@ final class TimThumb implements ImageProcessorInterface
      * Downloads and processes remote images securely.
      *
      * @return GdImage|null Image resource or null on failure
-     * @throws RuntimeException On download/processing failure
+     * @throws \Glueful\Exceptions\BusinessLogicException On download/processing failure
      */
     private function loadExternalImage(): ?GdImage
     {
@@ -397,7 +430,10 @@ final class TimThumb implements ImageProcessorInterface
 
             $content = file_get_contents($this->source, false, $context);
             if ($content === false) {
-                throw new RuntimeException("Failed to download external image");
+                throw BusinessLogicException::operationNotAllowed(
+                    'external_image_download',
+                    'Failed to download external image'
+                );
             }
 
             file_put_contents($tempFile, $content);
@@ -408,7 +444,10 @@ final class TimThumb implements ImageProcessorInterface
             if (file_exists($tempFile)) {
                 unlink($tempFile);
             }
-            throw new RuntimeException("Failed to process external image: " . $e->getMessage());
+            throw BusinessLogicException::operationNotAllowed(
+                'external_image_processing',
+                'Failed to process external image: ' . $e->getMessage()
+            );
         }
     }
 
@@ -429,7 +468,10 @@ final class TimThumb implements ImageProcessorInterface
             return realpath($fullPath);
         }
 
-        throw new RuntimeException("Image file not found: $src");
+        throw BusinessLogicException::operationNotAllowed(
+            'image_processing',
+            "Image file not found: $src"
+        );
     }
 
     private function getDocumentRoot(): string
@@ -447,11 +489,17 @@ final class TimThumb implements ImageProcessorInterface
         $info = @getimagesize($path);
 
         if ($info === false) {
-            throw new RuntimeException("Could not determine image type");
+            throw BusinessLogicException::operationNotAllowed(
+                'image_processing',
+                'Could not determine image type'
+            );
         }
 
         if (!isset($info['mime'])) {
-            throw new RuntimeException("Missing MIME type information");
+            throw BusinessLogicException::operationNotAllowed(
+                'image_processing',
+                'Missing MIME type information'
+            );
         }
 
         return $info['mime'];

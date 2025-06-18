@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Database;
 
 use PDO;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * PooledConnection
@@ -79,7 +80,7 @@ class PooledConnection
     {
         // Check if connection is healthy
         if (!$this->isHealthy) {
-            throw new \Exception('Connection is marked as unhealthy');
+            throw DatabaseException::connectionFailed('Connection is marked as unhealthy');
         }
 
         // Update usage statistics

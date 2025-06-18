@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\EmailNotification;
 
 use Glueful\Notifications\Contracts\Notifiable;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Email Formatter
@@ -375,13 +376,19 @@ class EmailFormatter
 
         // Make sure templates directory exists
         if (!file_exists($templatesPath)) {
-            throw new \RuntimeException("Email templates directory not found: {$templatesPath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'email_template_loading',
+                "Email templates directory not found: {$templatesPath}"
+            );
         }
 
         // First register the default template (required)
         $defaultTemplatePath = $templatesPath . '/default.html';
         if (!file_exists($defaultTemplatePath)) {
-            throw new \RuntimeException("Default email template not found: {$defaultTemplatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'email_template_loading',
+                "Default email template not found: {$defaultTemplatePath}"
+            );
         }
 
         $this->templates['default'] = $defaultTemplatePath;

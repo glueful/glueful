@@ -8,6 +8,8 @@ use Glueful\Queue\Contracts\DriverInfo;
 use Glueful\Queue\Contracts\HealthStatus;
 use Glueful\Queue\Jobs\RedisJob;
 use Glueful\Helpers\Utils;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Redis Queue Driver
@@ -84,7 +86,10 @@ class RedisQueue implements QueueDriverInterface
     public function initialize(array $config): void
     {
         if (!extension_loaded('redis')) {
-            throw new \Exception('Redis extension is required for RedisQueue driver');
+            throw BusinessLogicException::operationNotAllowed(
+                'redis_queue_setup',
+                'Redis extension is required for RedisQueue driver'
+            );
         }
 
         $this->redis = new \Redis();
@@ -102,13 +107,17 @@ class RedisQueue implements QueueDriverInterface
         }
 
         if (!$connected) {
-            throw new \Exception("Failed to connect to Redis server at {$host}:{$port}");
+            throw DatabaseException::connectionFailed(
+                "Failed to connect to Redis server at {$host}:{$port}"
+            );
         }
 
         // Authenticate if password provided
         if (!empty($config['password'])) {
             if (!$this->redis->auth($config['password'])) {
-                throw new \Exception('Redis authentication failed');
+                throw DatabaseException::connectionFailed(
+                    'Redis authentication failed'
+                );
             }
         }
 

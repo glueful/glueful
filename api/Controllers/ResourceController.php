@@ -8,6 +8,7 @@ use Glueful\Http\Response;
 use Glueful\Auth\PasswordHasher;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Logging\AuditEvent;
+use Glueful\Constants\ErrorCodes;
 
 /**
  * ResourceController - Performance-First CRUD API
@@ -154,7 +155,7 @@ class ResourceController extends BaseController
         );
 
         if (!$result) {
-            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Apply optional ownership validation
@@ -196,7 +197,7 @@ class ResourceController extends BaseController
         $this->requireLowRiskBehavior();
 
         if (empty($postData)) {
-            return Response::error('No data provided', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('No data provided', ErrorCodes::BAD_REQUEST)->send();
         }
 
         // check if postData contains 'password' and hash it
@@ -256,7 +257,7 @@ class ResourceController extends BaseController
         $existing = $repository->find($uuid);
 
         if (!$existing) {
-            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Apply optional ownership validation
@@ -275,7 +276,7 @@ class ResourceController extends BaseController
         $success = $repository->update($params['uuid'], $updateData);
 
         if (!$success) {
-            return Response::error('Record not found or update failed', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Record not found or update failed', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Invalidate cache after update
@@ -324,7 +325,7 @@ class ResourceController extends BaseController
         $existing = $repository->find($uuid);
 
         if (!$existing) {
-            return Response::error('Record not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Apply optional ownership validation
@@ -333,7 +334,7 @@ class ResourceController extends BaseController
         $success = $repository->delete($params['uuid']);
 
         if (!$success) {
-            return Response::error('Record not found or delete failed', Response::HTTP_NOT_FOUND)->send();
+            return Response::error('Record not found or delete failed', ErrorCodes::NOT_FOUND)->send();
         }
 
         // Invalidate cache after deletion

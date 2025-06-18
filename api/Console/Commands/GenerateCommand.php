@@ -3,6 +3,8 @@
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Code Generation Command System
@@ -292,13 +294,19 @@ class GenerateCommand extends Command
         }
 
         if (file_exists($filePath) && !$force) {
-            throw new \RuntimeException("Controller file already exists: {$fileName}. Use --force to overwrite.");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Controller file already exists: {$fileName}. Use --force to overwrite."
+            );
         }
 
         $content = $this->generateControllerContent($controllerName, $resource, $api);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write controller file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Failed to write controller file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -312,7 +320,10 @@ class GenerateCommand extends Command
         $templatePath = __DIR__ . '/../Templates/Generate/controller.php.tpl';
 
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Controller template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Controller template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);
@@ -461,13 +472,19 @@ PHP;
         }
 
         if (file_exists($filePath) && !$force) {
-            throw new \RuntimeException("Model file already exists: {$fileName}. Use --force to overwrite.");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Model file already exists: {$fileName}. Use --force to overwrite."
+            );
         }
 
         $content = $this->generateModelContent($modelName);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write model file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Failed to write model file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -487,13 +504,19 @@ PHP;
         }
 
         if (file_exists($filePath) && !$force) {
-            throw new \RuntimeException("Middleware file already exists: {$fileName}. Use --force to overwrite.");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Middleware file already exists: {$fileName}. Use --force to overwrite."
+            );
         }
 
         $content = $this->generateMiddlewareContent($middlewareName);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write middleware file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Failed to write middleware file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -513,13 +536,19 @@ PHP;
         }
 
         if (file_exists($filePath) && !$force) {
-            throw new \RuntimeException("Service file already exists: {$fileName}. Use --force to overwrite.");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Service file already exists: {$fileName}. Use --force to overwrite."
+            );
         }
 
         $content = $this->generateServiceContent($serviceName);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write service file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Failed to write service file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -539,13 +568,19 @@ PHP;
         }
 
         if (file_exists($filePath) && !$force) {
-            throw new \RuntimeException("Repository file already exists: {$fileName}. Use --force to overwrite.");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Repository file already exists: {$fileName}. Use --force to overwrite."
+            );
         }
 
         $content = $this->generateRepositoryContent($repositoryName);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write repository file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Failed to write repository file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -559,7 +594,10 @@ PHP;
         $templatePath = __DIR__ . '/../Templates/Generate/model.php.tpl';
 
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Model template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Model template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);
@@ -586,7 +624,10 @@ PHP;
         $templatePath = __DIR__ . '/../Templates/Generate/middleware.php.tpl';
 
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Middleware template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Middleware template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);
@@ -610,7 +651,10 @@ PHP;
         $templatePath = __DIR__ . '/../Templates/Generate/service.php.tpl';
 
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Service template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Service template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);
@@ -643,7 +687,10 @@ PHP;
         $templatePath = __DIR__ . '/../Templates/Generate/repository.php.tpl';
 
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Repository template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'code_generation',
+                "Repository template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);

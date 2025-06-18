@@ -9,7 +9,8 @@ use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
 use Glueful\Helpers\ExtensionsManager;
-use RuntimeException;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Database Migration Manager
@@ -64,7 +65,7 @@ class MigrationManager
      *
      * @param string|null $migrationsPath Custom path to migrations directory
      * @param ExtensionsManager|null $extensionsManager Extensions manager instance
-     * @throws RuntimeException If database connection fails
+     * @throws \Glueful\Exceptions\DatabaseException If database connection fails
      */
     public function __construct(?string $migrationsPath = null, ?ExtensionsManager $extensionsManager = null)
     {
@@ -251,14 +252,20 @@ class MigrationManager
         if (!class_exists($fullClassName)) {
             // Fall back to non-namespaced class if namespace detection failed
             if (!class_exists($className)) {
-                throw new RuntimeException("Migration class $className not found in $file");
+                throw DatabaseException::queryFailed(
+                    'MIGRATION_ERROR',
+                    "Migration class $className not found in $file"
+                );
             }
             $fullClassName = $className;
         }
 
         $migration = new $fullClassName();
         if (!$migration instanceof MigrationInterface) {
-            throw new RuntimeException("Migration $fullClassName must implement MigrationInterface");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_validation',
+                "Migration $fullClassName must implement MigrationInterface"
+            );
         }
 
         $filename = basename($file);
@@ -427,12 +434,18 @@ class MigrationManager
         $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
 
         if (!class_exists($className)) {
-            throw new RuntimeException("Migration class $className not found in $file");
+            throw DatabaseException::queryFailed(
+                'MIGRATION_ERROR',
+                "Migration class $className not found in $file"
+            );
         }
 
         $migration = new $className();
         if (!$migration instanceof MigrationInterface) {
-            throw new RuntimeException("Migration $className must implement MigrationInterface");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_validation',
+                "Migration $className must implement MigrationInterface"
+            );
         }
 
         try {

@@ -13,7 +13,8 @@ use Glueful\Database\Schema\PostgreSQLSchemaManager;
 use Glueful\Database\Schema\SQLiteSchemaManager;
 use Glueful\Database\ConnectionPoolManager;
 use Glueful\Database\PooledConnection;
-use Exception;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Database Connection Manager
@@ -80,7 +81,7 @@ class Connection
      * 4. Initialize driver and schema manager
      *
      * @param array $config Optional configuration override
-     * @throws Exception On connection failure or invalid configuration
+     * @throws \Glueful\Exceptions\DatabaseException On connection failure or invalid configuration
      */
     public function __construct(array $config = [])
     {
@@ -109,7 +110,7 @@ class Connection
      *
      * @param string $engine Target database engine
      * @return PDO Configured PDO instance
-     * @throws Exception On connection failure or invalid credentials
+     * @throws \Glueful\Exceptions\DatabaseException On connection failure or invalid credentials
      */
     /**
      * Load database configuration
@@ -170,7 +171,7 @@ class Connection
      * @param string $engine Database engine type
      * @param array $config Engine-specific configuration
      * @return string Formatted DSN string
-     * @throws Exception For unsupported engines
+     * @throws \Glueful\Exceptions\BusinessLogicException For unsupported engines
      */
     private function buildDSN(string $engine, array $config): string
     {
@@ -191,7 +192,10 @@ class Connection
                 $config['schema'] ?? 'public'
             ),
             'sqlite' => $this->prepareSQLiteDSN($config['primary']),
-            default => throw new Exception("Unsupported database engine: {$engine}"),
+            default => throw BusinessLogicException::operationNotAllowed(
+                'database_connection',
+                "Unsupported database engine: {$engine}"
+            ),
         };
     }
 
@@ -205,7 +209,7 @@ class Connection
      *
      * @param string $dbPath Target database file path
      * @return string SQLite connection string
-     * @throws Exception If path is invalid or inaccessible
+     * @throws \Glueful\Exceptions\BusinessLogicException If path is invalid or inaccessible
      */
     private function prepareSQLiteDSN(string $dbPath): string
     {
@@ -221,7 +225,7 @@ class Connection
      *
      * @param string $engine Target database engine
      * @return DatabaseDriver Initialized driver instance
-     * @throws Exception For unsupported engines
+     * @throws \Glueful\Exceptions\BusinessLogicException For unsupported engines
      */
     private function resolveDriver(string $engine): DatabaseDriver
     {
@@ -229,7 +233,10 @@ class Connection
             'mysql' => new MySQLDriver(),
             'pgsql' => new PostgreSQLDriver(),
             'sqlite' => new SQLiteDriver(),
-            default => throw new Exception("Unsupported database engine: {$engine}"),
+            default => throw BusinessLogicException::operationNotAllowed(
+                'database_connection',
+                "Unsupported database engine: {$engine}"
+            ),
         };
     }
 
@@ -241,7 +248,7 @@ class Connection
      *
      * @param string $engine Target database engine
      * @return SchemaManager Initialized schema manager
-     * @throws Exception For unsupported engines
+     * @throws \Glueful\Exceptions\BusinessLogicException For unsupported engines
      */
     private function resolveSchemaManager(string $engine): SchemaManager
     {
@@ -249,7 +256,10 @@ class Connection
             'mysql' => new MySQLSchemaManager($this->getPDO()),
             'pgsql' => new PostgreSQLSchemaManager($this->getPDO()),
             'sqlite' => new SQLiteSchemaManager($this->getPDO()),
-            default => throw new Exception("Unsupported database engine: {$engine}"),
+            default => throw BusinessLogicException::operationNotAllowed(
+                'database_connection',
+                "Unsupported database engine: {$engine}"
+            ),
         };
     }
 
@@ -260,7 +270,7 @@ class Connection
      * PDO connection is available.
      *
      * @return SchemaManager Current schema manager
-     * @throws Exception If schema manager initialization fails
+     * @throws \Glueful\Exceptions\DatabaseException If schema manager initialization fails
      */
     public function getSchemaManager(): SchemaManager
     {
@@ -278,7 +288,7 @@ class Connection
      * otherwise falls back to legacy connection.
      *
      * @return PDO Active database connection
-     * @throws Exception If connection lost
+     * @throws \Glueful\Exceptions\DatabaseException If connection lost
      */
     public function getPDO(): PDO
     {
@@ -310,7 +320,7 @@ class Connection
      * Returns engine-specific driver instance.
      *
      * @return DatabaseDriver Active database driver
-     * @throws Exception If driver not initialized
+     * @throws \Glueful\Exceptions\DatabaseException If driver not initialized
      */
     public function getDriver(): DatabaseDriver
     {

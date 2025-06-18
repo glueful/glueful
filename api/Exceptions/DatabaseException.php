@@ -80,4 +80,57 @@ class DatabaseException extends ApiException
             $previous
         );
     }
+
+    /**
+     * Create exception for record creation failures
+     *
+     * @param string $table Table name
+     * @param \Throwable|null $previous Previous exception
+     * @return self
+     */
+    public static function createFailed(string $table, ?\Throwable $previous = null): self
+    {
+        return new self(
+            "Failed to create record in {$table}",
+            500,
+            ['create_error' => true, 'table' => $table],
+            $previous
+        );
+    }
+
+    /**
+     * Create exception for record update failures
+     *
+     * @param string $table Table name
+     * @param string $identifier Record identifier
+     * @param \Throwable|null $previous Previous exception
+     * @return self
+     */
+    public static function updateFailed(string $table, string $identifier, ?\Throwable $previous = null): self
+    {
+        return new self(
+            "Failed to update record in {$table}: {$identifier}",
+            500,
+            ['update_error' => true, 'table' => $table, 'identifier' => $identifier],
+            $previous
+        );
+    }
+
+    /**
+     * Create exception for record deletion failures
+     *
+     * @param string $table Table name
+     * @param string $identifier Record identifier
+     * @param \Throwable|null $previous Previous exception
+     * @return self
+     */
+    public static function deleteFailed(string $table, string $identifier, ?\Throwable $previous = null): self
+    {
+        return new self(
+            "Failed to delete record from {$table}: {$identifier}",
+            500,
+            ['delete_error' => true, 'table' => $table, 'identifier' => $identifier],
+            $previous
+        );
+    }
 }

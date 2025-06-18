@@ -12,6 +12,8 @@ use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Logging\{AuditLogger, AuditEvent};
 use Glueful\Permissions\Exceptions\UnauthorizedException;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /**
@@ -408,7 +410,10 @@ class FilesController extends BaseController
                 'status' => $fileInfo['status'] ?? 'active'
             ],
             'download', 'inline', 'image' => $this->processFileServing($fileInfo, $type, $params),
-            default => throw new \InvalidArgumentException('Invalid file retrieval type')
+            default => throw BusinessLogicException::operationNotAllowed(
+                'file_retrieval',
+                'Invalid file retrieval type'
+            )
         };
     }
 

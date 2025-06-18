@@ -15,6 +15,9 @@ use Glueful\Services\Archive\DTOs\ArchiveSummary;
 use Glueful\Services\Archive\DTOs\ExportResult;
 use Glueful\Services\Archive\DTOs\ArchiveFile;
 use Glueful\Helpers\Utils;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Constants\ErrorCodes;
 
 /**
  * Archive Service Implementation
@@ -91,7 +94,10 @@ class ArchiveService implements ArchiveServiceInterface
 
             // 6. Verify archive
             if (!$this->verifyArchive($archiveUuid)) {
-                throw new \Exception('Archive verification failed');
+                throw BusinessLogicException::operationNotAllowed(
+                    'archive_verification',
+                    'Archive verification failed'
+                );
             }
 
             // 7. Delete original data
@@ -610,25 +616,37 @@ class ArchiveService implements ArchiveServiceInterface
             // Get archive metadata from database
             $archive = $this->getArchiveRecord($archiveUuid);
             if (!$archive) {
-                throw new \Exception("Archive {$archiveUuid} not found");
+                throw BusinessLogicException::operationNotAllowed(
+                    'archive_restore',
+                    "Archive {$archiveUuid} not found"
+                );
             }
 
             // Check if file exists
             if (!file_exists($archive['file_path'])) {
-                throw new \Exception("Archive file not found: {$archive['file_path']}");
+                throw BusinessLogicException::operationNotAllowed(
+                    'archive_restore',
+                    "Archive file not found: {$archive['file_path']}"
+                );
             }
 
             // Read the archive file
             $fileData = file_get_contents($archive['file_path']);
             if ($fileData === false) {
-                throw new \Exception("Failed to read archive file: {$archive['file_path']}");
+                throw DatabaseException::queryFailed(
+                    'READ',
+                    "Failed to read archive file: {$archive['file_path']}"
+                );
             }
 
             // Verify checksum if configured
             if ($this->config['verify_checksums']) {
                 $currentChecksum = hash('sha256', $fileData);
                 if ($currentChecksum !== $archive['checksum_sha256']) {
-                    throw new \Exception("Archive file corrupted - checksum mismatch");
+                    throw BusinessLogicException::operationNotAllowed(
+                        'archive_restore',
+                        'Archive file corrupted - checksum mismatch'
+                    );
                 }
             }
 

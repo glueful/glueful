@@ -3,6 +3,7 @@
 namespace Glueful\Queue\Jobs;
 
 use Glueful\Queue\Job;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Send Notification Job
@@ -121,7 +122,10 @@ class SendNotification extends Job
         $this->logNotificationResult($data['type'], $data, $parsedResult, $parsedResult['success']);
 
         if (!$parsedResult['success']) {
-            throw new \Exception($parsedResult['message'] ?? 'Failed to send notification');
+            throw BusinessLogicException::operationNotAllowed(
+                'notification_sending',
+                $parsedResult['message'] ?? 'Failed to send notification'
+            );
         }
     }
 

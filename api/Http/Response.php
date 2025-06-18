@@ -2,6 +2,8 @@
 
 namespace Glueful\Http;
 
+use Glueful\Constants\ErrorCodes;
+
 /**
  * API Response Handler
  *
@@ -10,18 +12,19 @@ namespace Glueful\Http;
  */
 class Response
 {
-    public const HTTP_OK = 200;
-    public const HTTP_CREATED = 201;
-    public const HTTP_NO_CONTENT = 204;
-    public const HTTP_BAD_REQUEST = 400;
-    public const HTTP_UNAUTHORIZED = 401;
-    public const HTTP_FORBIDDEN = 403;
-    public const HTTP_NOT_FOUND = 404;
-    public const HTTP_METHOD_NOT_ALLOWED = 405;
-    public const HTTP_UNPROCESSABLE_ENTITY = 422;
-    public const HTTP_TOO_MANY_REQUESTS = 429;
-    public const HTTP_SERVICE_UNAVAILABLE = 503;
-    public const HTTP_INTERNAL_SERVER_ERROR = 500;
+    // HTTP status codes - use ErrorCodes constants for consistency
+    public const HTTP_OK = ErrorCodes::SUCCESS;
+    public const HTTP_CREATED = ErrorCodes::CREATED;
+    public const HTTP_NO_CONTENT = ErrorCodes::NO_CONTENT;
+    public const HTTP_BAD_REQUEST = ErrorCodes::BAD_REQUEST;
+    public const HTTP_UNAUTHORIZED = ErrorCodes::UNAUTHORIZED;
+    public const HTTP_FORBIDDEN = ErrorCodes::FORBIDDEN;
+    public const HTTP_NOT_FOUND = ErrorCodes::NOT_FOUND;
+    public const HTTP_METHOD_NOT_ALLOWED = ErrorCodes::METHOD_NOT_ALLOWED;
+    public const HTTP_UNPROCESSABLE_ENTITY = ErrorCodes::VALIDATION_ERROR;
+    public const HTTP_TOO_MANY_REQUESTS = ErrorCodes::RATE_LIMIT_EXCEEDED;
+    public const HTTP_SERVICE_UNAVAILABLE = ErrorCodes::SERVICE_UNAVAILABLE;
+    public const HTTP_INTERNAL_SERVER_ERROR = ErrorCodes::INTERNAL_SERVER_ERROR;
 
     // Error type constants for standardized error handling
     public const ERROR_VALIDATION = 'VALIDATION_ERROR';
@@ -166,11 +169,11 @@ class Response
     private static function getErrorTypeFromStatus(int $statusCode): string
     {
         return match ($statusCode) {
-            400, 422 => self::ERROR_VALIDATION,
-            401 => self::ERROR_AUTHENTICATION,
-            403 => self::ERROR_AUTHORIZATION,
-            404 => self::ERROR_NOT_FOUND,
-            429 => self::ERROR_RATE_LIMIT,
+            ErrorCodes::BAD_REQUEST, ErrorCodes::VALIDATION_ERROR => self::ERROR_VALIDATION,
+            ErrorCodes::UNAUTHORIZED => self::ERROR_AUTHENTICATION,
+            ErrorCodes::FORBIDDEN => self::ERROR_AUTHORIZATION,
+            ErrorCodes::NOT_FOUND => self::ERROR_NOT_FOUND,
+            ErrorCodes::RATE_LIMIT_EXCEEDED => self::ERROR_RATE_LIMIT,
             413, 415 => self::ERROR_SECURITY,
             default => self::ERROR_SERVER
         };
