@@ -5,6 +5,7 @@ namespace Glueful\Console\Commands;
 use Glueful\Console\Command;
 use Glueful\Database\Migrations\MigrationManager;
 use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Comprehensive Migration Management System
@@ -506,7 +507,10 @@ class MigrateCommand extends Command
 
         $templatePath = __DIR__ . '/../Templates/Migrations/migration.php.tpl';
         if (!file_exists($templatePath)) {
-            throw new \RuntimeException("Migration template not found: {$templatePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_creation',
+                "Migration template not found: {$templatePath}"
+            );
         }
 
         $template = file_get_contents($templatePath);
@@ -529,11 +533,17 @@ class MigrateCommand extends Command
         }
 
         if (file_exists($filePath)) {
-            throw new \RuntimeException("Migration file already exists: {$fileName}");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_creation',
+                "Migration file already exists: {$fileName}"
+            );
         }
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write migration file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_creation',
+                "Failed to write migration file: {$filePath}"
+            );
         }
 
         return $filePath;
@@ -679,13 +689,19 @@ class MigrateCommand extends Command
         }
 
         if (file_exists($filePath)) {
-            throw new \RuntimeException("Seeder file already exists: {$fileName}");
+            throw BusinessLogicException::operationNotAllowed(
+                'seeder_creation',
+                "Seeder file already exists: {$fileName}"
+            );
         }
 
         $content = $this->generateSeederContent($seederName);
 
         if (file_put_contents($filePath, $content) === false) {
-            throw new \RuntimeException("Failed to write seeder file: {$filePath}");
+            throw BusinessLogicException::operationNotAllowed(
+                'seeder_creation',
+                "Failed to write seeder file: {$filePath}"
+            );
         }
 
         return $filePath;

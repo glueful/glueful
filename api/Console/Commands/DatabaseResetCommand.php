@@ -3,7 +3,6 @@
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Connection;
 
 /**
@@ -95,7 +94,7 @@ HELP;
      * - Provides operation feedback
      *
      * @param array $args Command line arguments
-     * @throws \RuntimeException If reset operation fails
+     * @throws \Glueful\Exceptions\BusinessLogicException If reset operation fails
      * @return int Status code, 0 for success, non-zero for errors
      */
     public function execute(array $args = []): int

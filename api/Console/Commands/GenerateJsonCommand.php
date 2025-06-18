@@ -105,7 +105,7 @@ HELP;
      * - Handles errors
      *
      * @param array $args Command line arguments
-     * @throws \RuntimeException If generation fails
+     * @throws \Glueful\Exceptions\BusinessLogicException If generation fails
      * @return int Exit code (0 for success, non-zero for error)
      */
     public function execute(array $args = []): int

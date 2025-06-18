@@ -96,7 +96,7 @@ HELP;
      * - Handles connection errors
      *
      * @param array $args Command line arguments
-     * @throws \RuntimeException If database connection fails
+     * @throws \Glueful\Exceptions\BusinessLogicException If database connection fails
      * @return int Exit code (0 for success)
      */
     public function execute(array $args = []): int

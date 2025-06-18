@@ -9,6 +9,7 @@ use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Services\Archive\ArchiveServiceInterface;
 use Glueful\Services\Archive\DTOs\ArchiveSearchQuery;
 use Glueful\Services\Archive\ArchiveHealthChecker;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Archive Management Command
@@ -75,7 +76,10 @@ class ArchiveCommand extends Command
         try {
             $this->archiveService = $this->container->get(ArchiveServiceInterface::class);
         } catch (\Exception $e) {
-            throw new \RuntimeException('Archive service not available: ' . $e->getMessage());
+            throw BusinessLogicException::operationNotAllowed(
+                'archive_service_initialization',
+                'Archive service not available: ' . $e->getMessage()
+            );
         }
     }
 

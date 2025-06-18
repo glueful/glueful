@@ -8,6 +8,7 @@ use Glueful\Helpers\Utils;
 use Glueful\Services\HealthService;
 use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\Exceptions\BusinessLogicException;
 
 /**
  * Installation and Setup Command
@@ -409,7 +410,10 @@ HELP;
             ]);
 
             if (!$userId) {
-                throw new \RuntimeException('Failed to create admin user');
+                throw BusinessLogicException::operationNotAllowed(
+                    'admin_user_creation',
+                    'Failed to create admin user'
+                );
             }
 
             // Create profile for admin user
@@ -423,7 +427,10 @@ HELP;
             ]);
 
             if (!$profileId) {
-                throw new \RuntimeException('Failed to create admin profile');
+                throw BusinessLogicException::operationNotAllowed(
+                    'admin_profile_creation',
+                    'Failed to create admin profile'
+                );
             }
 
             // Note: Role assignment moved to RBAC extension
