@@ -738,4 +738,158 @@ class ExtensionsController extends BaseController
             $result['message']
         )->send();
     }
+
+    /**
+     * Get synchronized extensions catalog from GitHub
+     *
+     * Retrieves the GitHub extensions catalog and enriches it with local extension status,
+     * including installation and enablement information for each extension.
+     * Supports comprehensive filtering and search capabilities.
+     *
+     * @return mixed HTTP response
+     */
+    public function getCatalog(): mixed
+    {
+        // Check permission
+        $this->requirePermission('extensions.catalog.view');
+
+        // Apply rate limiting for catalog endpoint
+        $this->rateLimitMethod(null, [
+            'attempts' => 60,
+            'window' => 60,
+            'adaptive' => true
+        ]);
+
+        try {
+            // Build filters from query parameters
+            $filters = $this->buildCatalogFilters();
+
+            // Get cache preference
+            $useCache = $this->request->query->get('useCache', 'true');
+            $useCache = filter_var($useCache, FILTER_VALIDATE_BOOLEAN);
+
+            // Cache catalog data with permission-aware TTL
+            $cacheKey = 'extensions_catalog_' . md5(serialize($filters)) . '_' . ($useCache ? '1' : '0');
+            $catalogData = $this->cacheByPermission($cacheKey, function () use ($filters, $useCache) {
+                return ExtensionsManager::getSynchronizedCatalog($filters, $useCache);
+            }, 300); // 5 minutes TTL
+
+            // Log catalog access
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_SYSTEM,
+                'extensions_catalog_accessed',
+                AuditEvent::SEVERITY_INFO,
+                [
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'filters_applied' => count($filters),
+                    'results_count' => count($catalogData['extensions'] ?? []),
+                    'cache_used' => $useCache,
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
+            return Response::ok([
+                'data' => $catalogData,
+                'request_filters' => $filters,
+                'cache_used' => $useCache
+            ], 'Extensions catalog retrieved successfully')->send();
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            error_log("Extensions catalog API error: " . $e->getMessage());
+
+            // Log failed catalog access
+            $this->auditLogger->audit(
+                AuditEvent::CATEGORY_SYSTEM,
+                'extensions_catalog_error',
+                AuditEvent::SEVERITY_ERROR,
+                [
+                    'user_uuid' => $this->getCurrentUserUuid(),
+                    'error_message' => $e->getMessage(),
+                    'ip_address' => $this->request->getClientIp()
+                ]
+            );
+
+            return Response::error(
+                'Failed to retrieve extensions catalog',
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_VALIDATION,
+                'CATALOG_FETCH_ERROR',
+                ['message' => $e->getMessage()]
+            )->send();
+        }
+    }
+
+    /**
+     * Build catalog filters from request query parameters
+     *
+     * @return array Validated filters array
+     */
+    private function buildCatalogFilters(): array
+    {
+        $filters = [];
+
+        // Boolean filters
+        if ($this->request->query->has('installed')) {
+            $filters['installed'] = filter_var(
+                $this->request->query->get('installed'),
+                FILTER_VALIDATE_BOOLEAN
+            );
+        }
+
+        if ($this->request->query->has('enabled')) {
+            $filters['enabled'] = filter_var(
+                $this->request->query->get('enabled'),
+                FILTER_VALIDATE_BOOLEAN
+            );
+        }
+
+        // Status filter
+        if ($this->request->query->has('status')) {
+            $status = $this->request->query->get('status');
+            $validStatuses = ['available', 'active', 'inactive'];
+            if (in_array($status, $validStatuses)) {
+                $filters['status'] = $status;
+            }
+        }
+
+        // Tags filter (comma-separated)
+        if ($this->request->query->has('tags')) {
+            $tags = $this->request->query->get('tags');
+            if (is_string($tags) && !empty(trim($tags))) {
+                $filters['tags'] = array_map('trim', explode(',', $tags));
+                // Remove empty tags
+                $filters['tags'] = array_filter($filters['tags'], fn($tag) => !empty($tag));
+            }
+        }
+
+        // Search filter
+        if ($this->request->query->has('search')) {
+            $search = trim($this->request->query->get('search'));
+            if (!empty($search)) {
+                $filters['search'] = $search;
+            }
+        }
+
+        // Rating filter
+        if ($this->request->query->has('min_rating')) {
+            $minRating = $this->request->query->get('min_rating');
+            if (is_numeric($minRating)) {
+                $rating = (float) $minRating;
+                // Validate rating range (0-5)
+                if ($rating >= 0 && $rating <= 5) {
+                    $filters['min_rating'] = $rating;
+                }
+            }
+        }
+
+        // Publisher filter
+        if ($this->request->query->has('publisher')) {
+            $publisher = trim($this->request->query->get('publisher'));
+            if (!empty($publisher)) {
+                $filters['publisher'] = $publisher;
+            }
+        }
+
+        return $filters;
+    }
 }

@@ -549,7 +549,7 @@ LOCKDOWN_ENABLED=false
 2. **Add route with OpenAPI documentation**
    ```php
    // In routes/my-routes.php
-   use Glueful\Core\Router;
+   use Glueful\Http\Router;
    
    /**
     * @route POST /my-endpoint
@@ -677,7 +677,7 @@ Custom Router built on Symfony routing with PSR-15 middleware support.
 #### Basic Usage
 
 ```php
-use Glueful\Core\Router;
+use Glueful\Http\Router;
 
 // HTTP methods with controllers
 Router::get('/users/{id}', [UserController::class, 'show']);

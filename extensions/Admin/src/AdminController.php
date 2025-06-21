@@ -222,6 +222,64 @@ class AdminController
     }
 
     /**
+     * Load and render the Admin UI
+     *
+     * @return mixed HTML response with admin interface
+     */
+    public function adminUI(): mixed
+    {
+        try {
+            // Get the path to the admin HTML file
+            $htmlPath = __DIR__ . '/../public/index.html';
+
+            // Check if the file exists
+            if (!file_exists($htmlPath)) {
+                return Response::error(
+                    'Admin UI file not found',
+                    Response::HTTP_NOT_FOUND,
+                    Response::ERROR_NOT_FOUND,
+                    'ADMIN_UI_NOT_FOUND'
+                )->send();
+            }
+
+            // Read the HTML content
+            $htmlContent = file_get_contents($htmlPath);
+
+            if ($htmlContent === false) {
+                return Response::error(
+                    'Failed to load Admin UI',
+                    Response::HTTP_INTERNAL_SERVER_ERROR,
+                    Response::ERROR_SERVER,
+                    'ADMIN_UI_LOAD_FAILED'
+                )->send();
+            }
+
+            // Return HTML response with proper headers
+            $response = new \Symfony\Component\HttpFoundation\Response(
+                $htmlContent,
+                200,
+                [
+                    'Content-Type' => 'text/html; charset=UTF-8',
+                    'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                    'Pragma' => 'no-cache',
+                    'Expires' => '0'
+                ]
+            );
+
+            // Send the response directly to bypass any middleware that adds debug info
+            $response->send();
+            exit;
+        } catch (\Exception $e) {
+            return Response::error(
+                'Failed to render Admin UI: ' . $e->getMessage(),
+                Response::HTTP_INTERNAL_SERVER_ERROR,
+                Response::ERROR_SERVER,
+                'ADMIN_UI_RENDER_FAILED'
+            )->send();
+        }
+    }
+
+    /**
      * Get comprehensive dashboard data in a single request
      */
     public function getDashboardData(SymfonyRequest $request): mixed

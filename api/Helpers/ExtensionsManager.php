@@ -4664,4 +4664,424 @@ class ExtensionsManager
 
         return $config;
     }
+
+    /**
+     * Fetch extensions catalog from GitHub repository
+     *
+     * Retrieves the extension catalog data from the official Glueful catalog repository.
+     * This method provides access to the latest available extensions with their metadata,
+     * including versions, descriptions, download URLs, and compatibility information.
+     *
+     * @param int $timeout Request timeout in seconds (default: 30)
+     * @param bool $useCache Whether to use cached data if available (default: true)
+     * @return array|null Returns catalog data array on success, null on failure
+     * @throws \Exception When the request fails or returns invalid data
+     */
+    public static function fetchExtensionsCatalog(int $timeout = 30, bool $useCache = true): ?array
+    {
+        $catalogUrl = 'https://raw.githubusercontent.com/glueful/catalog/main/catalog.json';
+        $cacheKey = 'extensions_catalog';
+        $cacheTtl = 3600; // Cache for 1 hour
+
+        // Try to get from cache first if enabled
+        if ($useCache && function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            self::debug("Loading extensions catalog from cache");
+            return apcu_fetch($cacheKey) ?: null;
+        }
+
+        self::debug("Fetching extensions catalog from: {$catalogUrl}");
+
+        // Initialize cURL
+        $curl = curl_init();
+        if ($curl === false) {
+            self::debug("Failed to initialize cURL");
+            return null;
+        }
+
+        try {
+            // Configure cURL options
+            curl_setopt_array($curl, [
+                CURLOPT_URL => $catalogUrl,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 3,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_USERAGENT => 'Glueful-Framework/' . (config('app.version_full') ?? '1.0.0'),
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json',
+                    'Cache-Control: no-cache'
+                ]
+            ]);
+
+            // Execute request
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $error = curl_error($curl);
+
+            if ($response === false || !empty($error)) {
+                self::debug("cURL error: {$error}");
+                return null;
+            }
+
+            if ($httpCode !== 200) {
+                self::debug("HTTP error: {$httpCode}");
+                return null;
+            }
+
+            // Parse JSON response
+            $catalogData = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                self::debug("JSON decode error: " . json_last_error_msg());
+                return null;
+            }
+
+            // Validate catalog structure
+            if (
+                !is_array($catalogData) ||
+                !isset($catalogData['extensions']) ||
+                !is_array($catalogData['extensions'])
+            ) {
+                self::debug("Invalid catalog structure");
+                return null;
+            }
+
+            // Validate extension entries
+            foreach ($catalogData['extensions'] as $extension) {
+                if (!is_array($extension) || !isset($extension['name']) || !isset($extension['version'])) {
+                    self::debug("Invalid extension entry found in catalog");
+                    return null;
+                }
+            }
+
+            self::debug("Successfully fetched catalog with " . count($catalogData['extensions']) . " extensions");
+
+            // Cache the result if caching is enabled
+            if ($useCache && function_exists('apcu_store')) {
+                apcu_store($cacheKey, $catalogData, $cacheTtl);
+                self::debug("Cached catalog data for {$cacheTtl} seconds");
+            }
+
+            return $catalogData;
+        } catch (\Exception $e) {
+            self::debug("Exception while fetching catalog: " . $e->getMessage());
+            return null;
+        } finally {
+            curl_close($curl);
+        }
+    }
+
+    /**
+     * Get available extensions from catalog
+     *
+     * Returns a filtered list of extensions from the catalog, optionally
+     * filtered by tags, compatibility, or other criteria.
+     *
+     * @param array $filters Optional filters to apply
+     * @param bool $useCache Whether to use cached catalog data
+     * @return array Array of extension information
+     */
+    public static function getAvailableExtensions(array $filters = [], bool $useCache = true): array
+    {
+        $catalog = self::fetchExtensionsCatalog(30, $useCache);
+        if (!$catalog || !isset($catalog['extensions'])) {
+            return [];
+        }
+
+        $extensions = $catalog['extensions'];
+
+        // Apply filters if provided
+        if (!empty($filters)) {
+            $extensions = array_filter($extensions, function ($extension) use ($filters) {
+                // Filter by tags
+                if (isset($filters['tags']) && is_array($filters['tags'])) {
+                    $extensionTags = $extension['tags'] ?? [];
+                    if (!array_intersect($filters['tags'], $extensionTags)) {
+                        return false;
+                    }
+                }
+
+                // Filter by minimum rating
+                if (isset($filters['min_rating']) && is_numeric($filters['min_rating'])) {
+                    $rating = $extension['rating'] ?? 0;
+                    if ($rating < $filters['min_rating']) {
+                        return false;
+                    }
+                }
+
+                // Filter by publisher
+                if (isset($filters['publisher']) && is_string($filters['publisher'])) {
+                    $publisher = $extension['publisher'] ?? '';
+                    if (stripos($publisher, $filters['publisher']) === false) {
+                        return false;
+                    }
+                }
+
+                // Filter by search term
+                if (isset($filters['search']) && is_string($filters['search'])) {
+                    $searchTerm = strtolower($filters['search']);
+                    $searchableText = strtolower(
+                        ($extension['name'] ?? '') . ' ' .
+                        ($extension['displayName'] ?? '') . ' ' .
+                        ($extension['description'] ?? '') . ' ' .
+                        implode(' ', $extension['tags'] ?? [])
+                    );
+                    if (strpos($searchableText, $searchTerm) === false) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        return array_values($extensions);
+    }
+
+    /**
+     * Clear the extensions catalog cache
+     *
+     * Removes the cached catalog data, forcing a fresh fetch on the next request.
+     *
+     * @return bool True if cache was cleared successfully
+     */
+    public static function clearCatalogCache(): bool
+    {
+        $cacheKey = 'extensions_catalog';
+
+        if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            $result = apcu_delete($cacheKey);
+            self::debug($result ? "Catalog cache cleared successfully" : "Failed to clear catalog cache");
+            return $result;
+        }
+
+        return true; // No cache to clear
+    }
+
+    /**
+     * Get synchronized catalog data with local extension status
+     *
+     * Fetches the GitHub catalog and enriches each extension with local status information:
+     * - "installed": whether the extension files exist locally
+     * - "enabled": whether the extension is currently enabled
+     *
+     * This provides a complete view of available extensions and their local status,
+     * useful for extension management interfaces and API endpoints.
+     *
+     * @param array $filters Optional filters to apply to the catalog
+     * @param bool $useCache Whether to use cached catalog data
+     * @return array Enriched catalog data with local status information
+     */
+    public static function getSynchronizedCatalog(array $filters = [], bool $useCache = true): array
+    {
+        // Fetch the remote catalog
+        $catalog = self::fetchExtensionsCatalog(30, $useCache);
+        if (!$catalog || !isset($catalog['extensions'])) {
+            self::debug("Failed to fetch catalog or no extensions found");
+            return ['extensions' => [], 'metadata' => ['source' => 'empty', 'synchronized_at' => date('c')]];
+        }
+
+        // Get local extension configuration
+        $localConfig = self::loadExtensionsConfig();
+        $localExtensions = $localConfig['extensions'] ?? [];
+
+        self::debug("Synchronizing " . count($catalog['extensions']) . " catalog extensions with local status");
+
+        // Enrich each catalog extension with local status
+        $enrichedExtensions = [];
+        foreach ($catalog['extensions'] as $extension) {
+            $extensionName = $extension['name'] ?? '';
+
+            if (empty($extensionName)) {
+                self::debug("Skipping extension with empty name");
+                continue;
+            }
+
+            // Check if extension is installed (files exist locally)
+            $isInstalled = self::findExtension($extensionName, true) !== null;
+
+            // Check if extension is enabled in configuration
+            $isEnabled = self::isExtensionEnabled($extensionName);
+
+            // Get local metadata if available
+            $localMetadata = [];
+            if (isset($localExtensions[$extensionName])) {
+                $localMetadata = [
+                    'local_version' => $localExtensions[$extensionName]['version'] ?? null,
+                    'installed_at' => $localExtensions[$extensionName]['installed_at'] ?? null,
+                    'install_path' => $localExtensions[$extensionName]['install_path'] ?? null,
+                    'local_config' => $localExtensions[$extensionName] ?? []
+                ];
+            }
+
+            // Create enriched extension data
+            $enrichedExtension = array_merge($extension, [
+                'installed' => $isInstalled,
+                'enabled' => $isEnabled,
+                'local_metadata' => $localMetadata,
+                'status' => self::getExtensionStatusSummary($isInstalled, $isEnabled),
+                'actions_available' => self::getAvailableActions($extensionName, $isInstalled, $isEnabled)
+            ]);
+
+            $enrichedExtensions[] = $enrichedExtension;
+        }
+
+        // Apply filters if provided
+        if (!empty($filters)) {
+            $enrichedExtensions = array_filter($enrichedExtensions, function ($extension) use ($filters) {
+                // Filter by installation status
+                if (isset($filters['installed']) && is_bool($filters['installed'])) {
+                    if ($extension['installed'] !== $filters['installed']) {
+                        return false;
+                    }
+                }
+
+                // Filter by enabled status
+                if (isset($filters['enabled']) && is_bool($filters['enabled'])) {
+                    if ($extension['enabled'] !== $filters['enabled']) {
+                        return false;
+                    }
+                }
+
+                // Filter by status
+                if (isset($filters['status']) && is_string($filters['status'])) {
+                    if ($extension['status'] !== $filters['status']) {
+                        return false;
+                    }
+                }
+
+                // Apply other filters from parent method
+                return self::applyStandardFilters($extension, $filters);
+            });
+        }
+
+        // Generate metadata about the synchronization
+        $metadata = [
+            'source' => 'github_catalog',
+            'catalog_url' => 'https://raw.githubusercontent.com/glueful/catalog/main/catalog.json',
+            'synchronized_at' => date('c'),
+            'total_available' => count($catalog['extensions']),
+            'total_after_filters' => count($enrichedExtensions),
+            'summary' => [
+                'installed' => count(array_filter($enrichedExtensions, fn($ext) => $ext['installed'])),
+                'enabled' => count(array_filter($enrichedExtensions, fn($ext) => $ext['enabled'])),
+                'available_for_install' => count(array_filter($enrichedExtensions, fn($ext) => !$ext['installed'])),
+                'disabled' => count(array_filter(
+                    $enrichedExtensions,
+                    fn($ext) => $ext['installed'] && !$ext['enabled']
+                ))
+            ]
+        ];
+
+        self::debug("Synchronization complete: " . json_encode($metadata['summary']));
+
+        return [
+            'extensions' => array_values($enrichedExtensions),
+            'metadata' => $metadata
+        ];
+    }
+
+    /**
+     * Get extension status summary
+     *
+     * @param bool $isInstalled Whether the extension is installed
+     * @param bool $isEnabled Whether the extension is enabled
+     * @return string Status summary
+     */
+    private static function getExtensionStatusSummary(bool $isInstalled, bool $isEnabled): string
+    {
+        if (!$isInstalled) {
+            return 'available';
+        }
+
+        if ($isEnabled) {
+            return 'active';
+        }
+
+        return 'inactive';
+    }
+
+    /**
+     * Get available actions for an extension
+     *
+     * @param string $extensionName Extension name
+     * @param bool $isInstalled Whether the extension is installed
+     * @param bool $isEnabled Whether the extension is enabled
+     * @return array List of available actions
+     */
+    private static function getAvailableActions(string $extensionName, bool $isInstalled, bool $isEnabled): array
+    {
+        $actions = [];
+
+        if (!$isInstalled) {
+            $actions[] = 'install';
+        } else {
+            if ($isEnabled) {
+                $actions[] = 'disable';
+                $actions[] = 'uninstall';
+                $actions[] = 'update';
+            } else {
+                $actions[] = 'enable';
+                $actions[] = 'uninstall';
+                $actions[] = 'update';
+            }
+        }
+
+        $actions[] = 'view_details';
+        $actions[] = 'view_readme';
+
+        return $actions;
+    }
+
+    /**
+     * Apply standard catalog filters
+     *
+     * @param array $extension Extension data
+     * @param array $filters Filters to apply
+     * @return bool Whether the extension passes the filters
+     */
+    private static function applyStandardFilters(array $extension, array $filters): bool
+    {
+        // Filter by tags
+        if (isset($filters['tags']) && is_array($filters['tags'])) {
+            $extensionTags = $extension['tags'] ?? [];
+            if (!array_intersect($filters['tags'], $extensionTags)) {
+                return false;
+            }
+        }
+
+        // Filter by minimum rating
+        if (isset($filters['min_rating']) && is_numeric($filters['min_rating'])) {
+            $rating = $extension['rating'] ?? 0;
+            if ($rating < $filters['min_rating']) {
+                return false;
+            }
+        }
+
+        // Filter by publisher
+        if (isset($filters['publisher']) && is_string($filters['publisher'])) {
+            $publisher = $extension['publisher'] ?? '';
+            if (stripos($publisher, $filters['publisher']) === false) {
+                return false;
+            }
+        }
+
+        // Filter by search term
+        if (isset($filters['search']) && is_string($filters['search'])) {
+            $searchTerm = strtolower($filters['search']);
+            $searchableText = strtolower(
+                ($extension['name'] ?? '') . ' ' .
+                ($extension['displayName'] ?? '') . ' ' .
+                ($extension['description'] ?? '') . ' ' .
+                implode(' ', $extension['tags'] ?? [])
+            );
+            if (strpos($searchableText, $searchTerm) === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

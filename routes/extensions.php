@@ -41,6 +41,69 @@ Router::group('/extensions', function () use ($container) {
     });
 
     /**
+     * @route GET /extensions/catalog
+     * @tag Extensions Management
+     * @summary Get synchronized extensions catalog
+     * @description Retrieves the GitHub extensions catalog synchronized with local extension status,
+     * including installation and enablement status for each extension
+     * @requiresAuth true
+     * @param installed query boolean false "Filter by installation status"
+     * @param enabled query boolean false "Filter by enabled status"
+     * @param status query string false "Filter by status: available, active, inactive"
+     * @param tags query array false "Filter by tags (comma-separated)"
+     * @param search query string false "Search in name, description, and tags"
+     * @param min_rating query number false "Minimum rating filter"
+     * @param publisher query string false "Filter by publisher"
+     * @param useCache query boolean false "Whether to use cached catalog data (default: true)"
+     * @response 200 application/json "Extensions catalog retrieved successfully" {
+     *   data:object={
+     *     extensions:array=[{
+     *       name:string="Extension name",
+     *       displayName:string="Extension display name",
+     *       version:string="Extension version",
+     *       publisher:string="Extension publisher",
+     *       description:string="Extension description",
+     *       repository:string="Repository URL",
+     *       downloadUrl:string="Download URL",
+     *       icon:string="Icon URL",
+     *       readme:string="README URL",
+     *       tags:array=[string]="Extension tags",
+     *       rating:number="Extension rating",
+     *       downloads:integer="Download count",
+     *       lastUpdated:string="Last update timestamp",
+     *       installed:boolean="Whether extension is installed locally",
+     *       enabled:boolean="Whether extension is enabled",
+     *       status:string="Extension status (available, active, inactive)",
+     *       local_metadata:object="Local extension metadata if installed",
+     *       actions_available:array=[string]="Available actions for this extension"
+     *     }],
+     *     metadata:object={
+     *       source:string="Data source (github_catalog)",
+     *       catalog_url:string="Catalog URL",
+     *       synchronized_at:string="Synchronization timestamp",
+     *       total_available:integer="Total extensions in catalog",
+     *       total_after_filters:integer="Extensions after applying filters",
+     *       summary:object={
+     *         installed:integer="Number of installed extensions",
+     *         enabled:integer="Number of enabled extensions",
+     *         available_for_install:integer="Extensions available for installation",
+     *         disabled:integer="Installed but disabled extensions"
+     *       }
+     *     }
+     *   },
+     *   request_filters:object="Applied filters",
+     *   cache_used:boolean="Whether cache was used"
+     * }
+     * @response 400 application/json "Invalid filter parameters"
+     * @response 403 application/json "Permission denied"
+     * @response 500 application/json "Failed to fetch catalog or server error"
+     */
+    Router::get('/catalog', function (Request $request) use ($container) {
+        $controller = $container->get(ExtensionsController::class);
+        return $controller->getCatalog();
+    });
+
+    /**
      * @route POST /extensions/enable
      * @tag Extensions
      * @summary Enable extension
