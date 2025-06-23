@@ -23,6 +23,10 @@ use Glueful\Auth\SessionCacheManager;
 use Glueful\Auth\SessionTransaction;
 use Glueful\Auth\AuthenticationService;
 use Symfony\Component\HttpFoundation\Request;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
 
 /**
  * Core Service Provider
@@ -33,6 +37,26 @@ class CoreServiceProvider implements ServiceProviderInterface
 {
     public function register(ContainerInterface $container): void
     {
+        // Logging services
+        $container->singleton(LoggerInterface::class, function () {
+            if (env('APP_ENV') === 'testing') {
+                return new NullLogger();
+            }
+
+            $logger = new Logger('glueful');
+            $logLevel = Logger::toMonologLevel('info');
+
+            if (env('APP_DEBUG', false)) {
+                $logLevel = Logger::toMonologLevel('debug');
+            }
+
+            $logPath = dirname(__DIR__, 3) . '/storage/logs/app-' . date('Y-m-d') . '.log';
+            $handler = new StreamHandler($logPath, $logLevel);
+            $logger->pushHandler($handler);
+
+            return $logger;
+        });
+
         // Database services
         $container->singleton(Connection::class, function ($container) {
             return new Connection();

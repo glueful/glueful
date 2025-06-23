@@ -184,21 +184,137 @@ return [
     */
 
     'workers' => [
+        /*
+        |----------------------------------------------------------------------
+        | Process Management (Symfony Process)
+        |----------------------------------------------------------------------
+        | Modern multi-worker process management using Symfony Process.
+        | This is the new default for queue worker management.
+        */
+        'process' => [
+            'enabled' => env('QUEUE_PROCESS_ENABLED', true), // Default to enabled
+            'default_workers' => env('QUEUE_DEFAULT_WORKERS', 2),
+            'max_workers_global' => env('QUEUE_MAX_WORKERS_GLOBAL', 50),
+            'max_workers_per_queue' => env('QUEUE_MAX_WORKERS', 10),
+            'restart_delay' => env('QUEUE_RESTART_DELAY', 5),
+            'health_check_interval' => env('QUEUE_HEALTH_CHECK_INTERVAL', 30),
+            'worker_timeout' => env('QUEUE_WORKER_TIMEOUT', 300),
+            'graceful_shutdown_timeout' => env('QUEUE_GRACEFUL_SHUTDOWN_TIMEOUT', 30),
+            'heartbeat_interval' => env('QUEUE_HEARTBEAT_INTERVAL', 15),
+            'max_restarts_per_hour' => env('QUEUE_MAX_RESTARTS_PER_HOUR', 10),
+        ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Auto-scaling Configuration
+        |----------------------------------------------------------------------
+        | Intelligent scaling based on queue load, schedule, and resources.
+        */
         'auto_scaling' => [
             'enabled' => env('QUEUE_AUTO_SCALING', false),
-            'min_workers' => env('QUEUE_MIN_WORKERS', 1),
-            'max_workers' => env('QUEUE_MAX_WORKERS', 10),
+            'check_interval' => env('QUEUE_SCALE_CHECK_INTERVAL', 60),
             'scale_up_threshold' => env('QUEUE_SCALE_UP_THRESHOLD', 100),
             'scale_down_threshold' => env('QUEUE_SCALE_DOWN_THRESHOLD', 10),
-            'scale_cooldown' => env('QUEUE_SCALE_COOLDOWN', 300), // 5 minutes
-            'evaluation_period' => 60, // seconds
+            'scale_up_step' => env('QUEUE_SCALE_UP_STEP', 2),
+            'scale_down_step' => env('QUEUE_SCALE_DOWN_STEP', 1),
+            'cooldown_period' => env('QUEUE_SCALE_COOLDOWN', 300), // 5 minutes
         ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Queue-Specific Worker Configuration
+        |----------------------------------------------------------------------
+        | Per-queue worker settings for fine-tuned control.
+        */
+        'queues' => [
+            'default' => [
+                'workers' => env('DEFAULT_QUEUE_WORKERS', 2),
+                'max_workers' => env('DEFAULT_QUEUE_MAX_WORKERS', 5),
+                'priority' => 1,
+                'memory_limit' => env('DEFAULT_QUEUE_MEMORY', 128), // MB
+                'timeout' => env('DEFAULT_QUEUE_TIMEOUT', 60), // seconds
+                'max_jobs' => env('DEFAULT_QUEUE_MAX_JOBS', 1000),
+                'auto_scale' => true,
+            ],
+            'high' => [
+                'workers' => env('HIGH_QUEUE_WORKERS', 3),
+                'max_workers' => env('HIGH_QUEUE_MAX_WORKERS', 8),
+                'priority' => 10,
+                'memory_limit' => env('HIGH_QUEUE_MEMORY', 256), // MB
+                'timeout' => env('HIGH_QUEUE_TIMEOUT', 30), // seconds
+                'max_jobs' => env('HIGH_QUEUE_MAX_JOBS', 500),
+                'auto_scale' => true,
+            ],
+            'emails' => [
+                'workers' => env('EMAIL_QUEUE_WORKERS', 2),
+                'max_workers' => env('EMAIL_QUEUE_MAX_WORKERS', 4),
+                'priority' => 5,
+                'memory_limit' => env('EMAIL_QUEUE_MEMORY', 64), // MB
+                'timeout' => env('EMAIL_QUEUE_TIMEOUT', 120), // seconds
+                'max_jobs' => env('EMAIL_QUEUE_MAX_JOBS', 2000),
+                'auto_scale' => false,
+            ],
+            'reports' => [
+                'workers' => env('REPORTS_QUEUE_WORKERS', 1),
+                'max_workers' => env('REPORTS_QUEUE_MAX_WORKERS', 2),
+                'priority' => 2,
+                'memory_limit' => env('REPORTS_QUEUE_MEMORY', 512), // MB
+                'timeout' => env('REPORTS_QUEUE_TIMEOUT', 600), // 10 minutes
+                'max_jobs' => env('REPORTS_QUEUE_MAX_JOBS', 50),
+                'auto_scale' => false,
+            ],
+        ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Resource Monitoring & Limits
+        |----------------------------------------------------------------------
+        | System resource monitoring for scaling decisions.
+        */
         'resource_limits' => [
             'memory_limit' => env('QUEUE_WORKER_MEMORY_LIMIT', '512M'),
             'time_limit' => env('QUEUE_WORKER_TIME_LIMIT', 3600), // 1 hour
             'job_timeout' => env('QUEUE_JOB_TIMEOUT', 300), // 5 minutes
             'max_jobs_per_worker' => env('QUEUE_MAX_JOBS_PER_WORKER', 1000),
+            'worker_memory_mb' => env('QUEUE_WORKER_MEMORY_MB', 128),
+            'worker_cpu_percent' => env('QUEUE_WORKER_CPU_PERCENT', 10),
         ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Resource Monitoring Thresholds
+        |----------------------------------------------------------------------
+        | Thresholds for resource-aware scaling decisions.
+        */
+        'resource_thresholds' => [
+            'memory' => [
+                'warning' => env('QUEUE_MEMORY_WARNING', 75),
+                'critical' => env('QUEUE_MEMORY_CRITICAL', 90),
+                'scale_limit' => env('QUEUE_MEMORY_SCALE_LIMIT', 85),
+            ],
+            'cpu' => [
+                'warning' => env('QUEUE_CPU_WARNING', 70),
+                'critical' => env('QUEUE_CPU_CRITICAL', 90),
+                'scale_limit' => env('QUEUE_CPU_SCALE_LIMIT', 80),
+            ],
+            'disk' => [
+                'warning' => env('QUEUE_DISK_WARNING', 80),
+                'critical' => env('QUEUE_DISK_CRITICAL', 95),
+                'scale_limit' => env('QUEUE_DISK_SCALE_LIMIT', 90),
+            ],
+            'load' => [
+                'warning' => env('QUEUE_LOAD_WARNING', 2.0),
+                'critical' => env('QUEUE_LOAD_CRITICAL', 4.0),
+                'scale_limit' => env('QUEUE_LOAD_SCALE_LIMIT', 3.0),
+            ],
+        ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Performance Settings
+        |----------------------------------------------------------------------
+        | Worker performance and behavior configuration.
+        */
         'performance' => [
             'sleep_seconds' => env('QUEUE_WORKER_SLEEP', 3),
             'max_tries' => env('QUEUE_MAX_TRIES', 3),
@@ -206,6 +322,13 @@ return [
             'backoff_base' => env('QUEUE_BACKOFF_BASE', 2),
             'max_backoff' => env('QUEUE_MAX_BACKOFF', 3600), // 1 hour
         ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Legacy Supervisor Support
+        |----------------------------------------------------------------------
+        | Legacy supervisor configuration (use process management instead).
+        */
         'supervisor' => [
             'enabled' => env('QUEUE_SUPERVISOR_ENABLED', false),
             'config_path' => env('QUEUE_SUPERVISOR_CONFIG', '/etc/supervisor/conf.d/'),

@@ -68,7 +68,8 @@
         "psr/simple-cache": "^3.0",
         "symfony/filesystem": "^7.3",
         "symfony/finder": "^7.3",
-        "symfony/event-dispatcher": "^7.3"
+        "symfony/event-dispatcher": "^7.3",
+        "symfony/process": "^7.3"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.5",

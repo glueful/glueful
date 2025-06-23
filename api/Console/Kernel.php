@@ -73,7 +73,9 @@ class Kernel
             \Glueful\Console\Commands\ConfigProductionCommand::class,
             \Glueful\Console\Commands\SecurityCommand::class,
             \Glueful\Console\Commands\ArchiveCommand::class,
+            // Queue Commands (Process-based)
             \Glueful\Console\Commands\Queue\QueueCommand::class,
+            \Glueful\Console\Commands\Queue\AutoScaleCommand::class,
         ]);
     }
 
