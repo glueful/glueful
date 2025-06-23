@@ -55,6 +55,18 @@ return [
     'ttl' => env('CACHE_TTL', 3600),
     'lock_ttl' => env('CACHE_LOCK_TTL', 60),
 
+    // Cache stampede protection settings
+    'stampede_protection' => [
+        'enabled' => env('CACHE_STAMPEDE_PROTECTION', false),
+        'lock_ttl' => env('CACHE_STAMPEDE_LOCK_TTL', 60),
+        'max_wait_time' => env('CACHE_STAMPEDE_MAX_WAIT', 30),
+        'retry_interval' => env('CACHE_STAMPEDE_RETRY_INTERVAL', 100000), // microseconds
+        'early_expiration' => [
+            'enabled' => env('CACHE_EARLY_EXPIRATION', false),
+            'threshold' => env('CACHE_EARLY_EXPIRATION_THRESHOLD', 0.8), // 80% of TTL
+        ],
+    ],
+
     // Cache tag settings
     'enable_tags' => env('CACHE_TAGS', true),
     'tags_store' => 'redis',

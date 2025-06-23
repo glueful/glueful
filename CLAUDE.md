@@ -643,23 +643,29 @@ class UserRepository extends BaseRepository {
 
 ### Working with Cache
 
-CacheEngine supports Redis, Memcached, file-based caching, plus CDN/edge cache integration.
+CacheStore provides PSR-16 compliant caching with Redis, Memcached, file-based caching, plus CDN/edge cache integration.
 
 #### Basic Cache Operations
 
 ```php
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 
-// Basic operations
-CacheEngine::set('user:123', $userData, 3600); // TTL in seconds
-$userData = CacheEngine::get('user:123');
-CacheEngine::delete('user:123');
-CacheEngine::increment('page_views', 1);
+// Get cache instance via DI container
+$cache = container()->get(CacheStore::class);
+
+// Basic PSR-16 operations
+$cache->set('user:123', $userData, 3600); // TTL in seconds
+$userData = $cache->get('user:123');
+$cache->delete('user:123');
+
+// Advanced operations
+$cache->increment('page_views', 1);
+$cache->setNx('lock:process', 1, 60); // Set only if not exists
 
 // Remember pattern for expensive operations
-$activeUsers = CacheEngine::remember('active-users', 3600, function() {
+$activeUsers = $cache->remember('active-users', function() {
     return $this->userRepo->findWhere(['status' => 'active']);
-});
+}, 3600);
 ```
 
 #### Key Features
