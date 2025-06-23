@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Permissions;
 
 use Glueful\Interfaces\Permission\PermissionCacheInterface;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 
 /**
  * Permission Cache
@@ -20,6 +20,9 @@ class PermissionCache implements PermissionCacheInterface
 {
     /** @var array Cache configuration */
     private array $config;
+
+    /** @var CacheStore|null Cache driver service */
+    private ?CacheStore $cache;
 
     /** @var array In-memory cache for request lifetime */
     private array $memoryCache = [];
@@ -36,6 +39,17 @@ class PermissionCache implements PermissionCacheInterface
 
     /** @var bool Whether cache is enabled */
     private bool $enabled = true;
+
+    /**
+     * Constructor
+     *
+     * @param CacheStore|null $cache Cache driver service
+     */
+    public function __construct(?CacheStore $cache = null)
+    {
+        $this->cache = $cache;
+        $this->initialize();
+    }
 
     /**
      * Initialize the cache system
@@ -62,15 +76,8 @@ class PermissionCache implements PermissionCacheInterface
             $this->ttlConfig = array_merge($this->ttlConfig, $config['ttl']);
         }
 
-        // Initialize distributed cache if enabled
-        if ($this->config['distributed_cache']) {
-            try {
-                CacheEngine::initialize();
-            } catch (\Exception $e) {
-                // Graceful degradation - disable distributed cache but keep memory cache
-                $this->config['distributed_cache'] = false;
-            }
-        }
+        // Set distributed cache based on cache availability
+        $this->config['distributed_cache'] = $this->cache !== null;
     }
 
     /**
@@ -93,9 +100,9 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Check distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
-                $cached = CacheEngine::get($key);
+                $cached = $this->cache->get($key);
                 if ($cached !== null) {
                     // Store in memory cache for faster subsequent access
                     if ($this->config['memory_cache']) {
@@ -136,9 +143,9 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Store in distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
-                CacheEngine::set($key, $permissions, $actualTtl);
+                $this->cache->set($key, $permissions, $actualTtl);
             } catch (\Exception $e) {
                 $success = false;
             }
@@ -174,9 +181,9 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Check distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
-                $cached = CacheEngine::get($key);
+                $cached = $this->cache->get($key);
                 if ($cached !== null) {
                     // Store in memory cache
                     if ($this->config['memory_cache']) {
@@ -226,9 +233,9 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Store in distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
-                CacheEngine::set($key, $result, $actualTtl);
+                $this->cache->set($key, $result, $actualTtl);
             } catch (\Exception $e) {
                 $success = false;
             }
@@ -262,15 +269,15 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Clear from distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
                 // Clear user permissions cache
                 $userPermissionsKey = $this->generateUserPermissionsKey($userUuid);
-                CacheEngine::delete($userPermissionsKey);
+                $this->cache->delete($userPermissionsKey);
 
-                // Clear permission check caches for this user
+                // Clear permission check caches for this user using advanced cache features
                 $pattern = $this->keyPrefix . 'check:' . $userUuid . ':*';
-                CacheEngine::deletePattern($pattern);
+                $this->cache->deletePattern($pattern);
             } catch (\Exception $e) {
                 $success = false;
             }
@@ -309,14 +316,14 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Clear from distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
                 $pattern = $this->keyPrefix . 'check:*:' . $permission;
                 if (!empty($resource)) {
                     $pattern .= ':' . $resource;
                 }
                 $pattern .= ':*';
-                CacheEngine::deletePattern($pattern);
+                $this->cache->deletePattern($pattern);
             } catch (\Exception $e) {
                 $success = false;
             }
@@ -344,10 +351,10 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Clear distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
                 $pattern = $this->keyPrefix . '*';
-                CacheEngine::deletePattern($pattern);
+                $this->cache->deletePattern($pattern);
             } catch (\Exception $e) {
                 $success = false;
             }
@@ -394,9 +401,9 @@ class PermissionCache implements PermissionCacheInterface
         ];
 
         // Add distributed cache stats if available
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
-                $stats['distributed_cache_stats'] = CacheEngine::getStats();
+                $stats['distributed_cache_stats'] = $this->cache->getStats();
             } catch (\Exception $e) {
                 $stats['distributed_cache_error'] = $e->getMessage();
             }
@@ -429,14 +436,14 @@ class PermissionCache implements PermissionCacheInterface
         }
 
         // Test distributed cache
-        if ($this->config['distributed_cache']) {
+        if ($this->config['distributed_cache'] && $this->cache) {
             try {
                 $testKey = $this->keyPrefix . 'health_check';
                 $testValue = 'test_' . time();
 
-                CacheEngine::set($testKey, $testValue, 60);
-                $retrieved = CacheEngine::get($testKey);
-                CacheEngine::delete($testKey);
+                $this->cache->set($testKey, $testValue, 60);
+                $retrieved = $this->cache->get($testKey);
+                $this->cache->delete($testKey);
 
                 if ($retrieved !== $testValue) {
                     return false;

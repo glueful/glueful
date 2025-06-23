@@ -32,18 +32,25 @@ class AuthenticationService
     private PasswordHasher $passwordHasher;
     private AuthenticationManager $authManager;
     private TokenStorageInterface $tokenStorage;
+    private SessionCacheManager $sessionCacheManager;
 
     /**
      * Constructor
      *
-     * Initializes service dependencies.
+     * Initializes service dependencies using dependency injection with optional fallbacks.
      */
-    public function __construct(?TokenStorageInterface $tokenStorage = null)
-    {
-        $this->userRepository = new UserRepository();
-        $this->validator = new Validator();
-        $this->passwordHasher = new PasswordHasher();
+    public function __construct(
+        ?TokenStorageInterface $tokenStorage = null,
+        ?SessionCacheManager $sessionCacheManager = null,
+        ?UserRepository $userRepository = null,
+        ?Validator $validator = null,
+        ?PasswordHasher $passwordHasher = null
+    ) {
         $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
+        $this->sessionCacheManager = $sessionCacheManager ?? container()->get(SessionCacheManager::class);
+        $this->userRepository = $userRepository ?? new UserRepository();
+        $this->validator = $validator ?? new Validator();
+        $this->passwordHasher = $passwordHasher ?? new PasswordHasher();
 
         // Ensure authentication system is initialized
         AuthBootstrap::initialize();
@@ -142,8 +149,7 @@ class AuthenticationService
             $userAgent = $request->headers->get('User-Agent') ?? 'unknown';
             $xForwardedFor = $request->headers->get('X-Forwarded-For') ?? null;
             // Update user record with tracking information
-            $userRepo = new UserRepository();
-            $userRepo->update($userData['uuid'], [
+            $this->userRepository->update($userData['uuid'], [
                 'ip_address' => $clientIp,
                 'user_agent' => substr($userAgent, 0, 512), // Limit to field size
                 'x_forwarded_for_ip_address' => $xForwardedFor ? substr($xForwardedFor, 0, 40) : null,
@@ -177,8 +183,8 @@ class AuthenticationService
         if (!$token) {
             return false;
         }
-        // SessionCacheManager::destroySession() handles token revocation
-        return SessionCacheManager::destroySession($token);
+        // SessionCacheManager->destroySession() handles token revocation
+        return $this->sessionCacheManager->destroySession($token);
     }
 
     /**
@@ -195,7 +201,9 @@ class AuthenticationService
             return null;
         }
 
-        return SessionCacheManager::getSession($token);
+        // For static method, we need to get instance through container
+        $sessionCacheManager = container()->get(SessionCacheManager::class);
+        return $sessionCacheManager->getSession($token);
     }
 
     /**
@@ -275,7 +283,7 @@ class AuthenticationService
     public function refreshPermissions(string $token): ?array
     {
         // Get current session
-        $session = SessionCacheManager::getSession($token);
+        $session = $this->sessionCacheManager->getSession($token);
         if (!$session) {
             return null;
         }
@@ -316,7 +324,7 @@ class AuthenticationService
             $newToken = $tokens['access_token'];
 
             // Update session storage with new token
-            SessionCacheManager::updateSession($token, $session, $newToken, $provider);
+            $this->sessionCacheManager->updateSession($token, $session, $newToken, $provider);
 
             return [
                 'token' => $newToken,
@@ -328,7 +336,7 @@ class AuthenticationService
             $newToken = JWTService::generate($session, $tokenLifetime);
 
             // Update session storage
-            SessionCacheManager::updateSession($token, $session, $newToken);
+            $this->sessionCacheManager->updateSession($token, $session, $newToken);
 
             return [
                 'token' => $newToken,

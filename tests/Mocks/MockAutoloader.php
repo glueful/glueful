@@ -21,7 +21,7 @@ class MockAutoloader
     public static function register(): void
     {
         // Reset all mock data
-        MockCacheEngine::reset();
+        MockCacheStore::reset();
         MockAuditLogger::reset();
 
         // If runkit7 is available, use it for class replacement
@@ -39,8 +39,8 @@ class MockAutoloader
     private static function registerWithRunkit(): void
     {
         // Store original implementations if they exist
-        if (class_exists('Glueful\Cache\CacheEngine', true)) {
-            self::$originals['Glueful\Cache\CacheEngine'] = true;
+        if (class_exists('Glueful\Cache\CacheStore', true)) {
+            self::$originals['Glueful\Cache\CacheStore'] = true;
         }
         if (class_exists('Glueful\Logging\AuditLogger', true)) {
             self::$originals['Glueful\Logging\AuditLogger'] = true;
@@ -75,7 +75,7 @@ class MockAutoloader
     {
         // Map of original class names to mock class names
         $classMap = [
-            'Glueful\Cache\CacheEngine' => MockCacheEngine::class,
+            'Glueful\Cache\CacheStore' => MockCacheStore::class,
             'Glueful\Logging\AuditLogger' => MockAuditLogger::class,
             'Glueful\Security\RateLimiterDistributor' => MockRateLimiterDistributor::class,
             'Glueful\Security\RateLimiter' => MockRateLimiter::class,
@@ -117,7 +117,7 @@ class MockAutoloader
     public static function unregister(): void
     {
         // Reset all mock data
-        MockCacheEngine::reset();
+        MockCacheStore::reset();
         MockAuditLogger::reset();
 
         // Remove our autoloader if it was registered

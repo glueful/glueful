@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
@@ -33,22 +33,42 @@ class TokenManager
     private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour
     private static ?int $ttl = null;
+    private static ?CacheStore $cache = null;
 
     /**
      * Initialize token manager
      *
      * Sets up caching and loads configuration.
      */
-    public static function initialize(): void
+    public static function initialize(?CacheStore $cache = null): void
     {
-        if (!defined('CACHE_ENGINE')) {
-            define('CACHE_ENGINE', true);
-        }
-
-        CacheEngine::initialize('glueful:', 'redis');
+        self::$cache = $cache ?? app(CacheStore::class);
 
         // Cast the config value to int
         self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+    }
+
+    /**
+     * Get cache instance
+     *
+     * @return CacheStore
+     */
+    private static function getCache(): CacheStore
+    {
+        if (self::$cache === null) {
+            self::initialize();
+        }
+        return self::$cache;
+    }
+
+    /**
+     * Get SessionCacheManager instance from container
+     *
+     * @return SessionCacheManager
+     */
+    private static function getSessionCacheManager(): SessionCacheManager
+    {
+        return app(SessionCacheManager::class);
     }
 
    /**
@@ -66,7 +86,9 @@ class TokenManager
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
     ): array {
-        self::initialize();
+        if (self::$ttl === null) {
+            self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+        }
 
         // Use provided lifetimes or defaults
         $accessTokenLifetime = $accessTokenLifetime ?? self::$ttl;
@@ -101,11 +123,11 @@ class TokenManager
      */
     public static function mapTokenToSession(string $token, string $sessionId): bool
     {
-        self::initialize();
+        $cache = self::getCache();
 
         // Skip audit logging for token mapping - this is internal implementation detail
 
-        return CacheEngine::set(
+        return $cache->set(
             self::TOKEN_PREFIX . $token,
             $sessionId,
             self::$ttl
@@ -122,8 +144,8 @@ class TokenManager
      */
     public static function getSessionIdFromToken(string $token): ?string
     {
-        self::initialize();
-        return CacheEngine::get(self::TOKEN_PREFIX . $token);
+        $cache = self::getCache();
+        return $cache->get(self::TOKEN_PREFIX . $token);
     }
 
     /**
@@ -136,7 +158,7 @@ class TokenManager
      */
     public static function removeTokenMapping(string $token, ?RequestContext $requestContext = null): bool
     {
-        self::initialize();
+        $cache = self::getCache();
         $requestContext = $requestContext ?? RequestContext::fromGlobals();
 
         // Log token mapping removal
@@ -152,7 +174,7 @@ class TokenManager
             ]
         );
 
-        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
+        return $cache->delete(self::TOKEN_PREFIX . $token);
     }
 
     /**
@@ -455,7 +477,8 @@ class TokenManager
         $tokenStorage->storeSession($user, $tokens);
 
         // Also store in cache for quick lookup
-        SessionCacheManager::storeSession(
+        $sessionCacheManager = self::getSessionCacheManager();
+        $sessionCacheManager->storeSession(
             $user, // userData array
             $tokens['access_token'], // token string
             $provider ?? 'jwt', // provider

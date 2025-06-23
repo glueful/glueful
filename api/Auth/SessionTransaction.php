@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 
@@ -33,11 +34,20 @@ class SessionTransaction
     private bool $rolledBack = false;
     private string $transactionId;
     private float $startTime;
+    private SessionCacheManager $sessionCacheManager;
+    private CacheStore $cache;
 
-    public function __construct()
+    public function __construct(?SessionCacheManager $sessionCacheManager = null, ?CacheStore $cache = null)
     {
         $this->transactionId = uniqid('session_tx_', true);
         $this->startTime = microtime(true);
+        $this->sessionCacheManager = $sessionCacheManager ?? container()->get(SessionCacheManager::class);
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'CacheStore is required for SessionTransaction: Unable to create cache instance.'
+            );
+        }
     }
 
     /**
@@ -150,7 +160,7 @@ class SessionTransaction
 
         try {
             // Find matching sessions
-            $query = SessionCacheManager::sessionQuery();
+            $query = $this->sessionCacheManager->sessionQuery();
 
             foreach ($criteria as $field => $value) {
                 switch ($field) {
@@ -191,7 +201,7 @@ class SessionTransaction
                     ];
 
                     // Invalidate session
-                    if (SessionCacheManager::destroySession($session['token'])) {
+                    if ($this->sessionCacheManager->destroySession($session['token'])) {
                         $invalidatedCount++;
                     }
                 }
@@ -229,7 +239,7 @@ class SessionTransaction
 
         try {
             // Find matching sessions
-            $query = SessionCacheManager::sessionQuery();
+            $query = $this->sessionCacheManager->sessionQuery();
 
             foreach ($criteria as $field => $value) {
                 switch ($field) {
@@ -263,9 +273,9 @@ class SessionTransaction
 
                 // Update session in cache
                 $sessionId = $session['id'];
-                $ttl = SessionCacheManager::getProviderTtlPublic($session['provider'] ?? 'jwt');
+                $ttl = $this->sessionCacheManager->getProviderTtlPublic($session['provider'] ?? 'jwt');
 
-                if (CacheEngine::set('session:' . $sessionId, $session, $ttl)) {
+                if ($this->cache->set('session:' . $sessionId, $session, $ttl)) {
                     $updatedCount++;
                 }
             }
@@ -309,7 +319,7 @@ class SessionTransaction
                 $provider = $sessionData['provider'] ?? 'jwt';
                 $ttl = $sessionData['ttl'] ?? null;
 
-                if (SessionCacheManager::storeSession($userData, $token, $provider, $ttl)) {
+                if ($this->sessionCacheManager->storeSession($userData, $token, $provider, $ttl)) {
                     $sessionId = TokenManager::getSessionIdFromToken($token);
                     $createdSessions[] = $sessionId;
 
@@ -347,7 +357,7 @@ class SessionTransaction
         $this->ensureActive();
 
         try {
-            $sessions = SessionCacheManager::getSessionsByProvider($fromProvider);
+            $sessions = $this->sessionCacheManager->getSessionsByProvider($fromProvider);
             $migratedCount = 0;
 
             foreach ($sessions as $session) {
@@ -362,12 +372,12 @@ class SessionTransaction
 
                 // Update session in cache
                 $sessionId = $session['id'];
-                $newTtl = SessionCacheManager::getProviderTtlPublic($toProvider);
+                $newTtl = $this->sessionCacheManager->getProviderTtlPublic($toProvider);
 
-                if (CacheEngine::set('session:' . $sessionId, $session, $newTtl)) {
+                if ($this->cache->set('session:' . $sessionId, $session, $newTtl)) {
                     // Update indexes
-                    SessionCacheManager::removeSessionFromProviderIndexPublic($fromProvider, $sessionId);
-                    SessionCacheManager::indexSessionByProviderPublic($toProvider, $sessionId, $newTtl);
+                    $this->sessionCacheManager->removeSessionFromProviderIndexPublic($fromProvider, $sessionId);
+                    $this->sessionCacheManager->indexSessionByProviderPublic($toProvider, $sessionId, $newTtl);
                     $migratedCount++;
                 }
             }
@@ -504,13 +514,13 @@ class SessionTransaction
     private function restoreSession(array $sessionData): void
     {
         $sessionId = $sessionData['id'];
-        $ttl = SessionCacheManager::getProviderTtlPublic($sessionData['provider'] ?? 'jwt');
+        $ttl = $this->sessionCacheManager->getProviderTtlPublic($sessionData['provider'] ?? 'jwt');
 
-        CacheEngine::set('session:' . $sessionId, $sessionData, $ttl);
+        $this->cache->set('session:' . $sessionId, $sessionData, $ttl);
 
         // Restore indexes
         if (isset($sessionData['provider'])) {
-            SessionCacheManager::indexSessionByProviderPublic($sessionData['provider'], $sessionId, $ttl);
+            $this->sessionCacheManager->indexSessionByProviderPublic($sessionData['provider'], $sessionId, $ttl);
         }
 
         if (isset($sessionData['user']['uuid'])) {
@@ -528,7 +538,7 @@ class SessionTransaction
      */
     private function deleteSession(string $sessionId, string $token): void
     {
-        SessionCacheManager::destroySession($token);
+        $this->sessionCacheManager->destroySession($token);
     }
 
     /**

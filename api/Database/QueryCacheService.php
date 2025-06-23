@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Glueful\Database;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\Attributes\CacheResult;
+use Glueful\Helpers\CacheHelper;
 use ReflectionMethod;
 
 /**
@@ -17,9 +18,9 @@ use ReflectionMethod;
 class QueryCacheService
 {
     /**
-     * @var CacheEngine Cache engine instance
+     * @var CacheStore Cache store instance
      */
-    private $cache;
+    private CacheStore $cache;
 
     /**
      * @var QueryHasher Query hash generator
@@ -39,11 +40,18 @@ class QueryCacheService
     /**
      * Constructor
      *
-     * @param CacheEngine|null $cache Optional custom cache engine instance
+     * @param CacheStore|null $cache Optional custom cache store instance
      */
-    public function __construct(?CacheEngine $cache = null)
+    public function __construct(?CacheStore $cache = null)
     {
-        $this->cache = $cache ?? new CacheEngine();
+        // Set up cache - try provided instance or get from helper
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'CacheStore is required for query cache service: Unable to create cache instance.'
+            );
+        }
         $this->queryHasher = new QueryHasher();
         $this->enabled = config('database.query_cache.enabled', true);
         $this->defaultTtl = config('database.query_cache.default_ttl', 3600);
@@ -72,10 +80,11 @@ class QueryCacheService
 
             // Associate the cache entry with affected tables for invalidation
             $tables = $this->extractTablesFromQuery($query);
+            $allTags = ["query_cache:all"];
             foreach ($tables as $table) {
-                $this->cache->addTags($key, ["query_cache:table:{$table}"]);
+                $allTags[] = "query_cache:table:{$table}";
             }
-            $this->cache->addTags($key, "query_cache:all");
+            $this->cache->addTags($key, $allTags);
 
             return $result;
         }, $ttl);

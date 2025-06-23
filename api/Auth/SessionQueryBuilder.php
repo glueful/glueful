@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheEngine;
-
 /**
  * Session Query Builder
  *

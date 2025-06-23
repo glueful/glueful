@@ -7,6 +7,7 @@ namespace Glueful\Console\Commands;
 use Glueful\Console\Command;
 use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Security\SecurityManager;
+use Glueful\Cache\CacheStore;
 use Glueful\Helpers\{DatabaseConnectionTrait};
 use Glueful\Exceptions\BusinessLogicException;
 
@@ -71,7 +72,7 @@ class SecurityCommand extends Command
      */
     public function __construct(?ContainerInterface $container = null)
     {
-        $this->container = $container ?? app();
+        $this->container = $container ?? container();
     }
 
     /**
@@ -583,7 +584,7 @@ class SecurityCommand extends Command
             // Import required classes
             $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
             $queryBuilder = $this->getQueryBuilder();
-            $cacheEngine = \Glueful\Cache\CacheEngine::class;
+            $cacheStore = $this->container->get(CacheStore::class);
             $tokenManager = \Glueful\Auth\TokenManager::class;
 
             // Initialize cache engine if not already initialized
@@ -636,8 +637,7 @@ class SecurityCommand extends Command
             try {
                 // Clear all token-related cache entries
                 // Note: This is a more aggressive approach to ensure no cached tokens remain
-                $cacheEngine = new \Glueful\Cache\CacheEngine();
-                $cacheEngine->flush();
+                $cacheStore->flush();
                 $this->info('✅ Token cache cleared successfully');
             } catch (\Exception $e) {
                 $this->warning("Cache clearing failed: {$e->getMessage()}");

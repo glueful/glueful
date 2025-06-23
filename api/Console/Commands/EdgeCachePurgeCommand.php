@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Cache\CacheEngine;
 use Glueful\Cache\EdgeCacheService;
 
 /**

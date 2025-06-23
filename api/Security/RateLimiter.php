@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditEvent;
 use Glueful\Logging\AuditLogger;
+use Glueful\Helpers\Utils;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Rate Limiter
@@ -20,21 +22,39 @@ class RateLimiter
     /** @var string Cache key prefix for rate limit entries */
     private const PREFIX = 'rate_limit:';
 
+    /** @var CacheStore Cache driver instance */
+    protected CacheStore $cache;
+
+    /** @var AuditLogger Audit logger instance */
+    private AuditLogger $auditLogger;
+
     /**
      * Constructor
      *
      * @param string $key Unique identifier for the rate limit
      * @param int $maxAttempts Maximum allowed attempts in window
      * @param int $windowSeconds Time window in seconds
+     * @param CacheStore|null $cache Cache driver instance
+     * @param RequestContext|null $requestContext Request context instance
+     * @param AuditLogger|null $auditLogger Audit logger instance
      */
     public function __construct(
         private readonly string $key,
         private readonly int $maxAttempts,
         private readonly int $windowSeconds,
-        private ?RequestContext $requestContext = null
+        ?CacheStore $cache = null,
+        private ?RequestContext $requestContext = null,
+        ?AuditLogger $auditLogger = null
     ) {
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
-        CacheEngine::initialize('Glueful:', config('cache.default'));
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+        $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
+
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'Cache is required for RateLimiter. Please ensure cache is properly configured.'
+            );
+        }
     }
 
     /**
@@ -50,13 +70,12 @@ class RateLimiter
         $now = time();
 
         // Remove expired entries
-        CacheEngine::zremrangebyscore($key, '-inf', (string) ($now - $this->windowSeconds));
+        $this->cache->zremrangebyscore($key, '-inf', (string) ($now - $this->windowSeconds));
 
         // Get current attempt count
-        if (CacheEngine::zcard($key) >= $this->maxAttempts) {
+        if ($this->cache->zcard($key) >= $this->maxAttempts) {
             // Audit log the rate limit violation
-            $auditLogger = new AuditLogger();
-            $auditLogger->audit(
+            $this->auditLogger->audit(
                 AuditEvent::CATEGORY_SYSTEM,
                 'rate_limit_exceeded',
                 AuditEvent::SEVERITY_WARNING,
@@ -71,10 +90,10 @@ class RateLimiter
         }
 
         // Add new request timestamp
-        CacheEngine::zadd($key, [$now => $now]);
+        $this->cache->zadd($key, [$now => $now]);
 
         // Set expiration time
-        CacheEngine::expire($key, $this->windowSeconds);
+        $this->cache->expire($key, $this->windowSeconds);
 
         return true;
     }
@@ -88,7 +107,7 @@ class RateLimiter
      */
     public function remaining(): int
     {
-        return max(0, $this->maxAttempts - CacheEngine::zcard($this->getCacheKey()));
+        return max(0, $this->maxAttempts - $this->cache->zcard($this->getCacheKey()));
     }
 
     /**
@@ -100,7 +119,7 @@ class RateLimiter
      */
     public function getRetryAfter(): int
     {
-        $timestamps = CacheEngine::zrange($this->getCacheKey(), 0, 0);
+        $timestamps = $this->cache->zrange($this->getCacheKey(), 0, 0);
         return empty($timestamps) ? 0 : max(0, (int) $timestamps[0] + $this->windowSeconds - time());
     }
 
@@ -111,11 +130,10 @@ class RateLimiter
      */
     public function reset(): void
     {
-        CacheEngine::delete($this->getCacheKey());
+        $this->cache->delete($this->getCacheKey());
 
         // Audit log the rate limit reset
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
+        $this->auditLogger->audit(
             AuditEvent::CATEGORY_SYSTEM,
             'rate_limit_reset',
             AuditEvent::SEVERITY_INFO,
@@ -144,7 +162,7 @@ class RateLimiter
      */
     private function getCacheKey(): string
     {
-        return self::PREFIX . $this->key;
+        return self::PREFIX . Utils::sanitizeCacheKey($this->key);
     }
 
     /**
@@ -158,7 +176,7 @@ class RateLimiter
     public static function perIp(string $ip, int $maxAttempts, int $windowSeconds): self
     {
         // Audit log IP-based rate limiter creation
-        $auditLogger = new AuditLogger();
+        $auditLogger = AuditLogger::getInstance();
         $auditLogger->audit(
             AuditEvent::CATEGORY_SYSTEM,
             'rate_limit_ip_created',
@@ -170,7 +188,7 @@ class RateLimiter
             ]
         );
 
-        return new self("ip:$ip", $maxAttempts, $windowSeconds);
+        return new self("ip:$ip", $maxAttempts, $windowSeconds, CacheHelper::createCacheInstance());
     }
 
     /**
@@ -184,7 +202,7 @@ class RateLimiter
     public static function perUser(string $userId, int $maxAttempts, int $windowSeconds): self
     {
         // Audit log user-based rate limiter creation
-        $auditLogger = new AuditLogger();
+        $auditLogger = AuditLogger::getInstance();
         $auditLogger->audit(
             AuditEvent::CATEGORY_SYSTEM,
             'rate_limit_user_created',
@@ -196,7 +214,7 @@ class RateLimiter
             ]
         );
 
-        return new self("user:$userId", $maxAttempts, $windowSeconds);
+        return new self("user:$userId", $maxAttempts, $windowSeconds, CacheHelper::createCacheInstance());
     }
 
     /**
@@ -211,7 +229,7 @@ class RateLimiter
     public static function perEndpoint(string $endpoint, string $identifier, int $maxAttempts, int $windowSeconds): self
     {
         // Audit log endpoint-specific rate limiter creation
-        $auditLogger = new AuditLogger();
+        $auditLogger = AuditLogger::getInstance();
         $auditLogger->audit(
             AuditEvent::CATEGORY_SYSTEM,
             'rate_limit_endpoint_created',
@@ -224,6 +242,11 @@ class RateLimiter
             ]
         );
 
-        return new self("endpoint:$endpoint:$identifier", $maxAttempts, $windowSeconds);
+        return new self(
+            "endpoint:$endpoint:$identifier",
+            $maxAttempts,
+            $windowSeconds,
+            CacheHelper::createCacheInstance()
+        );
     }
 }

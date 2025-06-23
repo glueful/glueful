@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands;
 
 use Glueful\Console\Command;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\DI\Interfaces\ContainerInterface;
 
 /**
@@ -61,9 +61,20 @@ class CacheCommand extends Command
     public function __construct(?ContainerInterface $container = null)
     {
         $this->container = $container ?? $this->getDefaultContainer();
+    }
 
-        // Initialize the cache engine
-        CacheEngine::initialize();
+    /**
+     * Get cache store instance
+     *
+     * @return CacheStore
+     */
+    private function getCacheStore(): CacheStore
+    {
+        if (!$this->container) {
+            throw new \RuntimeException('DI Container is required for cache operations');
+        }
+
+        return $this->container->get(CacheStore::class);
     }
 
     /**
@@ -100,8 +111,10 @@ class CacheCommand extends Command
             return Command::SUCCESS;
         }
 
-        if (!CacheEngine::isEnabled()) {
-            $this->error("Cache system is not enabled");
+        try {
+            $this->getCacheStore();
+        } catch (\Exception $e) {
+            $this->error("Cache system is not available: " . $e->getMessage());
             return Command::FAILURE;
         }
 
@@ -184,7 +197,7 @@ class CacheCommand extends Command
     {
         $this->info('Clearing cache...');
 
-        $result = CacheEngine::flush();
+        $result = $this->getCacheStore()->flush();
 
         if ($result) {
             $this->success('Cache cleared successfully');
@@ -201,12 +214,30 @@ class CacheCommand extends Command
         $this->info('Cache Status');
         $this->line('============');
 
-        if (CacheEngine::isEnabled()) {
+        try {
+            $cacheStore = $this->getCacheStore();
+            $stats = $cacheStore->getStats();
+            $capabilities = $cacheStore->getCapabilities();
+
             $this->line('Status:  ' . $this->colorText('Enabled', 'green'));
             $this->line('Driver:  ' .  config('cache.default'));
             $this->line('Prefix:  ' . config('cache.prefix'));
-        } else {
+
+            if (!empty($stats)) {
+                $this->line('');
+                $this->line('Statistics:');
+                foreach ($stats as $key => $value) {
+                    $this->line("  {$key}: {$value}");
+                }
+            }
+
+            if (!empty($capabilities)) {
+                $this->line('');
+                $this->line('Capabilities: ' . implode(', ', $capabilities));
+            }
+        } catch (\Exception $e) {
             $this->line('Status:  ' . $this->colorText('Disabled', 'red'));
+            $this->line('Error:   ' . $e->getMessage());
         }
     }
 
@@ -217,7 +248,8 @@ class CacheCommand extends Command
      */
     protected function getItem(string $key): void
     {
-        $value = CacheEngine::get($key);
+        $cacheStore = $this->getCacheStore();
+        $value = $cacheStore->get($key);
 
         if ($value === null) {
             $this->warning("No cache entry found for key: $key");
@@ -233,7 +265,7 @@ class CacheCommand extends Command
         }
 
         // Show TTL as well
-        $ttl = CacheEngine::ttl($key);
+        $ttl = $cacheStore->ttl($key);
         if ($ttl > 0) {
             $this->line("\nExpires in: " . $this->formatTtl($ttl));
         }
@@ -253,7 +285,7 @@ class CacheCommand extends Command
             $value = json_decode($value, true);
         }
 
-        $result = CacheEngine::set($key, $value, $ttl);
+        $result = $this->getCacheStore()->set($key, $value, $ttl);
 
         if ($result) {
             $this->success("Cache entry \"$key\" set successfully");
@@ -270,7 +302,7 @@ class CacheCommand extends Command
      */
     protected function deleteItem(string $key): void
     {
-        $result = CacheEngine::delete($key);
+        $result = $this->getCacheStore()->delete($key);
 
         if ($result) {
             $this->success("Cache entry \"$key\" deleted successfully");
@@ -286,7 +318,7 @@ class CacheCommand extends Command
      */
     protected function getTtl(string $key): void
     {
-        $ttl = CacheEngine::ttl($key);
+        $ttl = $this->getCacheStore()->ttl($key);
 
         if ($ttl < 0) {
             $this->warning("Cache entry \"$key\" not found or has no TTL");
@@ -305,7 +337,7 @@ class CacheCommand extends Command
      */
     protected function setExpire(string $key, int $seconds): void
     {
-        $result = CacheEngine::expire($key, $seconds);
+        $result = $this->getCacheStore()->expire($key, $seconds);
 
         if ($result) {
             $this->success("Expiration set for \"$key\"");
@@ -388,10 +420,10 @@ HELP;
      */
     private function getDefaultContainer(): ?ContainerInterface
     {
-        // Check if app() function exists (available when bootstrap is loaded)
-        if (function_exists('app')) {
+        // Check if container() function exists (available when bootstrap is loaded)
+        if (function_exists('container')) {
             try {
-                return app();
+                return container();
             } catch (\Exception $e) {
                 // Fall back to null if container is not available
                 return null;

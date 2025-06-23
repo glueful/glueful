@@ -2,10 +2,13 @@
 
 namespace Glueful\Cache;
 
+use Glueful\Helpers\CacheHelper;
+
 class CacheInvalidationService
 {
     private static array $patterns = [];
     private static bool $enabled = true;
+    private static ?CacheStore $cache = null;
     private static array $stats = [
         'invalidations' => 0,
         'patterns_matched' => 0,
@@ -61,7 +64,20 @@ class CacheInvalidationService
 
     public static function isEnabled(): bool
     {
-        return self::$enabled && CacheEngine::isEnabled() && CacheTaggingService::isEnabled();
+        return self::$enabled && self::getCacheInstance() !== null && CacheTaggingService::isEnabled();
+    }
+
+    private static function getCacheInstance(): ?CacheStore
+    {
+        if (self::$cache === null) {
+            try {
+                self::$cache = CacheHelper::createCacheInstance();
+            } catch (\Exception $e) {
+                // Cache not available
+                self::$cache = null;
+            }
+        }
+        return self::$cache;
     }
 
     public static function registerPattern(string $event, array $pattern): void
@@ -134,9 +150,20 @@ class CacheInvalidationService
                     $keys = self::expandKeyPattern($keyPattern, $context);
                     foreach ($keys as $key) {
                         try {
-                            if (CacheEngine::delete($key)) {
-                                $results['invalidated_keys'][] = $key;
-                                self::$stats['keys_invalidated']++;
+                            $cache = self::getCacheInstance();
+                            if ($cache !== null) {
+                                try {
+                                    $cache->delete($key);
+                                    $results['invalidated_keys'][] = $key;
+                                    self::$stats['keys_invalidated']++;
+                                } catch (\Exception $e) {
+                                    error_log("Cache delete failed for key '{$key}': " . $e->getMessage());
+                                    $results['errors'][] = "Failed to delete key '$key': " . $e->getMessage();
+                                    self::$stats['errors']++;
+                                }
+                            } else {
+                                $results['errors'][] = "Cache not available for key '$key'";
+                                self::$stats['errors']++;
                             }
                         } catch (\Exception $e) {
                             $results['errors'][] = "Failed to invalidate key '$key': " . $e->getMessage();

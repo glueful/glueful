@@ -2,9 +2,8 @@
 
 namespace Glueful\Cron;
 
-use Glueful\Cache\CacheEngine;
 use Glueful\Cache\CacheFactory;
-use Glueful\Cache\Drivers\CacheDriverInterface;
+use Glueful\Cache\CacheStore;
 
 class CacheMaintenance
 {
@@ -16,7 +15,7 @@ class CacheMaintenance
         'errors' => []
     ];
 
-    private CacheDriverInterface $cache;
+    private CacheStore $cache;
 
     public function __construct()
     {

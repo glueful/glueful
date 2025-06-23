@@ -6,7 +6,8 @@ namespace Glueful\Controllers;
 
 use Glueful\Helpers\ConfigManager;
 use Glueful\Logging\AuditEvent;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 use Glueful\Exceptions\SecurityException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Constants\ErrorCodes;
@@ -14,6 +15,12 @@ use Glueful\Helpers\ValidationHelper;
 
 class ConfigController extends BaseController
 {
+    private ?CacheStore $cache;
+
+    public function __construct(?CacheStore $cache = null)
+    {
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+    }
     private const SENSITIVE_KEYS = [
         'jwt.secret',
         'jwt.private_key',
@@ -1070,7 +1077,15 @@ class ConfigController extends BaseController
         ];
 
         // Store behavior data
-        $existingBehavior = json_decode(CacheEngine::get($behaviorKey) ?? '[]', true);
+        $existingBehavior = [];
+        if ($this->cache !== null) {
+            try {
+                $cached = $this->cache->get($behaviorKey);
+                $existingBehavior = json_decode($cached ?? '[]', true);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for key '{$behaviorKey}': " . $e->getMessage());
+            }
+        }
         $existingBehavior[] = $behaviorData;
 
         // Keep only last 100 actions
@@ -1078,7 +1093,13 @@ class ConfigController extends BaseController
             $existingBehavior = array_slice($existingBehavior, -100);
         }
 
-        CacheEngine::set($behaviorKey, json_encode($existingBehavior), 3600);
+        if ($this->cache !== null) {
+            try {
+                $this->cache->set($behaviorKey, json_encode($existingBehavior), 3600);
+            } catch (\Exception $e) {
+                error_log("Cache set failed for key '{$behaviorKey}': " . $e->getMessage());
+            }
+        }
 
         // Analyze for suspicious patterns
         $this->analyzeBehaviorPatterns($existingBehavior, $action);
@@ -1105,10 +1126,24 @@ class ConfigController extends BaseController
             'risk_score' => $this->calculateModificationRiskScore($action, $context)
         ];
 
-        $existingMods = json_decode(CacheEngine::get($modificationKey) ?? '[]', true);
+        $existingMods = [];
+        if ($this->cache !== null) {
+            try {
+                $cached = $this->cache->get($modificationKey);
+                $existingMods = json_decode($cached ?? '[]', true);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for key '{$modificationKey}': " . $e->getMessage());
+            }
+        }
         $existingMods[] = $modificationData;
 
-        CacheEngine::set($modificationKey, json_encode($existingMods), 86400);
+        if ($this->cache !== null) {
+            try {
+                $this->cache->set($modificationKey, json_encode($existingMods), 86400);
+            } catch (\Exception $e) {
+                error_log("Cache set failed for key '{$modificationKey}': " . $e->getMessage());
+            }
+        }
 
         // Check for high-risk modification patterns
         $this->checkHighRiskModificationPatterns($existingMods);
@@ -1263,7 +1298,15 @@ class ConfigController extends BaseController
     private function createConfigRollbackPoint(string $configName, array $config): void
     {
         $rollbackKey = sprintf('config_rollback:%s', $configName);
-        $existingRollbacks = json_decode(CacheEngine::get($rollbackKey) ?? '[]', true);
+        $existingRollbacks = [];
+        if ($this->cache !== null) {
+            try {
+                $cached = $this->cache->get($rollbackKey);
+                $existingRollbacks = json_decode($cached ?? '[]', true);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for key '{$rollbackKey}': " . $e->getMessage());
+            }
+        }
 
         $rollbackPoint = [
             'timestamp' => time(),
@@ -1283,7 +1326,13 @@ class ConfigController extends BaseController
 
         // Store rollback data
         $ttl = self::CONFIG_ROLLBACK_RETENTION_DAYS * 86400; // Convert days to seconds
-        CacheEngine::set($rollbackKey, json_encode($existingRollbacks), $ttl);
+        if ($this->cache !== null) {
+            try {
+                $this->cache->set($rollbackKey, json_encode($existingRollbacks), $ttl);
+            } catch (\Exception $e) {
+                error_log("Cache set failed for key '{$rollbackKey}': " . $e->getMessage());
+            }
+        }
 
         // Also persist to storage for important configs
         if (in_array($configName, self::SENSITIVE_CONFIG_FILES)) {
@@ -1332,7 +1381,15 @@ class ConfigController extends BaseController
         }
 
         $rollbackKey = sprintf('config_rollback:%s', $configName);
-        $rollbacks = json_decode(CacheEngine::get($rollbackKey) ?? '[]', true);
+        $rollbacks = [];
+        if ($this->cache !== null) {
+            try {
+                $cached = $this->cache->get($rollbackKey);
+                $rollbacks = json_decode($cached ?? '[]', true);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for key '{$rollbackKey}': " . $e->getMessage());
+            }
+        }
 
         // Find the specified version
         $targetRollback = null;
@@ -1392,7 +1449,15 @@ class ConfigController extends BaseController
         }
 
         $rollbackKey = sprintf('config_rollback:%s', $configName);
-        $rollbacks = json_decode(CacheEngine::get($rollbackKey) ?? '[]', true);
+        $rollbacks = [];
+        if ($this->cache !== null) {
+            try {
+                $cached = $this->cache->get($rollbackKey);
+                $rollbacks = json_decode($cached ?? '[]', true);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for key '{$rollbackKey}': " . $e->getMessage());
+            }
+        }
 
         // Return sanitized rollback list
         return array_map(function ($rollback) {

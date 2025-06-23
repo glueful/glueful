@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Helpers;
 
 use Glueful\Security\RandomStringGenerator;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use PDO;
 use PDOException;
 use Glueful\Auth\SessionCacheManager;
@@ -19,6 +19,18 @@ use Glueful\Auth\JWTService;
  */
 class Utils
 {
+    /** @var CacheStore|null Cache driver instance */
+    private static ?CacheStore $cache = null;
+
+    /**
+     * Get cache instance
+     *
+     * @return CacheStore
+     */
+    private static function getCache(): CacheStore
+    {
+        return self::$cache ??= CacheHelper::createCacheInstance();
+    }
     public static function export(
         string $format,
         array $data,
@@ -83,17 +95,15 @@ class Utils
 
     public static function withCache(string $key, callable $callback, ?int $ttl = 3600): mixed
     {
-        if (!CacheEngine::isEnabled()) {
-            return $callback();
-        }
+        $cache = self::getCache();
 
-        $cached = CacheEngine::get($key);
+        $cached = $cache->get($key);
         if ($cached !== null) {
             return $cached;
         }
 
         $result = $callback();
-        CacheEngine::set($key, $result, $ttl);
+        $cache->set($key, $result, $ttl);
         return $result;
     }
 
@@ -106,7 +116,8 @@ class Utils
 
         // Remove 'Bearer ' if present
         $token = str_replace('Bearer ', '', $token);
-        return SessionCacheManager::getSession($token);
+        $sessionCacheManager = container()->get(SessionCacheManager::class);
+        return $sessionCacheManager->getSession($token);
     }
 
     public static function getCurrentUser(): ?array
@@ -255,14 +266,14 @@ class Utils
     }
 
     /**
-     * Initialize the cache engine
+     * Initialize the cache driver
      *
-     * @param string $prefix Prefix for cache keys
+     * @param CacheStore|null $cache Cache driver instance
      * @return void
      */
-    public static function initializeCacheEngine(string $prefix = 'glueful:'): void
+    public static function initializeCacheDriver(?CacheStore $cache = null): void
     {
-        CacheEngine::initialize($prefix);
+        self::$cache = $cache ?? CacheHelper::createCacheInstance();
     }
 
     /**
@@ -739,5 +750,21 @@ class Utils
     {
         $middleware = new \Glueful\Http\Middleware\CSRFMiddleware();
         return $middleware->getTokenData($request);
+    }
+
+    /**
+     * Sanitize cache key to handle IPv6 addresses and special characters
+     *
+     * Replaces characters that are invalid for cache keys with underscores.
+     * This ensures cache keys are compatible with all cache drivers including Redis.
+     *
+     * @param string $key Original cache key
+     * @return string Sanitized cache key safe for all cache backends
+     */
+    public static function sanitizeCacheKey(string $key): string
+    {
+        // Replace IPv6 colons and other special characters with underscores
+        // This ensures cache keys are compatible with all cache drivers
+        return str_replace([':', '[', ']', '/', '\\', ' '], '_', $key);
     }
 }

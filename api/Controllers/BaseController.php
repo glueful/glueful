@@ -105,7 +105,7 @@ abstract class BaseController
         $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
 
         // Set request - use provided request or get from container
-        $this->request = $request ?? app()->get(Request::class);
+        $this->request = $request ?? container()->get(Request::class);
 
         // Initialize request user context for cached authentication
         $this->userContext = RequestUserContext::getInstance()->initialize();

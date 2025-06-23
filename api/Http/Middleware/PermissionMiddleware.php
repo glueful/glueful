@@ -229,7 +229,8 @@ class PermissionMiddleware implements MiddlewareInterface
             // Try to get session ID from token
             $sessionId = TokenManager::getSessionIdFromToken($token);
             if ($sessionId) {
-                $session = \Glueful\Auth\SessionCacheManager::getSession($sessionId);
+                $sessionCacheManager = container()->get(\Glueful\Auth\SessionCacheManager::class);
+                $session = $sessionCacheManager->getSession($sessionId);
                 if ($session && isset($session['user']['uuid'])) {
                     return $session['user']['uuid'];
                 }

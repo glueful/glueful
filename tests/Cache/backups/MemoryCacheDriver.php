@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Glueful\Tests\Cache\Drivers;
 
-use Glueful\Cache\Drivers\CacheDriverInterface;
+use Glueful\Cache\CacheStore;
 
 /**
  * Memory Cache Driver for Testing
  *
  * A simple in-memory cache driver implementation for testing purposes.
  */
-class MemoryCacheDriver implements CacheDriverInterface
+class MemoryCacheDriver implements CacheStore
 {
     /** @var array In-memory storage */
     private $storage = [];

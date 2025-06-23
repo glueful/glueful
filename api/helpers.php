@@ -149,6 +149,27 @@ if (!function_exists('app')) {
     }
 }
 
+if (!function_exists('container')) {
+    /**
+     * Get the DI container instance
+     *
+     * Returns the global DI container instance. This is a convenience
+     * function that's equivalent to calling app() without arguments.
+     *
+     * @return \Glueful\DI\Interfaces\ContainerInterface Container instance
+     */
+    function container(): \Glueful\DI\Interfaces\ContainerInterface
+    {
+        $container = $GLOBALS['container'] ?? null;
+
+        if (!$container) {
+            throw new \RuntimeException('DI container not initialized. Make sure bootstrap.php is loaded.');
+        }
+
+        return $container;
+    }
+}
+
 /**
  * Additional helper functions can be added below.
  * Each function should have proper documentation and

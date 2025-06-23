@@ -37,7 +37,7 @@ class MigrateCommand extends Command
      */
     public function __construct(?ContainerInterface $container = null)
     {
-        $this->container = $container ?? app();
+        $this->container = $container ?? container();
         $this->migrationManager = $this->container->get(MigrationManager::class);
     }
 

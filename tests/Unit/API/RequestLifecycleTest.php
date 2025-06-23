@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\API;
 
 use Tests\TestCase;
@@ -47,7 +48,6 @@ class RequestLifecycleTest extends TestCase
     private function resetRouterMiddleware(): void
     {
         $this->setPrivateStaticProperty(Router::class, 'middlewareStack', []);
-        $this->setPrivateStaticProperty(Router::class, 'legacyMiddlewares', []);
     }
 
     /**

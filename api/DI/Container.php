@@ -81,12 +81,15 @@ class Container implements ContainerInterface
     /**
      * Get a service from the container
      */
-    public function get(string $id): object
+    public function get(string $id): mixed
     {
         try {
             return $this->resolve($id);
+        } catch (ServiceNotFoundException $e) {
+            // Re-throw PSR-11 compliant exception
+            throw $e;
         } catch (\Exception $e) {
-            throw new ServiceNotFoundException("Service '$id' not found: " . $e->getMessage(), 0, $e);
+            throw new ContainerException("Error resolving service '$id': " . $e->getMessage(), 0, $e);
         }
     }
 
@@ -141,6 +144,10 @@ class Container implements ContainerInterface
 
         if (is_string($concrete) && class_exists($concrete)) {
             return $this->buildClass($concrete);
+        }
+
+        if (is_string($concrete)) {
+            throw new ServiceNotFoundException("Class '$concrete' not found");
         }
 
         throw new ContainerException("Cannot build service for: " . print_r($concrete, true));

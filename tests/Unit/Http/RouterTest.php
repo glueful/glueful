@@ -56,7 +56,6 @@ class RouterTest extends TestCase
         $this->setPrivateStaticProperty(Router::class, 'protectedRoutes', []);
         $this->setPrivateStaticProperty(Router::class, 'adminProtectedRoutes', []);
         $this->setPrivateStaticProperty(Router::class, 'middlewareStack', []);
-        $this->setPrivateStaticProperty(Router::class, 'legacyMiddlewares', []);
     }
 
     /**

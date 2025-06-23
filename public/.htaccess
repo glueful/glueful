@@ -1,0 +1,49 @@
+RewriteEngine On
+
+# Handle Angular/Vue/React router (prevent 404 for client-side routes)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api/
+
+# Serve existing files directly (CSS, JS, images, etc.)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^(.*)$ - [L]
+
+# Route all other requests through index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Security headers
+<IfModule mod_headers.c>
+    # Prevent access to sensitive files
+    <FilesMatch "\.(env|log|md|txt|sql|json)$">
+        Header set X-Robots-Tag "noindex, nofollow"
+    </FilesMatch>
+    
+    # Basic security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Prevent access to framework files
+<FilesMatch "^(\.env|\.htaccess|composer\.(json|lock)|package\.json)$">
+    Order deny,allow
+    Deny from all
+</FilesMatch>
+
+# Cache static assets
+<IfModule mod_expires.c>
+    ExpiresActive on
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType application/pdf "access plus 1 year"
+    ExpiresByType application/json "access plus 5 minutes"
+</IfModule>

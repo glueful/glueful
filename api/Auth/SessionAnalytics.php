@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Session Analytics and Metrics System
@@ -27,45 +28,70 @@ class SessionAnalytics
     private const ANALYTICS_PREFIX = 'session_analytics:';
     private const METRICS_TTL = 3600; // 1 hour
 
+    /** @var CacheStore Cache driver service */
+    private CacheStore $cache;
+
+    /** @var SessionCacheManager Session cache manager service */
+    private SessionCacheManager $sessionCacheManager;
+
+    /**
+     * Constructor
+     *
+     * @param CacheStore|null $cache Cache driver service
+     * @param SessionCacheManager|null $sessionCacheManager Session cache manager service
+     */
+    public function __construct(
+        ?CacheStore $cache = null,
+        ?SessionCacheManager $sessionCacheManager = null
+    ) {
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+        $this->sessionCacheManager = $sessionCacheManager ?? container()->get(SessionCacheManager::class);
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'CacheStore is required for SessionAnalytics: Unable to create cache instance.'
+            );
+        }
+    }
+
     /**
      * Get comprehensive session analytics
      *
      * @param array $filters Optional filters for analysis
      * @return array Detailed session metrics
      */
-    public static function getSessionAnalytics(array $filters = []): array
+    public function getSessionAnalytics(array $filters = []): array
     {
         $startTime = microtime(true);
 
         // Get all active sessions
-        $allSessions = self::getAllActiveSessions();
+        $allSessions = $this->getAllActiveSessions();
 
         // Apply filters if provided
         if (!empty($filters)) {
-            $allSessions = self::applyFilters($allSessions, $filters);
+            $allSessions = $this->applyFilters($allSessions, $filters);
         }
 
         $analytics = [
             'timestamp' => time(),
             'total_sessions' => count($allSessions),
-            'active_sessions' => self::countActiveSessions($allSessions),
-            'idle_sessions' => self::countIdleSessions($allSessions),
-            'expired_sessions' => self::countExpiredSessions($allSessions),
-            'by_provider' => self::analyzeByProvider($allSessions),
-            'by_user_role' => self::analyzeByUserRole($allSessions),
-            'by_time_range' => self::analyzeByTimeRange($allSessions),
-            'geographic_distribution' => self::analyzeGeographicDistribution($allSessions),
-            'device_types' => self::analyzeDeviceTypes($allSessions),
-            'security_events' => self::getSecurityEvents(),
-            'performance_metrics' => self::getPerformanceMetrics($allSessions),
-            'user_activity' => self::analyzeUserActivity($allSessions),
-            'session_duration' => self::analyzeSessionDuration($allSessions),
-            'concurrent_sessions' => self::analyzeConcurrentSessions($allSessions),
+            'active_sessions' => $this->countActiveSessions($allSessions),
+            'idle_sessions' => $this->countIdleSessions($allSessions),
+            'expired_sessions' => $this->countExpiredSessions($allSessions),
+            'by_provider' => $this->analyzeByProvider($allSessions),
+            'by_user_role' => $this->analyzeByUserRole($allSessions),
+            'by_time_range' => $this->analyzeByTimeRange($allSessions),
+            'geographic_distribution' => $this->analyzeGeographicDistribution($allSessions),
+            'device_types' => $this->analyzeDeviceTypes($allSessions),
+            'security_events' => $this->getSecurityEvents(),
+            'performance_metrics' => $this->getPerformanceMetrics($allSessions),
+            'user_activity' => $this->analyzeUserActivity($allSessions),
+            'session_duration' => $this->analyzeSessionDuration($allSessions),
+            'concurrent_sessions' => $this->analyzeConcurrentSessions($allSessions),
             'analysis_duration_ms' => (microtime(true) - $startTime) * 1000
         ];
 
         // Cache analytics for performance
-        self::cacheAnalytics($analytics, $filters);
+        $this->cacheAnalytics($analytics, $filters);
 
         return $analytics;
     }
@@ -75,30 +101,30 @@ class SessionAnalytics
      *
      * @return array Real-time metrics
      */
-    public static function getRealTimeMetrics(): array
+    public function getRealTimeMetrics(): array
     {
         $cacheKey = self::ANALYTICS_PREFIX . 'realtime';
-        $cached = CacheEngine::get($cacheKey);
+        $cached = $this->cache->get($cacheKey);
 
         if ($cached !== null) {
             return $cached;
         }
 
-        $sessions = self::getAllActiveSessions();
+        $sessions = $this->getAllActiveSessions();
 
         $metrics = [
             'timestamp' => time(),
             'total_active' => count($sessions),
-            'sessions_last_minute' => self::countSessionsInTimeframe($sessions, 60),
-            'sessions_last_hour' => self::countSessionsInTimeframe($sessions, 3600),
-            'unique_users' => self::countUniqueUsers($sessions),
-            'avg_session_age' => self::calculateAverageSessionAge($sessions),
-            'peak_concurrent' => self::getPeakConcurrentSessions(),
+            'sessions_last_minute' => $this->countSessionsInTimeframe($sessions, 60),
+            'sessions_last_hour' => $this->countSessionsInTimeframe($sessions, 3600),
+            'unique_users' => $this->countUniqueUsers($sessions),
+            'avg_session_age' => $this->calculateAverageSessionAge($sessions),
+            'peak_concurrent' => $this->getPeakConcurrentSessions(),
             'providers' => array_count_values(array_column($sessions, 'provider')),
-            'cache_hit_ratio' => self::calculateCacheHitRatio()
+            'cache_hit_ratio' => $this->calculateCacheHitRatio()
         ];
 
-        CacheEngine::set($cacheKey, $metrics, 60); // Cache for 1 minute
+        $this->cache->set($cacheKey, $metrics, 60); // Cache for 1 minute
 
         return $metrics;
     }
@@ -110,7 +136,7 @@ class SessionAnalytics
      * @param int $interval Interval in minutes
      * @return array Trend data
      */
-    public static function getSessionTrends(int $hours = 24, int $interval = 60): array
+    public function getSessionTrends(int $hours = 24, int $interval = 60): array
     {
         $trends = [];
         $endTime = time();
@@ -119,9 +145,9 @@ class SessionAnalytics
         for ($timestamp = $startTime; $timestamp <= $endTime; $timestamp += ($interval * 60)) {
             $trends[] = [
                 'timestamp' => $timestamp,
-                'active_sessions' => self::getHistoricalSessionCount($timestamp),
-                'new_sessions' => self::getNewSessionsCount($timestamp, $interval * 60),
-                'terminated_sessions' => self::getTerminatedSessionsCount($timestamp, $interval * 60)
+                'active_sessions' => $this->getHistoricalSessionCount($timestamp),
+                'new_sessions' => $this->getNewSessionsCount($timestamp, $interval * 60),
+                'terminated_sessions' => $this->getTerminatedSessionsCount($timestamp, $interval * 60)
             ];
         }
 
@@ -134,10 +160,10 @@ class SessionAnalytics
      * @param array $criteria Search criteria
      * @return array Matching sessions
      */
-    public static function findSessionsWithCriteria(array $criteria): array
+    public function findSessionsWithCriteria(array $criteria): array
     {
         // Get all active sessions and filter manually
-        $allSessions = self::getAllActiveSessions();
+        $allSessions = $this->getAllActiveSessions();
 
         return array_filter($allSessions, function ($session) use ($criteria) {
             foreach ($criteria as $field => $condition) {
@@ -145,7 +171,7 @@ class SessionAnalytics
                     case 'ip_range':
                         if (isset($condition['start']) && isset($condition['end'])) {
                             $ip = $session['ip_address'] ?? '';
-                            if (!self::ipInRange($ip, $condition['start'], $condition['end'])) {
+                            if (!$this->ipInRange($ip, $condition['start'], $condition['end'])) {
                                 return false;
                             }
                         }
@@ -160,7 +186,7 @@ class SessionAnalytics
 
                     case 'permission_combinations':
                         $permissions = $session['user']['permissions'] ?? [];
-                        if (!self::hasPermissionCombination($permissions, $condition)) {
+                        if (!$this->hasPermissionCombination($permissions, $condition)) {
                             return false;
                         }
                         break;
@@ -175,7 +201,7 @@ class SessionAnalytics
                         break;
 
                     case 'geographic_constraint':
-                        if (!self::matchesGeographicConstraint($session, $condition)) {
+                        if (!$this->matchesGeographicConstraint($session, $condition)) {
                             return false;
                         }
                         break;
@@ -206,7 +232,7 @@ class SessionAnalytics
      * @param int $hours Hours to look back
      * @return array Security events
      */
-    public static function getSecurityEvents(int $hours = 24): array
+    public function getSecurityEvents(int $hours = 24): array
     {
         $events = [];
 
@@ -216,11 +242,11 @@ class SessionAnalytics
 
             // Get recent security events related to sessions
             $securityEvents = [
-                'failed_logins' => self::getFailedLoginAttempts($hours),
-                'suspicious_locations' => self::getSuspiciousLocationLogins($hours),
-                'concurrent_sessions_violations' => self::getConcurrentSessionViolations($hours),
-                'session_hijacking_attempts' => self::getSessionHijackingAttempts($hours),
-                'unusual_activity_patterns' => self::getUnusualActivityPatterns($hours)
+                'failed_logins' => $this->getFailedLoginAttempts($hours),
+                'suspicious_locations' => $this->getSuspiciousLocationLogins($hours),
+                'concurrent_sessions_violations' => $this->getConcurrentSessionViolations($hours),
+                'session_hijacking_attempts' => $this->getSessionHijackingAttempts($hours),
+                'unusual_activity_patterns' => $this->getUnusualActivityPatterns($hours)
             ];
 
             $events = $securityEvents;
@@ -238,7 +264,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Provider analysis
      */
-    private static function analyzeByProvider(array $sessions): array
+    private function analyzeByProvider(array $sessions): array
     {
         $providers = [];
 
@@ -284,7 +310,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Role analysis
      */
-    private static function analyzeByUserRole(array $sessions): array
+    private function analyzeByUserRole(array $sessions): array
     {
         $roles = [];
 
@@ -335,7 +361,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Time range analysis
      */
-    private static function analyzeByTimeRange(array $sessions): array
+    private function analyzeByTimeRange(array $sessions): array
     {
         $now = time();
         $ranges = [
@@ -395,7 +421,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Geographic analysis
      */
-    private static function analyzeGeographicDistribution(array $sessions): array
+    private function analyzeGeographicDistribution(array $sessions): array
     {
         $countries = [];
         $cities = [];
@@ -405,11 +431,11 @@ class SessionAnalytics
             $ipAddress = $session['ip_address'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
             // Simulate geo lookup (in real implementation, use GeoIP service)
-            $geoData = self::getGeolocationData($ipAddress);
+            $geoData = $this->getGeolocationData($ipAddress);
 
             $country = $geoData['country'] ?? 'Unknown';
             $city = $geoData['city'] ?? 'Unknown';
-            $ipRange = self::getIpRange($ipAddress);
+            $ipRange = $this->getIpRange($ipAddress);
 
             // Count by country
             $countries[$country] = ($countries[$country] ?? 0) + 1;
@@ -442,7 +468,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Device analysis
      */
-    private static function analyzeDeviceTypes(array $sessions): array
+    private function analyzeDeviceTypes(array $sessions): array
     {
         $devices = [];
         $browsers = [];
@@ -451,7 +477,7 @@ class SessionAnalytics
         foreach ($sessions as $session) {
             $userAgent = $session['user_agent'] ?? $_SERVER['HTTP_USER_AGENT'] ?? '';
 
-            $deviceInfo = self::parseUserAgent($userAgent);
+            $deviceInfo = $this->parseUserAgent($userAgent);
 
             $device = $deviceInfo['device'] ?? 'unknown';
             $browser = $deviceInfo['browser'] ?? 'unknown';
@@ -479,7 +505,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Performance metrics
      */
-    private static function getPerformanceMetrics(array $sessions): array
+    private function getPerformanceMetrics(array $sessions): array
     {
         if (empty($sessions)) {
             return [
@@ -508,9 +534,9 @@ class SessionAnalytics
 
         return [
             'avg_session_duration' => $totalDuration / $sessionCount,
-            'peak_concurrent_sessions' => self::getPeakConcurrentSessions(),
-            'session_creation_rate' => self::calculateSessionCreationRate(),
-            'cache_hit_ratio' => self::calculateCacheHitRatio(),
+            'peak_concurrent_sessions' => $this->getPeakConcurrentSessions(),
+            'session_creation_rate' => $this->calculateSessionCreationRate(),
+            'cache_hit_ratio' => $this->calculateCacheHitRatio(),
             'avg_requests_per_session' => $totalRequests / $sessionCount,
             'memory_usage_mb' => memory_get_usage(true) / 1024 / 1024
         ];
@@ -522,7 +548,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Activity analysis
      */
-    private static function analyzeUserActivity(array $sessions): array
+    private function analyzeUserActivity(array $sessions): array
     {
         $userActivity = [];
         $hourlyDistribution = array_fill(0, 24, 0);
@@ -579,7 +605,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Duration analysis
      */
-    private static function analyzeSessionDuration(array $sessions): array
+    private function analyzeSessionDuration(array $sessions): array
     {
         $durations = [];
         $buckets = [
@@ -610,7 +636,7 @@ class SessionAnalytics
 
         return [
             'avg_duration' => !empty($durations) ? array_sum($durations) / count($durations) : 0,
-            'median_duration' => self::calculateMedian($durations),
+            'median_duration' => $this->calculateMedian($durations),
             'min_duration' => !empty($durations) ? min($durations) : 0,
             'max_duration' => !empty($durations) ? max($durations) : 0,
             'duration_buckets' => $bucketCounts
@@ -623,7 +649,7 @@ class SessionAnalytics
      * @param array $sessions Sessions to analyze
      * @return array Concurrency analysis
      */
-    private static function analyzeConcurrentSessions(array $sessions): array
+    private function analyzeConcurrentSessions(array $sessions): array
     {
         $userSessions = [];
 
@@ -655,10 +681,10 @@ class SessionAnalytics
      *
      * @return array All active sessions
      */
-    private static function getAllActiveSessions(): array
+    private function getAllActiveSessions(): array
     {
         // Get all active sessions using the SessionQueryBuilder
-        return SessionCacheManager::sessionQuery()->get();
+        return $this->sessionCacheManager->sessionQuery()->get();
     }
 
     /**
@@ -668,7 +694,7 @@ class SessionAnalytics
      * @param array $filters Filters to apply
      * @return array Filtered sessions
      */
-    private static function applyFilters(array $sessions, array $filters): array
+    private function applyFilters(array $sessions, array $filters): array
     {
         return array_filter($sessions, function ($session) use ($filters) {
             foreach ($filters as $field => $value) {
@@ -697,17 +723,17 @@ class SessionAnalytics
      * @param array $filters Filters used
      * @return void
      */
-    private static function cacheAnalytics(array $analytics, array $filters): void
+    private function cacheAnalytics(array $analytics, array $filters): void
     {
         $cacheKey = self::ANALYTICS_PREFIX . 'full:' . md5(json_encode($filters));
-        CacheEngine::set($cacheKey, $analytics, self::METRICS_TTL);
+        $this->cache->set($cacheKey, $analytics, self::METRICS_TTL);
     }
 
     /**
      * Helper methods for calculations
      */
 
-    private static function countActiveSessions(array $sessions): int
+    private function countActiveSessions(array $sessions): int
     {
         return count(array_filter($sessions, function ($session) {
             $lastActivity = $session['last_activity'] ?? 0;
@@ -715,7 +741,7 @@ class SessionAnalytics
         }));
     }
 
-    private static function countIdleSessions(array $sessions): int
+    private function countIdleSessions(array $sessions): int
     {
         return count(array_filter($sessions, function ($session) {
             $lastActivity = $session['last_activity'] ?? 0;
@@ -724,7 +750,7 @@ class SessionAnalytics
         }));
     }
 
-    private static function countExpiredSessions(array $sessions): int
+    private function countExpiredSessions(array $sessions): int
     {
         return count(array_filter($sessions, function ($session) {
             $lastActivity = $session['last_activity'] ?? 0;
@@ -732,7 +758,7 @@ class SessionAnalytics
         }));
     }
 
-    private static function countSessionsInTimeframe(array $sessions, int $seconds): int
+    private function countSessionsInTimeframe(array $sessions, int $seconds): int
     {
         $threshold = time() - $seconds;
         return count(array_filter($sessions, function ($session) use ($threshold) {
@@ -740,7 +766,7 @@ class SessionAnalytics
         }));
     }
 
-    private static function countUniqueUsers(array $sessions): int
+    private function countUniqueUsers(array $sessions): int
     {
         $users = array_unique(array_filter(array_map(function ($session) {
             return $session['user']['uuid'] ?? null;
@@ -748,7 +774,7 @@ class SessionAnalytics
         return count($users);
     }
 
-    private static function calculateAverageSessionAge(array $sessions): float
+    private function calculateAverageSessionAge(array $sessions): float
     {
         if (empty($sessions)) {
             return 0;
@@ -765,7 +791,7 @@ class SessionAnalytics
         return $totalAge / count($sessions);
     }
 
-    private static function calculateMedian(array $values): float
+    private function calculateMedian(array $values): float
     {
         if (empty($values)) {
             return 0;
@@ -782,39 +808,39 @@ class SessionAnalytics
         }
     }
 
-    private static function getPeakConcurrentSessions(): int
+    private function getPeakConcurrentSessions(): int
     {
         $cacheKey = self::ANALYTICS_PREFIX . 'peak_concurrent';
-        return (int) (CacheEngine::get($cacheKey) ?? 0);
+        return (int) ($this->cache->get($cacheKey) ?? 0);
     }
 
-    private static function calculateSessionCreationRate(): float
+    private function calculateSessionCreationRate(): float
     {
         // Calculate sessions created per minute over last hour
         $cacheKey = self::ANALYTICS_PREFIX . 'creation_rate';
-        return (float) (CacheEngine::get($cacheKey) ?? 0);
+        return (float) ($this->cache->get($cacheKey) ?? 0);
     }
 
-    private static function calculateCacheHitRatio(): float
+    private function calculateCacheHitRatio(): float
     {
         // This would integrate with cache statistics
         return 0.95; // Placeholder
     }
 
     // Placeholder methods for geolocation and user agent parsing
-    private static function getGeolocationData(string $ip): array
+    private function getGeolocationData(string $ip): array
     {
         // In real implementation, use GeoIP service
         return ['country' => 'Unknown', 'city' => 'Unknown'];
     }
 
-    private static function getIpRange(string $ip): string
+    private function getIpRange(string $ip): string
     {
         $parts = explode('.', $ip);
         return $parts[0] . '.' . $parts[1] . '.x.x';
     }
 
-    private static function parseUserAgent(string $userAgent): array
+    private function parseUserAgent(string $userAgent): array
     {
         // Basic user agent parsing - in real implementation use proper library
         $device = 'desktop';
@@ -847,56 +873,56 @@ class SessionAnalytics
     }
 
     // Placeholder methods for historical data and security events
-    private static function getHistoricalSessionCount(int $timestamp): int
+    private function getHistoricalSessionCount(int $timestamp): int
     {
         // Would query historical session data
         return 0;
     }
 
-    private static function getNewSessionsCount(int $timestamp, int $interval): int
+    private function getNewSessionsCount(int $timestamp, int $interval): int
     {
         // Would count new sessions in time interval
         return 0;
     }
 
-    private static function getTerminatedSessionsCount(int $timestamp, int $interval): int
+    private function getTerminatedSessionsCount(int $timestamp, int $interval): int
     {
         // Would count terminated sessions in time interval
         return 0;
     }
 
-    private static function getFailedLoginAttempts(int $hours): array
+    private function getFailedLoginAttempts(int $hours): array
     {
         return ['count' => 0, 'unique_ips' => 0];
     }
 
-    private static function getSuspiciousLocationLogins(int $hours): array
+    private function getSuspiciousLocationLogins(int $hours): array
     {
         return ['count' => 0, 'locations' => []];
     }
 
-    private static function getConcurrentSessionViolations(int $hours): array
+    private function getConcurrentSessionViolations(int $hours): array
     {
         return ['count' => 0, 'users' => []];
     }
 
-    private static function getSessionHijackingAttempts(int $hours): array
+    private function getSessionHijackingAttempts(int $hours): array
     {
         return ['count' => 0, 'patterns' => []];
     }
 
-    private static function getUnusualActivityPatterns(int $hours): array
+    private function getUnusualActivityPatterns(int $hours): array
     {
         return ['count' => 0, 'patterns' => []];
     }
 
     // Helper methods for complex filtering
-    private static function ipInRange(string $ip, string $start, string $end): bool
+    private function ipInRange(string $ip, string $start, string $end): bool
     {
         return ip2long($ip) >= ip2long($start) && ip2long($ip) <= ip2long($end);
     }
 
-    private static function hasPermissionCombination(array $permissions, array $required): bool
+    private function hasPermissionCombination(array $permissions, array $required): bool
     {
         foreach ($required as $permission) {
             $found = false;
@@ -913,7 +939,7 @@ class SessionAnalytics
         return true;
     }
 
-    private static function matchesGeographicConstraint(array $session, array $constraint): bool
+    private function matchesGeographicConstraint(array $session, array $constraint): bool
     {
         // Placeholder for geographic matching logic
         return true;

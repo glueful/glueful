@@ -6,14 +6,17 @@ namespace Glueful\Cache\Drivers;
 
 use InvalidArgumentException;
 use Glueful\Security\SecureSerializer;
+use Psr\SimpleCache\InvalidArgumentException as PSRInvalidArgumentException;
+use Glueful\Exceptions\CacheException;
+use Glueful\Cache\CacheStore;
 
 /**
  * File Cache Driver
  *
  * Provides file-based caching as a fallback when Redis/Memcached are unavailable.
- * Implements CacheDriverInterface with file system storage.
+ * Implements CacheStore with file system storage.
  */
-class FileCacheDriver implements CacheDriverInterface
+class FileCacheDriver implements CacheStore
 {
     /** @var string Base directory for cache files */
     private string $directory;
@@ -96,49 +99,56 @@ class FileCacheDriver implements CacheDriverInterface
     }
 
     /**
-     * Get cached value
+     * Get cached value (PSR-16 compatible)
      *
      * @param string $key Cache key
-     * @return mixed Cached value or null if not found
+     * @param mixed $default Default value if key not found
+     * @return mixed Cached value or default if not found
+     * @throws PSRInvalidArgumentException If key is invalid
      */
-    public function get(string $key): mixed
+    public function get(string $key, mixed $default = null): mixed
     {
+        $this->validateKey($key);
         $filePath = $this->getFilePath($key);
         $metaPath = $this->getFilePath($key, self::META_EXT);
 
         if (!file_exists($filePath) || !file_exists($metaPath)) {
-            return null;
+            return $default;
         }
 
         // Check if expired
         $meta = $this->loadFromFile($metaPath);
-        if ($meta === null || (isset($meta['expires']) && $meta['expires'] < time())) {
+        if ($meta === null || (isset($meta['expires']) && $meta['expires'] > 0 && $meta['expires'] < time())) {
             // Clean up expired files
             @unlink($filePath);
             @unlink($metaPath);
-            return null;
+            return $default;
         }
 
-        return $this->loadFromFile($filePath);
+        $value = $this->loadFromFile($filePath);
+        return $value !== null ? $value : $default;
     }
 
     /**
-     * Store value in cache
+     * Store value in cache (PSR-16 compatible)
      *
      * @param string $key Cache key
      * @param mixed $value Value to store
-     * @param int $ttl Time to live in seconds
+     * @param null|int|\DateInterval $ttl Time to live
      * @return bool True if stored successfully
+     * @throws PSRInvalidArgumentException If key is invalid
      */
-    public function set(string $key, mixed $value, int $ttl = 3600): bool
+    public function set(string $key, mixed $value, null|int|\DateInterval $ttl = null): bool
     {
+        $this->validateKey($key);
         $filePath = $this->getFilePath($key);
         $metaPath = $this->getFilePath($key, self::META_EXT);
 
+        $seconds = $this->normalizeTtl($ttl);
         $meta = [
             'created' => time(),
-            'expires' => ($ttl > 0) ? time() + $ttl : 0,
-            'ttl' => $ttl
+            'expires' => ($seconds && $seconds > 0) ? time() + $seconds : 0,
+            'ttl' => $seconds ?? 0
         ];
 
         if (!$this->saveToFile($metaPath, $meta)) {
@@ -146,6 +156,63 @@ class FileCacheDriver implements CacheDriverInterface
         }
 
         return $this->saveToFile($filePath, $value);
+    }
+
+    /**
+     * Set value only if key does not exist (atomic operation)
+     *
+     * Uses file locking to ensure atomicity.
+     *
+     * @param string $key Cache key
+     * @param mixed $value Value to store
+     * @param int $ttl Time to live in seconds
+     * @return bool True if key was set (didn't exist), false if key already exists
+     */
+    public function setNx(string $key, mixed $value, int $ttl = 3600): bool
+    {
+        $filePath = $this->getFilePath($key);
+        $metaPath = $this->getFilePath($key, self::META_EXT);
+        $lockPath = $filePath . '.lock';
+
+        // Use file locking for atomicity
+        $lockFile = fopen($lockPath, 'c');
+        if (!$lockFile) {
+            return false;
+        }
+
+        try {
+            // Acquire exclusive lock
+            if (!flock($lockFile, LOCK_EX)) {
+                return false;
+            }
+
+            // Check if key already exists (and is not expired)
+            if (file_exists($filePath) && file_exists($metaPath)) {
+                $meta = $this->loadFromFile($metaPath);
+                if ($meta !== null && (!isset($meta['expires']) || $meta['expires'] >= time())) {
+                    // Key exists and is not expired
+                    return false;
+                }
+            }
+
+            // Key doesn't exist or is expired, set it
+            $meta = [
+                'created' => time(),
+                'expires' => ($ttl > 0) ? time() + $ttl : 0,
+                'ttl' => $ttl
+            ];
+
+            if (!$this->saveToFile($metaPath, $meta)) {
+                return false;
+            }
+
+            return $this->saveToFile($filePath, $value);
+        } finally {
+            // Always release lock and clean up
+            flock($lockFile, LOCK_UN);
+            fclose($lockFile);
+            @unlink($lockPath);
+        }
     }
 
     /**
@@ -184,13 +251,15 @@ class FileCacheDriver implements CacheDriverInterface
     }
 
     /**
-     * Delete cached value
+     * Delete cached value (PSR-16 compatible)
      *
      * @param string $key Cache key
      * @return bool True if deleted successfully
+     * @throws PSRInvalidArgumentException If key is invalid
      */
     public function delete(string $key): bool
     {
+        $this->validateKey($key);
         return $this->del($key);
     }
 
@@ -198,23 +267,38 @@ class FileCacheDriver implements CacheDriverInterface
      * Increment numeric value
      *
      * @param string $key Cache key
-     * @return bool True if incremented successfully
+     * @param int $value Amount to increment by (default: 1)
+     * @return int New value after increment
      */
-    public function increment(string $key): bool
+    public function increment(string $key, int $value = 1): int
     {
-        $value = $this->get($key);
+        $currentValue = $this->get($key, 0);
 
-        if (!is_numeric($value)) {
-            return false;
+        if (!is_numeric($currentValue)) {
+            $currentValue = 0;
         }
 
+        $newValue = (int) $currentValue + $value;
+
+        // Preserve existing TTL
         $metaPath = $this->getFilePath($key, self::META_EXT);
         $meta = $this->loadFromFile($metaPath);
-        if ($meta === null) {
-            return false;
-        }
+        $ttl = $meta['ttl'] ?? 3600;
 
-        return $this->set($key, $value + 1, $meta['ttl']);
+        $this->set($key, $newValue, $ttl);
+        return $newValue;
+    }
+
+    /**
+     * Decrement numeric value
+     *
+     * @param string $key Cache key
+     * @param int $value Amount to decrement by (default: 1)
+     * @return int New value after decrement
+     */
+    public function decrement(string $key, int $value = 1): int
+    {
+        return $this->increment($key, -$value);
     }
 
     /**
@@ -245,11 +329,11 @@ class FileCacheDriver implements CacheDriverInterface
     }
 
     /**
-     * Clear all cached values
+     * Clear all cached values (PSR-16 compatible)
      *
      * @return bool True if cache cleared successfully
      */
-    public function flush(): bool
+    public function clear(): bool
     {
         $files = glob($this->directory . '*');
 
@@ -265,6 +349,16 @@ class FileCacheDriver implements CacheDriverInterface
         }
 
         return $success;
+    }
+
+    /**
+     * Clear all cached values (alias for PSR-16 clear() for backward compatibility)
+     *
+     * @return bool True if cache cleared successfully
+     */
+    public function flush(): bool
+    {
+        return $this->clear();
     }
 
     /**
@@ -579,6 +673,183 @@ class FileCacheDriver implements CacheDriverInterface
     }
 
     /**
+     * Check if a cache key exists (PSR-16)
+     *
+     * @param string $key Cache key
+     * @return bool True if key exists
+     * @throws PSRInvalidArgumentException If key is invalid
+     */
+    public function has(string $key): bool
+    {
+        $this->validateKey($key);
+        $filePath = $this->getFilePath($key);
+        $metaPath = $this->getFilePath($key, self::META_EXT);
+
+        if (!file_exists($filePath) || !file_exists($metaPath)) {
+            return false;
+        }
+
+        // Check if expired
+        $meta = $this->loadFromFile($metaPath);
+        if ($meta === null || (isset($meta['expires']) && $meta['expires'] > 0 && $meta['expires'] < time())) {
+            // Clean up expired files
+            @unlink($filePath);
+            @unlink($metaPath);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get multiple cached values (PSR-16)
+     *
+     * @param iterable $keys Cache keys
+     * @param mixed $default Default value for missing keys
+     * @return iterable Values in same order as keys
+     * @throws PSRInvalidArgumentException If any key is invalid
+     */
+    public function getMultiple(iterable $keys, mixed $default = null): iterable
+    {
+        $keyArray = is_array($keys) ? $keys : iterator_to_array($keys);
+        $result = [];
+
+        foreach ($keyArray as $key) {
+            $result[$key] = $this->get($key, $default);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Store multiple values in cache (PSR-16)
+     *
+     * @param iterable $values Key-value pairs
+     * @param null|int|\DateInterval $ttl Time to live
+     * @return bool True if all values stored successfully
+     * @throws PSRInvalidArgumentException If any key is invalid
+     */
+    public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
+    {
+        $valueArray = is_array($values) ? $values : iterator_to_array($values);
+        $success = true;
+
+        foreach ($valueArray as $key => $value) {
+            $success = $success && $this->set($key, $value, $ttl);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Delete multiple cache keys (PSR-16)
+     *
+     * @param iterable $keys Cache keys
+     * @return bool True if all keys deleted successfully
+     * @throws PSRInvalidArgumentException If any key is invalid
+     */
+    public function deleteMultiple(iterable $keys): bool
+    {
+        $keyArray = is_array($keys) ? $keys : iterator_to_array($keys);
+        $success = true;
+
+        foreach ($keyArray as $key) {
+            $success = $success && $this->delete($key);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Get count of keys matching pattern
+     *
+     * @param string $pattern Pattern to match (supports wildcards *)
+     * @return int Number of matching keys
+     */
+    public function getKeyCount(string $pattern = '*'): int
+    {
+        return count($this->getKeys($pattern));
+    }
+
+    /**
+     * Get cache driver capabilities
+     *
+     * @return array Driver capabilities and features
+     */
+    public function getCapabilities(): array
+    {
+        return [
+            'driver' => 'file',
+            'features' => [
+                'persistent' => true,
+                'distributed' => false,      // File cache is local only
+                'atomic_operations' => true, // Via file locking
+                'pattern_deletion' => true,
+                'sorted_sets' => true,
+                'counters' => true,
+                'expiration' => true,
+                'bulk_operations' => true,
+                'tags' => false,             // Not implemented yet
+                'key_enumeration' => true,
+            ],
+            'data_types' => ['string', 'integer', 'float', 'boolean', 'array', 'object'],
+            'max_key_length' => 255,        // Filesystem limit
+            'max_value_size' => null,       // Limited by disk space
+            'directory' => $this->directory,
+            'permissions' => substr(sprintf('%o', fileperms($this->directory)), -4),
+        ];
+    }
+
+    /**
+     * Add tags to a cache key for grouped invalidation
+     *
+     * @param string $key Cache key
+     * @param array $tags Array of tags to associate with the key
+     * @return bool True if tags added successfully
+     */
+    public function addTags(string $key, array $tags): bool
+    {
+        // TODO: Implement tagging system using additional metadata files
+        // For now, return false to indicate not implemented
+        return false;
+    }
+
+    /**
+     * Invalidate all cache entries with specified tags
+     *
+     * @param array $tags Array of tags to invalidate
+     * @return bool True if invalidation successful
+     */
+    public function invalidateTags(array $tags): bool
+    {
+        // TODO: Implement tag-based invalidation
+        // For now, return false to indicate not implemented
+        return false;
+    }
+
+    /**
+     * Remember pattern - get from cache or execute callback and store result
+     *
+     * @param string $key Cache key
+     * @param callable $callback Function to execute if cache miss
+     * @param int|null $ttl Time to live in seconds (null = default)
+     * @return mixed Cached or computed value
+     */
+    public function remember(string $key, callable $callback, ?int $ttl = null): mixed
+    {
+        $value = $this->get($key);
+
+        if ($value !== null) {
+            return $value;
+        }
+
+        $value = $callback();
+        $this->set($key, $value, $ttl ?? 3600);
+
+        return $value;
+    }
+
+    /**
      * Format bytes to human readable format
      *
      * @param int $size Size in bytes
@@ -594,5 +865,48 @@ class FileCacheDriver implements CacheDriverInterface
         }
 
         return round($size / (1024 ** $power), 2) . ' ' . $units[$power];
+    }
+
+    /**
+     * Validate cache key according to PSR-16 requirements
+     *
+     * @param string $key Cache key to validate
+     * @throws PSRInvalidArgumentException If key is invalid
+     */
+    private function validateKey(string $key): void
+    {
+        if ($key === '') {
+            throw CacheException::emptyKey();
+        }
+
+        if (strpbrk($key, '{}()/\\@:') !== false) {
+            throw CacheException::invalidCharacters($key);
+        }
+
+        // Filesystem-safe length limit
+        if (strlen($key) > 255) {
+            throw CacheException::invalidKey($key . ' (exceeds 255 character limit)');
+        }
+    }
+
+    /**
+     * Normalize TTL value to seconds
+     *
+     * @param null|int|\DateInterval $ttl TTL value
+     * @return int|null TTL in seconds or null for no expiration
+     */
+    private function normalizeTtl(null|int|\DateInterval $ttl): ?int
+    {
+        if ($ttl === null) {
+            return null;
+        }
+
+        if ($ttl instanceof \DateInterval) {
+            $now = new \DateTimeImmutable();
+            $future = $now->add($ttl);
+            return $future->getTimestamp() - $now->getTimestamp();
+        }
+
+        return max(1, (int) $ttl);
     }
 }

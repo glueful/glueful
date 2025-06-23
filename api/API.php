@@ -96,7 +96,7 @@ class API
         // Initialize cache if enabled
         if (config('cache.enabled', true)) {
             self::getLogger()->debug("Initializing cache services...");
-            \Glueful\Helpers\Utils::initializeCacheEngine(config('cache.prefix', 'glueful:'));
+            \Glueful\Helpers\Utils::initializeCacheDriver();
         }
 
         self::getLogger()->debug("Core initialization completed without middleware conflicts");

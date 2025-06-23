@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers\Traits;
 
 use Glueful\Http\Response;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\QueryCacheService;
 use Glueful\Cache\EdgeCacheService;
 use Glueful\Logging\AuditEvent;
@@ -20,6 +20,20 @@ use Glueful\Logging\AuditEvent;
  */
 trait ResponseCachingTrait
 {
+    /**
+     * Get cache store instance
+     *
+     * @return CacheStore
+     */
+    protected function getCacheStore(): CacheStore
+    {
+        try {
+            return container()->get(CacheStore::class);
+        } catch (\Exception $e) {
+            throw new \RuntimeException('CacheStore is required for response caching: ' . $e->getMessage());
+        }
+    }
+
      /**
      * Cache response with automatic cache key generation
      *
@@ -53,7 +67,7 @@ trait ResponseCachingTrait
             $tags[] = 'user:' . $this->currentUser->uuid;
         }
 
-        return CacheEngine::remember($cacheKey, $callback, $ttl);
+        return $this->getCacheStore()->remember($cacheKey, $callback, $ttl);
     }
 
     /**
@@ -259,7 +273,7 @@ trait ResponseCachingTrait
             }
         }
 
-        CacheEngine::invalidateTags($tags);
+        $this->getCacheStore()->invalidateTags($tags);
 
         // Log cache invalidation
         $this->asyncAudit(
@@ -411,10 +425,10 @@ trait ResponseCachingTrait
         ];
 
         // Store metrics (could be sent to monitoring service)
-        CacheEngine::zadd('cache_metrics', [json_encode($metrics) => time()]);
+        $this->getCacheStore()->zadd('cache_metrics', [json_encode($metrics) => time()]);
 
         // Cleanup old metrics (keep last 24 hours)
-        CacheEngine::zremrangebyscore('cache_metrics', '-inf', (string)(time() - 86400));
+        $this->getCacheStore()->zremrangebyscore('cache_metrics', '-inf', (string)(time() - 86400));
     }
 
     /**
@@ -441,7 +455,7 @@ trait ResponseCachingTrait
 
         $startTime = microtime(true);
         // Check if key exists by attempting to get it
-        $existingValue = CacheEngine::get($cacheKey);
+        $existingValue = $this->getCacheStore()->get($cacheKey);
         $cached = $existingValue !== null;
 
         $result = $this->cacheResponse($cacheKey, $callback, $ttl, ['fragment', 'fragment:' . $fragment]);
@@ -465,7 +479,7 @@ trait ResponseCachingTrait
         foreach ($operations as $key => $operation) {
             // Try to get from cache first
             $cacheKey = sprintf('controller:%s:%s', static::class, $key);
-            $cachedValue = CacheEngine::get($cacheKey);
+            $cachedValue = $this->getCacheStore()->get($cacheKey);
 
             if ($cachedValue !== null) {
                 $results[$key] = $cachedValue;

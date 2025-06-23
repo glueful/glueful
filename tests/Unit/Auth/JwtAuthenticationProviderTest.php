@@ -8,7 +8,7 @@ use Tests\TestCase;
 use Tests\Helpers\AuditLoggerMock;
 use Glueful\Auth\JwtAuthenticationProvider;
 use Glueful\Auth\JWTService;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheFactory;
 
 /**
  * Tests for the JWT Authentication Provider
@@ -80,7 +80,12 @@ class JwtAuthenticationProviderTest extends TestCase
         ];
 
         // Reset the cache for a clean test state
-        CacheEngine::reset();
+        try {
+            $cache = CacheFactory::create();
+            $cache->flush();
+        } catch (\Exception $e) {
+            // Cache might not be available in test environment
+        }
 
         // Create required database tables for TokenStorageService
         $this->createDatabaseTables();
@@ -146,7 +151,17 @@ class JwtAuthenticationProviderTest extends TestCase
         $sessionData = array_merge($sessionData, $userData);
 
         // Create cache entry that TokenStorageService expects
-        CacheEngine::set('session_token:' . $token, json_encode($sessionData));
+        try {
+            $cache = CacheFactory::create();
+            $result = $cache->set('session_token:' . $token, json_encode($sessionData));
+            if (!$result) {
+                throw new \Exception('Failed to set cache value');
+            }
+        } catch (\Exception $e) {
+            // Cache might not be available in test environment - this should not fail silently
+            error_log('Cache operation failed in test: ' . $e->getMessage());
+            throw $e; // Re-throw to see what's actually failing
+        }
 
         return $sessionId;
     }
@@ -290,7 +305,12 @@ class JwtAuthenticationProviderTest extends TestCase
         $this->assertNotNull($userData);
 
         // Reset cache and set up session again for a clean test
-        CacheEngine::reset();
+        try {
+            $cache = CacheFactory::create();
+            $cache->flush();
+        } catch (\Exception $e) {
+            // Cache might not be available in test environment
+        }
         $this->setupTokenSession($token, $this->testUserData);
 
         // Test token in cookie - this will fail because current implementation doesn't check cookies

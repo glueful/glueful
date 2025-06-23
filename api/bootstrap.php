@@ -23,19 +23,18 @@ if (env('APP_ENV') === 'production') {
 
 Glueful\Exceptions\ExceptionHandler::register();
 
-// Initialize Cache Engine
-Glueful\Helpers\Utils::initializeCacheEngine('glueful:');
+// Initialize Cache Driver
+Glueful\Helpers\Utils::initializeCacheDriver();
 
 // Initialize API versioning
 $apiVersion = config('app.api_version', 'v1');
 \Glueful\Http\Router::setVersion($apiVersion);
 
-// Enable cache tagging and invalidation services (if cache is enabled)
-if (\Glueful\Cache\CacheEngine::isEnabled()) {
-    \Glueful\Cache\CacheTaggingService::enable();
-    \Glueful\Cache\CacheInvalidationService::enable();
-    \Glueful\Cache\CacheInvalidationService::warmupPatterns();
-}
+// Enable cache tagging and invalidation services
+// Cache services will handle their own initialization via DI
+\Glueful\Cache\CacheTaggingService::enable();
+\Glueful\Cache\CacheInvalidationService::enable();
+\Glueful\Cache\CacheInvalidationService::warmupPatterns();
 
 // Enable development query monitoring in development environment
 if (env('APP_ENV') === 'development' && env('ENABLE_QUERY_MONITORING', true)) {

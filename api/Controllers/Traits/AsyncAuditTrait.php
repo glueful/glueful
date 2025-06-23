@@ -262,8 +262,8 @@ trait AsyncAuditTrait
     {
         if ($this->queueManager === null) {
             // Try to get from container if available
-            if (function_exists('app')) {
-                $this->queueManager = app(QueueManager::class);
+            if (function_exists('container')) {
+                $this->queueManager = container()->get(QueueManager::class);
             } else {
                 // Create new instance
                 $this->queueManager = new QueueManager();

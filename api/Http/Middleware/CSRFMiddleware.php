@@ -7,7 +7,7 @@ namespace Glueful\Http\Middleware;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Glueful\Security\RandomStringGenerator;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Exceptions\SecurityException;
 use Glueful\DI\Interfaces\ContainerInterface;
 
@@ -69,6 +69,9 @@ class CSRFMiddleware implements MiddlewareInterface
     /** @var bool Whether to enforce CSRF protection */
     private bool $enabled;
 
+    /** @var CacheStore|null Cache instance */
+    private ?CacheStore $cache;
+
     /**
      * Create CSRF middleware
      *
@@ -83,13 +86,25 @@ class CSRFMiddleware implements MiddlewareInterface
         int $tokenLifetime = self::DEFAULT_TOKEN_LIFETIME,
         bool $useDoubleSubmit = false,
         bool $enabled = true,
-        ?ContainerInterface $container = null
+        ?ContainerInterface $container = null,
+        ?CacheStore $cache = null
     ) {
         $this->exemptRoutes = $this->normalizeRoutes($exemptRoutes);
         $this->tokenLifetime = $tokenLifetime;
         $this->useDoubleSubmit = $useDoubleSubmit;
         $this->enabled = $enabled;
         $this->container = $container ?? $this->getDefaultContainer();
+        $this->cache = $cache;
+
+        // If no cache provided, try to get from container
+        if ($this->cache === null && $this->container !== null) {
+            try {
+                $this->cache = $this->container->get(CacheStore::class);
+            } catch (\Exception $e) {
+                // Cache not available - continue without caching
+                $this->cache = null;
+            }
+        }
 
         // Container is available for future enhancements
         unset($this->container);
@@ -152,7 +167,13 @@ class CSRFMiddleware implements MiddlewareInterface
         $cacheKey = self::CACHE_PREFIX . $sessionId;
 
         // Store token in cache with expiration
-        CacheEngine::set($cacheKey, $token, $this->tokenLifetime);
+        if ($this->cache !== null) {
+            try {
+                $this->cache->set($cacheKey, $token, $this->tokenLifetime);
+            } catch (\Exception $e) {
+                error_log("Cache set failed for CSRF token '{$cacheKey}': " . $e->getMessage());
+            }
+        }
 
         // Set double-submit cookie if enabled
         if ($this->useDoubleSubmit) {
@@ -183,7 +204,14 @@ class CSRFMiddleware implements MiddlewareInterface
         $sessionId = $this->getSessionId($request);
         $cacheKey = self::CACHE_PREFIX . $sessionId;
 
-        return CacheEngine::get($cacheKey);
+        if ($this->cache !== null) {
+            try {
+                return $this->cache->get($cacheKey);
+            } catch (\Exception $e) {
+                error_log("Cache get failed for CSRF token '{$cacheKey}': " . $e->getMessage());
+            }
+        }
+        return null;
     }
 
     /**

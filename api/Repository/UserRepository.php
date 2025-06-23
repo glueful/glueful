@@ -36,9 +36,12 @@ class UserRepository extends BaseRepository
     /**
      * Initialize repository
      *
-     * Sets up database connection and dependencies
+     * Sets up database connection and dependencies with optional dependency injection
+     *
+     * @param Connection|null $connection Database connection instance
+     * @param Validator|null $validator Validator instance
      */
-    public function __construct(?Connection $connection = null)
+    public function __construct(?Connection $connection = null, ?Validator $validator = null)
     {
         // Configure repository settings before calling parent
         $this->containsSensitiveData = true;
@@ -49,8 +52,8 @@ class UserRepository extends BaseRepository
         // Call parent constructor to set up database connection
         parent::__construct($connection);
 
-        // Initialize additional dependencies
-        $this->validator = new Validator();
+        // Initialize validator with dependency injection or fallback
+        $this->validator = $validator ?? $this->createValidatorInstance();
         // Role repository functionality moved to RBAC extension
     }
 
@@ -580,7 +583,8 @@ class UserRepository extends BaseRepository
             }
 
             // Get session data directly from the session cache
-            $sessionData = \Glueful\Auth\SessionCacheManager::getSession($token);
+            $sessionCacheManager = $this->getSessionCacheManager();
+            $sessionData = $sessionCacheManager->getSession($token);
 
             if ($sessionData && isset($sessionData['user'])) {
                 // Return the user data directly from session cache to avoid DB query
@@ -640,6 +644,41 @@ class UserRepository extends BaseRepository
         }
 
         return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Create validator instance with proper fallback handling
+     *
+     * @return Validator Validator instance
+     */
+    private function createValidatorInstance(): Validator
+    {
+        try {
+            return container()->get(Validator::class);
+        } catch (\Exception) {
+            // Fallback to direct instantiation if container fails
+            return new Validator();
+        }
+    }
+
+    /**
+     * Get session cache manager instance with proper fallback handling
+     *
+     * @return \Glueful\Auth\SessionCacheManager Session cache manager instance
+     */
+    private function getSessionCacheManager(): \Glueful\Auth\SessionCacheManager
+    {
+        try {
+            return container()->get(\Glueful\Auth\SessionCacheManager::class);
+        } catch (\Exception) {
+            // Fallback to direct instantiation if container fails
+            // SessionCacheManager requires a CacheStore, so create one
+            $cacheStore = \Glueful\Helpers\CacheHelper::createCacheInstance();
+            if ($cacheStore === null) {
+                throw new \RuntimeException('Unable to create cache instance for SessionCacheManager');
+            }
+            return new \Glueful\Auth\SessionCacheManager($cacheStore);
+        }
     }
 
     /**

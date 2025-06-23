@@ -4,6 +4,7 @@ namespace Glueful\Cache;
 
 use Glueful\Cache\CDN\CDNAdapterInterface;
 use Glueful\Helpers\ExtensionsManager;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Service for edge caching functionality.
@@ -15,11 +16,11 @@ use Glueful\Helpers\ExtensionsManager;
 class EdgeCacheService
 {
     /**
-     * The cache engine instance
+     * The cache store instance
      *
-     * @var CacheEngine
+     * @var CacheStore|null
      */
-    private $cacheEngine;
+    private ?CacheStore $cacheStore = null;
 
     /**
      * The CDN adapter instance
@@ -38,12 +39,22 @@ class EdgeCacheService
     /**
      * Constructor for the Edge Cache Service
      *
-     * @param CacheEngine|null $cacheEngine The cache engine to use
+     * @param CacheStore|null $cacheStore The cache store to use
      * @param CDNAdapterInterface|null $cdnAdapter A specific CDN adapter to use
      */
-    public function __construct(?CacheEngine $cacheEngine = null, ?CDNAdapterInterface $cdnAdapter = null)
+    public function __construct(?CacheStore $cacheStore = null, ?CDNAdapterInterface $cdnAdapter = null)
     {
-        $this->cacheEngine = $cacheEngine ?? new CacheEngine();
+        // Set up cache store - try provided instance or get from container
+        $this->cacheStore = $cacheStore;
+
+        // If no cache provided, try to get from helper
+        if ($this->cacheStore === null) {
+            $this->cacheStore = CacheHelper::createCacheInstance();
+            if ($this->cacheStore === null) {
+                // Log but continue - edge cache service might work without local cache
+                error_log('EdgeCacheService: Could not create CacheStore instance');
+            }
+        }
         $this->config = config('cache.edge', []);
 
         // If no adapter is provided, attempt to resolve one

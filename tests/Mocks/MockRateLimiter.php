@@ -27,6 +27,20 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
     /** @var array Custom behaviors for testing */
     protected static array $testBehaviors = [];
 
+    /** @var MockCacheStore|null Shared cache instance */
+    protected static ?MockCacheStore $mockCache = null;
+
+    /**
+     * Get or create cache instance
+     */
+    protected static function getCache(): MockCacheStore
+    {
+        if (self::$mockCache === null) {
+            self::$mockCache = new MockCacheStore();
+        }
+        return self::$mockCache;
+    }
+
     /**
      * Constructor
      *
@@ -42,7 +56,8 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
 
         // Initialize attempt count from cache if exists
         $cacheKey = $this->getCacheKey();
-        $this->attemptCount = MockCacheEngine::zcard($cacheKey);
+        $cache = new MockCacheStore();
+        $this->attemptCount = $cache->zcard($cacheKey);
     }
 
     /**
@@ -62,10 +77,10 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         // Clean up old attempts
         $now = microtime(true);
         $cutoff = $now - $this->windowSeconds;
-        MockCacheEngine::zremrangebyscore($cacheKey, '0', (string) $cutoff);
+        self::getCache()->zremrangebyscore($cacheKey, '0', (string) $cutoff);
 
         // Count current attempts
-        $currentCount = MockCacheEngine::zcard($cacheKey);
+        $currentCount = self::getCache()->zcard($cacheKey);
 
         // Check if we're over the limit
         if ($currentCount >= $this->maxAttempts) {
@@ -73,7 +88,7 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         }
 
         // Record this attempt - cast to string to avoid deprecation warning
-        MockCacheEngine::zadd($cacheKey, [(string)$now => (string)$now]);
+        self::getCache()->zadd($cacheKey, [(string)$now => (string)$now]);
 
         // Update attempt count
         $this->attemptCount = $currentCount + 1;
@@ -98,10 +113,10 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         // Clean up old attempts
         $now = microtime(true);
         $cutoff = $now - $this->windowSeconds;
-        MockCacheEngine::zremrangebyscore($cacheKey, '0', (string) $cutoff);
+        self::getCache()->zremrangebyscore($cacheKey, '0', (string) $cutoff);
 
         // Count current attempts
-        $currentCount = MockCacheEngine::zcard($cacheKey);
+        $currentCount = self::getCache()->zcard($cacheKey);
 
         return $currentCount >= $this->maxAttempts;
     }
@@ -123,10 +138,10 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         // Clean up old attempts
         $now = microtime(true);
         $cutoff = $now - $this->windowSeconds;
-        MockCacheEngine::zremrangebyscore($cacheKey, '0', (string) $cutoff);
+        self::getCache()->zremrangebyscore($cacheKey, '0', (string) $cutoff);
 
         // Count current attempts
-        $currentCount = MockCacheEngine::zcard($cacheKey);
+        $currentCount = self::getCache()->zcard($cacheKey);
 
         return max(0, $this->maxAttempts - $currentCount);
     }
@@ -158,9 +173,9 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         // Clean up old attempts
         $now = microtime(true);
         $cutoff = $now - $this->windowSeconds;
-        MockCacheEngine::zremrangebyscore($cacheKey, '0', (string) $cutoff);
+        self::getCache()->zremrangebyscore($cacheKey, '0', (string) $cutoff);
 
-        return MockCacheEngine::zcard($cacheKey);
+        return self::getCache()->zcard($cacheKey);
     }
 
     /**
@@ -173,7 +188,7 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
         $cacheKey = $this->getCacheKey();
 
         // Get oldest attempt timestamp
-        $range = MockCacheEngine::zrange($cacheKey, 0, 0);
+        $range = self::getCache()->zrange($cacheKey, 0, 0);
         if (empty($range)) {
             return 0;
         }
@@ -308,5 +323,8 @@ class MockRateLimiter extends RateLimiter implements RateLimiterInterface
     public static function resetMock(): void
     {
         self::$testBehaviors = [];
+        if (self::$mockCache !== null) {
+            self::$mockCache->reset();
+        }
     }
 }

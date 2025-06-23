@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Glueful\Auth\Interfaces\TokenStorageInterface;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Http\RequestContext;
@@ -24,33 +25,32 @@ class TokenStorageService implements TokenStorageInterface
     private Connection $connection;
     private QueryBuilder $queryBuilder;
     private AuditLogger $auditLogger;
+    private ?CacheStore $cache;
 
     private bool $useTransactions;
-    private bool $cacheEnabled;
     private string $sessionTable = 'auth_sessions';
     private int $cacheDefaultTtl;
     private ?RequestContext $requestContext;
 
     public function __construct(
+        ?CacheStore $cache = null,
         ?Connection $connection = null,
-        bool $useTransactions = true,
-        bool $cacheEnabled = true,
-        ?RequestContext $requestContext = null
+        ?RequestContext $requestContext = null,
+        ?AuditLogger $auditLogger = null,
+        bool $useTransactions = true
     ) {
+        // Assign dependencies with sensible defaults
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
         $this->connection = $connection ?? new Connection();
-        $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
-        $this->auditLogger = AuditLogger::getInstance();
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
-
+        $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
         $this->useTransactions = $useTransactions;
-        $this->cacheEnabled = $cacheEnabled;
-        $this->cacheDefaultTtl = (int)config('session.access_token_lifetime', 900);
 
-        // Initialize cache engine if enabled
-        if ($this->cacheEnabled) {
-            CacheEngine::initialize();
-        }
+        // Initialize derived dependencies
+        $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
+        $this->cacheDefaultTtl = (int)config('session.access_token_lifetime', 900);
     }
+
 
     /**
      * Store a new session with tokens in both database and cache
@@ -93,7 +93,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Store in cache if enabled
-            if ($this->cacheEnabled) {
+            if ($this->cache !== null) {
                 $this->storeSessionInCache($sessionData, $tokens, $sessionUuid);
             }
 
@@ -176,7 +176,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Update cache if enabled
-            if ($this->cacheEnabled) {
+            if ($this->cache !== null) {
                 $this->updateSessionInCache($existingSession, $newTokens);
             }
 
@@ -222,7 +222,7 @@ class TokenStorageService implements TokenStorageInterface
     public function getSessionByAccessToken(string $accessToken): ?array
     {
         // Try cache first if enabled
-        if ($this->cacheEnabled) {
+        if ($this->cache !== null) {
             $cacheKey = "session_token:{$accessToken}";
             $cachedSession = $this->resolveCacheReference($cacheKey);
             if ($cachedSession) {
@@ -245,7 +245,7 @@ class TokenStorageService implements TokenStorageInterface
         $session = $result[0];
 
         // Store in cache for future requests
-        if ($this->cacheEnabled && $session) {
+        if ($this->cache !== null && $session) {
             $this->cacheSessionData($session, $accessToken);
         }
 
@@ -258,7 +258,7 @@ class TokenStorageService implements TokenStorageInterface
     public function getSessionByRefreshToken(string $refreshToken): ?array
     {
         // Try cache first if enabled
-        if ($this->cacheEnabled) {
+        if ($this->cache !== null) {
             $cacheKey = "session_refresh:{$refreshToken}";
             $cachedSession = $this->resolveCacheReference($cacheKey);
             if ($cachedSession) {
@@ -279,7 +279,7 @@ class TokenStorageService implements TokenStorageInterface
         $session = $result[0];
 
         // Store in cache for future requests
-        if ($this->cacheEnabled && $session) {
+        if ($this->cache !== null && $session) {
             $this->cacheSessionData($session, null, $refreshToken);
         }
 
@@ -318,7 +318,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Clear cache entries
-            if ($this->cacheEnabled) {
+            if ($this->cache !== null) {
                 $this->clearSessionCache($session);
             }
 
@@ -378,7 +378,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Clear cache entries for all sessions
-            if ($this->cacheEnabled) {
+            if ($this->cache !== null) {
                 foreach ($sessions as $session) {
                     $this->clearSessionCache($session);
                 }
@@ -444,7 +444,7 @@ class TokenStorageService implements TokenStorageInterface
                 $cleanedCount = count($expiredSessions);
 
                 // Clear cache entries
-                if ($this->cacheEnabled) {
+                if ($this->cache !== null) {
                     foreach ($expiredSessions as $session) {
                         $this->clearSessionCache($session);
                     }
@@ -472,7 +472,7 @@ class TokenStorageService implements TokenStorageInterface
      */
     public function validateStorageConsistency(string $sessionIdentifier): bool
     {
-        if (!$this->cacheEnabled) {
+        if ($this->cache === null) {
             return true; // Can't be inconsistent if cache is disabled
         }
 
@@ -481,8 +481,16 @@ class TokenStorageService implements TokenStorageInterface
             $dbSession = $this->getSessionFromDatabase($sessionIdentifier);
 
             // Get from cache
-            $cacheKey = "session_refresh:{$sessionIdentifier}";
-            $cachedData = CacheEngine::get($cacheKey);
+            $cacheKey = CacheHelper::sessionKey($sessionIdentifier, 'refresh');
+            $cachedData = null;
+            if ($this->cache !== null) {
+                try {
+                    $cachedData = $this->cache->get($cacheKey);
+                } catch (\Exception $e) {
+                    // Cache failure - continue without cache
+                    error_log("Cache get failed for key '{$cacheKey}': " . $e->getMessage());
+                }
+            }
             $cacheSession = $cachedData ? json_decode($cachedData, true) : null;
 
             // Compare critical fields
@@ -530,11 +538,11 @@ class TokenStorageService implements TokenStorageInterface
         }
 
         // Test cache connectivity
-        if ($this->cacheEnabled) {
+        if ($this->cache !== null) {
             try {
                 $start = microtime(true);
-                CacheEngine::set('health_check', 'ok', 5);
-                CacheEngine::get('health_check');
+                $this->cache->set('health_check', 'ok', 5);
+                $this->cache->get('health_check');
                 $health['cache'] = [
                     'status' => 'healthy',
                     'response_time' => round((microtime(true) - $start) * 1000, 2)
@@ -551,7 +559,7 @@ class TokenStorageService implements TokenStorageInterface
 
         // Determine overall health
         $dbHealthy = $health['database']['status'] === 'healthy';
-        $cacheHealthy = !$this->cacheEnabled || $health['cache']['status'] === 'healthy';
+        $cacheHealthy = $this->cache === null || $health['cache']['status'] === 'healthy';
 
         $health['overall'] = ($dbHealthy && $cacheHealthy) ? 'healthy' : 'degraded';
 
@@ -585,18 +593,18 @@ class TokenStorageService implements TokenStorageInterface
         $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
 
         // Store the actual data once with the longest TTL
-        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+        $this->cache->set($canonicalKey, $sessionDataJson, $maxTtl);
 
         // Store references with appropriate TTLs
-        CacheEngine::set($accessCacheKey, $canonicalKey, $this->cacheDefaultTtl);
-        CacheEngine::set($refreshCacheKey, $canonicalKey, $refreshTtl);
+        $this->cache->set($accessCacheKey, $canonicalKey, $this->cacheDefaultTtl);
+        $this->cache->set($refreshCacheKey, $canonicalKey, $refreshTtl);
     }
 
     private function updateSessionInCache(array $sessionData, array $newTokens): void
     {
         // Remove old cache entries
-        CacheEngine::delete("session_token:{$sessionData['access_token']}");
-        CacheEngine::delete("session_refresh:{$sessionData['refresh_token']}");
+        $this->cache->delete("session_token:{$sessionData['access_token']}");
+        $this->cache->delete("session_refresh:{$sessionData['refresh_token']}");
 
         // Store new cache entries using reference pattern
         $updatedData = array_merge($sessionData, [
@@ -610,11 +618,11 @@ class TokenStorageService implements TokenStorageInterface
         $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
 
         // Store the actual data once with the longest TTL
-        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+        $this->cache->set($canonicalKey, $sessionDataJson, $maxTtl);
 
         // Store references with appropriate TTLs
-        CacheEngine::set("session_token:{$newTokens['access_token']}", $canonicalKey, $this->cacheDefaultTtl);
-        CacheEngine::set("session_refresh:{$newTokens['refresh_token']}", $canonicalKey, $refreshTtl);
+        $this->cache->set("session_token:{$newTokens['access_token']}", $canonicalKey, $this->cacheDefaultTtl);
+        $this->cache->set("session_refresh:{$newTokens['refresh_token']}", $canonicalKey, $refreshTtl);
     }
 
     private function cacheSessionData(array $session, ?string $accessToken = null, ?string $refreshToken = null): void
@@ -629,15 +637,15 @@ class TokenStorageService implements TokenStorageInterface
         $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
 
         // Store the actual data once with the longest TTL
-        CacheEngine::set($canonicalKey, $sessionDataJson, $maxTtl);
+        $this->cache->set($canonicalKey, $sessionDataJson, $maxTtl);
 
         // Store references with appropriate TTLs
         if ($accessToken) {
-            CacheEngine::set("session_token:{$accessToken}", $canonicalKey, $this->cacheDefaultTtl);
+            $this->cache->set("session_token:{$accessToken}", $canonicalKey, $this->cacheDefaultTtl);
         }
 
         if ($refreshToken) {
-            CacheEngine::set("session_refresh:{$refreshToken}", $canonicalKey, $refreshTtl);
+            $this->cache->set("session_refresh:{$refreshToken}", $canonicalKey, $refreshTtl);
         }
     }
 
@@ -649,7 +657,7 @@ class TokenStorageService implements TokenStorageInterface
      */
     private function resolveCacheReference(string $key): ?string
     {
-        $cachedValue = CacheEngine::get($key);
+        $cachedValue = $this->cache->get($key);
 
         if ($cachedValue === null) {
             return null;
@@ -658,7 +666,7 @@ class TokenStorageService implements TokenStorageInterface
         // Check if this is a reference (starts with session_data:)
         if (is_string($cachedValue) && strpos($cachedValue, 'session_data:') === 0) {
             // This is a reference, resolve it
-            return CacheEngine::get($cachedValue);
+            return $this->cache->get($cachedValue);
         }
 
         // This is the actual data
@@ -668,16 +676,16 @@ class TokenStorageService implements TokenStorageInterface
     private function clearSessionCache(array $session): void
     {
         if (isset($session['access_token'])) {
-            CacheEngine::delete("session_token:{$session['access_token']}");
+            $this->cache->delete("session_token:{$session['access_token']}");
         }
 
         if (isset($session['refresh_token'])) {
-            CacheEngine::delete("session_refresh:{$session['refresh_token']}");
+            $this->cache->delete("session_refresh:{$session['refresh_token']}");
         }
 
         // Also clear the canonical session data
         if (isset($session['session_id'])) {
-            CacheEngine::delete("session_data:{$session['session_id']}");
+            $this->cache->delete("session_data:{$session['session_id']}");
         }
     }
 

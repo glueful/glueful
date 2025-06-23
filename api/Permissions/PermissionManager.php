@@ -22,6 +22,11 @@ use Glueful\Auth\TokenManager;
  * This class provides a consistent API for the framework to interact
  * with permission systems regardless of which provider is active.
  *
+ * Uses hybrid dependency injection approach:
+ * - Singleton pattern for global access
+ * - Optional dependencies for internal services
+ * - Static provider registry for extensions
+ *
  * @package Glueful\Permissions
  */
 class PermissionManager implements PermissionManagerInterface
@@ -40,6 +45,9 @@ class PermissionManager implements PermissionManagerInterface
 
     /** @var array Debug information collected during operations */
     private static array $debugInfo = [];
+
+    /** @var \Glueful\Auth\SessionCacheManager|null Session cache manager instance */
+    private ?\Glueful\Auth\SessionCacheManager $sessionCacheManager = null;
 
     /**
      * Set the active permission provider
@@ -458,7 +466,9 @@ class PermissionManager implements PermissionManagerInterface
             $sessionId = TokenManager::getSessionIdFromToken($token);
             if ($sessionId) {
                 // Get user UUID from session
-                $session = \Glueful\Auth\SessionCacheManager::getSession($sessionId);
+                $sessionCacheManager = $this->sessionCacheManager
+                    ?? container()->get(\Glueful\Auth\SessionCacheManager::class);
+                $session = $sessionCacheManager->getSession($sessionId);
                 if ($session && isset($session['user']['uuid'])) {
                     return $session['user']['uuid'];
                 }
@@ -555,15 +565,27 @@ class PermissionManager implements PermissionManagerInterface
     }
 
     /**
+     * Constructor with optional dependency injection
+     *
+     * @param \Glueful\Auth\SessionCacheManager|null $sessionCacheManager Optional session cache manager
+     */
+    public function __construct(?\Glueful\Auth\SessionCacheManager $sessionCacheManager = null)
+    {
+        $this->sessionCacheManager = $sessionCacheManager;
+    }
+
+    /**
      * Get singleton instance of PermissionManager
      *
+     * @param \Glueful\Auth\SessionCacheManager|null $sessionCacheManager Optional session cache manager
+     *                                                                    for new instance
      * @return self
      */
-    public static function getInstance(): self
+    public static function getInstance(?\Glueful\Auth\SessionCacheManager $sessionCacheManager = null): self
     {
         static $instance = null;
         if ($instance === null) {
-            $instance = new self();
+            $instance = new self($sessionCacheManager);
         }
         return $instance;
     }

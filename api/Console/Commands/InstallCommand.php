@@ -38,7 +38,7 @@ class InstallCommand extends Command
      */
     public function __construct(?ContainerInterface $container = null)
     {
-        $this->container = $container ?? app();
+        $this->container = $container ?? container();
     }
 
     /**

@@ -112,7 +112,8 @@ class RequestUserContext
                     'ip_address' => $this->requestMetadata['ip_address'],
                     'user_agent' => $this->requestMetadata['user_agent']
                 ];
-                $this->sessionData = SessionCacheManager::getOptimizedSession($this->token, $context);
+                $sessionCacheManager = app(SessionCacheManager::class);
+                $this->sessionData = $sessionCacheManager->getOptimizedSession($this->token, $context);
 
                 if ($this->sessionData && isset($this->sessionData['user'])) {
                     $this->user = User::fromArray($this->sessionData['user']);

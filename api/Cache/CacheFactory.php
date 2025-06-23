@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Cache;
 
-use Glueful\Cache\Drivers\{CacheDriverInterface, RedisCacheDriver, MemcachedCacheDriver};
+use Glueful\Cache\Drivers\{RedisCacheDriver, MemcachedCacheDriver};
 use Redis;
 use Memcached;
 use Glueful\Exceptions\BusinessLogicException;
@@ -25,11 +25,11 @@ class CacheFactory
      * Handles connection setup and error handling.
      *
      * @param string $driverOverride Optional driver override
-     * @return CacheDriverInterface Configured cache driver
+     * @return CacheStore Configured cache driver
      * @throws \Glueful\Exceptions\DatabaseException If connection fails
      * @throws \Glueful\Exceptions\BusinessLogicException If cache type is not supported
      */
-    public static function create(string $driverOverride = ''): CacheDriverInterface
+    public static function create(string $driverOverride = ''): CacheStore
     {
         $cacheType = $driverOverride ?: config('cache.default', 'redis');
 
@@ -132,9 +132,9 @@ class CacheFactory
     /**
      * Create a file-based cache driver as fallback
      *
-     * @return CacheDriverInterface File-based cache driver
+     * @return CacheStore File-based cache driver
      */
-    private static function createFileDriver(): CacheDriverInterface
+    private static function createFileDriver(): CacheStore
     {
         if (!class_exists('\\Glueful\\Cache\\Drivers\\FileCacheDriver')) {
             throw BusinessLogicException::operationNotAllowed(

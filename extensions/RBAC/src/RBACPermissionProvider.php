@@ -9,7 +9,7 @@ use Glueful\Extensions\RBAC\Repositories\UserRoleRepository;
 use Glueful\Extensions\RBAC\Repositories\UserPermissionRepository;
 use Glueful\Extensions\RBAC\Repositories\RolePermissionRepository;
 use Glueful\Extensions\RBAC\Models\Role;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 
 /**
  * RBAC Permission Provider
@@ -27,6 +27,7 @@ use Glueful\Cache\CacheEngine;
  */
 class RBACPermissionProvider implements PermissionProviderInterface
 {
+    private ?CacheStore $cache = null;
     private ?RoleRepository $roleRepository = null;
     private ?PermissionRepository $permissionRepository = null;
     private ?UserRoleRepository $userRoleRepository = null;
@@ -58,13 +59,14 @@ class RBACPermissionProvider implements PermissionProviderInterface
         $this->cacheEnabled = $this->config['cache_enabled'];
         $this->cachePrefix = $this->config['cache_prefix'];
 
-        // Initialize cache engine if enabled
+        // Initialize cache store if enabled
         if ($this->cacheEnabled) {
             try {
-                CacheEngine::initialize($this->cachePrefix);
+                $this->cache = app(CacheStore::class);
             } catch (\Exception $e) {
                 // Graceful degradation - disable cache if initialization fails
                 $this->cacheEnabled = false;
+                $this->cache = null;
                 error_log("RBAC Cache initialization failed: " . $e->getMessage());
             }
         }
@@ -139,7 +141,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         // Check cache if enabled and context is cacheable (no dynamic constraints)
         if ($this->cacheEnabled && $this->isContextCacheable($context)) {
             try {
-                $cached = CacheEngine::get($cacheKey);
+                $cached = $this->cache->get($cacheKey);
                 if ($cached !== null) {
                     return (bool)$cached;
                 }
@@ -164,7 +166,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         if ($this->cacheEnabled && $this->isContextCacheable($context)) {
             try {
                 // Cache permission checks for a shorter time (15 minutes)
-                CacheEngine::set($cacheKey, $result, 900);
+                $this->cache->set($cacheKey, $result, 900);
             } catch (\Exception $e) {
                 error_log("Cache write failed for permission check: " . $e->getMessage());
             }
@@ -184,7 +186,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         $cacheKey = $this->generateCacheKey('user_permissions', $userUuid);
         if ($this->cacheEnabled) {
             try {
-                $cached = CacheEngine::get($cacheKey);
+                $cached = $this->cache->get($cacheKey);
                 if ($cached !== null) {
                     $this->permissionCache[$userUuid] = $cached;
                     return $cached;
@@ -210,7 +212,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         $this->permissionCache[$userUuid] = $permissions;
         if ($this->cacheEnabled) {
             try {
-                CacheEngine::set($cacheKey, $permissions, $this->config['cache_ttl']);
+                $this->cache->set($cacheKey, $permissions, $this->config['cache_ttl']);
             } catch (\Exception $e) {
                 error_log("Cache write failed for user permissions {$userUuid}: " . $e->getMessage());
             }
@@ -351,8 +353,8 @@ class RBACPermissionProvider implements PermissionProviderInterface
                 $userPermissionsKey = $this->generateCacheKey('user_permissions', $userUuid);
                 $userRolesKey = $this->generateCacheKey('user_roles', $userUuid);
 
-                CacheEngine::delete($userPermissionsKey);
-                CacheEngine::delete($userRolesKey);
+                $this->cache->delete($userPermissionsKey);
+                $this->cache->delete($userRolesKey);
 
                 // Also clear any permission check cache for this user
                 $this->clearUserPermissionChecks($userUuid);
@@ -371,7 +373,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         if ($this->cacheEnabled) {
             try {
                 // Clear all RBAC-related cache keys
-                CacheEngine::deletePattern($this->cachePrefix . '*');
+                $this->cache->deletePattern($this->cachePrefix . '*');
             } catch (\Exception $e) {
                 error_log("Failed to invalidate all RBAC cache: " . $e->getMessage());
             }
@@ -570,7 +572,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         // Check cache if enabled
         if ($this->cacheEnabled) {
             try {
-                $cached = CacheEngine::get($cacheKey);
+                $cached = $this->cache->get($cacheKey);
                 if ($cached !== null) {
                     return (bool)$cached;
                 }
@@ -592,7 +594,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         if ($this->cacheEnabled) {
             try {
                 // Cache role permission checks for 30 minutes
-                CacheEngine::set($cacheKey, $result, 1800);
+                $this->cache->set($cacheKey, $result, 1800);
             } catch (\Exception $e) {
                 error_log("Cache write failed for role permission check: " . $e->getMessage());
             }
@@ -715,7 +717,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         try {
             // Clear all permission check cache keys for this user
             $pattern = $this->cachePrefix . 'check:' . $userUuid . ':*';
-            CacheEngine::deletePattern($pattern);
+            $this->cache->deletePattern($pattern);
         } catch (\Exception $e) {
             error_log("Failed to clear permission checks cache for user {$userUuid}: " . $e->getMessage());
         }

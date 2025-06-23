@@ -5,7 +5,8 @@ namespace Glueful\Security;
 use Glueful\Helpers\{ConfigManager, Utils};
 use Glueful\Exceptions\RateLimitExceededException;
 use Glueful\Exceptions\SecurityException;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -40,21 +41,24 @@ class SecurityManager
      */
     private array $config;
 
+    /** @var CacheStore Cache driver instance */
+    private CacheStore $cache;
+
     /**
      * Initialize the Security Manager
      *
      * Loads security configuration from the ConfigManager and sets up
      * default values for rate limiting and request validation.
      */
-    public function __construct()
+    public function __construct(?CacheStore $cache = null)
     {
         $this->config = ConfigManager::get('security', []);
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
 
-        // Initialize cache engine for rate limiting if not already initialized
-        if (!CacheEngine::isEnabled()) {
-            $cachePrefix = config('cache.prefix', 'glueful:');
-            $cacheDriver = config('cache.default', 'redis');
-            CacheEngine::initialize($cachePrefix, $cacheDriver);
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'Cache is required for SecurityManager. Please ensure cache is properly configured.'
+            );
         }
     }
 
@@ -397,7 +401,7 @@ class SecurityManager
         $window = $this->config['rate_limit']['window_seconds'] ?? 3600;     // per hour
 
         // Generate cache key for this IP's rate limit counter
-        $key = "rate_limit:$ip";
+        $key = "rate_limit:" . Utils::sanitizeCacheKey($ip);
         $current = $this->getCacheValue($key, 0);
 
         // Check if current request count exceeds the limit
@@ -526,11 +530,7 @@ class SecurityManager
      */
     private function getCacheValue(string $key, $default = null)
     {
-        if (!CacheEngine::isEnabled()) {
-            return $default;
-        }
-
-        $value = CacheEngine::get($key);
+        $value = $this->cache->get($key);
         return $value !== null ? $value : $default;
     }
 
@@ -547,14 +547,10 @@ class SecurityManager
      */
     private function incrementCacheValue(string $key, int $ttl): void
     {
-        if (!CacheEngine::isEnabled()) {
-            return;
-        }
-
         // Get current value or start at 0
         $current = (int) $this->getCacheValue($key, 0);
 
         // Increment and set with TTL
-        CacheEngine::set($key, $current + 1, $ttl);
+        $this->cache->set($key, $current + 1, $ttl);
     }
 }

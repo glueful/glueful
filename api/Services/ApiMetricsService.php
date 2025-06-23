@@ -4,9 +4,10 @@ namespace Glueful\Services;
 
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Helpers\Utils;
+use Glueful\Helpers\CacheHelper;
 use Exception;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Exceptions\DatabaseException;
@@ -21,6 +22,7 @@ class ApiMetricsService
 {
     private QueryBuilder $db;
     private SchemaManager $schemaManager;
+    private ?CacheStore $cache;
     private string $metricsTable = 'api_metrics';
     private string $dailyMetricsTable = 'api_metrics_daily';
     private string $rateLimitsTable = 'api_rate_limits';
@@ -31,48 +33,29 @@ class ApiMetricsService
     private int $metricsFlushThreshold = 50; // Flush to database after this many metrics
     private string $cacheKeyPrefix = 'api_metrics_';
 
-    public function __construct()
-    {
+    public function __construct(
+        ?CacheStore $cache = null,
+        ?Connection $connection = null,
+        ?SchemaManager $schemaManager = null
+    ) {
         try {
-            try {
-                $connection = new Connection();
-                $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Database connection failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
+            // Assign dependencies with sensible defaults
+            $this->cache = $cache ?? CacheHelper::createCacheInstance();
+            $connection = $connection ?? new Connection();
+            $this->schemaManager = $schemaManager ?? $connection->getSchemaManager();
 
-            try {
-                // Check if CacheEngine class exists
-                if (!class_exists('\\Glueful\\Cache\\CacheEngine')) {
-                    throw BusinessLogicException::operationNotAllowed(
-                        'cache_initialization',
-                        'CacheEngine class not found'
-                    );
-                }
+            // Initialize derived dependencies
+            $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-                // Ensure CacheEngine is properly initialized for metrics
-                CacheEngine::initialize();
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Cache initialization failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
-
-            try {
-                $this->schemaManager = $connection->getSchemaManager();
-
-                // Ensure metrics tables exist
-                $this->ensureTablesExist();
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Schema management failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
+            // Ensure metrics tables exist
+            $this->ensureTablesExist();
         } catch (\Exception $e) {
             error_log("ApiMetricsService CRITICAL ERROR: Service initialization failed: " . $e->getMessage());
             error_log($e->getTraceAsString());
             throw $e; // Re-throw so the middleware knows the service failed
         }
     }
+
 
     /**
      * Record a metric asynchronously to avoid impacting API performance
@@ -82,19 +65,12 @@ class ApiMetricsService
     public function recordMetricAsync(array $metric): void
     {
         try {
-            // Check if cache is initialized
-            $cacheInitialized = CacheEngine::isEnabled();
-
-            if (!$cacheInitialized) {
-                $initResult = CacheEngine::initialize();
-            }
-
             // Queue the metric for batch processing
             $cacheKey = $this->cacheKeyPrefix . 'pending';
 
             // Get existing metrics from cache
             try {
-                $pendingMetrics = CacheEngine::get($cacheKey);
+                $pendingMetrics = $this->cache?->get($cacheKey);
             } catch (\Exception $e) {
                 $pendingMetrics = null;
             }
@@ -110,7 +86,7 @@ class ApiMetricsService
 
             // Store back in cache with a 24-hour TTL to prevent loss
             try {
-                CacheEngine::set($cacheKey, $pendingMetrics, 86400);
+                $this->cache?->set($cacheKey, $pendingMetrics, 86400);
             } catch (\Exception $e) {
                 // Silently continue - we don't want metrics to break functionality
             }
@@ -144,7 +120,7 @@ class ApiMetricsService
         $pendingMetrics = [];
         try {
             $cacheKey = $this->cacheKeyPrefix . 'pending';
-            $pendingMetrics = CacheEngine::get($cacheKey) ?? [];
+            $pendingMetrics = $this->cache?->get($cacheKey) ?? [];
 
             if (empty($pendingMetrics)) {
                 error_log("API Metrics: No pending metrics to flush");
@@ -153,7 +129,7 @@ class ApiMetricsService
 
             // Reset the pending metrics list first to avoid losing metrics
             // if an error occurs during processing
-            CacheEngine::set($cacheKey, []);
+            $this->cache?->set($cacheKey, []);
 
             // Insert raw metrics in batch
             $rawMetricsToInsert = [];
@@ -188,8 +164,8 @@ class ApiMetricsService
             error_log("Error flushing API metrics: " . $e->getMessage());
 
             // If an error occurs, put the metrics back in the queue to try again later
-            $currentPending = CacheEngine::get($this->cacheKeyPrefix . 'pending') ?? [];
-            CacheEngine::set($this->cacheKeyPrefix . 'pending', array_merge($currentPending, $pendingMetrics));
+            $currentPending = $this->cache->get($this->cacheKeyPrefix . 'pending') ?? [];
+            $this->cache->set($this->cacheKeyPrefix . 'pending', array_merge($currentPending, $pendingMetrics));
         }
     }
 
@@ -328,7 +304,7 @@ class ApiMetricsService
         $minute = floor(time() / 60) * 60; // Round to the current minute
 
         // Get current rate limit info from cache
-        $rateLimit = CacheEngine::get($key) ?? [
+        $rateLimit = $this->cache?->get($key) ?? [
             'count' => 0,
             'minute' => $minute,
             'limit' => 100 // Default limit (could be dynamic based on endpoint)
@@ -347,7 +323,7 @@ class ApiMetricsService
         }
 
         // Store the updated rate limit info
-        CacheEngine::set($key, $rateLimit, 3600); // Store for 1 hour
+        $this->cache?->set($key, $rateLimit, 3600); // Store for 1 hour
 
         // If the rate limit is approaching threshold, store in the database
         // for admin visibility in the dashboard
@@ -565,7 +541,7 @@ class ApiMetricsService
             $this->db->delete($this->rateLimitsTable, [], false);
 
             // Clear cached metrics using the proper cache key prefix
-            CacheEngine::delete($this->cacheKeyPrefix . 'pending');
+            $this->cache?->delete($this->cacheKeyPrefix . 'pending');
 
             return true;
         } catch (Exception $e) {

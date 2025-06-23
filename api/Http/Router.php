@@ -61,9 +61,6 @@ class Router
     /** @var MiddlewareInterface[] PSR-15 middleware stack */
     private static array $middlewareStack = [];
 
-    /** @var callable[] Legacy middleware functions (for backward compatibility) */
-    private static array $legacyMiddlewares = [];
-
     private static array $protectedRoutes = []; // Routes that require authentication
     private static array $currentGroups = [];
     private static array $currentGroupAuth = [];
@@ -123,36 +120,210 @@ class Router
         string $path,
         callable $handler,
         bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
+        bool $requiresAdminAuth = false,
+        array $requirements = []
     ) {
-        self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth);
+        self::addRoute($path, ['GET'], $handler, $requiresAuth, $requiresAdminAuth, $requirements);
     }
 
     public static function post(
         string $path,
         callable $handler,
         bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
+        bool $requiresAdminAuth = false,
+        array $requirements = []
     ) {
-        self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth);
+        self::addRoute($path, ['POST'], $handler, $requiresAuth, $requiresAdminAuth, $requirements);
     }
 
     public static function put(
         string $path,
         callable $handler,
         bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
+        bool $requiresAdminAuth = false,
+        array $requirements = []
     ) {
-        self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth);
+        self::addRoute($path, ['PUT'], $handler, $requiresAuth, $requiresAdminAuth, $requirements);
     }
 
     public static function delete(
         string $path,
         callable $handler,
         bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
+        bool $requiresAdminAuth = false,
+        array $requirements = []
     ) {
-        self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth);
+        self::addRoute($path, ['DELETE'], $handler, $requiresAuth, $requiresAdminAuth, $requirements);
+    }
+
+    /**
+     * Serve static files from a directory
+     *
+     * This method creates a route that serves static files from the specified directory.
+     * It handles MIME types, prevents directory traversal, and sets appropriate headers.
+     *
+     * Example:
+     * ```php
+     * // Serve documentation files
+     * Router::static('/docs', '/path/to/documentation');
+     *
+     * // Serve assets with custom cache settings
+     * Router::static('/assets', '/public/assets', false, [
+     *     'cache' => true,
+     *     'cacheMaxAge' => 86400 // 24 hours
+     * ]);
+     *
+     * // Restrict to specific file types
+     * Router::static('/images', '/storage/images', false, [
+     *     'allowedExtensions' => ['jpg', 'jpeg', 'png', 'gif', 'webp']
+     * ]);
+     *
+     * // Require authentication for private docs
+     * Router::static('/api-docs', '/private/api-docs', true);
+     *
+     * // Custom index file
+     * Router::static('/app', '/dist', false, [
+     *     'indexFile' => 'app.html'
+     * ]);
+     * ```
+     *
+     * @param string $urlPath The URL path prefix (e.g., '/docs')
+     * @param string $directory The filesystem directory to serve files from
+     * @param bool $requiresAuth Whether authentication is required to access these files
+     * @param array $options Additional options (indexFile, allowedExtensions, etc.)
+     */
+    public static function static(
+        string $urlPath,
+        string $directory,
+        bool $requiresAuth = false,
+        array $options = []
+    ): void {
+        // Default options
+        $defaultOptions = [
+            'indexFile' => 'index.html',
+            'allowedExtensions' => null, // null means all extensions allowed
+            'cache' => true,
+            'cacheMaxAge' => 3600, // 1 hour
+        ];
+        $options = array_merge($defaultOptions, $options);
+
+        // Normalize paths
+        $urlPath = '/' . trim($urlPath, '/');
+        $directory = rtrim($directory, '/');
+
+        // Create the handler
+        $handler = function (Request $request) use ($directory, $options) {
+            // Get the requested file path from route parameters
+            $filePath = $request->attributes->get('path', '');
+
+            // If no file specified, try index file
+            if (empty($filePath) || str_ends_with($filePath, '/')) {
+                $filePath = rtrim($filePath, '/') . '/' . $options['indexFile'];
+            }
+
+            // Security: Prevent directory traversal
+            $filePath = str_replace(['../', '..\\', '..'], '', $filePath);
+            $fullPath = $directory . '/' . ltrim($filePath, '/');
+
+            // Check if file exists and is within the allowed directory
+            if (!file_exists($fullPath) || !is_file($fullPath)) {
+                return new Response('Not Found', 404);
+            }
+
+            // Ensure the file is within the allowed directory
+            $realPath = realpath($fullPath);
+            $realDirectory = realpath($directory);
+            if (!str_starts_with($realPath, $realDirectory)) {
+                return new Response('Forbidden', 403);
+            }
+
+            // Check allowed extensions if specified
+            if ($options['allowedExtensions'] !== null) {
+                $extension = pathinfo($fullPath, PATHINFO_EXTENSION);
+                if (!in_array($extension, $options['allowedExtensions'])) {
+                    return new Response('Forbidden', 403);
+                }
+            }
+
+            // Determine MIME type
+            $mimeType = self::getMimeType($fullPath);
+
+            // Read file content
+            $content = file_get_contents($fullPath);
+            if ($content === false) {
+                return new Response('Internal Server Error', 500);
+            }
+
+            // Create response
+            $response = new Response($content, 200);
+            $response->headers->set('Content-Type', $mimeType);
+
+            // Set cache headers if enabled
+            if ($options['cache']) {
+                $response->headers->set('Cache-Control', 'public, max-age=' . $options['cacheMaxAge']);
+                $response->headers->set('ETag', md5_file($fullPath));
+
+                // Check if client has cached version
+                $etag = $request->headers->get('If-None-Match');
+                if ($etag === md5_file($fullPath)) {
+                    return new Response('', 304); // Not Modified
+                }
+            } else {
+                $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            }
+
+            return $response;
+        };
+
+        // Register the route with a catch-all pattern
+        self::get($urlPath . '/{path}', $handler, $requiresAuth, false, ['path' => '.*']);
+
+        // Also register the base path without parameters for serving index
+        self::get($urlPath, $handler, $requiresAuth);
+    }
+
+    /**
+     * Get MIME type for a file
+     *
+     * @param string $filePath Path to the file
+     * @return string MIME type
+     */
+    private static function getMimeType(string $filePath): string
+    {
+        $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+
+        // Common MIME types for documentation and web assets
+        $mimeTypes = [
+            'html' => 'text/html',
+            'htm' => 'text/html',
+            'css' => 'text/css',
+            'js' => 'application/javascript',
+            'json' => 'application/json',
+            'xml' => 'application/xml',
+            'txt' => 'text/plain',
+            'md' => 'text/markdown',
+            'pdf' => 'application/pdf',
+            'png' => 'image/png',
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            'ico' => 'image/x-icon',
+            'woff' => 'font/woff',
+            'woff2' => 'font/woff2',
+            'ttf' => 'font/ttf',
+            'eot' => 'application/vnd.ms-fontobject',
+        ];
+
+        // Use mime_content_type if available for better detection
+        if (function_exists('mime_content_type')) {
+            $detected = mime_content_type($filePath);
+            if ($detected !== false) {
+                return $detected;
+            }
+        }
+
+        return $mimeTypes[$extension] ?? 'application/octet-stream';
     }
 
     /**
@@ -243,7 +414,8 @@ class Router
         array $methods,
         callable $handler,
         bool $requiresAuth = false,
-        bool $requiresAdminAuth = false
+        bool $requiresAdminAuth = false,
+        array $requirements = []
     ) {
         // Ensure router is initialized
         self::ensureInitialized();
@@ -261,7 +433,7 @@ class Router
 
         $routeKey = $fullPath . '|' . implode('|', $methods);
         $routeName = self::$routeNameCache[$routeKey] ??= md5($routeKey);
-        $route = new Route($fullPath, ['_controller' => $handler], [], [], '', [], $methods);
+        $route = new Route($fullPath, ['_controller' => $handler], $requirements, [], '', [], $methods);
         self::$routes->add($routeName, $route);
 
         if ($requiresAdminAuth) {
@@ -271,15 +443,6 @@ class Router
         }
     }
 
-    /**
-     * Add a middleware using the legacy interface (for backward compatibility)
-     *
-     * @param callable $middleware The middleware function
-     */
-    public static function middleware(callable $middleware)
-    {
-        self::$legacyMiddlewares[] = $middleware;
-    }
 
     /**
      * Add a PSR-15 compatible middleware to the stack
@@ -347,22 +510,6 @@ class Router
         }
     }
 
-    /**
-     * Convert legacy middleware functions to PSR-15 compatible middleware
-     *
-     * This allows for easy migration from the old middleware system to the new PSR-15 compatible one.
-     *
-     * @return void
-     */
-    public static function convertLegacyMiddleware(): void
-    {
-        foreach (self::$legacyMiddlewares as $middleware) {
-            self::$middlewareStack[] = self::convertToMiddleware($middleware);
-        }
-
-        // Clear legacy middleware since they've been converted
-        self::$legacyMiddlewares = [];
-    }
 
     /**
      * Convert a callable to a PSR-15 compatible middleware
@@ -511,11 +658,6 @@ class Router
         // Add PSR-15 middleware to the pipeline
         foreach (self::$middlewareStack as $middleware) {
             $dispatcher->pipe($middleware);
-        }
-
-        // Convert and add legacy middleware to the pipeline
-        foreach (self::$legacyMiddlewares as $middleware) {
-            $dispatcher->pipe(self::convertToMiddleware($middleware));
         }
 
         // Update request in container for middleware to share state

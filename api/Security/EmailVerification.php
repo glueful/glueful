@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
 use Glueful\Http\RequestContext;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Services\NotificationService;
 use Glueful\Repository\UserRepository;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Email Verification System
@@ -52,17 +53,24 @@ class EmailVerification
     /** @var RequestContext Request context service */
     private RequestContext $requestContext;
 
+    /** @var CacheStore Cache driver instance */
+    private CacheStore $cache;
+
     /**
      * Constructor
      *
-     * Initializes cache engine for OTP storage and notification service.
+     * Initializes cache driver for OTP storage and notification service.
      */
-    public function __construct(?RequestContext $requestContext = null)
+    public function __construct(?RequestContext $requestContext = null, ?CacheStore $cache = null)
     {
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
 
-        // Initialize CacheEngine with Redis driver
-        CacheEngine::initialize('Glueful:', config('cache.default'));
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'Cache is required for EmailVerification. Please ensure cache is properly configured.'
+            );
+        }
 
         // Create the channel manager
         $channelManager = new \Glueful\Notifications\Services\ChannelManager();
@@ -295,18 +303,6 @@ class EmailVerification
     private function storeOTP(string $email, string $hashedOTP): bool
     {
         try {
-            // Ensure cache engine is initialized
-            if (!CacheEngine::isInitialized() || !CacheEngine::isEnabled()) {
-                error_log("Cache not ready. Reinitializing...");
-                CacheEngine::initialize('Glueful:', config('cache.default'));
-
-                // Double-check if initialization worked
-                if (!CacheEngine::isEnabled()) {
-                    error_log("Failed to initialize cache system after retry");
-                    return false;
-                }
-            }
-
             $key = self::OTP_PREFIX . $email;
             $data = [
                 'otp' => $hashedOTP,
@@ -314,24 +310,22 @@ class EmailVerification
             ];
 
             // Try to store the data
-            $result = CacheEngine::set($key, $data, self::OTP_EXPIRY_MINUTES * 60);
+            $result = $this->cache->set($key, $data, self::OTP_EXPIRY_MINUTES * 60);
 
             // Debug what's happening with the cache operation
             if (!$result) {
                 error_log("Failed to store OTP in cache. Key: $key, Driver: " . config('cache.default'));
 
                 // Try with a shorter expiry as fallback
-                $fallbackResult = CacheEngine::set($key, $data, 900); // 15 minutes in seconds
+                $fallbackResult = $this->cache->set($key, $data, 900); // 15 minutes in seconds
                 if ($fallbackResult) {
                     error_log("Successfully stored OTP using fallback method for email: $email");
                     return true;
                 }
 
-                // If still failing, try one last approach with direct cache driver access
-                if (defined('CACHE_ENGINE')) {
-                    error_log("Attempting alternative storage method for OTP");
-                    return $this->storeOTPAlternative($key, $data);
-                }
+                // If still failing, try alternative storage approach
+                error_log("Attempting alternative storage method for OTP");
+                return $this->storeOTPAlternative($key, $data);
             }
 
             return $result;
@@ -386,7 +380,7 @@ class EmailVerification
     public function verifyOTP(string $email, string $providedOTP): bool
     {
         $key = self::OTP_PREFIX . $email;
-        $stored = CacheEngine::get($key);
+        $stored = $this->cache->get($key);
 
         if (!$stored || empty($stored['otp']) || empty($stored['timestamp'])) {
             $this->incrementAttempts($email);
@@ -420,7 +414,7 @@ class EmailVerification
         if ($isValid) {
             // Clear rate limiting on success
             $this->clearAttempts($email);
-            CacheEngine::delete($key);
+            $this->cache->delete($key);
 
             // Update email_verified_at timestamp if user exists
             try {
@@ -495,7 +489,7 @@ class EmailVerification
      */
     private function isRateLimited(string $email): bool
     {
-        $attempts = CacheEngine::get(self::ATTEMPTS_PREFIX . $email) ?? 0;
+        $attempts = $this->cache->get(self::ATTEMPTS_PREFIX . $email) ?? 0;
         return $attempts >= self::MAX_ATTEMPTS;
     }
 
@@ -507,8 +501,8 @@ class EmailVerification
     private function incrementAttempts(string $email): void
     {
         $key = self::ATTEMPTS_PREFIX . $email;
-        $attempts = (int)(CacheEngine::get($key) ?? 0) + 1;
-        CacheEngine::set($key, $attempts, self::COOLDOWN_MINUTES * 60);
+        $attempts = (int)($this->cache->get($key) ?? 0) + 1;
+        $this->cache->set($key, $attempts, self::COOLDOWN_MINUTES * 60);
 
         if ($attempts >= self::MAX_ATTEMPTS) {
             error_log("Account temporary locked for email: $email");
@@ -544,7 +538,7 @@ class EmailVerification
      */
     private function clearAttempts(string $email): void
     {
-        CacheEngine::delete(self::ATTEMPTS_PREFIX . $email);
+        $this->cache->delete(self::ATTEMPTS_PREFIX . $email);
     }
 
     /**
@@ -556,7 +550,7 @@ class EmailVerification
     private function incrementDailyRequests(string $email): bool
     {
         $key = self::REQUESTS_PREFIX . $email . ':' . date('Y-m-d');
-        $requests = (int)(CacheEngine::get($key) ?? 0) + 1;
+        $requests = (int)($this->cache->get($key) ?? 0) + 1;
 
         if ($requests > self::MAX_DAILY_REQUESTS) {
             // Log the daily limit exceeded to the audit system
@@ -587,7 +581,7 @@ class EmailVerification
 
         // Set expiry to end of day
         $endOfDay = strtotime('tomorrow') - time();
-        CacheEngine::set($key, $requests, $endOfDay);
+        $this->cache->set($key, $requests, $endOfDay);
         return true;
     }
 
@@ -614,7 +608,7 @@ class EmailVerification
     {
         try {
             $requestContext = RequestContext::fromGlobals();
-            $verifier = new self($requestContext);
+            $verifier = new self($requestContext, CacheHelper::createCacheInstance());
 
             // Check if EmailNotification extension is enabled
             $extensionManager = new \Glueful\Helpers\ExtensionsManager();
