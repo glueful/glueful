@@ -72,8 +72,11 @@ class MigrationManager
      * @param FileFinder|null $fileFinder File finder service instance
      * @throws \Glueful\Exceptions\DatabaseException If database connection fails
      */
-    public function __construct(?string $migrationsPath = null, ?ExtensionsManager $extensionsManager = null, ?FileFinder $fileFinder = null)
-    {
+    public function __construct(
+        ?string $migrationsPath = null,
+        ?ExtensionsManager $extensionsManager = null,
+        ?FileFinder $fileFinder = null
+    ) {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
