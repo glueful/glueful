@@ -45,8 +45,7 @@ class JwtAuthenticationProviderTest extends TestCase
         $_ENV['DB_ENGINE'] = 'sqlite';
         $_ENV['DB_SQLITE_DATABASE'] = ':memory:';
 
-        // Disable connection pooling for tests to ensure single connection
-        $_ENV['DB_POOLING_ENABLED'] = 'false';
+        // Test-specific database settings (other settings handled by TestCase base class)
 
         // Clear any existing database connections to ensure fresh state
         $reflection = new \ReflectionClass(\Glueful\Database\Connection::class);
