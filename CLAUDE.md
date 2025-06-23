@@ -724,7 +724,44 @@ Router::post('/auth/login', [AuthController::class, 'login']);
 
 **Generate Documentation**: `php glueful generate:json doc`
 
-## Debugging Tips
+## Debugging with VarDumper
+
+Glueful includes Symfony VarDumper for enhanced debugging in development:
+
+### Basic Usage
+```php
+// Beautiful, formatted variable dumps
+dump($user);              // Dump variable
+dd($user, $request);      // Dump and die
+
+// Works with complex objects
+dump($container);         // DI container
+dump($response);          // HTTP responses
+dump($database);          // Database connections
+```
+
+### Features
+- **Environment-aware**: Only active in development with `APP_DEBUG=true`
+- **CLI support**: Colored output for console commands
+- **Web support**: Dark-themed HTML output for web requests
+- **Complex objects**: Handles circular references, resources, closures
+- **Configuration**: Customizable via `config/vardumper.php`
+
+### Configuration
+```env
+# .env settings
+VARDUMPER_ENABLED=true
+VARDUMPER_CLI_COLORS=true
+VARDUMPER_HTML_THEME=dark
+VARDUMPER_MAX_ITEMS=2500
+```
+
+### Safety
+- **Production safety**: Automatically disabled in production
+- **Fallback**: Falls back to `var_dump()` if VarDumper unavailable
+- **Performance**: No overhead when disabled
+
+## Additional Debugging Tips
 
 1. **Enable debug mode**: Set `APP_DEBUG=true`, `API_DEBUG_MODE=true` in `.env`
 2. **Check logs**: `tail -f storage/logs/app-*.log` (app, debug, query, error logs)

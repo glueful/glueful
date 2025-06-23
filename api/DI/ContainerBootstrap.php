@@ -11,6 +11,7 @@ use Glueful\DI\Providers\RepositoryServiceProvider;
 use Glueful\DI\Providers\ControllerServiceProvider;
 use Glueful\DI\Providers\ArchiveServiceProvider;
 use Glueful\DI\ServiceProviders\FileServiceProvider;
+use Glueful\DI\ServiceProviders\VarDumperServiceProvider;
 
 /**
  * Container Bootstrap
@@ -38,6 +39,7 @@ class ContainerBootstrap
         $container->register(new ControllerServiceProvider());
         $container->register(new ArchiveServiceProvider());
         $container->register(new FileServiceProvider());
+        $container->register(new VarDumperServiceProvider());
 
         // Boot all providers
         $container->boot();

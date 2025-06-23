@@ -170,6 +170,56 @@ if (!function_exists('container')) {
     }
 }
 
+if (!function_exists('dump')) {
+    /**
+     * Dump the given variables using Symfony VarDumper
+     *
+     * This function provides beautiful, formatted variable dumps in development.
+     * In production, it falls back to var_dump() for safety.
+     *
+     * @param mixed ...$vars Variables to dump
+     * @return void
+     */
+    function dump(...$vars): void
+    {
+        if (env('APP_ENV') !== 'development' || !env('APP_DEBUG', false)) {
+            // In production, fall back to simple var_dump
+            foreach ($vars as $var) {
+                var_dump($var);
+            }
+            return;
+        }
+
+        if (class_exists(\Symfony\Component\VarDumper\VarDumper::class)) {
+            foreach ($vars as $var) {
+                \Symfony\Component\VarDumper\VarDumper::dump($var);
+            }
+        } else {
+            // Fallback if VarDumper not available
+            foreach ($vars as $var) {
+                var_dump($var);
+            }
+        }
+    }
+}
+
+if (!function_exists('dd')) {
+    /**
+     * Dump the given variables and terminate script execution
+     *
+     * This function dumps variables using Symfony VarDumper and then
+     * terminates script execution. Useful for debugging.
+     *
+     * @param mixed ...$vars Variables to dump before dying
+     * @return never
+     */
+    function dd(...$vars): never
+    {
+        dump(...$vars);
+        exit(1);
+    }
+}
+
 /**
  * Additional helper functions can be added below.
  * Each function should have proper documentation and

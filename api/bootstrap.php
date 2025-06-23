@@ -41,6 +41,19 @@ if (env('APP_ENV') === 'development' && env('ENABLE_QUERY_MONITORING', true)) {
     \Glueful\Database\DevelopmentQueryMonitor::enable();
 }
 
+// Initialize VarDumper for development debugging
+if (env('APP_ENV') === 'development' && env('APP_DEBUG', false)) {
+    if (class_exists(\Symfony\Component\VarDumper\VarDumper::class)) {
+        \Symfony\Component\VarDumper\VarDumper::setHandler(function ($var) {
+            $cloner = new \Symfony\Component\VarDumper\Cloner\VarCloner();
+            $dumper = 'cli' === PHP_SAPI
+                ? new \Symfony\Component\VarDumper\Dumper\CliDumper()
+                : new \Symfony\Component\VarDumper\Dumper\HtmlDumper();
+            $dumper->dump($cloner->cloneVar($var));
+        });
+    }
+}
+
 // Validate database connection on startup (if enabled)
 if (env('DB_STARTUP_VALIDATION', true) && !env('SKIP_DB_VALIDATION', false)) {
     \Glueful\Database\ConnectionValidator::validateOnStartup(
