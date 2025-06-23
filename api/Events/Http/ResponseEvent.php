@@ -27,7 +27,8 @@ class ResponseEvent extends Event
         private readonly Request $request,
         private readonly Response $response,
         private readonly array $metadata = []
-    ) {}
+    ) {
+    }
 
     /**
      * Get original HTTP request

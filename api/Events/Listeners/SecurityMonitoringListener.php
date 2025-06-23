@@ -19,7 +19,8 @@ class SecurityMonitoringListener
 {
     public function __construct(
         private LogManager $logger
-    ) {}
+    ) {
+    }
 
     /**
      * Handle authentication failed events

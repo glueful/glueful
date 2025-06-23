@@ -19,7 +19,8 @@ class PerformanceMonitoringListener
 {
     public function __construct(
         private LogManager $logger
-    ) {}
+    ) {
+    }
 
     /**
      * Handle slow query events

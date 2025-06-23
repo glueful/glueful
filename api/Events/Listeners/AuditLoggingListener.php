@@ -20,7 +20,8 @@ class AuditLoggingListener
 {
     public function __construct(
         private LogManager $logger
-    ) {}
+    ) {
+    }
 
     /**
      * Handle session created events

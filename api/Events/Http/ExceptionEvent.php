@@ -27,7 +27,8 @@ class ExceptionEvent extends Event
         private readonly Request $request,
         private readonly Throwable $exception,
         private readonly array $metadata = []
-    ) {}
+    ) {
+    }
 
     /**
      * Get original HTTP request
