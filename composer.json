@@ -65,7 +65,9 @@
         "onelogin/php-saml": "^4.2",
         "directorytree/ldaprecord": "^3.8",
         "league/oauth2-server": "^9.2",
-        "psr/simple-cache": "^3.0"
+        "psr/simple-cache": "^3.0",
+        "symfony/filesystem": "^7.3",
+        "symfony/finder": "^7.3"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.5",

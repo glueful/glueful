@@ -11,6 +11,7 @@ use Glueful\Database\Connection;
 use Glueful\Helpers\ExtensionsManager;
 use Glueful\Exceptions\DatabaseException;
 use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Services\FileFinder;
 
 /**
  * Database Migration Manager
@@ -55,6 +56,9 @@ class MigrationManager
     /** @var ExtensionsManager Extensions manager for checking enabled extensions */
     private ExtensionsManager $extensionsManager;
 
+    /** @var FileFinder File finder service for migration discovery */
+    private FileFinder $fileFinder;
+
     /** @var string Name of migrations tracking table */
     private const VERSION_TABLE = 'migrations';
 
@@ -65,9 +69,10 @@ class MigrationManager
      *
      * @param string|null $migrationsPath Custom path to migrations directory
      * @param ExtensionsManager|null $extensionsManager Extensions manager instance
+     * @param FileFinder|null $fileFinder File finder service instance
      * @throws \Glueful\Exceptions\DatabaseException If database connection fails
      */
-    public function __construct(?string $migrationsPath = null, ?ExtensionsManager $extensionsManager = null)
+    public function __construct(?string $migrationsPath = null, ?ExtensionsManager $extensionsManager = null, ?FileFinder $fileFinder = null)
     {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
@@ -75,6 +80,7 @@ class MigrationManager
 
         $this->migrationsPath = $migrationsPath ?? config(('app.paths.migrations'));
         $this->extensionsManager = $extensionsManager ?? new ExtensionsManager();
+        $this->fileFinder = $fileFinder ?? container()->get(FileFinder::class);
         // echo $this->migrationsPath;
         // exit;
         $this->ensureVersionTable();
@@ -125,8 +131,12 @@ class MigrationManager
     {
         $applied = $this->getAppliedMigrations();
 
-        // Get migrations from main directory
-        $files = glob($this->migrationsPath . '/*.php');
+        // Get migrations from main directory using FileFinder
+        $files = [];
+        $mainMigrations = $this->fileFinder->findMigrations($this->migrationsPath);
+        foreach ($mainMigrations as $file) {
+            $files[] = $file->getPathname();
+        }
 
         // Get migrations from enabled extensions only
         $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
@@ -135,9 +145,9 @@ class MigrationManager
             $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
             if ($extensionPath) {
                 $migrationDir = $extensionPath . '/migrations';
-                if (is_dir($migrationDir)) {
-                    $extensionFiles = glob($migrationDir . '/*.php');
-                    $files = array_merge($files, $extensionFiles);
+                $extensionMigrations = $this->fileFinder->findMigrations($migrationDir);
+                foreach ($extensionMigrations as $file) {
+                    $files[] = $file->getPathname();
                 }
             }
         }
@@ -416,7 +426,17 @@ class MigrationManager
                     $migrationDir = $extensionPath . '/migrations';
                     $extensionFile = $migrationDir . '/' . $filename;
 
-                    if (is_dir($migrationDir) && file_exists($extensionFile)) {
+                    // Use FileFinder to check if migration directory exists and file exists
+                    $extensionMigrations = $this->fileFinder->findMigrations($migrationDir);
+                    $matchingFile = null;
+                    foreach ($extensionMigrations as $migFile) {
+                        if ($migFile->getFilename() === $filename) {
+                            $matchingFile = $migFile;
+                            break;
+                        }
+                    }
+
+                    if ($matchingFile && file_exists($extensionFile)) {
                         $file = $extensionFile;
                         $found = true;
                         break;

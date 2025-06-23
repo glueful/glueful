@@ -18,6 +18,7 @@ use Glueful\Helpers\Utils;
 use Glueful\Exceptions\DatabaseException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Constants\ErrorCodes;
+use Glueful\Services\FileManager;
 
 /**
  * Archive Service Implementation
@@ -32,13 +33,16 @@ class ArchiveService implements ArchiveServiceInterface
     private string $archiveBasePath;
     private ?string $encryptionKey;
     private array $config;
+    private FileManager $fileManager;
 
     public function __construct(
         private QueryBuilder $queryBuilder,
         private SchemaManager $schemaManager,
         private RandomStringGenerator $randomGenerator,
-        array $config = []
+        array $config = [],
+        ?FileManager $fileManager = null
     ) {
+        $this->fileManager = $fileManager ?? container()->get(FileManager::class);
         $this->config = array_merge([
             'storage_path' => config('archive.storage.path'),
             'encryption_key' => $_ENV['ARCHIVE_ENCRYPTION_KEY'] ?? null,
@@ -50,9 +54,9 @@ class ArchiveService implements ArchiveServiceInterface
         $this->archiveBasePath = $this->config['storage_path'];
         $this->encryptionKey = $this->config['encryption_key'];
 
-        // Ensure archive directory exists
-        if (!is_dir($this->archiveBasePath)) {
-            mkdir($this->archiveBasePath, 0755, true);
+        // Ensure archive directory exists using FileManager
+        if (!$this->fileManager->exists($this->archiveBasePath)) {
+            $this->fileManager->createDirectory($this->archiveBasePath);
         }
     }
 

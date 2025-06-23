@@ -16,6 +16,7 @@ use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Constants\ErrorCodes;
 use Glueful\Http\SecureErrorResponse;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
+use Glueful\Services\FileManager;
 
 /**
  * Files Controller
@@ -30,6 +31,7 @@ class FilesController extends BaseController
 {
     private FileUploader $fileUploader;
     private RepositoryInterface $blobRepository;
+    private FileManager $fileManager;
 
     /**
      * Constructor
@@ -45,12 +47,14 @@ class FilesController extends BaseController
         ?AuthenticationManager $authManager = null,
         ?AuditLogger $auditLogger = null,
         ?SymfonyRequest $request = null,
-        ?FileUploader $fileUploader = null
+        ?FileUploader $fileUploader = null,
+        ?FileManager $fileManager = null
     ) {
         parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
 
-        // Initialize file uploader
+        // Initialize file uploader and file manager
         $this->fileUploader = $fileUploader ?? new FileUploader();
+        $this->fileManager = $fileManager ?? container()->get(FileManager::class);
 
         // Get blob repository from factory
         $this->blobRepository = $this->repositoryFactory->getRepository('Blob');
@@ -436,7 +440,7 @@ class FilesController extends BaseController
                 'type' => $getParams['mime_type'] ?? 'image/jpeg',
                 'tmp_name' => $tmpFile,
                 'error' => 0,
-                'size' => filesize($tmpFile)
+                'size' => $this->fileManager->getFileSize($tmpFile)
             ];
 
             return $this->fileUploader->handleUpload(

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Helpers;
 
+use Glueful\Services\FileFinder;
+
 /**
  * Centralized Configuration Manager
  *
@@ -47,14 +49,12 @@ class ConfigManager
             }
         }
 
-        // Load remaining configurations
-        $configFiles = glob($configPath . '/*.php');
-        if ($configFiles === false) {
-            throw new \RuntimeException("Unable to read configuration directory: {$configPath}");
-        }
+        // Load remaining configurations using FileFinder
+        $fileFinder = container()->get(FileFinder::class);
+        $configFiles = $fileFinder->findConfigFiles($configPath);
 
         foreach ($configFiles as $file) {
-            $name = basename($file, '.php');
+            $name = $file->getBasename('.php');
             if (!in_array($name, self::$requiredConfigs)) {
                 self::loadConfigFile($configPath, $name, false);
             }
@@ -251,13 +251,12 @@ class ConfigManager
 
         // Check if cache is stale (older than any config file)
         $cacheTime = filemtime(self::$cacheFile);
-        $configFiles = glob($configPath . '/*.php');
+        $fileFinder = container()->get(FileFinder::class);
+        $configFiles = $fileFinder->findConfigFiles($configPath);
 
-        if ($configFiles !== false) {
-            foreach ($configFiles as $file) {
-                if (filemtime($file) > $cacheTime) {
-                    return false;
-                }
+        foreach ($configFiles as $file) {
+            if ($file->getMTime() > $cacheTime) {
+                return false;
             }
         }
 

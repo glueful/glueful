@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Helpers;
 
+use Glueful\Services\FileFinder;
+
 class RoutesManager
 {
     protected static string $routesDir = __DIR__ . '/../../routes';
@@ -13,12 +15,15 @@ class RoutesManager
      */
     public static function loadRoutes(): void
     {
-        if (!is_dir(self::$routesDir)) {
-            throw new \Exception("Routes directory not found: " . self::$routesDir);
+        $fileFinder = container()->get(FileFinder::class);
+        $routeFiles = $fileFinder->findRouteFiles([self::$routesDir]);
+
+        if (!$routeFiles->valid()) {
+            throw new \Exception("No route files found in directory: " . self::$routesDir);
         }
 
-        foreach (glob(self::$routesDir . '/*.php') as $file) {
-            require_once $file;
+        foreach ($routeFiles as $file) {
+            require_once $file->getPathname();
         }
     }
 }

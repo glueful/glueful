@@ -8,6 +8,7 @@ use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
+use Glueful\Services\FileFinder;
 
 /**
  * JSON Definition Generator for API
@@ -233,21 +234,27 @@ class ApiDefinitionGenerator
         $definitionsPath = config('app.paths.json_definitions');
         $definitionsDocPath = config('app.paths.api_docs') . 'api-doc-json-definitions/';
 
-        // Process API doc definition files
+        // Process API doc definition files using FileFinder
+        $fileFinder = container()->get(FileFinder::class);
+        $finder = $fileFinder->createFinder();
+
         if (is_dir($definitionsDocPath)) {
-            foreach (glob($definitionsDocPath . "*.json") as $file) {
+            $docFiles = $finder->files()->in($definitionsDocPath)->name('*.json');
+            foreach ($docFiles as $file) {
                 try {
-                    $docGenerator->generateFromDocJson($file);
-                    $this->log("Processed Custom API doc for: " . basename($file));
+                    $docGenerator->generateFromDocJson($file->getPathname());
+                    $this->log("Processed Custom API doc for: " . $file->getFilename());
                 } catch (\Exception $e) {
-                    $this->log("Error processing doc definition {$file}: " . $e->getMessage());
+                    $this->log("Error processing doc definition {$file->getPathname()}: " . $e->getMessage());
                 }
             }
         }
 
         // Process table definition files
-        foreach (glob($definitionsPath . "*.json") as $file) {
-            $parts = explode('.', basename($file));
+        $finder = $fileFinder->createFinder();
+        $definitionFiles = $finder->files()->in($definitionsPath)->name('*.json');
+        foreach ($definitionFiles as $file) {
+            $parts = explode('.', basename($file->getFilename()));
             if (count($parts) !== 3) {
                 continue; // Skip if not in format: dbname.tablename.json
             }
@@ -282,12 +289,12 @@ class ApiDefinitionGenerator
                 $this->log("Forcing generation of extension documentation...");
 
                 // If forcing generation, handle each extension separately
-                $extensionDirs = array_filter(glob(dirname(__DIR__) . '/extensions' . '/*'), 'is_dir');
+                $extensionDirs = $fileFinder->findExtensions(dirname(__DIR__) . '/extensions');
                 $generatedFiles = [];
 
                 foreach ($extensionDirs as $extDir) {
-                    $extName = basename($extDir);
-                    $routeFile = $extDir . '/routes.php';
+                    $extName = $extDir->getFilename();
+                    $routeFile = $extDir->getPathname() . '/routes.php';
 
                     if (file_exists($routeFile)) {
                         $docFile = $extDocGen->generateForExtension($extName, $routeFile, true);
@@ -298,9 +305,10 @@ class ApiDefinitionGenerator
                 }
 
                 // Force generation for main routes
-                $routeFiles = glob(dirname(__DIR__) . '/routes/*.php');
-                foreach ($routeFiles as $routeFile) {
-                    $routeName = basename($routeFile, '.php');
+                $routeFiles = $fileFinder->findRouteFiles([dirname(__DIR__) . '/routes']);
+                foreach ($routeFiles as $routeFileObj) {
+                    $routeFile = $routeFileObj->getPathname();
+                    $routeName = $routeFileObj->getBasename('.php');
                     $docFile = $extDocGen->generateForRouteFile($routeName, $routeFile, true);
                     if ($docFile) {
                         $generatedFiles[] = $docFile;

@@ -148,6 +148,11 @@ class CacheFactory
             mkdir($path, 0755, true);
         }
 
-        return new \Glueful\Cache\Drivers\FileCacheDriver($path);
+        // Get file services from container
+        $container = \Glueful\DI\ContainerBootstrap::getContainer();
+        $fileManager = $container->get(\Glueful\Services\FileManager::class);
+        $fileFinder = $container->get(\Glueful\Services\FileFinder::class);
+
+        return new \Glueful\Cache\Drivers\FileCacheDriver($path, $fileManager, $fileFinder);
     }
 }

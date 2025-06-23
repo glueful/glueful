@@ -7,6 +7,7 @@ namespace Glueful;
 use ReflectionClass;
 use ReflectionMethod;
 use Glueful\Helpers\ExtensionsManager;
+use Glueful\Services\FileFinder;
 
 /**
  * Comments Documentation Generator
@@ -111,10 +112,12 @@ class CommentsDocGenerator
             mkdir($this->routesOutputPath, 0755, true);
         }
 
-        // Get all route files in the routes directory
-        $routeFiles = glob($this->routesPath . '/*.php');
+        // Get all route files in the routes directory using FileFinder
+        $fileFinder = container()->get(FileFinder::class);
+        $routeFiles = $fileFinder->findRouteFiles([$this->routesPath]);
 
-        foreach ($routeFiles as $routeFile) {
+        foreach ($routeFiles as $routeFileObj) {
+            $routeFile = $routeFileObj->getPathname();
             $routeName = basename($routeFile, '.php');
             $docFile = $this->generateForRouteFile($routeName, $routeFile);
             if ($docFile) {

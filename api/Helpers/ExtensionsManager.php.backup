@@ -6,9 +6,6 @@ namespace Glueful\Helpers;
 
 use Composer\Autoload\ClassLoader;
 use Glueful\Helpers\CDNAdapterManager;
-use Glueful\Services\FileFinder;
-use Glueful\Services\FileManager;
-use Glueful\DI\ContainerBootstrap;
 
 /**
  * Extensions Manager
@@ -31,12 +28,6 @@ class ExtensionsManager
     /** @var ClassLoader|null Composer's class loader instance */
     private static ?ClassLoader $classLoader = null;
 
-    /** @var FileFinder|null File finder service instance */
-    private static ?FileFinder $fileFinder = null;
-
-    /** @var FileManager|null File manager service instance */
-    private static ?FileManager $fileManager = null;
-
     /**
      * Enable debug mode for extension loading
      *
@@ -56,44 +47,6 @@ class ExtensionsManager
     }
 
     /**
-     * Get FileFinder service instance
-     *
-     * @return FileFinder
-     */
-    private static function getFileFinder(): FileFinder
-    {
-        if (self::$fileFinder === null) {
-            try {
-                $container = ContainerBootstrap::getContainer();
-                self::$fileFinder = $container->get(FileFinder::class);
-            } catch (\Exception $e) {
-                // Fallback to creating directly if container not available
-                self::$fileFinder = new FileFinder();
-            }
-        }
-        return self::$fileFinder;
-    }
-
-    /**
-     * Get FileManager service instance
-     *
-     * @return FileManager
-     */
-    private static function getFileManager(): FileManager
-    {
-        if (self::$fileManager === null) {
-            try {
-                $container = ContainerBootstrap::getContainer();
-                self::$fileManager = $container->get(FileManager::class);
-            } catch (\Exception $e) {
-                // Fallback to creating directly if container not available
-                self::$fileManager = new FileManager();
-            }
-        }
-        return self::$fileManager;
-    }
-
-    /**
      * Log debug message if debug mode is enabled
      *
      * @param string $message Message to log
@@ -103,115 +56,6 @@ class ExtensionsManager
     {
         if (self::$debug) {
             error_log("[ExtensionsManager Debug] " . $message);
-        }
-    }
-
-    /**
-     * Count PHP files in a directory using FileFinder
-     *
-     * @param string $directory Directory to count files in
-     * @return int Number of PHP files
-     */
-    private static function countPhpFiles(string $directory): int
-    {
-        try {
-            $finder = self::getFileFinder();
-            $files = $finder->findPhpFiles($directory, 0); // depth 0 for current directory only
-            return iterator_count($files);
-        } catch (\Exception $e) {
-            self::debug("Error counting PHP files in {$directory}: " . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Find PHP files in a directory and return their paths
-     *
-     * @param string $directory Directory to search in
-     * @return array Array of PHP file paths
-     */
-    private static function findPhpFilesInDirectory(string $directory): array
-    {
-        try {
-            $finder = self::getFileFinder();
-            $files = $finder->findPhpFiles($directory, 0); // depth 0 for current directory only
-
-            $phpFiles = [];
-            foreach ($files as $file) {
-                $phpFiles[] = $file->getPathname();
-            }
-
-            return $phpFiles;
-        } catch (\Exception $e) {
-            self::debug("Error finding PHP files in {$directory}: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Count screenshot files in a directory
-     *
-     * @param string $directory Directory to search in
-     * @return int Number of screenshot files
-     */
-    private static function countScreenshots(string $directory): int
-    {
-        try {
-            $finder = self::getFileFinder()->createFinder();
-            $files = $finder
-                ->files()
-                ->in($directory)
-                ->depth('== 0')
-                ->name(['*.png', '*.jpg', '*.jpeg', '*.gif']);
-
-            return iterator_count($files);
-        } catch (\Exception $e) {
-            self::debug("Error counting screenshots in {$directory}: " . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Discover all extensions in the extensions directory using FileFinder
-     *
-     * @param string|null $extensionsPath Path to extensions directory (null = use default)
-     * @return array Array of discovered extensions with metadata
-     */
-    public static function discoverExtensions(?string $extensionsPath = null): array
-    {
-        $extensionsPath = $extensionsPath ?? config('app.paths.project_extensions', 'extensions/');
-
-        if (!is_dir($extensionsPath)) {
-            self::debug("Extensions directory does not exist: {$extensionsPath}");
-            return [];
-        }
-
-        try {
-            $finder = self::getFileFinder();
-            $extensions = $finder->findExtensions($extensionsPath);
-
-            $discovered = [];
-            foreach ($extensions as $extensionDir) {
-                $extensionName = $extensionDir->getBasename();
-                $extensionPath = $extensionDir->getPathname();
-
-                // Get extension metadata
-                $discovered[$extensionName] = [
-                    'name' => $extensionName,
-                    'path' => $extensionPath,
-                    'hasConfig' => file_exists("{$extensionPath}/config.php"),
-                    'hasRoutes' => file_exists("{$extensionPath}/routes.php"),
-                    'hasMigrations' => is_dir("{$extensionPath}/migrations") ||
-                                     is_dir("{$extensionPath}/database/migrations"),
-                    'hasAssets' => is_dir("{$extensionPath}/assets"),
-                    'lastModified' => $extensionDir->getMTime(),
-                ];
-            }
-
-            return $discovered;
-        } catch (\Exception $e) {
-            self::debug("Error discovering extensions: " . $e->getMessage());
-            return [];
         }
     }
 
@@ -1639,7 +1483,7 @@ class ExtensionsManager
                 'healthy' => empty($issues),
                 'issues' => $issues,
                 'metrics' => [
-                    'files_count' => self::countPhpFiles($extensionDir),
+                    'files_count' => count(glob($extensionDir . '/*.php')),
                     'last_modified' => filemtime($classPath)
                 ]
             ];
@@ -1783,7 +1627,7 @@ class ExtensionsManager
         $mainClassFile = "$extensionDir/$targetName.php";
         if (!file_exists($mainClassFile)) {
             // Try to find any PHP file that might be the main extension file
-            $phpFiles = self::findPhpFilesInDirectory($extensionDir);
+            $phpFiles = glob("$extensionDir/*.php");
 
             if (empty($phpFiles)) {
                 return [
@@ -1984,20 +1828,32 @@ class ExtensionsManager
     }
 
     /**
-     * Recursively remove a directory and its contents using FileManager
+     * Recursively remove a directory and its contents
      *
      * @param string $dir Directory to remove
      * @return bool Success status
      */
     private static function removeDirectory(string $dir): bool
     {
-        try {
-            $fileManager = self::getFileManager();
-            return $fileManager->remove($dir);
-        } catch (\Exception $e) {
-            self::debug("Error removing directory {$dir}: " . $e->getMessage());
-            return false;
+        if (!is_dir($dir)) {
+            return true;
         }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = "$dir/$file";
+            if (is_dir($path)) {
+                if (!self::removeDirectory($path)) {
+                    return false;
+                }
+            } else {
+                if (!unlink($path)) {
+                    return false;
+                }
+            }
+        }
+
+        return rmdir($dir);
     }
 
     /**
@@ -2551,7 +2407,7 @@ class ExtensionsManager
             if (method_exists($extensionClass, 'getScreenshots')) {
                 $screenshotsDir = dirname((new \ReflectionClass($extensionClass))->getFileName()) . '/screenshots';
                 if (is_dir($screenshotsDir)) {
-                    $screenshotsCount = self::countScreenshots($screenshotsDir);
+                    $screenshotsCount = count(glob($screenshotsDir . '/*.{png,jpg,jpeg,gif}', GLOB_BRACE));
 
                     if (
                         $screenshotsCount > 0 &&
@@ -2837,14 +2693,28 @@ class ExtensionsManager
     }
 
     /**
-     * Recursively remove a directory (alias for removeDirectory)
+     * Recursively remove a directory
      *
      * @param string $dir Directory path
      * @return bool Success status
      */
     private static function rrmdir(string $dir): bool
     {
-        return self::removeDirectory($dir);
+        if (is_dir($dir)) {
+            $objects = scandir($dir);
+            foreach ($objects as $object) {
+                if ($object !== '.' && $object !== '..') {
+                    $path = $dir . '/' . $object;
+                    if (is_dir($path)) {
+                        self::rrmdir($path);
+                    } else {
+                        unlink($path);
+                    }
+                }
+            }
+            return rmdir($dir);
+        }
+        return false;
     }
 
     /**
@@ -3181,7 +3051,7 @@ class ExtensionsManager
 
         if (!$foundMainFile) {
             // Try to find any PHP file that might be the main extension file
-            $phpFiles = self::findPhpFilesInDirectory($tempDir);
+            $phpFiles = glob("$tempDir/*.php");
 
             if (empty($phpFiles)) {
                 // Clean up temporary directory
@@ -4727,8 +4597,7 @@ class ExtensionsManager
         foreach ($migrationDirs as $dir) {
             $fullDir = "{$extensionPath}/{$dir}";
             if (is_dir($fullDir)) {
-                $migrationFiles = self::findPhpFilesInDirectory($fullDir);
-                foreach ($migrationFiles as $migrationFile) {
+                foreach (glob("{$fullDir}/*.php") as $migrationFile) {
                     $provides['migrations'][] = "{$installPath}/{$dir}/" . basename($migrationFile);
                 }
             }

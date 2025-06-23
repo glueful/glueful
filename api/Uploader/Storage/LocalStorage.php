@@ -3,28 +3,52 @@
 namespace Glueful\Uploader\Storage;
 
 use Glueful\Uploader\UploadException;
+use Glueful\Services\FileManager;
 
 class LocalStorage implements StorageInterface
 {
+    private FileManager $fileManager;
+
     public function __construct(
         private readonly string $baseDir,
-        private readonly string $baseUrl
+        private readonly string $baseUrl,
+        ?FileManager $fileManager = null
     ) {
+        $this->fileManager = $fileManager ?? container()->get(FileManager::class);
     }
 
     public function store(string $sourcePath, string $destinationPath): string
     {
         $fullPath = rtrim($this->baseDir, '/') . '/' . $destinationPath;
 
-        if (file_exists($fullPath)) {
+        if ($this->fileManager->exists($fullPath)) {
             throw new UploadException('File already exists');
         }
 
-        if (!move_uploaded_file($sourcePath, $fullPath)) {
-            throw new UploadException('Failed to move uploaded file');
+        // Ensure destination directory exists
+        $directory = dirname($fullPath);
+        if (!$this->fileManager->exists($directory)) {
+            $this->fileManager->createDirectory($directory);
         }
 
-        chmod($fullPath, 0644);
+        // Use FileManager for secure file copying
+        if (is_uploaded_file($sourcePath)) {
+            // For uploaded files, copy content then remove source
+            $content = file_get_contents($sourcePath);
+            if ($content === false) {
+                throw new UploadException('Failed to read uploaded file');
+            }
+
+            if (!$this->fileManager->writeFile($fullPath, $content)) {
+                throw new UploadException('Failed to store uploaded file');
+            }
+        } else {
+            // For non-uploaded files (e.g., temporary files), use copy
+            if (!$this->fileManager->copy($sourcePath, $fullPath)) {
+                throw new UploadException('Failed to copy file to destination');
+            }
+        }
+
         return $destinationPath;
     }
 
@@ -35,13 +59,13 @@ class LocalStorage implements StorageInterface
 
     public function exists(string $path): bool
     {
-        return file_exists(rtrim($this->baseDir, '/') . '/' . $path);
+        return $this->fileManager->exists(rtrim($this->baseDir, '/') . '/' . $path);
     }
 
     public function delete(string $path): bool
     {
         $fullPath = rtrim($this->baseDir, '/') . '/' . $path;
-        return file_exists($fullPath) && unlink($fullPath);
+        return $this->fileManager->exists($fullPath) && $this->fileManager->remove($fullPath);
     }
 
     public function getSignedUrl(string $path, int $expiry = 3600): string
