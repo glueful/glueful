@@ -111,8 +111,12 @@ class AutoScaler
     /**
      * Make scaling decision based on metrics and configuration
      */
-    private function makeScalingDecision(string $queueName, array $metrics, int $currentWorkers, array $queueConfig): array
-    {
+    private function makeScalingDecision(
+        string $queueName,
+        array $metrics,
+        int $currentWorkers,
+        array $queueConfig
+    ): array {
         $maxWorkers = $queueConfig['max_workers'] ?? $this->config['limits']['max_workers_per_queue'];
         $minWorkers = $queueConfig['min_workers'] ?? 1;
 
@@ -188,7 +192,8 @@ class AutoScaler
      */
     private function shouldScaleDown(array $metrics, int $currentWorkers, array $queueConfig): bool
     {
-        $scaleDownThreshold = $queueConfig['scale_down_threshold'] ?? $this->config['auto_scale']['scale_down_threshold'];
+        $scaleDownThreshold = $queueConfig['scale_down_threshold']
+            ?? $this->config['auto_scale']['scale_down_threshold'];
         $minWorkers = $queueConfig['min_workers'] ?? 1;
 
         // Can't scale down if already at min
@@ -382,7 +387,8 @@ class AutoScaler
     {
         $reasons = [];
 
-        $scaleDownThreshold = $queueConfig['scale_down_threshold'] ?? $this->config['auto_scale']['scale_down_threshold'];
+        $scaleDownThreshold = $queueConfig['scale_down_threshold']
+            ?? $this->config['auto_scale']['scale_down_threshold'];
         if ($metrics['queue_size'] < $scaleDownThreshold) {
             $reasons[] = "Queue size ({$metrics['queue_size']}) < threshold ({$scaleDownThreshold})";
         }
@@ -397,7 +403,7 @@ class AutoScaler
     /**
      * Get scaling history
      */
-    public function getScalingHistory(string $queueName = null): array
+    public function getScalingHistory(?string $queueName = null): array
     {
         if ($queueName === null) {
             return $this->scaleHistory;

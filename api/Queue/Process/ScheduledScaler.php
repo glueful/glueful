@@ -237,8 +237,11 @@ class ScheduledScaler
     /**
      * Add predefined business hour schedules
      */
-    public function addBusinessHourSchedules(string $queueName, int $businessWorkers = 4, int $offHoursWorkers = 1): void
-    {
+    public function addBusinessHourSchedules(
+        string $queueName,
+        int $businessWorkers = 4,
+        int $offHoursWorkers = 1
+    ): void {
         // Scale up at 8 AM Monday-Friday
         $this->addSchedule(
             "business_hours_start_{$queueName}",
@@ -340,16 +343,19 @@ class ScheduledScaler
 
             try {
                 $cron = new CronExpression($schedule['cron']);
-                $runs = $cron->getMultipleRunDates(10, $startDate, $endDate);
+                $runs = $cron->getMultipleRunDates(10, $startDate, false, true);
 
                 foreach ($runs as $runDate) {
-                    $preview[] = [
-                        'schedule_name' => $name,
-                        'queue' => $schedule['queue'],
-                        'workers' => $schedule['workers'],
-                        'run_time' => $runDate->format('Y-m-d H:i:s'),
-                        'cron' => $schedule['cron'],
-                    ];
+                    // Only include runs within our date range
+                    if ($runDate <= $endDate) {
+                        $preview[] = [
+                            'schedule_name' => $name,
+                            'queue' => $schedule['queue'],
+                            'workers' => $schedule['workers'],
+                            'run_time' => $runDate->format('Y-m-d H:i:s'),
+                            'cron' => $schedule['cron'],
+                        ];
+                    }
                 }
             } catch (\Exception $e) {
                 $this->logger->error('Error previewing schedule', [
