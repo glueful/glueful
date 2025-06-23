@@ -4,6 +4,8 @@ namespace Glueful\Security;
 
 use Glueful\Helpers\{ConfigManager, Utils};
 use Glueful\Exceptions\RateLimitExceededException;
+use Glueful\Events\Auth\RateLimitExceededEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Glueful\Exceptions\SecurityException;
 use Glueful\Cache\CacheStore;
 use Glueful\Helpers\CacheHelper;
@@ -44,16 +46,20 @@ class SecurityManager
     /** @var CacheStore Cache driver instance */
     private CacheStore $cache;
 
+    /** @var EventDispatcherInterface|null Event dispatcher for security events */
+    private ?EventDispatcherInterface $eventDispatcher;
+
     /**
      * Initialize the Security Manager
      *
      * Loads security configuration from the ConfigManager and sets up
      * default values for rate limiting and request validation.
      */
-    public function __construct(?CacheStore $cache = null)
+    public function __construct(?CacheStore $cache = null, ?EventDispatcherInterface $eventDispatcher = null)
     {
         $this->config = ConfigManager::get('security', []);
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
+        $this->eventDispatcher = $eventDispatcher;
 
         if ($this->cache === null) {
             throw new \RuntimeException(
@@ -406,6 +412,19 @@ class SecurityManager
 
         // Check if current request count exceeds the limit
         if ($current >= $limit) {
+            // Dispatch rate limit exceeded event
+            if ($this->eventDispatcher) {
+                $event = new RateLimitExceededEvent(
+                    $ip,
+                    'default_limit',
+                    $current + 1, // Include the current request
+                    $limit,
+                    $window,
+                    ['rule' => 'default_limit', 'triggered_at' => time()]
+                );
+                $this->eventDispatcher->dispatch($event);
+            }
+
             throw new RateLimitExceededException("Rate limit exceeded for IP: $ip", $window);
         }
 

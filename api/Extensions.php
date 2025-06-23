@@ -85,12 +85,29 @@ abstract class Extensions implements IExtensions
     }
 
     /**
-     * Get event subscribers
+     * Get event subscribers (Symfony EventSubscriber pattern)
      *
-     * Returns an array of events this extension wants to subscribe to.
-     * Allows extensions to listen to system and other extension events.
+     * Returns an array of events this extension wants to subscribe to using
+     * the Symfony EventDispatcher EventSubscriberInterface pattern.
      *
-     * @return array<string, array> Event name => [method, priority] mapping
+     * Format:
+     * - String: method name to call
+     * - Array: [method, priority] where priority is an integer (higher = earlier)
+     * - Array: [[method1, priority1], [method2, priority2]] for multiple listeners
+     *
+     * Example:
+     * ```php
+     * return [
+     *     SessionCreatedEvent::class => 'onSessionCreated',
+     *     UserUpdatedEvent::class => ['onUserUpdated', 100],
+     *     'cache.invalidated' => [
+     *         ['onCacheCleared', 50],
+     *         ['logCacheEvent', 10]
+     *     ]
+     * ];
+     * ```
+     *
+     * @return array<string, string|array> Event subscriptions
      */
     public static function getEventSubscribers(): array
     {

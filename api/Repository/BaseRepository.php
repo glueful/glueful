@@ -12,7 +12,9 @@ use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Repository\Traits\TransactionTrait;
 use Glueful\Helpers\Utils;
 use Glueful\Exceptions\DatabaseException;
-use Glueful\Exceptions\NotFoundException;
+use Glueful\Events\Database\EntityCreatedEvent;
+use Glueful\Events\Database\EntityUpdatedEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Base Repository
@@ -53,6 +55,9 @@ abstract class BaseRepository implements RepositoryInterface
 
     /** @var bool Whether this table has updated_at timestamp column */
     protected bool $hasUpdatedAt = true;
+
+    /** @var EventDispatcherInterface|null Event dispatcher instance */
+    protected ?EventDispatcherInterface $eventDispatcher = null;
 
     /** @var Connection|null Shared database connection across all repositories */
     private static ?Connection $sharedConnection = null;
@@ -101,8 +106,9 @@ abstract class BaseRepository implements RepositoryInterface
      * Sets up database connection and query builder for common database operations.
      *
      * @param Connection|null $connection Optional connection override
+     * @param EventDispatcherInterface|null $eventDispatcher Optional event dispatcher
      */
-    public function __construct(?Connection $connection = null)
+    public function __construct(?Connection $connection = null, ?EventDispatcherInterface $eventDispatcher = null)
     {
         if ($connection) {
             self::$sharedConnection = $connection;
@@ -113,6 +119,9 @@ abstract class BaseRepository implements RepositoryInterface
 
         // Get the audit logger instance
         $this->auditLogger = AuditLogger::getInstance();
+
+        // Set event dispatcher if provided, or try to get from container
+        $this->eventDispatcher = $eventDispatcher ?? $this->getEventDispatcherFromContainer();
     }
 
     /**
@@ -220,6 +229,17 @@ abstract class BaseRepository implements RepositoryInterface
         // Audit log the creation
         $this->auditDataAction('create', $uuid, $data);
 
+        // Dispatch entity created event
+        if ($this->eventDispatcher) {
+            $event = new EntityCreatedEvent($data, $this->table, [
+                'entity_id' => $uuid,
+                'timestamp' => time(),
+                'primary_key' => $this->primaryKey,
+                'operation' => 'create'
+            ]);
+            $this->eventDispatcher->dispatch($event);
+        }
+
         return $uuid;
     }
 
@@ -245,6 +265,21 @@ abstract class BaseRepository implements RepositoryInterface
         if ($success) {
             // Audit log the update (without original data comparison)
             $this->auditDataAction('update', $uuid, $data);
+
+            // Dispatch entity updated event
+            if ($this->eventDispatcher) {
+                // Construct entity data with ID for the event
+                $entityData = array_merge($data, [$this->primaryKey => $uuid]);
+
+                $event = new EntityUpdatedEvent($entityData, $this->table, $data, [
+                    'entity_id' => $uuid,
+                    'timestamp' => time(),
+                    'primary_key' => $this->primaryKey,
+                    'affected_rows' => $affectedRows,
+                    'operation' => 'update'
+                ]);
+                $this->eventDispatcher->dispatch($event);
+            }
         }
 
         return $success;
@@ -699,5 +734,28 @@ abstract class BaseRepository implements RepositoryInterface
             $severity,
             $context
         );
+    }
+
+    /**
+     * Get event dispatcher from container if available
+     *
+     * @return EventDispatcherInterface|null
+     */
+    private function getEventDispatcherFromContainer(): ?EventDispatcherInterface
+    {
+        // Check if global container function exists and has EventDispatcher
+        if (function_exists('container')) {
+            try {
+                $container = container();
+                if ($container->has(EventDispatcherInterface::class)) {
+                    return $container->get(EventDispatcherInterface::class);
+                }
+            } catch (\Exception) {
+                // Silently fail if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 }

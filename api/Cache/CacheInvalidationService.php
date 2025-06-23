@@ -249,9 +249,8 @@ class CacheInvalidationService
 
         $events = array_keys(self::$patterns);
         foreach ($events as $event) {
-            if (method_exists($dispatcher, 'listen')) {
-                $dispatcher->listen($event, [self::class, 'onEvent']);
-            }
+            // Use Symfony EventDispatcher interface
+            $dispatcher->addListener($event, [self::class, 'onEvent']);
         }
     }
 

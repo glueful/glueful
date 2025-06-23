@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Notifications\Services;
 
 use DateTime;
-use Glueful\Events\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Contracts\NotificationExtension;
@@ -40,9 +40,9 @@ class NotificationDispatcher
     private ?LogManager $logger;
 
     /**
-     * @var EventDispatcher|null Event dispatcher for notification events
+     * @var EventDispatcherInterface|null Event dispatcher for notification events
      */
-    private ?EventDispatcher $eventDispatcher;
+    private ?EventDispatcherInterface $eventDispatcher;
 
     /**
      * @var array Configuration options
@@ -54,13 +54,13 @@ class NotificationDispatcher
      *
      * @param ChannelManager $channelManager Channel manager instance
      * @param LogManager|null $logger Logger instance
-     * @param EventDispatcher|null $eventDispatcher Event dispatcher instance
+     * @param EventDispatcherInterface|null $eventDispatcher Event dispatcher instance
      * @param array $config Configuration options
      */
     public function __construct(
         ChannelManager $channelManager,
         ?LogManager $logger = null,
-        ?EventDispatcher $eventDispatcher = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
         array $config = []
     ) {
         $this->channelManager = $channelManager;
@@ -300,10 +300,10 @@ class NotificationDispatcher
     /**
      * Set the event dispatcher
      *
-     * @param EventDispatcher $eventDispatcher Event dispatcher instance
+     * @param EventDispatcherInterface $eventDispatcher Event dispatcher instance
      * @return self
      */
-    public function setEventDispatcher(EventDispatcher $eventDispatcher): self
+    public function setEventDispatcher(EventDispatcherInterface $eventDispatcher): self
     {
         $this->eventDispatcher = $eventDispatcher;
         return $this;
@@ -312,9 +312,9 @@ class NotificationDispatcher
     /**
      * Get the event dispatcher
      *
-     * @return EventDispatcher|null The event dispatcher
+     * @return EventDispatcherInterface|null The event dispatcher
      */
-    public function getEventDispatcher(): ?EventDispatcher
+    public function getEventDispatcher(): ?EventDispatcherInterface
     {
         return $this->eventDispatcher;
     }

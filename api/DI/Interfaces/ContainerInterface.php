@@ -58,4 +58,9 @@ interface ContainerInterface extends PsrContainerInterface
      * Boot all registered service providers
      */
     public function boot(): void;
+
+    /**
+     * Create an alias for a service
+     */
+    public function alias(string $alias, string $abstract): void;
 }

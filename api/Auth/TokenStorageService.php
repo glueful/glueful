@@ -13,6 +13,9 @@ use Glueful\Http\RequestContext;
 use Glueful\Logging\AuditLogger;
 use Glueful\Logging\AuditEvent;
 use Glueful\Helpers\Utils;
+use Glueful\Events\Auth\SessionCreatedEvent;
+use Glueful\Events\Auth\SessionDestroyedEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Token Storage Service
@@ -26,6 +29,7 @@ class TokenStorageService implements TokenStorageInterface
     private QueryBuilder $queryBuilder;
     private AuditLogger $auditLogger;
     private ?CacheStore $cache;
+    private ?EventDispatcherInterface $eventDispatcher;
 
     private bool $useTransactions;
     private string $sessionTable = 'auth_sessions';
@@ -37,7 +41,8 @@ class TokenStorageService implements TokenStorageInterface
         ?Connection $connection = null,
         ?RequestContext $requestContext = null,
         ?AuditLogger $auditLogger = null,
-        bool $useTransactions = true
+        bool $useTransactions = true,
+        ?EventDispatcherInterface $eventDispatcher = null
     ) {
         // Assign dependencies with sensible defaults
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
@@ -45,6 +50,7 @@ class TokenStorageService implements TokenStorageInterface
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
         $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
         $this->useTransactions = $useTransactions;
+        $this->eventDispatcher = $eventDispatcher;
 
         // Initialize derived dependencies
         $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
@@ -99,6 +105,16 @@ class TokenStorageService implements TokenStorageInterface
 
             if ($this->useTransactions) {
                 $this->connection->getPDO()->commit();
+            }
+
+            // Dispatch session created event
+            if ($this->eventDispatcher) {
+                $event = new SessionCreatedEvent($sessionData, $tokens, [
+                    'session_uuid' => $sessionUuid,
+                    'ip_address' => $this->requestContext->getClientIp(),
+                    'user_agent' => $this->requestContext->getUserAgent()
+                ]);
+                $this->eventDispatcher->dispatch($event);
             }
 
             // Skip audit logging here - login success is already logged by the auth provider
@@ -324,6 +340,21 @@ class TokenStorageService implements TokenStorageInterface
 
             if ($this->useTransactions) {
                 $this->connection->getPDO()->commit();
+            }
+
+            // Dispatch session destroyed event
+            if ($this->eventDispatcher) {
+                $event = new SessionDestroyedEvent(
+                    $session['access_token'] ?? $sessionIdentifier,
+                    $session['user_uuid'] ?? null,
+                    'revoked',
+                    [
+                        'session_uuid' => $session['uuid'],
+                        'ip_address' => $this->requestContext->getClientIp(),
+                        'user_agent' => $this->requestContext->getUserAgent()
+                    ]
+                );
+                $this->eventDispatcher->dispatch($event);
             }
 
             $this->auditLogger->audit(

@@ -1236,6 +1236,11 @@ class LogManager implements LoggerInterface, LogManagerInterface
      */
     private function shouldSample($level): bool
     {
+        // Convert string level to Level enum if needed
+        if (is_string($level)) {
+            $level = $this->convertLevelStringToEnum($level);
+        }
+
         // Always log errors and above regardless of sampling
         if ($level->value >= Level::Error->value) {
             return true;
@@ -1247,6 +1252,30 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         return true;
+    }
+
+    /**
+     * Convert string level to Level enum
+     *
+     * @param string $levelName Level name
+     * @return Level Level enum
+     * @throws \InvalidArgumentException If level name is unknown
+     */
+    private function convertLevelStringToEnum(string $levelName): Level
+    {
+        $levelName = strtolower($levelName);
+
+        return match ($levelName) {
+            'debug' => Level::Debug,
+            'info' => Level::Info,
+            'notice' => Level::Notice,
+            'warning' => Level::Warning,
+            'error' => Level::Error,
+            'critical' => Level::Critical,
+            'alert' => Level::Alert,
+            'emergency' => Level::Emergency,
+            default => Level::Info // Default to Info instead of throwing exception
+        };
     }
 
     /**
