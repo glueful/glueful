@@ -19,6 +19,9 @@ class ConfigController extends BaseController
 
     public function __construct(?CacheStore $cache = null)
     {
+        // CRITICAL: Call parent constructor to initialize BaseController properties
+        parent::__construct();
+
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
     }
     private const SENSITIVE_KEYS = [

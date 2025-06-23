@@ -49,14 +49,15 @@ trait ResponseCachingTrait
         int $ttl = 3600,
         array $tags = []
     ): mixed {
-        // Generate cache key with controller context
+        // Generate cache key with controller context (sanitize class name for cache compatibility)
+        $controllerName = str_replace('\\', '.', static::class);
         $cacheKey = sprintf(
             'controller:%s:%s:%s',
-            static::class,
+            $controllerName,
             $key,
             md5(serialize([
                 $this->request->query->all(),
-                $this->currentUser?->uuid,
+                $this->currentUser?->uuid ?? null,
                 $this->request->headers->get('Accept'),
                 $this->request->headers->get('Accept-Language')
             ]))
@@ -446,9 +447,10 @@ trait ResponseCachingTrait
         int $ttl = 1800,
         array $dependencies = []
     ): mixed {
+        $controllerName = str_replace('\\', '.', static::class);
         $cacheKey = sprintf(
             'fragment:%s:%s:%s',
-            static::class,
+            $controllerName,
             $fragment,
             md5(serialize($dependencies))
         );
@@ -478,7 +480,8 @@ trait ResponseCachingTrait
         // Process each operation
         foreach ($operations as $key => $operation) {
             // Try to get from cache first
-            $cacheKey = sprintf('controller:%s:%s', static::class, $key);
+            $controllerName = str_replace('\\', '.', static::class);
+            $cacheKey = sprintf('controller:%s:%s', $controllerName, $key);
             $cachedValue = $this->getCacheStore()->get($cacheKey);
 
             if ($cachedValue !== null) {
