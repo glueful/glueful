@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Console\Commands\Queue;
 
-use Glueful\Console\Command;
 use Glueful\Queue\Process\ProcessManager;
 use Glueful\Queue\Process\ProcessFactory;
 use Glueful\Queue\Process\AutoScaler;
@@ -13,39 +12,193 @@ use Glueful\Queue\Process\ResourceMonitor;
 use Glueful\Queue\Process\StreamingMonitor;
 use Glueful\Queue\QueueManager;
 use Glueful\Queue\Monitoring\WorkerMonitor;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Auto-scaling Command for Queue Workers
- *
- * Advanced queue management with auto-scaling, scheduling, resource monitoring,
- * and real-time streaming capabilities.
+ * Queue Auto-Scale Command
+ * Advanced queue auto-scaling command featuring:
+ * - Advanced queue management with auto-scaling, scheduling, resource monitoring
+ * - Real-time streaming capabilities and comprehensive metrics
+ * - Intelligent resource-based scaling with trend analysis
+ * - Schedule management with cron-like expressions
+ * - Configuration validation and hot-reloading
+ * @package Glueful\Console\Commands\Queue
  */
-class AutoScaleCommand extends Command
+#[AsCommand(
+    name: 'queue:autoscale',
+    description: 'Advanced queue auto-scaling with monitoring and scheduling'
+)]
+class AutoScaleCommand extends BaseQueueCommand
 {
     private ProcessManager $processManager;
     private AutoScaler $autoScaler;
     private ScheduledScaler $scheduledScaler;
     private ResourceMonitor $resourceMonitor;
     private StreamingMonitor $streamingMonitor;
-    private ContainerInterface $container;
     private array $config;
 
-    public function __construct(?ContainerInterface $container = null)
+    protected function configure(): void
     {
-        $this->container = $container ?? container();
-        $this->config = config('queue.workers', []);
+        $this->setDescription('Advanced queue auto-scaling with monitoring and scheduling')
+             ->setHelp('This command provides advanced queue auto-scaling with comprehensive ' .
+                      'monitoring, scheduling, and real-time streaming capabilities.')
+             ->addArgument(
+                 'action',
+                 InputArgument::OPTIONAL,
+                 'Action to perform (run, status, config, schedule, resources, stream)',
+                 'run'
+             )
+             ->addOption(
+                 'interval',
+                 'i',
+                 InputOption::VALUE_REQUIRED,
+                 'Check interval in seconds',
+                 '60'
+             )
+             ->addOption(
+                 'no-resource-checks',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Disable resource monitoring'
+             )
+             ->addOption(
+                 'no-scheduling',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Disable scheduled scaling'
+             )
+             ->addOption(
+                 'streaming',
+                 's',
+                 InputOption::VALUE_NONE,
+                 'Enable real-time monitoring'
+             )
+             ->addOption(
+                 'json',
+                 'j',
+                 InputOption::VALUE_NONE,
+                 'Output as JSON'
+             )
+             ->addOption(
+                 'detailed',
+                 'd',
+                 InputOption::VALUE_NONE,
+                 'Show detailed metrics'
+             )
+             ->addOption(
+                 'show',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Show current configuration'
+             )
+             ->addOption(
+                 'validate',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Validate configuration'
+             )
+             ->addOption(
+                 'reload',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Reload configuration from file'
+             )
+             ->addOption(
+                 'list',
+                 'l',
+                 InputOption::VALUE_NONE,
+                 'List all schedules'
+             )
+             ->addOption(
+                 'preview',
+                 'p',
+                 InputOption::VALUE_NONE,
+                 'Preview upcoming schedule runs'
+             )
+             ->addOption(
+                 'days',
+                 null,
+                 InputOption::VALUE_REQUIRED,
+                 'Number of days to preview',
+                 '7'
+             )
+             ->addOption(
+                 'current',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Show current resource usage'
+             )
+             ->addOption(
+                 'history',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Show resource usage history'
+             )
+             ->addOption(
+                 'trends',
+                 null,
+                 InputOption::VALUE_NONE,
+                 'Show resource usage trends'
+             )
+             ->addOption(
+                 'format',
+                 'f',
+                 InputOption::VALUE_REQUIRED,
+                 'Output format (text, json, table)',
+                 'text'
+             )
+             ->addOption(
+                 'filter',
+                 null,
+                 InputOption::VALUE_REQUIRED,
+                 'Filter output (worker_id, level, message)'
+             )
+             ->addOption(
+                 'export',
+                 null,
+                 InputOption::VALUE_REQUIRED,
+                 'Export output to file'
+             );
+    }
 
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
         $this->initializeServices();
+
+        $action = $input->getArgument('action');
+
+        try {
+            return match ($action) {
+                'run' => $this->executeRun($input),
+                'status' => $this->executeStatus($input),
+                'config' => $this->executeConfig($input),
+                'schedule' => $this->executeSchedule($input),
+                'resources' => $this->executeResources($input),
+                'stream' => $this->executeStream($input),
+                default => $this->handleUnknownAction($action)
+            };
+        } catch (\Exception $e) {
+            $this->error("Error: " . $e->getMessage());
+            if ($input->getOption('verbose')) {
+                $this->error($e->getTraceAsString());
+            }
+            return self::FAILURE;
+        }
     }
 
     private function initializeServices(): void
     {
-        $logger = $this->container->get(LoggerInterface::class);
-        $queueManager = $this->container->get(QueueManager::class);
-        $workerMonitor = $this->container->get(WorkerMonitor::class);
-        $basePath = dirname(__DIR__, 4);
+        $this->config = config('queue.workers', []);
+
+        $logger = $this->getService(LoggerInterface::class);
+        $queueManager = $this->getService(QueueManager::class);
+        $workerMonitor = $this->getService(WorkerMonitor::class);
+        $basePath = dirname(__DIR__, 5);
 
         $processFactory = new ProcessFactory($logger, $basePath);
         $this->processManager = new ProcessManager($processFactory, $workerMonitor, $logger, $this->config);
@@ -56,99 +209,12 @@ class AutoScaleCommand extends Command
         $this->streamingMonitor = new StreamingMonitor($this->processManager, $logger);
     }
 
-    public function getName(): string
+    private function executeRun(InputInterface $input): int
     {
-        return 'queue:autoscale';
-    }
-
-    public function getDescription(): string
-    {
-        return 'Advanced queue auto-scaling with monitoring and scheduling';
-    }
-
-    public function getHelp(): string
-    {
-        return <<<HELP
-Advanced queue auto-scaling with comprehensive monitoring and scheduling.
-
-Usage:
-  php glueful queue:autoscale [action] [options]
-
-Actions:
-  run [options]         Start the auto-scaling daemon
-    --interval          Check interval in seconds (default: 60)
-    --resource-checks   Enable resource monitoring (default: true)
-    --scheduling        Enable scheduled scaling (default: true)
-    --streaming         Enable real-time monitoring (default: false)
-    
-  status                Show auto-scaling status and metrics
-    --json              Output as JSON
-    --detailed          Show detailed metrics
-    
-  config                Show/manage auto-scaling configuration
-    --show              Show current configuration
-    --validate          Validate configuration
-    --reload            Reload configuration from file
-    
-  schedule              Manage scaling schedules
-    --list              List all schedules
-    --add               Add a new schedule
-    --remove            Remove a schedule
-    --preview           Preview upcoming schedule runs
-    
-  resources             Monitor system resources
-    --current           Show current resource usage
-    --history           Show resource usage history
-    --trends            Show resource usage trends
-    
-  stream [options]      Start real-time output streaming
-    --format            Output format (text, json, table)
-    --filter            Filter output (worker_id, level, message)
-    --export            Export output to file
-
-Examples:
-  php glueful queue:autoscale run --interval=30 --streaming
-  php glueful queue:autoscale status --detailed
-  php glueful queue:autoscale schedule --preview --days=7
-  php glueful queue:autoscale resources --trends
-  php glueful queue:autoscale stream --format=table --filter=level:error
-HELP;
-    }
-
-    public function execute(array $args = []): int
-    {
-        if (empty($args) || in_array($args[0] ?? '', ['-h', '--help', 'help'])) {
-            $this->info($this->getHelp());
-            return Command::SUCCESS;
-        }
-
-        $action = array_shift($args);
-
-        try {
-            return match ($action) {
-                'run' => $this->executeRun($args),
-                'status' => $this->executeStatus($args),
-                'config' => $this->executeConfig($args),
-                'schedule' => $this->executeSchedule($args),
-                'resources' => $this->executeResources($args),
-                'stream' => $this->executeStream($args),
-                default => $this->handleUnknownAction($action)
-            };
-        } catch (\Exception $e) {
-            $this->error("Error: " . $e->getMessage());
-            if ($this->hasOption($args, '--verbose')) {
-                $this->error($e->getTraceAsString());
-            }
-            return Command::FAILURE;
-        }
-    }
-
-    private function executeRun(array $args): int
-    {
-        $interval = (int) $this->getOptionValue($args, '--interval', 60);
-        $enableResourceChecks = !$this->hasOption($args, '--no-resource-checks');
-        $enableScheduling = !$this->hasOption($args, '--no-scheduling');
-        $enableStreaming = $this->hasOption($args, '--streaming');
+        $interval = (int) $input->getOption('interval');
+        $enableResourceChecks = !$input->getOption('no-resource-checks');
+        $enableScheduling = !$input->getOption('no-scheduling');
+        $enableStreaming = $input->getOption('streaming');
 
         $this->info("🚀 Starting auto-scaling daemon");
         $this->line("Check interval: {$interval} seconds");
@@ -196,7 +262,7 @@ HELP;
         }
 
         $this->info("Auto-scaling daemon stopped");
-        return Command::SUCCESS;
+        return self::SUCCESS;
     }
 
     private function performScalingCycle(bool $enableResourceChecks, bool $enableScheduling): void
@@ -240,10 +306,10 @@ HELP;
         }
     }
 
-    private function executeStatus(array $args): int
+    private function executeStatus(InputInterface $input): int
     {
-        $json = $this->hasOption($args, '--json');
-        $detailed = $this->hasOption($args, '--detailed');
+        $json = $input->getOption('json');
+        $detailed = $input->getOption('detailed');
 
         $status = [
             'auto_scaling' => [
@@ -264,81 +330,86 @@ HELP;
         }
 
         if ($json) {
-            echo json_encode($status, JSON_PRETTY_PRINT) . "\n";
+            $this->displayJson($status);
         } else {
             $this->displayStatusReport($status, $detailed);
         }
 
-        return Command::SUCCESS;
+        return self::SUCCESS;
     }
 
-    private function executeSchedule(array $args): int
+    private function executeConfig(InputInterface $input): int
     {
-        if ($this->hasOption($args, '--list')) {
+        if ($input->getOption('show')) {
+            $this->displayConfiguration();
+            return self::SUCCESS;
+        }
+
+        if ($input->getOption('validate')) {
+            return $this->validateConfiguration();
+        }
+
+        if ($input->getOption('reload')) {
+            $this->info("🔄 Reloading configuration...");
+            $this->config = config('queue.workers', []);
+            $this->success("Configuration reloaded successfully");
+            return self::SUCCESS;
+        }
+
+        // Default: show configuration
+        $this->displayConfiguration();
+        return self::SUCCESS;
+    }
+
+    private function executeSchedule(InputInterface $input): int
+    {
+        if ($input->getOption('list')) {
             return $this->listSchedules();
         }
 
-        if ($this->hasOption($args, '--preview')) {
-            $days = (int) $this->getOptionValue($args, '--days', 7);
+        if ($input->getOption('preview')) {
+            $days = (int) $input->getOption('days');
             return $this->previewSchedules($days);
         }
 
-        if ($this->hasOption($args, '--add')) {
-            return $this->addSchedule($args);
-        }
-
-        if ($this->hasOption($args, '--remove')) {
-            $name = $this->getOptionValue($args, '--name');
-            if (!$name) {
-                $this->error("Schedule name is required for removal");
-                return Command::FAILURE;
-            }
-
-            if ($this->scheduledScaler->removeSchedule($name)) {
-                $this->success("Removed schedule: {$name}");
-            } else {
-                $this->error("Schedule not found: {$name}");
-            }
-            return Command::SUCCESS;
-        }
-
-        $this->error("Please specify an action: --list, --preview, --add, or --remove");
-        return Command::FAILURE;
+        $this->error("Please specify an action: --list or --preview");
+        return self::FAILURE;
     }
 
-    private function executeResources(array $args): int
+    private function executeResources(InputInterface $input): int
     {
-        if ($this->hasOption($args, '--current')) {
+        if ($input->getOption('current')) {
             $resources = $this->resourceMonitor->getCurrentResources();
             $this->displayResourceUsage($resources);
-            return Command::SUCCESS;
+            return self::SUCCESS;
         }
 
-        if ($this->hasOption($args, '--history')) {
+        if ($input->getOption('history')) {
             $history = $this->resourceMonitor->getResourceHistory(20);
             $this->displayResourceHistory($history);
-            return Command::SUCCESS;
+            return self::SUCCESS;
         }
 
-        if ($this->hasOption($args, '--trends')) {
+        if ($input->getOption('trends')) {
             $trends = $this->resourceMonitor->getResourceTrends();
             $this->displayResourceTrends($trends);
-            return Command::SUCCESS;
+            return self::SUCCESS;
         }
 
         // Default: show current resources
         $resources = $this->resourceMonitor->getCurrentResources();
         $this->displayResourceUsage($resources);
-        return Command::SUCCESS;
+        return self::SUCCESS;
     }
 
-    private function executeStream(array $args): int
+    private function executeStream(InputInterface $input): int
     {
-        $format = $this->getOptionValue($args, '--format', 'text');
-        $exportFile = $this->getOptionValue($args, '--export');
+        $format = $input->getOption('format');
+        $exportFile = $input->getOption('export');
+        $filterStr = $input->getOption('filter');
 
         $filters = [];
-        if ($filterStr = $this->getOptionValue($args, '--filter')) {
+        if ($filterStr) {
             $filters = $this->parseFilters($filterStr);
         }
 
@@ -369,10 +440,10 @@ HELP;
             ]);
         } catch (\Exception $e) {
             $this->error("Streaming failed: " . $e->getMessage());
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
-        return Command::SUCCESS;
+        return self::SUCCESS;
     }
 
     private function displayStatusReport(array $status, bool $detailed): void
@@ -444,137 +515,6 @@ HELP;
         }
     }
 
-    private function listSchedules(): int
-    {
-        $schedules = $this->scheduledScaler->getSchedules();
-
-        if (empty($schedules)) {
-            $this->warning("No schedules configured");
-            return Command::SUCCESS;
-        }
-
-        $this->info("📅 Scaling Schedules");
-        $this->line(str_repeat('=', 80));
-
-        foreach ($schedules as $name => $schedule) {
-            $status = $schedule['enabled'] ? '✅' : '❌';
-            $nextRun = $schedule['next_run'] ?? 'Not scheduled';
-
-            $this->line(sprintf(
-                "%s %s | Queue: %s | Workers: %d | Cron: %s | Next: %s",
-                $status,
-                $name,
-                $schedule['queue'],
-                $schedule['workers'],
-                $schedule['cron'],
-                $nextRun
-            ));
-        }
-
-        return Command::SUCCESS;
-    }
-
-    private function previewSchedules(int $days): int
-    {
-        $preview = $this->scheduledScaler->previewSchedules($days);
-
-        $this->info("📅 Schedule Preview (next {$days} days)");
-        $this->line(str_repeat('=', 60));
-
-        if (empty($preview)) {
-            $this->warning("No scheduled runs in the next {$days} days");
-            return Command::SUCCESS;
-        }
-
-        foreach ($preview as $run) {
-            $this->line(sprintf(
-                "%s | %s: %s → %d workers",
-                $run['run_time'],
-                $run['schedule_name'],
-                $run['queue'],
-                $run['workers']
-            ));
-        }
-
-        return Command::SUCCESS;
-    }
-
-    private function displayResourceUsage(array $resources): void
-    {
-        $this->info("💻 System Resources");
-        $this->line(str_repeat('=', 40));
-
-        $this->line(sprintf(
-            "Memory: %.1f%% (%.1f GB / %.1f GB)",
-            $resources['memory']['percentage'],
-            $resources['memory']['used'] / 1024 / 1024 / 1024,
-            $resources['memory']['total'] / 1024 / 1024 / 1024
-        ));
-
-        $this->line(sprintf(
-            "CPU: %.1f%% (%d cores)",
-            $resources['cpu']['percentage'],
-            $resources['cpu']['cores']
-        ));
-
-        $this->line(sprintf(
-            "Disk: %.1f%% (%.1f GB free)",
-            $resources['disk']['percentage'],
-            $resources['disk']['free'] / 1024 / 1024 / 1024
-        ));
-
-        $this->line(sprintf(
-            "Load Average: %.2f",
-            $resources['load_average']
-        ));
-    }
-
-    private function parseFilters(string $filterStr): array
-    {
-        $filters = [];
-        $parts = explode(',', $filterStr);
-
-        foreach ($parts as $part) {
-            if (strpos($part, ':') !== false) {
-                [$key, $value] = explode(':', $part, 2);
-                $filters[trim($key)] = trim($value);
-            }
-        }
-
-        return $filters;
-    }
-
-    private function handleUnknownAction(string $action): int
-    {
-        $this->error("Unknown action: {$action}");
-        $this->line();
-        $this->info("Available actions: run, status, config, schedule, resources, stream");
-        return Command::FAILURE;
-    }
-
-    private function executeConfig(array $args): int
-    {
-        if ($this->hasOption($args, '--show')) {
-            $this->displayConfiguration();
-            return Command::SUCCESS;
-        }
-
-        if ($this->hasOption($args, '--validate')) {
-            return $this->validateConfiguration();
-        }
-
-        if ($this->hasOption($args, '--reload')) {
-            $this->info("🔄 Reloading configuration...");
-            $this->config = config('queue.workers', []);
-            $this->success("Configuration reloaded successfully");
-            return Command::SUCCESS;
-        }
-
-        // Default: show configuration
-        $this->displayConfiguration();
-        return Command::SUCCESS;
-    }
-
     private function displayConfiguration(): void
     {
         $this->info("⚙️  Auto-scaling Configuration");
@@ -594,18 +534,6 @@ HELP;
         $this->line("  Scale up threshold: " . ($autoScaleConfig['scale_up_threshold'] ?? 100));
         $this->line("  Scale down threshold: " . ($autoScaleConfig['scale_down_threshold'] ?? 10));
         $this->line("  Cooldown period: " . ($autoScaleConfig['cooldown_period'] ?? 300) . "s");
-
-        // Queues
-        $queues = $this->config['queues'] ?? [];
-        if (!empty($queues)) {
-            $this->line("\nQueue-specific settings:");
-            foreach ($queues as $queueName => $queueConfig) {
-                $this->line("  {$queueName}:");
-                $this->line("    Workers: " . ($queueConfig['workers'] ?? 1));
-                $this->line("    Max workers: " . ($queueConfig['max_workers'] ?? 5));
-                $this->line("    Auto-scale: " . ($queueConfig['auto_scale'] ? 'Yes' : 'No'));
-            }
-        }
     }
 
     private function validateConfiguration(): int
@@ -645,7 +573,7 @@ HELP;
         // Display results
         if (empty($errors) && empty($warnings)) {
             $this->success("✅ Configuration is valid");
-            return Command::SUCCESS;
+            return self::SUCCESS;
         }
 
         if (!empty($errors)) {
@@ -662,40 +590,86 @@ HELP;
             }
         }
 
-        return empty($errors) ? Command::SUCCESS : Command::FAILURE;
+        return empty($errors) ? self::SUCCESS : self::FAILURE;
     }
 
-    private function displayStreamingStatus(): void
+    private function listSchedules(): int
     {
-        // Simple streaming status display
-        $status = $this->processManager->getStatus();
-        $runningWorkers = count(array_filter($status, fn($w) => $w['status'] === 'running'));
-        $totalWorkers = count($status);
+        $schedules = $this->scheduledScaler->getSchedules();
 
-        echo sprintf("\r[%s] Workers: %d/%d running", date('H:i:s'), $runningWorkers, $totalWorkers);
+        if (empty($schedules)) {
+            $this->warning("No schedules configured");
+            return self::SUCCESS;
+        }
+
+        $this->info("📅 Scaling Schedules");
+        $this->line(str_repeat('=', 80));
+
+        foreach ($schedules as $name => $schedule) {
+            $status = $schedule['enabled'] ? '✅' : '❌';
+            $nextRun = $schedule['next_run'] ?? 'Not scheduled';
+
+            $this->line(sprintf(
+                "%s %s | Queue: %s | Workers: %d | Cron: %s | Next: %s",
+                $status,
+                $name,
+                $schedule['queue'],
+                $schedule['workers'],
+                $schedule['cron'],
+                $nextRun
+            ));
+        }
+
+        return self::SUCCESS;
     }
 
-    private function addSchedule(array $args): int
+    private function previewSchedules(int $days): int
     {
-        $name = $this->getOptionValue($args, '--name');
-        $cron = $this->getOptionValue($args, '--cron');
-        $queue = $this->getOptionValue($args, '--queue');
-        $workers = (int) $this->getOptionValue($args, '--workers');
+        $preview = $this->scheduledScaler->previewSchedules($days);
 
-        if (!$name || !$cron || !$queue || !$workers) {
-            $this->error("Missing required options: --name, --cron, --queue, --workers");
-            return Command::FAILURE;
+        $this->info("📅 Schedule Preview (next {$days} days)");
+        $this->line(str_repeat('=', 60));
+
+        if (empty($preview)) {
+            $this->warning("No scheduled runs in the next {$days} days");
+            return self::SUCCESS;
         }
 
-        if (!$this->scheduledScaler->validateCronExpression($cron)) {
-            $this->error("Invalid cron expression: {$cron}");
-            return Command::FAILURE;
+        foreach ($preview as $run) {
+            $this->line(sprintf(
+                "%s | %s: %s → %d workers",
+                $run['run_time'],
+                $run['schedule_name'],
+                $run['queue'],
+                $run['workers']
+            ));
         }
 
-        $this->scheduledScaler->addSchedule($name, $cron, $queue, $workers);
-        $this->success("Added schedule: {$name}");
+        return self::SUCCESS;
+    }
 
-        return Command::SUCCESS;
+    private function displayResourceUsage(array $resources): void
+    {
+        $this->info("💻 System Resources");
+        $this->line(str_repeat('=', 40));
+
+        $this->line(sprintf(
+            "Memory: %.1f%% (%.1f GB / %.1f GB)",
+            $resources['memory']['percentage'],
+            $resources['memory']['used'] / 1024 / 1024 / 1024,
+            $resources['memory']['total'] / 1024 / 1024 / 1024
+        ));
+
+        $this->line(sprintf(
+            "CPU: %.1f%% (%d cores)",
+            $resources['cpu']['percentage'],
+            $resources['cpu']['cores']
+        ));
+
+        $this->line(sprintf(
+            "Load Average: %.2f",
+            $resources['load_average']
+        ));
     }
 
     private function displayResourceHistory(array $history): void
@@ -730,13 +704,9 @@ HELP;
             return;
         }
 
-        $memoryTrend = $trends['memory_trend'];
-        $cpuTrend = $trends['cpu_trend'];
-        $loadTrend = $trends['load_trend'];
-
-        $this->line(sprintf("Memory trend: %+.1f%%", $memoryTrend));
-        $this->line(sprintf("CPU trend: %+.1f%%", $cpuTrend));
-        $this->line(sprintf("Load trend: %+.2f", $loadTrend));
+        $this->line(sprintf("Memory trend: %+.1f%%", $trends['memory_trend']));
+        $this->line(sprintf("CPU trend: %+.1f%%", $trends['cpu_trend']));
+        $this->line(sprintf("Load trend: %+.2f", $trends['load_trend']));
 
         if ($trends['trending_up']) {
             $this->warning("⬆️  Resources are trending upward");
@@ -745,25 +715,36 @@ HELP;
         }
     }
 
-    // Helper methods from parent classes
-    private function getOptionValue(array $args, string $option, $default = null)
+    private function displayStreamingStatus(): void
     {
-        foreach ($args as $arg) {
-            if (str_starts_with($arg, $option . '=')) {
-                return substr($arg, strlen($option) + 1);
+        // Simple streaming status display
+        $status = $this->processManager->getStatus();
+        $runningWorkers = count(array_filter($status, fn($w) => $w['status'] === 'running'));
+        $totalWorkers = count($status);
+
+        echo sprintf("\r[%s] Workers: %d/%d running", date('H:i:s'), $runningWorkers, $totalWorkers);
+    }
+
+    private function parseFilters(string $filterStr): array
+    {
+        $filters = [];
+        $parts = explode(',', $filterStr);
+
+        foreach ($parts as $part) {
+            if (strpos($part, ':') !== false) {
+                [$key, $value] = explode(':', $part, 2);
+                $filters[trim($key)] = trim($value);
             }
         }
 
-        $index = array_search($option, $args);
-        if ($index !== false && isset($args[$index + 1]) && !str_starts_with($args[$index + 1], '--')) {
-            return $args[$index + 1];
-        }
-
-        return $default;
+        return $filters;
     }
 
-    private function hasOption(array $args, string $option): bool
+    private function handleUnknownAction(string $action): int
     {
-        return in_array($option, $args);
+        $this->error("Unknown action: {$action}");
+        $this->line();
+        $this->info("Available actions: run, status, config, schedule, resources, stream");
+        return self::FAILURE;
     }
 }

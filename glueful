@@ -31,7 +31,7 @@ require dirname(__FILE__) . '/vendor/autoload.php';
 // Initialize bootstrap (includes DI container setup)
 require_once dirname(__FILE__) . '/api/bootstrap.php';
 
-// Initialize and run console application with DI container
+// Initialize Symfony Console Application with DI container
 $container = app();
-$kernel = new Glueful\Console\Kernel($container);
-$kernel->run();
+$app = new Glueful\Console\Application($container);
+$app->run();
