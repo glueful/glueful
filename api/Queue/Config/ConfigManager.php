@@ -260,6 +260,7 @@ class ConfigManager
         return $this->validator->validate($this->config);
     }
 
+
     /**
      * Reload configuration from file
      *

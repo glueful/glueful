@@ -8,6 +8,7 @@ use Glueful\Queue\Process\ProcessManager;
 use Glueful\Queue\Process\ProcessFactory;
 use Glueful\Queue\WorkerOptions;
 use Glueful\Queue\Monitoring\WorkerMonitor;
+use Glueful\Lock\LockManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
@@ -32,6 +33,7 @@ class WorkCommand extends BaseQueueCommand
 {
     private ProcessManager $processManager;
     private WorkerMonitor $workerMonitor;
+    private LockManagerInterface $lockManager;
 
     protected function configure(): void
     {
@@ -157,6 +159,7 @@ class WorkCommand extends BaseQueueCommand
 
         $processFactory = new ProcessFactory($logger, $basePath);
         $this->workerMonitor = $this->getService(WorkerMonitor::class);
+        $this->lockManager = $this->getService(LockManagerInterface::class);
         $this->processManager = new ProcessManager(
             $processFactory,
             $this->workerMonitor,
@@ -191,10 +194,10 @@ class WorkCommand extends BaseQueueCommand
             maxAttempts: 3
         );
 
-        // Spawn workers for each queue
+        // Spawn workers for each queue with lock coordination
         foreach ($queues as $queue) {
             $queue = trim($queue);
-            $this->processManager->scale($workerCount, $queue, $workerOptions);
+            $this->spawnWorkersWithLock($queue, $workerCount, $workerOptions);
         }
 
         $this->success("Spawned {$workerCount} worker(s) per queue");
@@ -484,5 +487,37 @@ class WorkCommand extends BaseQueueCommand
         $this->info("💡 The queue command now defaults to multi-worker mode.");
         $this->info("   Use 'php glueful queue:work' to start with 2 workers by default.");
         return self::FAILURE;
+    }
+
+    /**
+     * Spawn workers with distributed lock coordination
+     *
+     * Prevents multiple manager processes from interfering with each other
+     * when spawning workers for the same queue.
+     */
+    private function spawnWorkersWithLock(string $queue, int $workerCount, WorkerOptions $workerOptions): void
+    {
+        $lockResource = "queue:manager:{$queue}:" . gethostname();
+        $lockTtl = 60.0; // 1 minute TTL for worker spawning
+
+        $this->lockManager->executeWithLock($lockResource, function () use ($queue, $workerCount, $workerOptions) {
+            // Check if workers are already running for this queue to prevent duplicates
+            $currentWorkers = $this->processManager->getWorkerCount($queue);
+
+            if ($currentWorkers > 0) {
+                $this->line("⚠️  Found {$currentWorkers} existing worker(s) for queue '{$queue}'");
+
+                if ($currentWorkers < $workerCount) {
+                    $needed = $workerCount - $currentWorkers;
+                    $this->line("📈 Scaling up: adding {$needed} worker(s)");
+                    $this->processManager->scale($workerCount, $queue, $workerOptions);
+                } else {
+                    $this->line("✅ Queue '{$queue}' already has sufficient workers");
+                }
+            } else {
+                $this->line("🚀 Spawning {$workerCount} new worker(s) for queue '{$queue}'");
+                $this->processManager->scale($workerCount, $queue, $workerOptions);
+            }
+        }, $lockTtl);
     }
 }

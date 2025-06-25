@@ -37,7 +37,7 @@ use Glueful\Exceptions\BusinessLogicException;
  * - Valid configuration settings
  * - Appropriate database permissions
  */
-class Connection
+class Connection implements DatabaseInterface
 {
     /** @var array<string, PDO> Connection pool indexed by engine type */
     protected static array $instances = [];
@@ -312,6 +312,17 @@ class Connection
         }
 
         return $this->pdo;
+    }
+
+    /**
+     * Get the database connection (alias for getPDO)
+     *
+     * @return PDO Active database connection
+     * @throws \Glueful\Exceptions\DatabaseException If connection lost
+     */
+    public function getConnection(): PDO
+    {
+        return $this->getPDO();
     }
 
     /**

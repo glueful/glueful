@@ -13,6 +13,9 @@ use Glueful\Notifications\Templates\TemplateManager;
 use Glueful\Repository\NotificationRepository;
 use InvalidArgumentException;
 use Glueful\Logging\LogManager;
+use Glueful\Config\ConfigurableInterface;
+use Glueful\Config\ConfigurableTrait;
+use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * Notification Service
@@ -22,8 +25,10 @@ use Glueful\Logging\LogManager;
  *
  * @package Glueful\Notifications\Services
  */
-class NotificationService
+class NotificationService implements ConfigurableInterface
 {
+    use ConfigurableTrait;
+
     /**
      * @var NotificationDispatcher The notification dispatcher
      */
@@ -49,10 +54,6 @@ class NotificationService
      */
     private $idGenerator;
 
-    /**
-     * @var array Configuration options
-     */
-    private array $config;
 
     /**
      * NotificationService constructor
@@ -73,17 +74,17 @@ class NotificationService
         $this->dispatcher = $dispatcher;
         $this->repository = $repository;
         $this->templateManager = $templateManager;
-        $this->config = $config;
+
+        // Resolve and validate configuration
+        $this->resolveOptions($config);
 
         // Create metrics service if not provided
         $this->metricsService = $metricsService ?? new NotificationMetricsService(
             $dispatcher->getLogger() instanceof LogManager ? $dispatcher->getLogger() : null
         );
 
-        // Default ID generator uses Utils::generateNanoID
-        $this->idGenerator = $config['id_generator'] ?? function () {
-            return Utils::generateNanoID();
-        };
+        // Set ID generator from validated config
+        $this->idGenerator = $this->getOption('id_generator');
     }
 
     /**
@@ -568,19 +569,6 @@ class NotificationService
     }
 
     /**
-     * Set configuration option
-     *
-     * @param string $key Configuration key
-     * @param mixed $value Configuration value
-     * @return self
-     */
-    public function setConfig(string $key, $value): self
-    {
-        $this->config[$key] = $value;
-        return $this;
-    }
-
-    /**
      * Get configuration option
      *
      * @param string $key Configuration key
@@ -589,7 +577,7 @@ class NotificationService
      */
     public function getConfig(string $key, $default = null)
     {
-        return $this->config[$key] ?? $default;
+        return $this->getOption($key, $default);
     }
 
     /**
@@ -781,7 +769,107 @@ class NotificationService
      */
     protected function getDefaultChannels(): array
     {
-        return $this->config['default_channels'] ??
-               $this->dispatcher->getConfig('default_channels', ['database']);
+        return $this->getOption('default_channels');
+    }
+
+    /**
+     * Configure notification service options
+     *
+     * @param OptionsResolver $resolver Options resolver instance
+     */
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'id_generator' => function () {
+                return Utils::generateNanoID();
+            },
+            'default_channels' => ['database'],
+            'max_retry_attempts' => 3,
+            'retry_delay_seconds' => 60,
+            'batch_size' => 100,
+            'rate_limit_per_minute' => 1000,
+            'enable_analytics' => true,
+            'template_cache_ttl' => 3600,
+        ]);
+
+        $resolver->setAllowedTypes('id_generator', 'callable');
+        $resolver->setAllowedTypes('default_channels', 'array');
+        $resolver->setAllowedTypes('max_retry_attempts', 'int');
+        $resolver->setAllowedTypes('retry_delay_seconds', 'int');
+        $resolver->setAllowedTypes('batch_size', 'int');
+        $resolver->setAllowedTypes('rate_limit_per_minute', 'int');
+        $resolver->setAllowedTypes('enable_analytics', 'bool');
+        $resolver->setAllowedTypes('template_cache_ttl', 'int');
+
+        // Validate default channels array
+        $resolver->setNormalizer('default_channels', function ($options, $value) {
+            unset($options); // Required by interface but not used
+            if (empty($value)) {
+                throw new \InvalidArgumentException('default_channels cannot be empty');
+            }
+
+            $validChannels = ['email', 'sms', 'database', 'slack', 'webhook', 'push'];
+            foreach ($value as $channel) {
+                if (!is_string($channel)) {
+                    throw new \InvalidArgumentException('All channel names must be strings');
+                }
+                if (!in_array($channel, $validChannels)) {
+                    throw new \InvalidArgumentException(
+                        "Invalid channel '{$channel}'. Valid channels: " . implode(', ', $validChannels)
+                    );
+                }
+            }
+
+            return array_unique($value);
+        });
+
+        // Validate retry attempts
+        $resolver->setAllowedValues('max_retry_attempts', function ($value) {
+            return $value >= 0 && $value <= 10;
+        });
+
+        // Validate retry delay
+        $resolver->setAllowedValues('retry_delay_seconds', function ($value) {
+            return $value >= 1 && $value <= 3600; // 1 second to 1 hour
+        });
+
+        // Validate batch size
+        $resolver->setAllowedValues('batch_size', function ($value) {
+            return $value >= 1 && $value <= 1000;
+        });
+
+        // Validate rate limit
+        $resolver->setAllowedValues('rate_limit_per_minute', function ($value) {
+            return $value >= 1 && $value <= 10000;
+        });
+
+        // Validate template cache TTL
+        $resolver->setAllowedValues('template_cache_ttl', function ($value) {
+            return $value >= 60 && $value <= 86400; // 1 minute to 24 hours
+        });
+
+        // Validate ID generator
+        $resolver->setNormalizer('id_generator', function ($options, $value) {
+            unset($options); // Required by interface but not used
+            if (!is_callable($value)) {
+                throw new \InvalidArgumentException('id_generator must be callable');
+            }
+
+            // Test the generator to ensure it returns a string
+            try {
+                $testId = $value();
+                if (!is_string($testId) || empty($testId)) {
+                    throw new \InvalidArgumentException(
+                        'id_generator must return a non-empty string'
+                    );
+                }
+            } catch (\Exception $e) {
+                throw new \InvalidArgumentException(
+                    'id_generator validation failed: ' . $e->getMessage()
+                );
+            }
+
+            return $value;
+        });
     }
 }

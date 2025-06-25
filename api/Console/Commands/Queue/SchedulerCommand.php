@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands\Queue;
 
 use Glueful\Scheduler\JobScheduler;
+use Glueful\Lock\LockManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Glueful\Console\BaseCommand;
 use Symfony\Component\Console\Input\InputInterface;
@@ -171,7 +172,8 @@ class SchedulerCommand extends BaseCommand
 
     private function initializeServices(): void
     {
-        $this->scheduler = new JobScheduler();
+        $lockManager = $this->getService(LockManagerInterface::class);
+        $this->scheduler = new JobScheduler($lockManager);
     }
 
     private function executeRun(InputInterface $input): int

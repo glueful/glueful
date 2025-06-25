@@ -7,6 +7,8 @@ use DateTime;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
+use Glueful\Lock\LockManagerInterface;
+use Symfony\Component\Lock\Exception\LockConflictedException;
 
 /**
  * Job Scheduler
@@ -68,13 +70,24 @@ class JobScheduler
     /** @var QueryBuilder Database query builder */
     protected QueryBuilder $db;
 
+    /** @var LockManagerInterface Lock manager for preventing concurrent executions */
+    protected LockManagerInterface $lockManager;
+
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(?LockManagerInterface $lockManager = null)
     {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+
+        // Get lock manager from container if not provided
+        if ($lockManager) {
+            $this->lockManager = $lockManager;
+        } else {
+            global $container;
+            $this->lockManager = $container?->get(LockManagerInterface::class) ?? null;
+        }
 
         // Ensure required database tables exist before trying to use them
         $this->ensureTablesExist();
@@ -308,23 +321,81 @@ class JobScheduler
 
         foreach ($this->jobs as $job) {
             if ((new CronExpression($job['schedule']))->isDue($now)) {
-                try {
-                    $result = call_user_func($job['callback']);
-                    $this->log("Executed job: {$job['name']}");
-
-                    // Record execution in database if job has an ID (came from database)
-                    if (isset($job['uuid'])) {
-                        $this->recordJobExecution($job['uuid'], true, $result);
-                    }
-                } catch (\Throwable $e) {
-                    $this->log("Error in job '{$job['name']}': " . $e->getMessage(), 'error');
-
-                    // Record execution error in database if job has an ID
-                    if (isset($job['uuid'])) {
-                        $this->recordJobExecution($job['uuid'], false, $e->getMessage());
-                    }
-                }
+                $this->runJobWithLock($job);
             }
+        }
+    }
+
+    /**
+     * Run a job with distributed locking to prevent concurrent executions
+     *
+     * @param array $job Job configuration array
+     * @return mixed Job execution result or null if lock cannot be acquired
+     */
+    protected function runJobWithLock(array $job): mixed
+    {
+        $jobName = $job['name'] ?? 'unknown';
+        $lockResource = "scheduler:job:{$jobName}";
+        $lockTtl = 3600.0; // 1 hour max execution time
+
+        // Skip if no lock manager available
+        if (!$this->lockManager) {
+            $this->log("No lock manager available, running job '{$jobName}' without locking", 'warning');
+            return $this->executeJob($job);
+        }
+
+        try {
+            return $this->lockManager->executeWithLock($lockResource, function () use ($job, $jobName) {
+                $this->log("🔒 Acquired lock for scheduled job: {$jobName}");
+                return $this->executeJob($job);
+            }, $lockTtl);
+        } catch (LockConflictedException $e) {
+            $this->log("⏳ Job '{$jobName}' is already running on another process - skipping", 'info');
+            return null;
+        } catch (\Throwable $e) {
+            $this->log("❌ Lock error for job '{$jobName}': " . $e->getMessage(), 'error');
+
+            // Record the error if job has a UUID
+            if (isset($job['uuid'])) {
+                $this->recordJobExecution($job['uuid'], false, "Lock error: " . $e->getMessage());
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Execute a job without locking (internal method)
+     *
+     * @param array $job Job configuration array
+     * @return mixed Job execution result
+     */
+    protected function executeJob(array $job): mixed
+    {
+        $jobName = $job['name'] ?? 'unknown';
+
+        try {
+            $startTime = microtime(true);
+            $result = call_user_func($job['callback']);
+            $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+
+            $this->log("✅ Executed job: {$jobName} (took {$executionTime}ms)");
+
+            // Record successful execution in database if job has an ID
+            if (isset($job['uuid'])) {
+                $this->recordJobExecution($job['uuid'], true, $result);
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            $this->log("❌ Error in job '{$jobName}': " . $e->getMessage(), 'error');
+
+            // Record execution error in database if job has an ID
+            if (isset($job['uuid'])) {
+                $this->recordJobExecution($job['uuid'], false, $e->getMessage());
+            }
+
+            throw $e;
         }
     }
 
