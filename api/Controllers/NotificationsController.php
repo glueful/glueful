@@ -11,7 +11,6 @@ use Glueful\Notifications\Services\NotificationDispatcher;
 use Glueful\Notifications\Services\ChannelManager;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\AuditLogger;
 use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
@@ -36,10 +35,9 @@ class NotificationsController extends BaseController
     public function __construct(
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
-        ?AuditLogger $auditLogger = null,
         ?SymfonyRequest $request = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
 
         // Get the notification repository directly
         $notificationRepo = new \Glueful\Repository\NotificationRepository();
@@ -261,15 +259,6 @@ class NotificationsController extends BaseController
         $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
 
         // Audit log
-        $this->auditLogger->audit(
-            'notifications',
-            'notification_marked_read',
-            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $user->uuid,
-                'notification_uuid' => $notification->getUuid()
-            ]
-        );
 
         return Response::success($notification, 'Notification marked as read');
     }
@@ -329,14 +318,6 @@ class NotificationsController extends BaseController
         $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
 
         // Audit log
-        $this->auditLogger->audit(
-            'notifications',
-            'all_notifications_marked_read',
-            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $user->uuid
-            ]
-        );
 
         return Response::success(null, 'All notifications marked as read');
     }
@@ -437,15 +418,6 @@ class NotificationsController extends BaseController
         $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
 
         // Audit log
-        $this->auditLogger->audit(
-            'notifications',
-            'notification_deleted',
-            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
-            [
-                'user_uuid' => $user->uuid,
-                'notification_uuid' => $notification->getUuid()
-            ]
-        );
 
         return Response::success(null, 'Notification deleted successfully');
     }
@@ -556,15 +528,6 @@ class NotificationsController extends BaseController
 
         // Audit log
         $user = $this->getCurrentUser();
-        $this->auditLogger->audit(
-            'admin',
-            'channel_metrics_reset',
-            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-            [
-                'admin_uuid' => $user->uuid,
-                'channel' => $channelName
-            ]
-        );
 
         return Response::success(
             null,

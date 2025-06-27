@@ -124,20 +124,10 @@ trait QueryRestrictionsTrait
      */
     protected function logQueryRestriction(string $table, string $param, string $requiredPermission): void
     {
-        // Only log if audit logging is enabled
-        if (method_exists($this, 'logResourceAccess')) {
-            $this->auditLogger->audit(
-                'query_restriction',
-                'query_parameter_blocked',
-                \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-                [
-                    'table' => $table,
-                    'blocked_parameter' => $param,
-                    'required_permission' => $requiredPermission,
-                    'user_uuid' => $this->getCurrentUserUuid()
-                ]
-            );
-        }
+        // Log to error log instead of audit system
+        error_log(
+            "Query restriction: User blocked from searching {$table} by {$param} (requires {$requiredPermission})"
+        );
     }
 
     /**

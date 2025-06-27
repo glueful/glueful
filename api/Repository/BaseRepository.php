@@ -6,8 +6,6 @@ namespace Glueful\Repository;
 
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Repository\Traits\TransactionTrait;
 use Glueful\Helpers\Utils;
@@ -21,7 +19,6 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * Unified repository base class combining the best features:
  * - Modern interface implementation with type safety
- * - Rich audit logging and security features
  * - Transaction support and connection management
  * - Pagination and advanced querying
  * - UUID-first approach with fallback support
@@ -41,17 +38,10 @@ abstract class BaseRepository implements RepositoryInterface
     /** @var string Primary key field name, defaults to 'uuid' */
     protected string $primaryKey = 'uuid';
 
-    /** @var bool Whether this repository handles sensitive data requiring stricter auditing */
-    protected bool $containsSensitiveData = false;
-
-    /** @var array Fields that should be considered sensitive and tracked in audit logs */
-    protected array $sensitiveFields = [];
 
     /** @var array Standard fields to retrieve in queries */
     protected array $defaultFields = ['*'];
 
-    /** @var AuditLogger|null Audit logger instance */
-    protected ?AuditLogger $auditLogger = null;
 
     /** @var bool Whether this table has updated_at timestamp column */
     protected bool $hasUpdatedAt = true;
@@ -117,8 +107,6 @@ abstract class BaseRepository implements RepositoryInterface
         $this->db = self::getNewQueryBuilder();
         $this->table = $this->getTableName();
 
-        // Get the audit logger instance
-        $this->auditLogger = AuditLogger::getInstance();
 
         // Set event dispatcher if provided, or try to get from container
         $this->eventDispatcher = $eventDispatcher ?? $this->getEventDispatcherFromContainer();
@@ -226,8 +214,6 @@ abstract class BaseRepository implements RepositoryInterface
 
         $uuid = $data[$this->primaryKey];
 
-        // Audit log the creation
-        $this->auditDataAction('create', $uuid, $data);
 
         // Dispatch entity created event
         if ($this->eventDispatcher) {
@@ -263,9 +249,6 @@ abstract class BaseRepository implements RepositoryInterface
         $success = $affectedRows > 0;
 
         if ($success) {
-            // Audit log the update (without original data comparison)
-            $this->auditDataAction('update', $uuid, $data);
-
             // Dispatch entity updated event
             if ($this->eventDispatcher) {
                 // Construct entity data with ID for the event
@@ -291,7 +274,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function delete(string $uuid): bool
     {
-        // Get the record before deleting (for audit log)
+        // Get the record before deleting
         $originalData = $this->find($uuid);
 
         if (!$originalData) {
@@ -307,8 +290,6 @@ abstract class BaseRepository implements RepositoryInterface
         $success = $affectedRows > 0;
 
         if ($success) {
-            // Audit log the deletion
-            $this->auditDataAction('delete', $uuid, [], null, $originalData);
         }
 
         return $success;
@@ -445,20 +426,6 @@ abstract class BaseRepository implements RepositoryInterface
             }
 
             $this->commit();
-
-            // Single audit log for bulk operation
-            if ($this->auditLogger) {
-                $this->auditLogger->audit(
-                    AuditEvent::CATEGORY_DATA,
-                    'bulk_create',
-                    AuditEvent::SEVERITY_INFO,
-                    [
-                        'table' => $this->table,
-                        'record_count' => count($records),
-                        'uuids' => $uuids
-                    ]
-                );
-            }
         } catch (\Exception $e) {
             $this->rollBack();
             throw $e;
@@ -486,8 +453,6 @@ abstract class BaseRepository implements RepositoryInterface
             [$this->primaryKey => ['IN', $uuids]]
         );
 
-        // Audit log bulk update
-        $this->auditDataAction('bulk_update', implode(',', $uuids), $data);
 
         return $affectedRows;
     }
@@ -509,8 +474,6 @@ abstract class BaseRepository implements RepositoryInterface
         // Ensure we return an integer count
         $count = is_bool($affectedRows) ? ($affectedRows ? count($uuids) : 0) : $affectedRows;
 
-        // Audit log bulk delete
-        $this->auditDataAction('bulk_delete', implode(',', $uuids), []);
 
         return $count;
     }
@@ -527,8 +490,6 @@ abstract class BaseRepository implements RepositoryInterface
         $success = $this->update($uuid, $updateData);
 
         if ($success) {
-            // Audit log soft delete
-            $this->auditDataAction('soft_delete', $uuid, [$statusColumn => $deletedValue]);
         }
 
         return $success;
@@ -543,8 +504,6 @@ abstract class BaseRepository implements RepositoryInterface
             $statusColumn => $deletedValue
         ]);
 
-        // Audit log bulk soft delete
-        $this->auditDataAction('bulk_soft_delete', implode(',', $uuids), [$statusColumn => $deletedValue]);
 
         return $affectedRows;
     }
@@ -633,108 +592,6 @@ abstract class BaseRepository implements RepositoryInterface
         );
     }
 
-    /**
-     * Audit log a data action
-     *
-     * @param string $action The action being performed (create, update, delete, etc.)
-     * @param string $resourceId ID of the affected resource
-     * @param array $newData New data being applied
-     * @param string|null $userId ID of user performing the action (if available)
-     * @param array|null $originalData Original data before changes (for updates/deletes)
-     */
-    protected function auditDataAction(
-        string $action,
-        string $resourceId,
-        array $newData,
-        ?string $userId = null,
-        ?array $originalData = null
-    ): void {
-        if ($this->auditLogger === null) {
-            return;
-        }
-
-        $severity = AuditEvent::SEVERITY_INFO;
-        $entityType = $this->table;
-        $context = [
-            'entity_id' => $resourceId,
-            'entity_type' => $entityType,
-            'user_id' => $userId
-        ];
-
-        // For sensitive data, add special handling
-        if ($this->containsSensitiveData) {
-            $severity = AuditEvent::SEVERITY_WARNING;
-
-            // Don't include the actual sensitive field values, just note which fields were changed
-            if (!empty($this->sensitiveFields)) {
-                $changedSensitiveFields = array_intersect(array_keys($newData), $this->sensitiveFields);
-                if (!empty($changedSensitiveFields)) {
-                    $context['sensitive_fields_modified'] = $changedSensitiveFields;
-                }
-            }
-        } else {
-            // For non-sensitive data, include the changes
-            switch ($action) {
-                case 'update':
-                    // Only include the fields that actually changed
-                    if ($originalData) {
-                        $changes = [];
-                        foreach ($newData as $field => $value) {
-                            if (isset($originalData[$field]) && $originalData[$field] !== $value) {
-                                // Exclude any sensitive fields from the change log
-                                if (!in_array($field, $this->sensitiveFields)) {
-                                    $changes[$field] = [
-                                        'old' => $originalData[$field],
-                                        'new' => $value
-                                    ];
-                                }
-                            }
-                        }
-                        $context['changes'] = $changes;
-                    }
-                    break;
-                case 'create':
-                    // Filter out sensitive fields
-                    $safeData = array_diff_key($newData, array_flip($this->sensitiveFields));
-                    $context['data'] = $safeData;
-                    break;
-                case 'delete':
-                    // Include the deleted data for tracking
-                    if ($originalData) {
-                        // Filter out sensitive fields
-                        $safeData = array_diff_key($originalData, array_flip($this->sensitiveFields));
-                        $context['deleted_data'] = $safeData;
-                    }
-                    break;
-            }
-        }
-
-        // Get caller info from debug backtrace for improved audit trail
-        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
-        if (isset($backtrace[1])) {
-            $caller = $backtrace[1];
-            $context['source'] = [
-                'class' => $caller['class'] ?? null,
-                'function' => $caller['function'],
-            ];
-        }
-
-        // Add request information if available (not in CLI mode)
-        if (php_sapi_name() !== 'cli' && !empty($_SERVER)) {
-            $context['request'] = [
-                'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
-            ];
-        }
-
-        // Log the event
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            "{$action}_{$entityType}",
-            $severity,
-            $context
-        );
-    }
 
     /**
      * Get event dispatcher from container if available

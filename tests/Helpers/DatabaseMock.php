@@ -76,8 +76,5 @@ class DatabaseMock
         if (!$tableProperty->isInitialized($repository)) {
             $tableProperty->setValue($repository, 'mock_table');
         }
-
-        // Mock the AuditLogger to prevent real database connections
-        AuditLoggerMock::setup($repository);
     }
 }

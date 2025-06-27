@@ -10,8 +10,6 @@ use Glueful\Helpers\CacheHelper;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Http\RequestContext;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Helpers\Utils;
 use Glueful\Events\Auth\SessionCreatedEvent;
 use Glueful\Events\Auth\SessionDestroyedEvent;
@@ -27,7 +25,6 @@ class TokenStorageService implements TokenStorageInterface
 {
     private Connection $connection;
     private QueryBuilder $queryBuilder;
-    private AuditLogger $auditLogger;
     private ?CacheStore $cache;
     private ?EventDispatcherInterface $eventDispatcher;
 
@@ -40,7 +37,6 @@ class TokenStorageService implements TokenStorageInterface
         ?CacheStore $cache = null,
         ?Connection $connection = null,
         ?RequestContext $requestContext = null,
-        ?AuditLogger $auditLogger = null,
         bool $useTransactions = true,
         ?EventDispatcherInterface $eventDispatcher = null
     ) {
@@ -48,7 +44,6 @@ class TokenStorageService implements TokenStorageInterface
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
         $this->connection = $connection ?? new Connection();
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
-        $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
         $this->useTransactions = $useTransactions;
         $this->eventDispatcher = $eventDispatcher;
 
@@ -124,18 +119,6 @@ class TokenStorageService implements TokenStorageInterface
                 $this->connection->getPDO()->rollBack();
             }
 
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_storage_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'user_id' => $sessionData['uuid'] ?? null,
-                    'session_action' => 'store_new_session',
-                    'error' => $e->getMessage(),
-                    'ip_address' => $this->requestContext->getClientIp(),
-                ]
-            );
-
             return false;
         }
     }
@@ -145,17 +128,6 @@ class TokenStorageService implements TokenStorageInterface
      */
     public function updateSessionTokens(string $sessionIdentifier, array $newTokens): bool
     {
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_update_attempt',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'session_identifier' => substr($sessionIdentifier, 0, 8) . '...',
-                'session_action' => 'update_tokens',
-                'ip_address' => $this->requestContext->getClientIp(),
-            ]
-        );
-
         try {
             if ($this->useTransactions) {
                 $this->connection->getPDO()->beginTransaction();
@@ -200,33 +172,11 @@ class TokenStorageService implements TokenStorageInterface
                 $this->connection->getPDO()->commit();
             }
 
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_update_success',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_id' => $existingSession['user_uuid'],
-                    'session_action' => 'update_tokens',
-                ]
-            );
-
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
                 $this->connection->getPDO()->rollBack();
             }
-
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_update_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'session_identifier' => substr($sessionIdentifier, 0, 8) . '...',
-                    'session_action' => 'update_tokens',
-                    'error' => $e->getMessage(),
-                    'ip_address' => $this->requestContext->getClientIp(),
-                ]
-            );
 
             return false;
         }
@@ -357,17 +307,6 @@ class TokenStorageService implements TokenStorageInterface
                 $this->eventDispatcher->dispatch($event);
             }
 
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'session_revoked',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_id' => $session['user_uuid'],
-                    'session_id' => $session['uuid'],
-                    'ip_address' => $this->requestContext->getClientIp(),
-                ]
-            );
-
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
@@ -418,17 +357,6 @@ class TokenStorageService implements TokenStorageInterface
             if ($this->useTransactions) {
                 $this->connection->getPDO()->commit();
             }
-
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'user_sessions_revoked',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_id' => $userUuid,
-                    'sessions_count' => count($sessions),
-                    'ip_address' => $this->requestContext->getClientIp(),
-                ]
-            );
 
             return true;
         } catch (\Exception $e) {
@@ -481,15 +409,6 @@ class TokenStorageService implements TokenStorageInterface
                     }
                 }
             }
-
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'expired_sessions_cleaned',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'cleaned_count' => $cleanedCount,
-                ]
-            );
         } catch (\Exception $e) {
             // Log but don't fail - cleanup is a maintenance operation
             error_log("Session cleanup failed: " . $e->getMessage());

@@ -212,7 +212,6 @@ use Glueful\Controllers\BaseController;
 use Glueful\Http\Response;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\AuditLogger;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Helpers\ValidationHelper;
@@ -228,10 +227,9 @@ class {$controllerName} extends BaseController
     public function __construct(
         ?RepositoryFactory \$repositoryFactory = null,
         ?AuthenticationManager \$authManager = null,
-        ?AuditLogger \$auditLogger = null,
         ?Request \$request = null
     ) {
-        parent::__construct(\$repositoryFactory, \$authManager, \$auditLogger, \$request);
+        parent::__construct(\$repositoryFactory, \$authManager, \$request);
     }
 
     /**
@@ -252,11 +250,6 @@ class {$controllerName} extends BaseController
                 'data' => []
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'list', 'info', [
-                'controller' => '{$controllerName}',
-                'action' => 'index'
-            ]);
 
             return Response::success(\$data);
         } catch (\Exception \$e) {
@@ -288,12 +281,6 @@ class {$controllerName} extends BaseController
                 'id' => \$id
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'show', 'info', [
-                'controller' => '{$controllerName}',
-                'action' => 'show',
-                'id' => \$id
-            ]);
 
             return Response::success(\$data);
         } catch (\Exception \$e) {
@@ -311,11 +298,6 @@ class {$controllerName} extends BaseController
             return Response::error(\$e->getMessage(), Response::HTTP_NOT_FOUND);
         }
 
-        // Log unexpected errors
-        \$this->asyncAudit('{$resourceName}', 'error', 'error', [
-            'controller' => '{$controllerName}',
-            'error' => \$e->getMessage()
-        ]);
 
         return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR);
     }
@@ -341,7 +323,6 @@ use Glueful\Controllers\BaseController;
 use Glueful\Http\Response;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\AuditLogger;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Exceptions\BusinessLogicException;
@@ -358,10 +339,9 @@ class {$controllerName} extends BaseController
     public function __construct(
         ?RepositoryFactory \$repositoryFactory = null,
         ?AuthenticationManager \$authManager = null,
-        ?AuditLogger \$auditLogger = null,
         ?Request \$request = null
     ) {
-        parent::__construct(\$repositoryFactory, \$authManager, \$auditLogger, \$request);
+        parent::__construct(\$repositoryFactory, \$authManager, \$request);
     }
 
 {$methods}
@@ -380,11 +360,6 @@ class {$controllerName} extends BaseController
             return Response::error(\$e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Log unexpected errors
-        \$this->asyncAudit('{$resourceName}', 'error', 'error', [
-            'controller' => '{$controllerName}',
-            'error' => \$e->getMessage()
-        ]);
 
         return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR);
     }
@@ -442,11 +417,6 @@ PHP;
                 ]
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'list', 'info', [
-                'page' => \$page,
-                'per_page' => \$perPage
-            ]);
 
             return Response::success(\$data);
         } catch (\Exception \$e) {
@@ -489,10 +459,6 @@ PHP;
                 // Add resource data here
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'show', 'info', [
-                'id' => \$id
-            ]);
 
             return Response::success(\$data);
         } catch (\Exception \$e) {
@@ -561,10 +527,6 @@ PHP;
                 'data' => \$validatedData
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'create', 'info', [
-                'data' => \$validatedData
-            ]);
 
             return Response::created(\$responseData);
         } catch (\Exception \$e) {
@@ -647,11 +609,6 @@ PHP;
                 'data' => \$validatedData
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'update', 'info', [
-                'id' => \$id,
-                'data' => \$validatedData
-            ]);
 
             return Response::success(\$responseData);
         } catch (\Exception \$e) {
@@ -698,10 +655,6 @@ PHP;
                 'id' => \$id
             ];
 
-            // Log audit trail
-            \$this->asyncAudit('{$resourceName}', 'delete', 'warning', [
-                'id' => \$id
-            ]);
 
             return Response::success(\$responseData);
         } catch (\Exception \$e) {
@@ -742,11 +695,11 @@ PHP;
         $this->line('3. Define validation rules in the TODO sections');
         $this->line('4. Set up authentication and permissions if required');
         $this->line('5. Register controller in DI container (ControllerServiceProvider)');
-        $this->line('6. Test your endpoints and verify audit logging');
+        $this->line('6. Test your endpoints');
         $this->line('');
         $this->info('Generated controller follows Glueful patterns:');
         $this->line('• Extends BaseController with full feature set');
-        $this->line('• Includes rate limiting, audit logging, and error handling');
+        $this->line('• Includes rate limiting and error handling');
         $this->line('• Uses repository pattern and dependency injection');
         $this->line('• Follows enterprise authentication and authorization');
     }

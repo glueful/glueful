@@ -44,8 +44,6 @@ class UserRepository extends BaseRepository
     public function __construct(?Connection $connection = null, ?Validator $validator = null)
     {
         // Configure repository settings before calling parent
-        $this->containsSensitiveData = true;
-        $this->sensitiveFields = ['password', 'api_key', 'remember_token', 'reset_token'];
         $this->defaultFields = ['*'];
         $this->hasUpdatedAt = false; // users table doesn't have updated_at column
 

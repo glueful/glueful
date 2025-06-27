@@ -22,7 +22,6 @@ class MockAutoloader
     {
         // Reset all mock data
         MockCacheStore::reset();
-        MockAuditLogger::reset();
 
         // If runkit7 is available, use it for class replacement
         if (extension_loaded('runkit7')) {
@@ -41,9 +40,6 @@ class MockAutoloader
         // Store original implementations if they exist
         if (class_exists('Glueful\Cache\CacheStore', true)) {
             self::$originals['Glueful\Cache\CacheStore'] = true;
-        }
-        if (class_exists('Glueful\Logging\AuditLogger', true)) {
-            self::$originals['Glueful\Logging\AuditLogger'] = true;
         }
         if (class_exists('Glueful\Security\RateLimiterDistributor', true)) {
             self::$originals['Glueful\Security\RateLimiterDistributor'] = true;
@@ -76,7 +72,6 @@ class MockAutoloader
         // Map of original class names to mock class names
         $classMap = [
             'Glueful\Cache\CacheStore' => MockCacheStore::class,
-            'Glueful\Logging\AuditLogger' => MockAuditLogger::class,
             'Glueful\Security\RateLimiterDistributor' => MockRateLimiterDistributor::class,
             'Glueful\Security\RateLimiter' => MockRateLimiter::class,
             'Glueful\Security\RateLimiterRule' => MockRateLimiterRule::class,
@@ -118,7 +113,6 @@ class MockAutoloader
     {
         // Reset all mock data
         MockCacheStore::reset();
-        MockAuditLogger::reset();
 
         // Remove our autoloader if it was registered
         if (self::$initialized) {

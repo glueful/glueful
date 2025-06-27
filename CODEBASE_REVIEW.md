@@ -370,3 +370,698 @@ The framework is now **fully optimized** and demonstrates **excellent production
 *Report generated on: 2025-01-17*  
 *Codebase Version: Pre-release Analysis*  
 *Analysis Scope: Complete codebase review including architecture, security, performance, and code quality*
+
+
+
+
+Based on the comprehensive analysis, here's how the public directory approach fits with the current Glueful framework:
+
+  Current Architecture vs Public Directory
+
+  Current Setup Issues:
+
+  1. Entry Point: api/index.php serves as main entry, but framework files are exposed
+  2. Asset Serving: Complex custom system through AdminController with query parameters
+  3. URLs: Nested structure like /glueful/api/v1/admin
+  4. Security: All framework files accessible from web root
+
+  What Public Directory Solves:
+
+  1. Clean URL Structure
+
+  // Current:
+  https://glueful.dev/glueful/api/v1/users
+  https://glueful.dev/glueful/api/v1/admin
+
+  // With Public:
+  https://glueful.dev/api/v1/users  
+  https://glueful.dev/admin
+
+  2. Proper Asset Serving
+
+  // Current: Complex query-based asset serving
+  /admin?asset=assets/index-B01moDuu.js
+
+  // With Public: Direct static serving
+  /assets/admin/index-B01moDuu.js
+
+  3. Security & Standards
+
+  - Framework code hidden above document root
+  - Follows Laravel/Symfony conventions
+  - Direct static file serving by Apache/Nginx
+
+  Key Changes Required:
+
+  1. Configuration Updates (config/app.php)
+
+  'paths' => [
+      'base' => dirname(__DIR__, 2),  // Up one more level
+      'api_base_url' => env('API_BASE_URL', '/api/'),  // Remove /glueful
+      'domain' => env('BASE_URL', 'https://glueful.dev/'),
+  ]
+
+  2. Extension Asset Handling
+
+  - Copy extension assets to public/assets/extensions/
+  - Or create asset compilation system
+  - Remove complex AdminController asset serving
+
+  3. Bootstrap Path Resolution
+
+  - Update relative paths in api/bootstrap.php
+  - Ensure config loading works from public directory
+
+  4. Development Server (ServeCommand.php)
+
+  // Current: serves from api/
+  // Update to: serve from public/
+
+  Compatibility Assessment:
+
+  ✅ Well Suited For:
+
+  - Centralized Config: All paths in config/app.php make updates manageable
+  - Extension System: Already has public directories for assets
+  - Routing: Symfony router can handle both API and web routes
+  - Bootstrap: Clean initialization system
+
+  ⚠️ Needs Adaptation:
+
+  - Asset Serving: Current query-based system needs replacement
+  - CLI Commands: Hardcoded paths need updates
+  - Extension Assets: Need new compilation/copying strategy
+  - Development: Serve command needs document root change
+
+  🔧 Implementation Effort:
+
+  - Medium complexity - well-architected but needs careful path updates
+  - Benefits outweigh effort - much cleaner, more secure, standard approach
+  - Backward compatibility can be maintained during transition
+
+  Recommendation:
+
+  The public directory approach is highly recommended for Glueful. The framework is well-structured to support this change, and it would solve the current asset serving complexity while
+  improving security and following modern PHP standards.
+
+
+  Then I recommend creating a route to serve the docs. This keeps the public directory clean while providing controlled access to documentation:
+
+  // In routes/api.php or routes/docs.php
+  Router::get('/docs/{path}', [DocsController::class, 'serve'])
+      ->where('path', '.*'); // Allow any path including subdirectories
+
+  The controller would:
+  1. Validate the requested file path
+  2. Check if file exists in the docs directory
+  3. Set appropriate headers (Content-Type based on file extension)
+  4. Return the file contents
+
+  Benefits:
+  - Clean public directory - Just like Laravel
+  - Security control - Can add authentication if needed
+  - Path validation - Prevent directory traversal attacks
+  - Custom handling - Can process markdown to HTML, add headers, etc.
+  - Stays within framework - Uses existing routing/controller patterns
+
+
+  Looking at your Router class, adding chain method support would require refactoring from static methods to a fluent interface. Here's the complexity and alternatives:
+
+  Option 1: Add regex constraints directly to route method (Simplest)
+  Router::get('/docs/{path}', [DocsController::class, 'serve'],
+      requirements: ['path' => '.*']
+  );
+
+  Option 2: Use Symfony's native requirements (Already supported)
+  // In addRoute method, pass requirements to Route constructor
+  $route = new Route($path, $defaults, $requirements);
+
+  Option 3: Create a simple docs catch-all route
+  Router::get('/docs', [DocsController::class, 'serve']);
+  // Then in controller, get the full path from request
+  $path = str_replace('/docs/', '', $request->getPathInfo());
+
+  Option 4: Use a prefix group
+  Router::group('/docs', function() {
+      Router::get('/{any}', [DocsController::class, 'serve']);
+  }, requirements: ['any' => '.*']);
+
+  Given your current architecture, I'd recommend Option 1 - adding a requirements parameter to your existing route methods. It's minimal change and leverages Symfony's built-in functionality.
+
+  Looking at your Router implementation, adding the requirements parameter would be very simple - just a few lines of code. However, my recommendation isn't modern enough.
+
+  More modern, developer-friendly alternatives:
+
+  Option 1: Wildcard route support (Most modern)
+  Router::get('/docs/*', [DocsController::class, 'serve']);
+  // Automatically captures everything after /docs/
+
+  Option 2: Fallback route (Laravel-style)
+  Router::fallback('/docs', [DocsController::class, 'serve']);
+  // Catches any unmatched routes starting with /docs
+
+  Option 3: Static file middleware (Most elegant)
+  Router::staticFiles('/docs', '/path/to/docs/directory');
+  // Automatically serves static files with proper mime types
+
+  My recommendation: Option 3 - Add a staticFiles method that:
+  - Handles file serving internally
+  - Sets correct Content-Type headers automatically
+  - Prevents directory traversal
+  - Caches headers for performance
+  - No controller needed
+
+  This is how modern frameworks like Express.js, Fastify, and even newer PHP frameworks handle static assets. Much cleaner than manual route + controller approach.
+
+  Implementation complexity: Low - About 20-30 lines in the Router class.
+
+
+  ./vendor/bin/phpcbf
+./vendor/bin/phpunit
+composer phpcs
+
+3. **Developer tools**
+   - Web UI for worker management
+   - Debug mode with verbose output
+   - Process visualization
+
+
+
+Implementation Plan: Advanced Logging Enhancements
+
+  Phase 1: OpenTelemetry Integration (2-3 weeks)
+
+  1.1 Dependencies & Setup
+
+  composer require open-telemetry/sdk open-telemetry/auto-instrumentation
+  composer require open-telemetry/transport-grpc open-telemetry/exporter-otlp
+
+  1.2 Core Integration
+
+  File: api/Logging/OpenTelemetryLogger.php
+  class OpenTelemetryLogger extends LogManager
+  {
+      private TracerInterface $tracer;
+      private MeterInterface $meter;
+
+      public function __construct()
+      {
+          parent::__construct();
+          $this->setupOpenTelemetry();
+      }
+
+      private function setupOpenTelemetry(): void
+      {
+          // Configure tracer and meter
+          $this->tracer = TracerProvider::getInstance()->getTracer('glueful');
+          $this->meter = MeterProvider::getInstance()->getMeter('glueful');
+      }
+
+      public function logWithTrace($level, $message, array $context = []): void
+      {
+          $span = $this->tracer->spanBuilder('log_event')
+              ->setSpanKind(SpanKind::KIND_INTERNAL)
+              ->startSpan();
+
+          try {
+              // Add trace context to log
+              $context['trace_id'] = $span->getContext()->getTraceId();
+              $context['span_id'] = $span->getContext()->getSpanId();
+
+              $this->log($level, $message, $context);
+
+              // Record metrics
+              $this->recordLogMetrics($level);
+          } finally {
+              $span->end();
+          }
+      }
+  }
+
+  1.3 Configuration
+
+  File: config/telemetry.php
+  return [
+      'enabled' => env('OTEL_ENABLED', false),
+      'service_name' => env('OTEL_SERVICE_NAME', 'glueful-api'),
+      'service_version' => env('OTEL_SERVICE_VERSION', '1.0.0'),
+      'environment' => env('APP_ENV', 'production'),
+
+      'exporters' => [
+          'traces' => [
+              'endpoint' => env('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', 'http://localhost:4318/v1/traces'),
+              'headers' => env('OTEL_EXPORTER_OTLP_HEADERS', ''),
+          ],
+          'metrics' => [
+              'endpoint' => env('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT', 'http://localhost:4318/v1/metrics'),
+              'interval' => env('OTEL_METRIC_EXPORT_INTERVAL', 60000), // 60 seconds
+          ],
+          'logs' => [
+              'endpoint' => env('OTEL_EXPORTER_OTLP_LOGS_ENDPOINT', 'http://localhost:4318/v1/logs'),
+          ]
+      ],
+
+      'sampling' => [
+          'traces' => env('OTEL_TRACES_SAMPLER_ARG', 0.1), // 10% sampling
+          'logs' => env('OTEL_LOGS_SAMPLER_ARG', 0.5), // 50% sampling
+      ]
+  ];
+
+  ---
+  Phase 2: Log Aggregation for Microservices (3-4 weeks)
+
+  2.1 Centralized Log Collector
+
+  File: api/Logging/LogAggregator.php
+  class LogAggregator
+  {
+      private array $backends = [];
+      private string $serviceId;
+
+      public function __construct()
+      {
+          $this->serviceId = config('app.service_id', gethostname());
+          $this->setupBackends();
+      }
+
+      private function setupBackends(): void
+      {
+          // ElasticSearch/OpenSearch
+          if (config('logging.aggregation.elasticsearch.enabled')) {
+              $this->backends[] = new ElasticsearchLogBackend();
+          }
+
+          // Fluentd/Fluent Bit
+          if (config('logging.aggregation.fluentd.enabled')) {
+              $this->backends[] = new FluentdLogBackend();
+          }
+
+          // Custom HTTP endpoint
+          if (config('logging.aggregation.http.enabled')) {
+              $this->backends[] = new HttpLogBackend();
+          }
+      }
+
+      public function aggregate(array $logEntry): void
+      {
+          // Add service metadata
+          $logEntry['service_id'] = $this->serviceId;
+          $logEntry['service_name'] = config('app.name');
+          $logEntry['node_id'] = $this->getNodeId();
+          $logEntry['aggregated_at'] = microtime(true);
+
+          // Send to all configured backends
+          foreach ($this->backends as $backend) {
+              $this->sendToBackend($backend, $logEntry);
+          }
+      }
+  }
+
+  2.2 Backend Implementations
+
+  File: api/Logging/Backends/ElasticsearchLogBackend.php
+  class ElasticsearchLogBackend implements LogBackendInterface
+  {
+      private Client $client;
+      private string $indexPattern;
+
+      public function __construct()
+      {
+          $this->client = new Client([
+              'hosts' => config('logging.aggregation.elasticsearch.hosts')
+          ]);
+          $this->indexPattern = config('logging.aggregation.elasticsearch.index_pattern', 'glueful-logs-{date}');
+      }
+
+      public function send(array $logEntry): bool
+      {
+          try {
+              $index = str_replace('{date}', date('Y.m.d'), $this->indexPattern);
+
+              $this->client->index([
+                  'index' => $index,
+                  'body' => $this->formatForElastic($logEntry)
+              ]);
+
+              return true;
+          } catch (\Exception $e) {
+              // Fallback logging
+              error_log("Failed to send log to Elasticsearch: " . $e->getMessage());
+              return false;
+          }
+      }
+  }
+
+  2.3 Service Discovery Integration
+
+  File: api/Services/ServiceDiscovery.php
+  class ServiceDiscovery
+  {
+      public function registerService(): void
+      {
+          $serviceInfo = [
+              'id' => $this->getServiceId(),
+              'name' => config('app.name'),
+              'version' => config('app.version'),
+              'address' => $this->getServiceAddress(),
+              'port' => config('app.port', 8000),
+              'health_check' => '/health',
+              'logging_endpoint' => '/api/logs',
+              'metadata' => [
+                  'environment' => config('app.env'),
+                  'deployment_id' => config('app.deployment_id'),
+                  'region' => config('app.region')
+              ]
+          ];
+
+          // Register with Consul, etcd, or custom registry
+          $this->registerWithConsul($serviceInfo);
+      }
+  }
+
+  ---
+  Phase 3: Real-time Log Streaming (2-3 weeks)
+
+  3.1 WebSocket Log Streaming
+
+  File: api/Logging/LogStreamer.php
+  class LogStreamer
+  {
+      private array $subscribers = [];
+      private ReactSocket\SocketServer $server;
+
+      public function __construct()
+      {
+          $this->setupWebSocketServer();
+      }
+
+      public function setupWebSocketServer(): void
+      {
+          $loop = ReactEventLoop\Factory::create();
+          $socket = new ReactSocket\Server('127.0.0.1:8080', $loop);
+
+          $this->server = new RatchetServer\IoServer(
+              new RatchetHttp\HttpServer(
+                  new RatchetWebSocket\WsServer(
+                      new LogStreamHandler()
+                  )
+              ),
+              $socket
+          );
+      }
+
+      public function streamLog(array $logEntry): void
+      {
+          $message = json_encode([
+              'type' => 'log',
+              'timestamp' => microtime(true),
+              'data' => $logEntry
+          ]);
+
+          foreach ($this->subscribers as $subscriber) {
+              $subscriber->send($message);
+          }
+      }
+  }
+
+  class LogStreamHandler implements MessageComponentInterface
+  {
+      private SplObjectStorage $clients;
+
+      public function __construct()
+      {
+          $this->clients = new SplObjectStorage;
+      }
+
+      public function onOpen(ConnectionInterface $conn): void
+      {
+          $this->clients->attach($conn);
+          echo "New connection! ({$conn->resourceId})\n";
+      }
+
+      public function onMessage(ConnectionInterface $from, $msg): void
+      {
+          $data = json_decode($msg, true);
+
+          // Handle subscription filters
+          if ($data['type'] === 'subscribe') {
+              $this->handleSubscription($from, $data['filters']);
+          }
+      }
+  }
+
+  3.2 Server-Sent Events Alternative
+
+  File: api/Controllers/LogStreamController.php
+  class LogStreamController extends BaseController
+  {
+      public function streamLogs(): StreamedResponse
+      {
+          $response = new StreamedResponse();
+          $response->headers->set('Content-Type', 'text/event-stream');
+          $response->headers->set('Cache-Control', 'no-cache');
+
+          $response->setCallback(function () {
+              $redis = container()->get(RedisInterface::class);
+              $pubsub = $redis->pubSubLoop();
+              $pubsub->subscribe('logs:stream');
+
+              foreach ($pubsub as $message) {
+                  if ($message->kind === 'message') {
+                      echo "data: {$message->payload}\n\n";
+                      ob_flush();
+                      flush();
+                  }
+              }
+          });
+
+          return $response;
+      }
+  }
+
+  3.3 Real-time Filters & Subscriptions
+
+  File: api/Logging/StreamFilter.php
+  class StreamFilter
+  {
+      public function apply(array $logEntry, array $filters): bool
+      {
+          foreach ($filters as $filter) {
+              if (!$this->matchesFilter($logEntry, $filter)) {
+                  return false;
+              }
+          }
+          return true;
+      }
+
+      private function matchesFilter(array $logEntry, array $filter): bool
+      {
+          return match ($filter['type']) {
+              'level' => $this->matchesLevel($logEntry, $filter),
+              'channel' => $this->matchesChannel($logEntry, $filter),
+              'timeRange' => $this->matchesTimeRange($logEntry, $filter),
+              'keyword' => $this->matchesKeyword($logEntry, $filter),
+              'service' => $this->matchesService($logEntry, $filter),
+              default => true
+          };
+      }
+  }
+
+  ---
+  Phase 4: Enhanced Database Search/Filtering (2-3 weeks)
+
+  4.1 Advanced Search Engine
+
+  File: api/Logging/LogSearchEngine.php
+  class LogSearchEngine
+  {
+      private QueryBuilder $db;
+      private ElasticsearchClient $elastic;
+
+      public function search(LogSearchQuery $query): LogSearchResult
+      {
+          // Use Elasticsearch for complex queries, fallback to database
+          if ($this->shouldUseElastic($query)) {
+              return $this->searchElastic($query);
+          }
+
+          return $this->searchDatabase($query);
+      }
+
+      public function searchDatabase(LogSearchQuery $query): LogSearchResult
+      {
+          $builder = $this->db->select('app_logs', ['*']);
+
+          // Apply filters
+          if ($query->hasTimeRange()) {
+              $builder->whereBetween('created_at', [
+                  $query->getStartTime(),
+                  $query->getEndTime()
+              ]);
+          }
+
+          if ($query->hasLevels()) {
+              $builder->whereIn('level', $query->getLevels());
+          }
+
+          if ($query->hasChannels()) {
+              $builder->whereIn('channel', $query->getChannels());
+          }
+
+          if ($query->hasKeyword()) {
+              $builder->where(function($q) use ($query) {
+                  $q->where('message', 'LIKE', "%{$query->getKeyword()}%")
+                    ->orWhere('context', 'LIKE', "%{$query->getKeyword()}%");
+              });
+          }
+
+          // Apply aggregations
+          if ($query->hasAggregations()) {
+              return $this->applyAggregations($builder, $query);
+          }
+
+          return new LogSearchResult(
+              $builder->paginate($query->getPage(), $query->getPerPage())
+          );
+      }
+  }
+
+  4.2 Search Query Builder
+
+  File: api/Logging/LogSearchQuery.php
+  class LogSearchQuery
+  {
+      private ?string $keyword = null;
+      private array $levels = [];
+      private array $channels = [];
+      private ?DateTime $startTime = null;
+      private ?DateTime $endTime = null;
+      private array $aggregations = [];
+      private array $sort = [];
+      private int $page = 1;
+      private int $perPage = 50;
+
+      public static function create(): self
+      {
+          return new self();
+      }
+
+      public function keyword(string $keyword): self
+      {
+          $this->keyword = $keyword;
+          return $this;
+      }
+
+      public function levels(array $levels): self
+      {
+          $this->levels = $levels;
+          return $this;
+      }
+
+      public function timeRange(DateTime $start, DateTime $end): self
+      {
+          $this->startTime = $start;
+          $this->endTime = $end;
+          return $this;
+      }
+
+      public function aggregateBy(string $field, string $type = 'count'): self
+      {
+          $this->aggregations[] = ['field' => $field, 'type' => $type];
+          return $this;
+      }
+
+      public function sortBy(string $field, string $direction = 'desc'): self
+      {
+          $this->sort[] = ['field' => $field, 'direction' => $direction];
+          return $this;
+      }
+  }
+
+  4.3 Log Analytics Dashboard
+
+  File: api/Controllers/LogAnalyticsController.php
+  class LogAnalyticsController extends BaseController
+  {
+      public function dashboard(): Response
+      {
+          $analytics = container()->get(LogAnalyticsService::class);
+
+          $data = [
+              'summary' => $analytics->getSummaryStats(),
+              'trending_errors' => $analytics->getTrendingErrors(),
+              'performance_metrics' => $analytics->getPerformanceMetrics(),
+              'top_channels' => $analytics->getTopChannels(),
+              'error_rate_trend' => $analytics->getErrorRateTrend(),
+          ];
+
+          return $this->json($data);
+      }
+
+      public function search(): Response
+      {
+          $query = LogSearchQuery::create()
+              ->keyword($this->request->query->get('q'))
+              ->levels($this->request->query->get('levels', []))
+              ->channels($this->request->query->get('channels', []))
+              ->timeRange(
+                  new DateTime($this->request->query->get('start_time', '-1 hour')),
+                  new DateTime($this->request->query->get('end_time', 'now'))
+              );
+
+          $results = container()->get(LogSearchEngine::class)->search($query);
+
+          return $this->json($results);
+      }
+  }
+
+  ---
+  Implementation Timeline & Priorities
+
+  Priority 1: OpenTelemetry Integration (Immediate Value)
+
+  - Weeks 1-3: Core integration, configuration, basic tracing
+  - Benefits: Industry-standard observability, better debugging
+  - Dependencies: None
+
+  Priority 2: Enhanced Database Search (Quick Win)
+
+  - Weeks 4-6: Advanced search engine, query builder, analytics
+  - Benefits: Better log analysis, faster debugging
+  - Dependencies: None
+
+  Priority 3: Real-time Streaming (High Impact)
+
+  - Weeks 7-9: WebSocket streaming, filters, dashboard integration
+  - Benefits: Real-time monitoring, faster incident response
+  - Dependencies: React/Vue.js frontend updates
+
+  Priority 4: Log Aggregation (Enterprise Scale)
+
+  - Weeks 10-13: Microservices support, centralized collection
+  - Benefits: Multi-service visibility, scalability
+  - Dependencies: Infrastructure setup (Elasticsearch, Redis)
+
+  Configuration Requirements
+
+  Environment Variables:
+  # OpenTelemetry
+  OTEL_ENABLED=true
+  OTEL_SERVICE_NAME=glueful-api
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+
+  # Log Aggregation
+  LOG_AGGREGATION_ENABLED=true
+  ELASTICSEARCH_HOSTS=localhost:9200
+  FLUENTD_HOST=localhost:24224
+
+  # Real-time Streaming
+  LOG_STREAMING_ENABLED=true
+  LOG_STREAM_PORT=8080
+  REDIS_URL=redis://localhost:6379
+
+  # Enhanced Search
+  LOG_SEARCH_ENGINE=elasticsearch
+  LOG_ANALYTICS_ENABLED=true
+
+  This implementation plan provides enterprise-grade logging capabilities while maintaining backward compatibility with Glueful's existing system.

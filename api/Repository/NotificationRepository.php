@@ -38,8 +38,6 @@ class NotificationRepository extends BaseRepository
     public function __construct(?Connection $connection = null)
     {
         // Configure repository settings before calling parent
-        $this->containsSensitiveData = false;
-        $this->sensitiveFields = [];
         $this->defaultFields = ['*'];
 
         // Call parent constructor to set up database connection and audit logger

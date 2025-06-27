@@ -70,7 +70,6 @@ class Application extends BaseApplication
         // Security commands
         \Glueful\Console\Commands\Security\CheckCommand::class,
         \Glueful\Console\Commands\Security\VulnerabilityCheckCommand::class,
-        \Glueful\Console\Commands\Security\AuditCommand::class,
         \Glueful\Console\Commands\Security\LockdownCommand::class,
         \Glueful\Console\Commands\Security\ResetPasswordCommand::class,
         \Glueful\Console\Commands\Security\ReportCommand::class,

@@ -103,7 +103,6 @@ class RevokeTokensCommand extends BaseSecurityCommand
 
         try {
             // Import required classes (following original pattern)
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
             $queryBuilder = $this->getQueryBuilder();
             $cacheStore = $this->getService(CacheStore::class);
             $tokenManager = \Glueful\Auth\TokenManager::class;
@@ -199,19 +198,10 @@ class RevokeTokensCommand extends BaseSecurityCommand
             }
 
             // Step 4: Log the bulk revocation event
-            $auditLogger->audit(
-                'security',
-                'bulk_token_revocation',
-                \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
-                [
-                    'total_sessions' => $totalSessions,
-                    'revoked_count' => $revokedCount,
-                    'failed_count' => $failedCount,
-                    'initiated_by' => 'security_command',
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'CLI',
-                    'reason' => $reason ?? 'emergency_security_procedure'
-                ]
-            );
+            $logMessage = "Security: Bulk token revocation - Total: {$totalSessions}, " .
+                         "Revoked: {$revokedCount}, Failed: {$failedCount}, " .
+                         "Reason: " . ($reason ?? 'emergency_security_procedure');
+            error_log($logMessage);
 
             // Step 5: Display results
             $this->line('');

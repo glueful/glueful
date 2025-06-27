@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
-
 /**
  * Secure Serialization Service
  *
@@ -48,8 +45,6 @@ class SecureSerializer
     /** @var bool Whether to use JSON as default format */
     private bool $useJsonDefault;
 
-    /** @var AuditLogger Audit logger instance */
-    private AuditLogger $auditLogger;
 
     /**
      * Constructor
@@ -61,7 +56,6 @@ class SecureSerializer
     {
         $this->allowedClasses = array_merge(self::$defaultAllowedClasses, $allowedClasses);
         $this->useJsonDefault = $useJsonDefault;
-        $this->auditLogger = AuditLogger::getInstance();
     }
 
     /**
@@ -90,12 +84,6 @@ class SecureSerializer
 
             return 'php:' . $serialized;
         } catch (\Throwable $e) {
-            $this->auditSecurityEvent('serialization_failed', [
-                'error' => $e->getMessage(),
-                'data_type' => gettype($data),
-                'force_php' => $forcePhp
-            ]);
-
             throw new \RuntimeException('Serialization failed: ' . $e->getMessage(), 0, $e);
         }
     }
@@ -116,10 +104,6 @@ class SecureSerializer
 
         // Validate size
         if (strlen($data) > self::MAX_SIZE) {
-            $this->auditSecurityEvent('deserialization_size_exceeded', [
-                'size' => strlen($data),
-                'max_size' => self::MAX_SIZE
-            ]);
             throw new \InvalidArgumentException('Serialized data exceeds maximum size limit');
         }
 
@@ -136,11 +120,6 @@ class SecureSerializer
             // Legacy data without prefix - try to detect format
             return $this->unserializeLegacy($data, $additionalAllowedClasses);
         } catch (\Throwable $e) {
-            $this->auditSecurityEvent('deserialization_failed', [
-                'error' => $e->getMessage(),
-                'data_preview' => substr($data, 0, 100)
-            ]);
-
             throw new \InvalidArgumentException('Deserialization failed: ' . $e->getMessage(), 0, $e);
         }
     }
@@ -261,10 +240,6 @@ class SecureSerializer
         }
 
         // Fall back to PHP serialization with validation
-        $this->auditSecurityEvent('legacy_deserialization_attempted', [
-            'data_preview' => substr($data, 0, 100)
-        ]);
-
         return $this->unserializePhp($data, $additionalAllowedClasses);
     }
 
@@ -312,11 +287,6 @@ class SecureSerializer
 
             foreach ($foundClasses as $className) {
                 if (!$this->isClassAllowed($className, $allowedClasses)) {
-                    $this->auditSecurityEvent('unsafe_class_detected', [
-                        'class' => $className,
-                        'allowed_classes' => $allowedClasses
-                    ]);
-
                     throw new \InvalidArgumentException(
                         "Class '$className' is not allowed for deserialization"
                     );
@@ -394,24 +364,6 @@ class SecureSerializer
         return false;
     }
 
-    /**
-     * Audit security events
-     *
-     * @param string $event Event type
-     * @param array $context Event context
-     */
-    private function auditSecurityEvent(string $event, array $context = []): void
-    {
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'secure_serializer_' . $event,
-            AuditEvent::SEVERITY_WARNING,
-            array_merge($context, [
-                'timestamp' => time(),
-                'process_id' => getmypid()
-            ])
-        );
-    }
 
     /**
      * Add allowed class for deserialization

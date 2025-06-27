@@ -5,7 +5,6 @@ namespace Tests\Unit\Auth;
 use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Component\HttpFoundation\Request;
 use Tests\TestCase;
-use Tests\Helpers\AuditLoggerMock;
 use Glueful\Auth\JwtAuthenticationProvider;
 use Glueful\Auth\JWTService;
 use Glueful\Auth\TokenStorageService;
@@ -26,11 +25,6 @@ class JwtAuthenticationProviderTest extends TestCase
     private array $testUserData;
 
     /**
-     * @var MockObject Mock of the AuditLogger
-     */
-    private $mockAuditLogger;
-
-    /**
      * @var MockObject Mock of the TokenStorageService
      */
     private $mockTokenStorage;
@@ -45,15 +39,6 @@ class JwtAuthenticationProviderTest extends TestCase
         // Set up JWT Service
         $_ENV['JWT_KEY'] = 'test-jwt-secret-key-for-unit-tests';
         $_SERVER['JWT_KEY'] = 'test-jwt-secret-key-for-unit-tests';
-
-        // Mock the AuditLogger to prevent database connections
-        $this->mockAuditLogger = AuditLoggerMock::setup($this);
-
-        // Configure mock audit logger methods
-        $this->mockAuditLogger->method('audit')->willReturn('mock-audit-id-' . uniqid());
-        $this->mockAuditLogger->method('authEvent')->willReturn('mock-auth-id-' . uniqid());
-        $this->mockAuditLogger->method('dataEvent')->willReturn('mock-data-id-' . uniqid());
-        $this->mockAuditLogger->method('configEvent')->willReturn('mock-config-id-' . uniqid());
 
         // Create mock TokenStorageService
         $this->mockTokenStorage = $this->createMock(TokenStorageService::class);
@@ -375,8 +360,5 @@ class JwtAuthenticationProviderTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-
-        // Reset the AuditLogger singleton
-        AuditLoggerMock::reset();
     }
 }

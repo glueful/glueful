@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Glueful\Cache\CacheStore;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Security\SecureSerializer;
 
 /**
@@ -409,15 +407,6 @@ class SessionCacheManager
             return false;
         }
 
-        // Store user ID for audit logging before removing the session
-        $userId = null;
-        $sessionProvider = null;
-        if ($session) {
-            if (isset($session['user']['uuid'])) {
-                $userId = $session['user']['uuid'];
-            }
-            $sessionProvider = $session['provider'] ?? 'jwt';
-        }
 
         // Remove session data
         $sessionRemoved = $this->removeSession($sessionId);
@@ -428,27 +417,6 @@ class SessionCacheManager
         // Have TokenManager revoke the token
         TokenManager::revokeSession($token);
 
-        // Log session destruction in the audit log
-        try {
-            if ($sessionRemoved && $mappingRemoved) {
-                $auditLogger = AuditLogger::getInstance();
-                $auditLogger->authEvent(
-                    'session_destroyed',
-                    $userId,
-                    [
-                    'session_id' => $sessionId,
-                    'provider' => $sessionProvider,
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                    'reason' => 'explicit_logout'
-                    ],
-                    AuditEvent::SEVERITY_INFO
-                );
-            }
-        } catch (\Throwable $e) {
-            // Silently handle audit logging errors to ensure session destruction isn't affected
-            unset($e); // Intentionally ignored exception
-        }
 
         return $sessionRemoved && $mappingRemoved;
     }
@@ -502,28 +470,6 @@ class SessionCacheManager
             // Map new token to existing session
             $mapped = TokenManager::mapTokenToSession($newToken, $sessionId);
 
-            // Log session update in the audit log
-            try {
-                if ($mapped) {
-                    $userId = $newData['user']['uuid'] ?? null;
-                    $auditLogger = AuditLogger::getInstance();
-                    $auditLogger->authEvent(
-                        'session_updated',
-                        $userId,
-                        [
-                        'session_id' => $sessionId,
-                        'provider' => $sessionProvider,
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                        'token_refreshed' => true
-                        ],
-                        AuditEvent::SEVERITY_INFO
-                    );
-                }
-            } catch (\Throwable $e) {
-                // Silently handle audit logging errors to ensure session update isn't affected
-                unset($e); // Intentionally ignored exception
-            }
 
             return $mapped;
         }
@@ -605,8 +551,6 @@ class SessionCacheManager
 
         $indexKey = self::PROVIDER_INDEX_PREFIX . $provider;
         $sessionIds = $this->cache->get($indexKey) ?? [];
-        // Store count of sessions for audit logging
-        $sessionCount = count($sessionIds);
 
         $success = true;
         foreach ($sessionIds as $sessionId) {
@@ -621,31 +565,6 @@ class SessionCacheManager
         // Clear the provider index
         $this->cache->delete($indexKey);
 
-        // Log provider sessions invalidation in the audit log
-        try {
-            $auditLogger = AuditLogger::getInstance();
-            // Try to get current user for actor
-            $userRepository = new \Glueful\Repository\UserRepository();
-            $userId = null;
-            if (function_exists('getCurrentUserId')) {
-                $userId = $userRepository->getCurrentUser()['uuid'] ?? null;
-            }
-
-            $auditLogger->authEvent(
-                'provider_sessions_invalidated',
-                $userId,
-                [
-                'provider' => $provider,
-                'sessions_count' => $sessionCount,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
-                ],
-                AuditEvent::SEVERITY_WARNING // Higher severity as this is a bulk operation
-            );
-        } catch (\Throwable $e) {
-            // Silently handle audit logging errors to ensure invalidation isn't affected
-            unset($e); // Intentionally ignored exception
-        }
 
         return $success;
     }

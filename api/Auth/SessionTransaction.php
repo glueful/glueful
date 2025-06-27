@@ -6,8 +6,6 @@ namespace Glueful\Auth;
 
 use Glueful\Cache\CacheStore;
 use Glueful\Helpers\CacheHelper;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Session Transaction Manager
@@ -67,9 +65,6 @@ class SessionTransaction
         $this->errors = [];
         $this->committed = false;
         $this->rolledBack = false;
-
-        // Log transaction start
-        $this->logTransactionEvent('transaction_began');
     }
 
     /**
@@ -87,21 +82,10 @@ class SessionTransaction
             throw new \RuntimeException('Transaction already finalized');
         }
 
-        try {
-            $this->committed = true;
-            $this->active = false;
+        $this->committed = true;
+        $this->active = false;
 
-            // Log successful commit
-            $this->logTransactionEvent('transaction_committed', [
-                'operations_count' => count($this->operations),
-                'duration_ms' => (microtime(true) - $this->startTime) * 1000
-            ]);
-
-            return true;
-        } catch (\Exception $e) {
-            $this->errors[] = 'Commit failed: ' . $e->getMessage();
-            return false;
-        }
+        return true;
     }
 
     /**
@@ -134,12 +118,6 @@ class SessionTransaction
             $this->rolledBack = true;
             $this->active = false;
 
-            // Log rollback
-            $this->logTransactionEvent('transaction_rolled_back', [
-                'operations_count' => count($this->operations),
-                'rollback_errors' => $rollbackErrors,
-                'duration_ms' => (microtime(true) - $this->startTime) * 1000
-            ]);
 
             return empty($rollbackErrors);
         } catch (\Exception $e) {
@@ -397,36 +375,6 @@ class SessionTransaction
         }
     }
 
-    /**
-     * Create audit log entry
-     *
-     * @param string $event Event name
-     * @param array $data Event data
-     * @return bool Success status
-     */
-    public function createAuditLog(string $event, array $data): bool
-    {
-        $this->ensureActive();
-
-        try {
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->audit('session_transaction', $event, AuditEvent::SEVERITY_INFO, array_merge($data, [
-                'transaction_id' => $this->transactionId
-            ]));
-
-            // Record operation (audit logs typically aren't rolled back)
-            $this->operations[] = [
-                'type' => 'audit_log',
-                'event' => $event,
-                'data' => $data
-            ];
-
-            return true;
-        } catch (\Exception $e) {
-            $this->errors[] = "Failed to create audit log: " . $e->getMessage();
-            return false;
-        }
-    }
 
     /**
      * Check if transaction has errors
@@ -497,7 +445,7 @@ class SessionTransaction
                 break;
 
             case 'delete_session':
-                $this->deleteSession($operation['session_id'], $operation['token']);
+                $this->deleteSession($operation['token']);
                 break;
 
             default:
@@ -532,33 +480,11 @@ class SessionTransaction
     /**
      * Delete session (for rollback of creation)
      *
-     * @param string $sessionId Session ID
      * @param string $token Session token
      * @return void
      */
-    private function deleteSession(string $sessionId, string $token): void
+    private function deleteSession(string $token): void
     {
         $this->sessionCacheManager->destroySession($token);
-    }
-
-    /**
-     * Log transaction event
-     *
-     * @param string $event Event name
-     * @param array $data Additional data
-     * @return void
-     */
-    private function logTransactionEvent(string $event, array $data = []): void
-    {
-        try {
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->audit('session_transaction', $event, AuditEvent::SEVERITY_INFO, array_merge([
-                'transaction_id' => $this->transactionId,
-                'duration_ms' => (microtime(true) - $this->startTime) * 1000
-            ], $data));
-        } catch (\Exception $e) {
-            // Don't fail transaction due to logging errors
-            error_log("Failed to log transaction event: " . $e->getMessage());
-        }
     }
 }

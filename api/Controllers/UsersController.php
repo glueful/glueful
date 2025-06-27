@@ -12,7 +12,6 @@ use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Auth\TokenStorageService;
 use Glueful\Database\RawExpression;
 use Symfony\Component\HttpFoundation\Request;
-use Glueful\Logging\AuditEvent;
 use Glueful\Constants\ErrorCodes;
 use Glueful\Helpers\ValidationHelper;
 use Glueful\Http\SecureErrorResponse;
@@ -38,12 +37,11 @@ class UsersController extends BaseController
     public function __construct(
         ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
         ?\Glueful\Auth\AuthenticationManager $authManager = null,
-        ?\Glueful\Logging\AuditLogger $auditLogger = null,
         ?Request $request = null,
         ?UserRepository $userRepository = null,
         ?TokenStorageService $tokenStorage = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
 
         // Initialize user-specific dependencies
         $this->userRepository = $userRepository ?? $this->repositoryFactory->getRepository('users');
@@ -324,19 +322,6 @@ class UsersController extends BaseController
 
         unset($user['password']);
 
-        // Audit log user creation
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'user_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'created_user_uuid' => $userUuid,
-                'created_user_email' => $data['email'] ?? null,
-                'created_user_username' => $data['username'] ?? null,
-                'creator_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Invalidate user-related caches
         $this->invalidateCache(['users', 'user_list', 'statistics']);
@@ -439,20 +424,6 @@ class UsersController extends BaseController
 
         unset($updatedUser['password']);
 
-        // Audit log user update
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'user_updated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'updated_user_uuid' => $user['uuid'],
-                'updated_user_email' => $user['email'] ?? null,
-                'updated_fields' => array_keys($data),
-                'is_self_update' => $uuid === $this->getCurrentUserUuid(),
-                'updater_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Invalidate user-specific and list caches
         $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
@@ -494,19 +465,6 @@ class UsersController extends BaseController
         // Invalidate user sessions
         $this->tokenStorage->revokeAllUserSessions($user['uuid']);
 
-        // Audit log user deletion
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'user_deleted',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'deleted_user_uuid' => $user['uuid'],
-                'deleted_user_email' => $user['email'] ?? null,
-                'deleted_user_username' => $user['username'] ?? null,
-                'deleter_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Invalidate all user-related caches
         $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
@@ -540,19 +498,6 @@ class UsersController extends BaseController
         // For now, update the deleted_at field to null
         $this->userRepository->update($user['uuid'], ['deleted_at' => null]);
 
-        // Audit log user restoration
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'user_restored',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'restored_user_uuid' => $user['uuid'],
-                'restored_user_email' => $user['email'] ?? null,
-                'restored_user_username' => $user['username'] ?? null,
-                'restorer_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         return Response::success(null, 'User restored successfully');
     }
@@ -665,35 +610,7 @@ class UsersController extends BaseController
             }
         }
 
-        // Single audit log for the entire bulk operation
-        $this->asyncAudit(
-            AuditEvent::CATEGORY_USER,
-            'bulk_user_action',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'action' => $data['action'],
-                'total_users' => count($data['user_ids']),
-                'successful' => $results['success'],
-                'failed' => $results['failed'],
-                'user_ids' => $data['user_ids']
-            ]
-        );
 
-        // Audit log bulk operation
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'user_bulk_operation',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'action' => $data['action'],
-                'user_ids' => $data['user_ids'],
-                'success_count' => $results['success'],
-                'failed_count' => $results['failed'],
-                'errors' => $results['errors'],
-                'operator_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         return Response::success(
             $results,
@@ -935,19 +852,6 @@ class UsersController extends BaseController
             $user['profile'] = $profiles[$user['uuid']] ?? [];
         }
 
-        // Audit log user export
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'users_exported',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'export_format' => $format,
-                'filters' => $filters,
-                'user_count' => count($users),
-                'exporter_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         if ($format === 'json') {
             return Response::success($users, 'Export completed successfully');
@@ -997,19 +901,6 @@ class UsersController extends BaseController
         // For now, return a placeholder response
         $results['errors'][] = 'Import functionality needs to be implemented based on specific requirements';
 
-        // Audit log user import attempt
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'users_import_attempted',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'file_name' => $file->isValid() ? $file->getClientOriginalName() : null,
-                'file_size' => $file->isValid() ? $file->getSize() : null,
-                'results' => $results,
-                'importer_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         $message = "Import completed: {$results['created']} created, " .
                   "{$results['updated']} updated, {$results['failed']} failed";
@@ -1184,21 +1075,6 @@ class UsersController extends BaseController
             $this->tokenStorage->revokeAllUserSessions($user['uuid']);
         }
 
-        // Audit log session termination
-        $this->auditLogger->audit(
-            'security',
-            'user_sessions_terminated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'target_user_uuid' => $user['uuid'],
-                'target_user_email' => $user['email'] ?? null,
-                'session_id' => $sessionId,
-                'terminated_sessions_count' => $terminatedSessions,
-                'is_self_termination' => $uuid === $this->getCurrentUserUuid(),
-                'terminator_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         return Response::success(null, 'Session(s) terminated successfully');
     }

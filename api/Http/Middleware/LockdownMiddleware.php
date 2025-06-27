@@ -42,14 +42,11 @@ class LockdownMiddleware implements MiddlewareInterface
 
         // Check if IP is blocked
         if ($this->isIPBlocked($clientIp)) {
-            $this->logBlockedAccess($clientIp, $requestPath, 'blocked_ip');
             throw new SecurityException('Access denied due to security restrictions', 403);
         }
 
         // Check if endpoint is allowed during lockdown
         if (!$this->isEndpointAllowed($requestPath)) {
-            $this->logBlockedAccess($clientIp, $requestPath, 'disabled_endpoint');
-
             // Return maintenance response for web requests
             if ($this->isWebRequest($request)) {
                 return $this->getMaintenanceResponse();
@@ -59,8 +56,6 @@ class LockdownMiddleware implements MiddlewareInterface
             return $this->getLockdownApiResponse();
         }
 
-        // Log allowed access during lockdown
-        $this->logLockdownAccess($clientIp, $requestPath);
 
         return $handler->handle($request);
     }
@@ -427,64 +422,6 @@ HTML;
         if (isset($blockedIps[$ip])) {
             unset($blockedIps[$ip]);
             file_put_contents($blockedIpsFile, json_encode($blockedIps, JSON_PRETTY_PRINT));
-        }
-    }
-
-    /**
-     * Log blocked access attempt
-     *
-     * @param string $ip Client IP
-     * @param string $path Request path
-     * @param string $reason Block reason
-     * @return void
-     */
-    private function logBlockedAccess(string $ip, string $path, string $reason): void
-    {
-        try {
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-
-            $auditLogger->audit(
-                'security',
-                'lockdown_access_blocked',
-                \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
-                [
-                    'ip_address' => $ip,
-                    'request_path' => $path,
-                    'block_reason' => $reason,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-                    'timestamp' => time()
-                ]
-            );
-        } catch (\Exception $e) {
-            error_log("Failed to log blocked access: {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * Log allowed access during lockdown
-     *
-     * @param string $ip Client IP
-     * @param string $path Request path
-     * @return void
-     */
-    private function logLockdownAccess(string $ip, string $path): void
-    {
-        try {
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-
-            $auditLogger->audit(
-                'security',
-                'lockdown_access_allowed',
-                \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-                [
-                    'ip_address' => $ip,
-                    'request_path' => $path,
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-                    'timestamp' => time()
-                ]
-            );
-        } catch (\Exception) {
-            // Don't fail request if logging fails
         }
     }
 }

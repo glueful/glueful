@@ -10,7 +10,6 @@ use Glueful\Uploader\FileUploader;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\{AuditLogger, AuditEvent};
 use Glueful\Permissions\Exceptions\UnauthorizedException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Constants\ErrorCodes;
@@ -38,19 +37,17 @@ class FilesController extends BaseController
      *
      * @param RepositoryFactory|null $repositoryFactory Repository factory instance
      * @param AuthenticationManager|null $authManager Authentication manager
-     * @param AuditLogger|null $auditLogger Audit logger instance
      * @param SymfonyRequest|null $request Request instance
      * @param FileUploader|null $fileUploader File uploader instance
      */
     public function __construct(
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
-        ?AuditLogger $auditLogger = null,
         ?SymfonyRequest $request = null,
         ?FileUploader $fileUploader = null,
         ?FileManager $fileManager = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
 
         // Initialize file uploader and file manager
         $this->fileUploader = $fileUploader ?? new FileUploader();
@@ -127,17 +124,6 @@ class FilesController extends BaseController
         $result = $this->processFileRequestWithCaching($fileInfo, $type, $params);
 
         // Enhanced audit logging with permission context
-        $this->auditWithPermissionContext(
-            'file_access',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'access_type' => $type,
-                'parameters' => $params,
-                'cached' => $result['cached'] ?? false,
-                'permission_used' => $permission
-            ],
-            $fileInfo
-        );
 
         // For download and inline types, handle ETag and caching headers
         if (in_array($type, ['download', 'inline'])) {
@@ -203,17 +189,6 @@ class FilesController extends BaseController
                 'created_by' => $this->currentUser->uuid
             ];
 
-            $this->auditWithPermissionContext(
-                'file_upload',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'upload_method' => 'multipart',
-                    'file_count' => count($files),
-                    'total_size' => array_sum(array_column($files, 'size')),
-                    'upload_success' => isset($result['uuid'])
-                ],
-                $uploadFileInfo
-            );
 
             // Invalidate user-specific file cache after upload
             $this->invalidateUserFileCache();
@@ -245,16 +220,6 @@ class FilesController extends BaseController
                 'created_by' => $this->currentUser->uuid
             ];
 
-            $this->auditWithPermissionContext(
-                'file_upload_base64',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'upload_method' => 'base64',
-                    'estimated_size' => strlen($postData['base64']) * 0.75,
-                    'upload_success' => isset($result['uuid'])
-                ],
-                $base64FileInfo
-            );
 
             return Response::success($result, 'File uploaded successfully');
         }
@@ -306,29 +271,10 @@ class FilesController extends BaseController
 
             // Enhanced audit logging for file deletion
             if ($result) {
-                $this->auditWithPermissionContext(
-                    'file_delete',
-                    AuditEvent::SEVERITY_INFO,
-                    [
-                        'deletion_success' => true,
-                        'was_own_file' => $fileInfo['created_by'] === $this->currentUser->uuid,
-                        'file_age_days' => $this->calculateFileAge($fileInfo)
-                    ],
-                    $fileInfo
-                );
             }
         } else {
             $result = false;
             // Enhanced audit logging for attempted deletion of non-existent file
-            $this->auditWithPermissionContext(
-                'file_delete_not_found',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'attempted_file_uuid' => $uuid,
-                    'deletion_attempt' => true,
-                    'file_exists' => false
-                ]
-            );
         }
 
         if (!$result) {
@@ -368,17 +314,6 @@ class FilesController extends BaseController
         $result = $this->getCachedPaginatedFiles($page, $perPage, $conditions);
 
         // Enhanced audit logging for file listing access
-        $this->auditWithPermissionContext(
-            'file_list_access',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'page' => $page,
-                'per_page' => $perPage,
-                'conditions' => $conditions,
-                'total_files' => $result['total'] ?? 0,
-                'filtered_by_ownership' => !$this->isAdmin()
-            ]
-        );
 
         // Return with cache headers for file listings
         return $this->withCacheHeaders(
@@ -671,17 +606,6 @@ class FilesController extends BaseController
         }
 
         // Single audit log for the entire permission check
-        $this->asyncAudit(
-            AuditEvent::CATEGORY_FILE,
-            'batch_upload_permission_check',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'file_count' => count($files),
-                'permissions_required' => array_keys($requiredPermissions),
-                'total_size' => array_sum(array_column($fileAnalysis, 'size')),
-                'mime_types' => array_unique(array_column($fileAnalysis, 'mime_type'))
-            ]
-        );
     }
 
     /**
@@ -1115,13 +1039,6 @@ class FilesController extends BaseController
                 'file_age_days' => $this->calculateFileAge($fileInfo),
             ]);
         }
-
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_AUTHZ,
-            $action,
-            $severity,
-            $enhancedContext
-        );
     }
 
     /**
@@ -1144,12 +1061,6 @@ class FilesController extends BaseController
             'recent_violations' => $this->getRecentViolationCount(),
             'controller' => static::class,
         ]);
-
-        $this->auditWithPermissionContext(
-            'rate_limit_violation',
-            AuditEvent::SEVERITY_WARNING,
-            $context
-        );
     }
 
     /**
@@ -1170,13 +1081,6 @@ class FilesController extends BaseController
             'risk_score' => $this->calculateRiskScore($suspiciousIndicators),
             'access_pattern' => $this->analyzeAccessPattern($fileInfo),
         ];
-
-        $this->auditWithPermissionContext(
-            'suspicious_file_access',
-            AuditEvent::SEVERITY_ERROR,
-            $context,
-            $fileInfo
-        );
     }
 
     /**
@@ -1197,12 +1101,6 @@ class FilesController extends BaseController
             'permission_check_result' => 'denied',
             'attempted_escalation' => $this->detectPrivilegeEscalation($permission),
         ]);
-
-        $this->auditWithPermissionContext(
-            'permission_violation',
-            AuditEvent::SEVERITY_WARNING,
-            $context
-        );
     }
 
     /**

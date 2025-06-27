@@ -6,7 +6,6 @@ namespace Glueful\Controllers\Traits;
 
 use Glueful\Permissions\Exceptions\UnauthorizedException;
 use Glueful\Permissions\PermissionManager;
-use Glueful\Logging\AuditEvent;
 use Glueful\Models\User;
 use Glueful\Permissions\Helpers\PermissionHelper;
 use Glueful\Permissions\PermissionContext;
@@ -55,21 +54,6 @@ trait AuthorizationTrait
         // Check if permission provider is available
         $permissionManager = PermissionManager::getInstance();
         if (!$permissionManager->hasActiveProvider()) {
-            // Log as error since this is a required operation
-            $auditContext = $this->getCachedAuditContext([
-                'permission' => $permission,
-                'resource' => $resource,
-                'message' => 'No permission provider available',
-                'controller' => static::class
-            ]);
-
-            $this->asyncAudit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'permission_required_no_provider',
-                AuditEvent::SEVERITY_ERROR,
-                $auditContext
-            );
-
             throw new UnauthorizedException(
                 'Permission system unavailable',
                 '503',
@@ -78,18 +62,6 @@ trait AuthorizationTrait
         }
 
         if (!$this->can($permission, $resource, $context)) {
-            $auditContext = $this->getCachedAuditContext(array_merge([
-                'permission' => $permission,
-                'resource' => $resource
-            ], $context));
-
-            $this->asyncAudit(
-                'security',
-                'permission_denied',
-                AuditEvent::SEVERITY_WARNING,
-                $auditContext
-            );
-
             throw new UnauthorizedException(
                 $this->getCachedUserUuid(),
                 $permission,
@@ -119,7 +91,7 @@ trait AuthorizationTrait
         }
 
         // Check if permission provider is available
-        if (!$this->hasPermissionProvider('permission_check_any')) {
+        if (!$this->hasPermissionProvider()) {
             return false;
         }
 
@@ -141,24 +113,13 @@ trait AuthorizationTrait
     /**
      * Check if a permission provider is available
      *
-     * @param string|null $action Optional action being performed for logging
      * @return bool True if provider is available, false otherwise
      */
-    protected function hasPermissionProvider(?string $action = null): bool
+    protected function hasPermissionProvider(): bool
     {
         $permissionManager = PermissionManager::getInstance();
 
         if (!$permissionManager->hasActiveProvider()) {
-            // Log warning when no provider is available
-            $this->asyncAudit(
-                AuditEvent::CATEGORY_SYSTEM,
-                $action ?? 'permission_provider_check',
-                AuditEvent::SEVERITY_WARNING,
-                $this->getCachedAuditContext([
-                    'message' => 'No permission provider available',
-                    'controller' => static::class
-                ])
-            );
             return false;
         }
 

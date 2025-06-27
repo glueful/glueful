@@ -7,7 +7,6 @@ namespace Tests\Unit\Repository;
 use Tests\Unit\Repository\Mocks\TestUserRepository;
 use Tests\Unit\Repository\Mocks\MockUserConnection;
 use Tests\Helpers\DatabaseMock;
-use Tests\Helpers\AuditLoggerMock;
 use Tests\TestCase;
 use Glueful\DTOs\UsernameDTO;
 use Glueful\DTOs\EmailDTO;

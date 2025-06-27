@@ -2,11 +2,8 @@
 
 namespace Glueful\Exceptions;
 
-use Glueful\Helpers\Utils;
 use Glueful\Logging\LogManagerInterface;
 use Glueful\Logging\LogManager;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Exceptions\AuthenticationException;
 use Glueful\Exceptions\NotFoundException;
@@ -29,10 +26,6 @@ class ExceptionHandler
      */
     private static ?array $testResponse = null;
 
-    /**
-     * @var AuditLogger|null Audit logger instance
-     */
-    private static ?AuditLogger $auditLogger = null;
 
 
     /**
@@ -566,28 +559,7 @@ class ExceptionHandler
         self::$logManager = $logManager;
     }
 
-    /**
-     * Set the audit logger instance
-     *
-     * @param AuditLogger|null $auditLogger
-     */
-    public static function setAuditLogger(?AuditLogger $auditLogger): void
-    {
-        self::$auditLogger = $auditLogger;
-    }
 
-    /**
-     * Get the audit logger instance
-     *
-     * @return AuditLogger
-     */
-    private static function getAuditLogger(): AuditLogger
-    {
-        if (self::$auditLogger === null) {
-            self::$auditLogger = AuditLogger::getInstance();
-        }
-        return self::$auditLogger;
-    }
 
 
 
@@ -630,8 +602,6 @@ class ExceptionHandler
         // Log the error with enhanced context
         self::logError($exception, $context);
 
-        // Log security-relevant exceptions to audit system
-        self::logToAuditSystem($exception, $userUuid, $context);
 
         // Determine appropriate status code, message, and data based on exception type
         $statusCode = 500;
@@ -870,81 +840,6 @@ class ExceptionHandler
         return trim($message);
     }
 
-    /**
-     * Log security-relevant exceptions to audit system
-     *
-     * @param \Throwable $exception The exception to audit
-     * @param string|null $userUuid Current user UUID
-     * @param array $context Request context
-     * @return void
-     */
-    private static function logToAuditSystem(\Throwable $exception, ?string $userUuid, array $context): void
-    {
-        try {
-            $auditLogger = self::getAuditLogger();
-
-            // Determine if this exception should be audited
-            $shouldAudit = false;
-            $category = AuditEvent::CATEGORY_SYSTEM;
-            $severity = AuditEvent::SEVERITY_ERROR;
-
-            if ($exception instanceof AuthenticationException) {
-                $shouldAudit = true;
-                $category = AuditEvent::CATEGORY_AUTH;
-                $severity = AuditEvent::SEVERITY_WARNING;
-            } elseif (
-                $exception instanceof \Glueful\Permissions\Exceptions\UnauthorizedException ||
-                $exception instanceof \Glueful\Permissions\Exceptions\PermissionException
-            ) {
-                $shouldAudit = true;
-                $category = AuditEvent::CATEGORY_AUTHZ;
-                $severity = AuditEvent::SEVERITY_WARNING;
-            } elseif ($exception instanceof SecurityException) {
-                $shouldAudit = true;
-                $category = AuditEvent::CATEGORY_SYSTEM;
-                $severity = AuditEvent::SEVERITY_CRITICAL;
-            } elseif ($exception instanceof RateLimitExceededException) {
-                $shouldAudit = true;
-                $category = AuditEvent::CATEGORY_SYSTEM;
-                $severity = AuditEvent::SEVERITY_WARNING;
-            } elseif ($exception instanceof DatabaseException) {
-                $shouldAudit = true;
-                $category = AuditEvent::CATEGORY_SYSTEM;
-                $severity = AuditEvent::SEVERITY_ERROR;
-            }
-
-            if ($shouldAudit) {
-                $auditDetails = [
-                    'exception_type' => get_class($exception),
-                    'exception_message' => $exception->getMessage(),
-                    'exception_code' => $exception->getCode(),
-                    'file' => basename($exception->getFile()),
-                    'line' => $exception->getLine(),
-                    'request_context' => $context
-                ];
-
-                // Create audit event
-                $event = new AuditEvent(
-                    $category,
-                    'exception_occurred',
-                    $severity,
-                    $auditDetails
-                );
-
-                if ($userUuid) {
-                    $event->setActor($userUuid);
-                }
-
-                $auditLogger->logAuditEvent($event);
-            }
-        } catch (\Throwable $auditException) {
-            // If audit logging fails, don't throw an exception
-            // Just log it to the regular error log (but not during tests to avoid noise)
-            if (!self::$testMode && !Utils::isTestEnvironment()) {
-                error_log('Failed to log exception to audit system: ' . $auditException->getMessage());
-            }
-        }
-    }
 
     /**
      * Output a JSON response using Response class for consistency

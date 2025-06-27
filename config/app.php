@@ -100,54 +100,5 @@ return [
         'log_file_path' => dirname(__DIR__) . '/storage/logs/',
         'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
         'log_rotation_days' => env('LOG_ROTATION_DAYS', 30),
-        // Audit logging configuration
-        'audit' => [
-            // Minimum audit level to log (1=CRITICAL, 2=IMPORTANT, 3=INFO, 4=DEBUG)
-            'minimum_level' => env('AUDIT_MINIMUM_LEVEL', match (env('APP_ENV')) {
-                'production' => 2,  // IMPORTANT and above in production
-                'staging' => 3,     // INFO and above in staging
-                default => 4        // All events in development
-            }),
-            // Enable batch audit logging for performance
-            'batch_enabled' => env('AUDIT_BATCH_ENABLED', true),
-            'batch_size' => env('AUDIT_BATCH_SIZE', match (env('APP_ENV')) {
-                'production' => 200,  // Larger batches in production for max performance
-                'staging' => 100,     // Medium batches in staging
-                default => 50         // Smaller batches in development for faster feedback
-            }),
-            'batch_timeout' => env('AUDIT_BATCH_TIMEOUT', match (env('APP_ENV')) {
-                'production' => 10,   // Longer timeout in production for larger batches
-                'staging' => 7,       // Medium timeout in staging
-                default => 5          // Quick timeout in development
-            }),
-            // High-frequency event specific batching
-            'auth_event_batch_size' => env('AUDIT_AUTH_BATCH_SIZE', 100),
-            'auth_event_batch_timeout' => env('AUDIT_AUTH_BATCH_TIMEOUT', 3), // Quick flush for security events
-            'resource_access_batch_size' => env('AUDIT_RESOURCE_BATCH_SIZE', 300),
-            'resource_access_batch_timeout' => env('AUDIT_RESOURCE_BATCH_TIMEOUT', 15),
-            // Skip audit logging for certain paths
-            'skip_paths' => [
-                '/health',
-                '/metrics',
-                '/favicon.ico',
-                '/robots.txt',
-                '/ping',
-                '/status',
-            ],
-            // Skip audit logging for certain user agents
-            'skip_user_agents' => [
-                'UptimeRobot',
-                'Pingdom',
-                'StatusCake',
-                'NewRelic',
-                'Datadog',
-            ],
-            // Async processing for non-critical events
-            'async_processing' => [
-                'enabled' => env('AUDIT_ASYNC_ENABLED', true),
-                'queue_name' => env('AUDIT_QUEUE_NAME', 'audit'),
-                'categories' => ['resource_access', 'info', 'debug'], // Use async for these categories
-            ],
-        ],
     ],
 ];

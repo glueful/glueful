@@ -6,8 +6,6 @@ namespace Glueful\Security;
 
 use Glueful\Cache\CacheStore;
 use Glueful\Helpers\CacheHelper;
-use Glueful\Logging\AuditEvent;
-use Glueful\Logging\AuditLogger;
 use Redis;
 
 /**
@@ -76,9 +74,6 @@ class RateLimiterDistributor
 
         // Register this node
         $this->registerNode();
-
-        // Log distributor initialization
-        $this->auditDistributorEvent('distributor_initialized');
     }
 
     /**
@@ -217,8 +212,6 @@ class RateLimiterDistributor
                 foreach ($cleanupKeys as $key) {
                     $this->cache->delete($limitsKey . ':' . $key);
                 }
-
-                $this->auditDistributorEvent('limits_cleaned_up', ['count' => count($cleanupKeys)]);
             } finally {
                 $this->releaseLock('cleanup');
             }
@@ -276,8 +269,6 @@ class RateLimiterDistributor
             }
 
             if ($count > 0) {
-                $this->auditDistributorEvent('nodes_cleaned_up', ['count' => $count]);
-
                 // Re-elect primary coordinator if needed
                 $this->tryElectPrimaryCoordinator();
             }
@@ -307,7 +298,6 @@ class RateLimiterDistributor
                 // No Redis connection, this node becomes primary
                 $this->isPrimaryCoordinator = true;
                 $this->cache->set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
                 return true;
             }
 
@@ -316,7 +306,6 @@ class RateLimiterDistributor
                 // No nodes registered yet, this node becomes primary
                 $this->isPrimaryCoordinator = true;
                 $this->cache->set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
                 return true;
             }
 
@@ -353,7 +342,6 @@ class RateLimiterDistributor
             $this->isPrimaryCoordinator = ($firstNodeId === $this->nodeId);
             if ($this->isPrimaryCoordinator) {
                 $this->cache->set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
             }
 
             return $this->isPrimaryCoordinator;
@@ -463,25 +451,5 @@ class RateLimiterDistributor
         } catch (\Exception $e) {
             $this->redis = null;
         }
-    }
-
-    /**
-     * Log distributor events to audit logger
-     *
-     * @param string $action Event action
-     * @param array $context Additional context
-     */
-    private function auditDistributorEvent(string $action, array $context = []): void
-    {
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'rate_limit_distributor_' . $action,
-            AuditEvent::SEVERITY_INFO,
-            array_merge([
-                'node_id' => $this->nodeId,
-                'is_primary' => $this->isPrimaryCoordinator,
-            ], $context)
-        );
     }
 }

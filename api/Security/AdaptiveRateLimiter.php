@@ -6,8 +6,6 @@ namespace Glueful\Security;
 
 use Glueful\Cache\CacheStore;
 use Glueful\Http\RequestContext;
-use Glueful\Logging\AuditEvent;
-use Glueful\Logging\AuditLogger;
 use Glueful\Helpers\Utils;
 use Glueful\Helpers\CacheHelper;
 
@@ -135,13 +133,6 @@ class AdaptiveRateLimiter extends RateLimiter
             $allowed = $tempLimiter->attempt();
 
             if (!$allowed) {
-                $this->logAdaptiveRateLimit('stricter_rule_applied', [
-                    'normal_limit' => $this->maxAttempts,
-                    'adjusted_limit' => $adjustedLimit,
-                    'behavior_score' => $this->behaviorScore,
-                    'rules_applied' => array_keys($this->getActiveApplicableRules()),
-                ]);
-
                 return false;
             }
         }
@@ -155,12 +146,6 @@ class AdaptiveRateLimiter extends RateLimiter
                 $allowed = $tempLimiter->attempt();
 
                 if (!$allowed) {
-                    $this->logAdaptiveRateLimit('progressive_limit_applied', [
-                        'normal_limit' => $this->maxAttempts,
-                        'progressive_limit' => $progressiveLimit,
-                        'behavior_score' => $this->behaviorScore,
-                    ]);
-
                     return false;
                 }
             }
@@ -184,11 +169,6 @@ class AdaptiveRateLimiter extends RateLimiter
         // Update behavior profile with this attempt
         if ($allowed) {
             $this->updateBehaviorProfile();
-        } else {
-            // Log when normal rate limit is exceeded
-            $this->logAdaptiveRateLimit('normal_limit_exceeded', [
-                'behavior_score' => $this->behaviorScore,
-            ]);
         }
 
         return $allowed;
@@ -459,19 +439,6 @@ class AdaptiveRateLimiter extends RateLimiter
 
             // Apply a weighted adjustment to the behavior score
             $this->behaviorScore = $this->behaviorScore * 0.7 + $additionalScore * 0.3;
-
-            // Log the statistical adjustment
-            $auditLogger = AuditLogger::getInstance();
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'statistical_adjustment_applied',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'original_score' => $profile['anomaly_score'],
-                    'adjusted_score' => $this->behaviorScore,
-                    'tracking_id' => $this->trackingId
-                ]
-            );
         }
 
         // Ensure score is within valid range
@@ -581,27 +548,6 @@ class AdaptiveRateLimiter extends RateLimiter
         }
     }
 
-    /**
-     * Log adaptive rate limit events to audit logger
-     *
-     * @param string $action Event action
-     * @param array $context Additional context
-     */
-    private function logAdaptiveRateLimit(string $action, array $context = []): void
-    {
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_' . $action,
-            AuditEvent::SEVERITY_INFO,
-            array_merge([
-                'key' => $this->limitKey,
-                'max_attempts' => $this->maxAttempts,
-                'window_seconds' => $this->windowSeconds,
-                'ip_address' => $this->requestContext->getClientIp(),
-            ], $context)
-        );
-    }
 
     /**
      * Get cache key
@@ -635,18 +581,6 @@ class AdaptiveRateLimiter extends RateLimiter
             'request_uri' => $requestContext->getRequestUri(),
         ];
 
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_ip_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'ip' => $ip,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
         return new self(
             "ip:$ip",
@@ -681,18 +615,6 @@ class AdaptiveRateLimiter extends RateLimiter
             'request_uri' => $requestContext->getRequestUri(),
         ];
 
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_user_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userId,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
         return new self(
             "user:$userId",
@@ -729,19 +651,6 @@ class AdaptiveRateLimiter extends RateLimiter
             'endpoint' => $endpoint,
         ];
 
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_endpoint_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'endpoint' => $endpoint,
-                'identifier' => $identifier,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
         return new self(
             "endpoint:$endpoint:$identifier",

@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Helpers\RequestHelper;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{QueryBuilder};
-use Glueful\Logging\AuditEvent;
 
 /**
  * Database Controller
@@ -35,10 +34,9 @@ class DatabaseController extends BaseController
     public function __construct(
         ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
         ?\Glueful\Auth\AuthenticationManager $authManager = null,
-        ?\Glueful\Logging\AuditLogger $auditLogger = null,
         ?\Symfony\Component\HttpFoundation\Request $request = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
 
         $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
@@ -149,20 +147,6 @@ class DatabaseController extends BaseController
             $schemaManager->addForeignKey($foreignKeys);
         }
 
-            // Audit log table creation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'table_created',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'table_name' => $tableName,
-                    'columns' => $columnsData,
-                    'indexes' => $data['indexes'] ?? [],
-                    'foreign_keys' => $data['foreign_keys'] ?? [],
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
 
             return Response::success([
                 'table' => $tableName,
@@ -197,17 +181,6 @@ class DatabaseController extends BaseController
             return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST);
         }
 
-        // Audit log table deletion
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'table_dropped',
-            AuditEvent::SEVERITY_ERROR, // High severity for destructive operation
-            [
-                'table_name' => $data['table_name'],
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         return Response::success(null, 'Table dropped successfully');
     }
@@ -735,20 +708,6 @@ class DatabaseController extends BaseController
 
         // Check if all indexes were added successfully
         if (empty($failed)) {
-            // Audit log index creation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'indexes_added',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'table_name' => $tableName,
-                    'indexes_added' => $results,
-                    'total_indexes' => count($results),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // All indexes were added successfully
             return Response::success([
                 'table' => $tableName,
@@ -761,22 +720,6 @@ class DatabaseController extends BaseController
                 Response::HTTP_BAD_REQUEST
             );
         } else {
-            // Audit log partial index creation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'indexes_added_partial',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'table_name' => $tableName,
-                    'indexes_added' => $results,
-                    'indexes_failed' => $failed,
-                    'success_count' => count($results),
-                    'failed_count' => count($failed),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // Some indexes were added, but some failed
             return Response::success([
                 'table' => $tableName,
@@ -840,20 +783,6 @@ class DatabaseController extends BaseController
 
         // Check if all indexes were dropped successfully
         if (empty($failed)) {
-            // Audit log index deletion
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'indexes_dropped',
-                AuditEvent::SEVERITY_WARNING, // Higher severity for destructive operation
-                [
-                    'table_name' => $tableName,
-                    'indexes_dropped' => $results,
-                    'total_indexes' => count($results),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // All indexes were dropped successfully
             return Response::success([
                 'table' => $tableName,
@@ -866,22 +795,6 @@ class DatabaseController extends BaseController
                 Response::HTTP_BAD_REQUEST
             );
         } else {
-            // Audit log partial index deletion
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'indexes_dropped_partial',
-                AuditEvent::SEVERITY_ERROR, // High severity for partial destructive operation
-                [
-                    'table_name' => $tableName,
-                    'indexes_dropped' => $results,
-                    'indexes_failed' => $failed,
-                    'success_count' => count($results),
-                    'failed_count' => count($failed),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // Some indexes were dropped, but some failed
             return Response::success([
                 'table' => $tableName,
@@ -964,20 +877,6 @@ class DatabaseController extends BaseController
 
         // Check if all foreign keys were added successfully
         if (empty($failed)) {
-            // Audit log foreign key creation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'foreign_keys_added',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'table_name' => $tableName,
-                    'constraints_added' => $results,
-                    'total_constraints' => count($results),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // All foreign keys were added successfully
             return Response::success(
                 [
@@ -995,22 +894,6 @@ class DatabaseController extends BaseController
                 Response::HTTP_BAD_REQUEST
             );
         } else {
-            // Audit log partial foreign key creation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'foreign_keys_added_partial',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'table_name' => $tableName,
-                    'constraints_added' => $results,
-                    'constraints_failed' => $failed,
-                    'success_count' => count($results),
-                    'failed_count' => count($failed),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // Some foreign keys were added, but some failed
             return Response::success([
                 'table' => $tableName,
@@ -1077,20 +960,6 @@ class DatabaseController extends BaseController
 
         // Check if all constraints were dropped successfully
         if (empty($failed)) {
-            // Audit log foreign key deletion
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'foreign_keys_dropped',
-                AuditEvent::SEVERITY_WARNING, // Higher severity for destructive operation
-                [
-                    'table_name' => $tableName,
-                    'constraints_dropped' => $results,
-                    'total_constraints' => count($results),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // All constraints were dropped successfully
             return Response::success(
                 [
@@ -1108,22 +977,6 @@ class DatabaseController extends BaseController
                 Response::HTTP_BAD_REQUEST
             );
         } else {
-            // Audit log partial foreign key deletion
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'foreign_keys_dropped_partial',
-                AuditEvent::SEVERITY_ERROR, // High severity for partial destructive operation
-                [
-                    'table_name' => $tableName,
-                    'constraints_dropped' => $results,
-                    'constraints_failed' => $failed,
-                    'success_count' => count($results),
-                    'failed_count' => count($failed),
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
-
             // Some constraints were dropped, but some failed
             return Response::success([
                 'table' => $tableName,
@@ -1185,20 +1038,6 @@ class DatabaseController extends BaseController
             ? 'Query executed successfully'
             : 'Query executed successfully, ' . count($results) . ' rows affected';
 
-        // Audit log raw SQL execution
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'raw_sql_executed',
-            $isReadOperation ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING,
-            [
-                'sql' => $sql,
-                'operation_type' => $firstWord,
-                'is_read_operation' => $isReadOperation,
-                'affected_rows' => count($results),
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         $responseData = [
             'query' => $sql,
@@ -2150,20 +1989,6 @@ class DatabaseController extends BaseController
         // Export schema
         $schema = $this->schemaManager->exportTableSchema($tableName, $format);
 
-        // Log export action using existing audit system
-        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-        $auditLogger->audit(
-            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-            'schema_export',
-            \Glueful\Logging\AuditEvent::SEVERITY_INFO,
-            [
-                'table' => $tableName,
-                'format' => $format,
-                'exported_at' => date('Y-m-d H:i:s'),
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-            ]
-        );
 
         return Response::success([
             'table_name' => $tableName,
@@ -2229,22 +2054,6 @@ class DatabaseController extends BaseController
         // Import schema
         $result = $this->schemaManager->importTableSchema($tableName, $schema, $format, $options);
 
-        // Log import action using existing audit system
-        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-        $auditLogger->audit(
-            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-            'schema_import',
-            \Glueful\Logging\AuditEvent::SEVERITY_WARNING, // Higher severity for imports
-            [
-                'table' => $tableName,
-                'format' => $format,
-                'options' => $options,
-                'changes_applied' => $result['changes'] ?? [],
-                'imported_at' => date('Y-m-d H:i:s'),
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-            ]
-        );
 
         return Response::success([
             'table_name' => $tableName,
@@ -2344,21 +2153,6 @@ class DatabaseController extends BaseController
         // Execute revert operations
         $result = $this->schemaManager->executeRevert($revertOps);
 
-        // Log revert action
-        $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-        $auditLogger->audit(
-            \Glueful\Logging\AuditEvent::CATEGORY_ADMIN,
-            'schema_revert',
-            \Glueful\Logging\AuditEvent::SEVERITY_WARNING,
-            [
-                'original_change_id' => $changeId,
-                'reverted_operations' => $revertOps,
-                'revert_result' => $result,
-                'reverted_at' => date('Y-m-d H:i:s'),
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
-            ]
-        );
 
         return Response::success([
             'change_id' => $changeId,

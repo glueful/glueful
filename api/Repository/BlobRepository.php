@@ -36,8 +36,6 @@ class BlobRepository extends BaseRepository
     public function __construct(?Connection $connection = null)
     {
         // Configure repository settings before calling parent
-        $this->containsSensitiveData = false;
-        $this->sensitiveFields = [];
         $this->defaultFields = $this->defaultBlobFields;
         $this->hasUpdatedAt = true;
 

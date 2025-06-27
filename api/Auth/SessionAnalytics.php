@@ -236,11 +236,8 @@ class SessionAnalytics
     {
         $events = [];
 
-        // This would integrate with AuditLogger to get security-related events
+        // Get recent security events related to sessions
         try {
-            $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-
-            // Get recent security events related to sessions
             $securityEvents = [
                 'failed_logins' => $this->getFailedLoginAttempts($hours),
                 'suspicious_locations' => $this->getSuspiciousLocationLogins($hours),

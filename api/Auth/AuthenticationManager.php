@@ -207,7 +207,7 @@ class AuthenticationManager
                             'error' => $e->getMessage()
                         ]
                     );
-                } catch (\Throwable $logError) {
+                } catch (\Throwable) {
                     // Silently fail if logging fails
                 }
             }
@@ -269,39 +269,15 @@ class AuthenticationManager
             'method' => $request->getMethod()
         ];
 
-        // Use AuditLogger for enhanced security logging if available
-        if (class_exists('\\Glueful\\Logging\\AuditLogger')) {
-            try {
-                $auditLogger = \Glueful\Logging\AuditLogger::getInstance();
-                $auditLogger->authEvent(
-                    'login_success',
-                    $userData['uuid'],
-                    $logData,
-                    \Glueful\Logging\AuditEvent::SEVERITY_INFO
-                );
-            } catch (\Throwable $e) {
-                // Fallback to basic logging if audit logging fails
-                if (class_exists('\\Glueful\\Logging\\Logger')) {
-                    try {
-                        call_user_func(
-                            ['\\Glueful\\Logging\\Logger', 'info'],
-                            'Authentication success',
-                            $logData
-                        );
-                    } catch (\Throwable $e) {
-                        // Silently fail if logging fails
-                    }
-                }
-            }
-        // Fallback to basic logging if AuditLogger is not available
-        } elseif (class_exists('\\Glueful\\Logging\\Logger')) {
+        // Use basic logging if available
+        if (class_exists('\\Glueful\\Logging\\Logger')) {
             try {
                 call_user_func(
                     ['\\Glueful\\Logging\\Logger', 'info'],
                     'Authentication success',
                     $logData
                 );
-            } catch (\Throwable $e) {
+            } catch (\Throwable) {
                 // Silently fail if logging fails
             }
         }

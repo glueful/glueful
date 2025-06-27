@@ -6,7 +6,6 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\{RequestHelper, ExtensionsManager};
-use Glueful\Logging\AuditEvent;
 use Glueful\Permissions\PermissionContext;
 
 /**
@@ -41,15 +40,6 @@ class ExtensionsController extends BaseController
         ]);
 
         // Log access to extensions list
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extensions_list_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Cache extensions list with permission-aware TTL
         $data = $this->cacheByPermission('extensions_list', function () {
@@ -178,18 +168,6 @@ class ExtensionsController extends BaseController
         }
 
         // Log successful extension enable
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extension_enabled',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'extension' => $extensionName,
-                'tier' => $tierType,
-                'is_core' => $isCoreExtension,
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Invalidate extensions cache after modification
         $this->invalidateCache(['extensions', 'user:' . $this->getCurrentUserUuid()]);
@@ -274,19 +252,6 @@ class ExtensionsController extends BaseController
         }
 
         // Log successful extension disable
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extension_disabled',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'extension' => $extensionName,
-                'tier' => $tierType,
-                'is_core' => $isCoreExtension,
-                'was_forced' => $force,
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Invalidate extensions cache after modification
         $this->invalidateCache(['extensions', 'user:' . $this->getCurrentUserUuid()]);
@@ -627,12 +592,6 @@ class ExtensionsController extends BaseController
             userAgent: $this->request->headers->get('User-Agent')
         );
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extension_delete_attempt',
-            AuditEvent::SEVERITY_WARNING,
-            array_merge($context->toArray(), ['user_uuid' => $this->getCurrentUserUuid()])
-        );
 
         $result = ExtensionsManager::deleteExtension($extensionName, $force);
 
@@ -678,20 +637,6 @@ class ExtensionsController extends BaseController
         }
 
         // Log successful deletion
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extension_deleted',
-            AuditEvent::SEVERITY_CRITICAL,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'extension' => $extensionName,
-                'tier' => $tierType,
-                'is_core' => $isCoreExtension,
-                'was_forced' => $force,
-                'ip_address' => $this->request->getClientIp(),
-                'details' => $result['details'] ?? []
-            ]
-        );
 
         // Invalidate all extension-related caches after deletion
         $this->invalidateCache([
@@ -750,18 +695,6 @@ class ExtensionsController extends BaseController
             }, 300); // 5 minutes TTL
 
             // Log catalog access
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'extensions_catalog_accessed',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'filters_applied' => count($filters),
-                    'results_count' => count($catalogData['extensions'] ?? []),
-                    'cache_used' => $useCache,
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
             $meta = [
                 'request_filters' => $filters,
                 'cache_used' => $useCache
@@ -772,16 +705,6 @@ class ExtensionsController extends BaseController
             error_log("Extensions catalog API error: " . $e->getMessage());
 
             // Log failed catalog access
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'extensions_catalog_error',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'error_message' => $e->getMessage(),
-                    'ip_address' => $this->request->getClientIp()
-                ]
-            );
 
             return Response::serverError(
                 'Failed to retrieve extensions catalog: ' . $e->getMessage()

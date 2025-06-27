@@ -70,7 +70,6 @@ class TestQueryLogger extends QueryLogger
         array $params = [],
         $startTime = null,
         ?\Throwable $error = null,
-        bool $debug = false,
         ?string $purpose = null
     ): ?float {
         // We need to calculate execution time first
@@ -110,45 +109,11 @@ class TestQueryLogger extends QueryLogger
             $this->stats['total_time'] += $executionTime;
         }
 
-        // Handle audit logging metrics directly if this is an auditable query
-        $this->handleAuditMetricsForQuery($queryType, $tables, $purpose, $params);
 
         // Return execution time
         return $executionTime;
     }
 
-    /**
-     * Handle audit metrics for a query, ensuring metrics are tracked properly
-     * This is a test-specific implementation to ensure metrics are updated
-     *
-     * @param string $queryType The type of query (select, insert, update, delete, other)
-     * @param array $tables The tables involved in the query
-     * @param string|null $purpose The purpose of the query
-     * @param array $params Query parameters
-     */
-    protected function handleAuditMetricsForQuery(
-        string $queryType,
-        array $tables,
-        ?string $purpose = null,
-        array $params = []
-    ): void {
-        // Skip if audit logging is disabled or no tables identified
-        if (!$this->enableAuditLogging || empty($tables)) {
-            return;
-        }
-
-        // Track total operations considered for auditing
-        $this->auditPerformanceMetrics['total_operations']++;
-
-        // Apply sampling if configured (skip randomly based on sampling rate)
-        if ($this->auditLoggingSampleRate < 1.0 && mt_rand(1, 100) > ($this->auditLoggingSampleRate * 100)) {
-            $this->auditPerformanceMetrics['skipped_operations']++;
-            return;
-        }
-
-        // Count this operation as one we'll actually log
-        $this->auditPerformanceMetrics['logged_operations']++;
-    }
 
     /**
      * A flag to track whether this is being invoked in a test or not

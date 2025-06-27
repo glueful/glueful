@@ -9,8 +9,6 @@ use Glueful\Helpers\RequestHelper;
 use Glueful\Security\EmailVerification;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\AuthBootstrap;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Exceptions\AuthenticationException;
 use Glueful\Exceptions\ValidationException;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
@@ -63,43 +61,9 @@ class AuthController
         // Authenticate with the specified provider or use default
         $result = $this->authService->authenticate($credentials, $providerName);
 
-        // Get audit logger instance and check if it exists
-        $auditLogger = AuditLogger::getInstance();
-
         if (!$result) {
-            // Log failed login attempt
-            $auditLogger->authEvent(
-                'login_failure',
-                null,
-                [
-                    'username' => $credentials['username'] ?? 'unknown',
-                    'provider' => $providerName ?? 'default',
-                    'ip_address' => $clientIp,
-                    'user_agent' => $userAgent,
-                    'remember_me' => $rememberMe,
-                    'reason' => 'Invalid credentials'
-                ],
-                AuditEvent::SEVERITY_WARNING
-            );
-
             throw new AuthenticationException('Invalid credentials');
         }
-
-        // Log successful login
-        $userId = $result['user']['uuid'] ?? null;
-        $auditLogger->authEvent(
-            'login_success',
-            $userId,
-            [
-                'username' => $credentials['username'] ?? 'unknown',
-                'provider' => $providerName ?? 'default',
-                'ip_address' => $clientIp,
-                'user_agent' => $userAgent,
-                'remember_me' => $rememberMe,
-                'session_id' => $result['token'] ?? null
-            ],
-            AuditEvent::SEVERITY_INFO
-        );
 
         // Add CSRF token to login response only if CSRF protection is enabled
         if (env('CSRF_PROTECTION_ENABLED', true)) {
@@ -139,43 +103,12 @@ class AuthController
             throw new ValidationException('No token provided');
         }
 
-        // Try to get user information for the audit log before terminating the session
-        $tokenStorage = new \Glueful\Auth\TokenStorageService();
-        $session = $tokenStorage->getSessionByAccessToken($token);
-        $userId = $session['user']['uuid'] ?? $session['uuid'] ?? null;
-
-        // Get audit logger instance
-        $auditLogger = AuditLogger::getInstance();
 
         $success = $this->authService->terminateSession($token);
 
-        // Log the logout attempt regardless of success
-        $logData = [
-            'ip_address' => $request->getClientIp(),
-            'user_agent' => $request->headers->get('User-Agent'),
-            'session_token' => $token,
-            'success' => $success
-        ];
-
         if ($success) {
-            // Log successful logout
-            $auditLogger->authEvent(
-                'logout_success',
-                $userId,
-                $logData,
-                AuditEvent::SEVERITY_INFO
-            );
-
             return Response::success(null, 'Logged out successfully');
         }
-
-        // Log failed logout
-        $auditLogger->authEvent(
-            'logout_failure',
-            $userId,
-            array_merge($logData, ['reason' => 'Session termination failed']),
-            AuditEvent::SEVERITY_WARNING
-        );
 
         throw new AuthenticationException('Logout failed');
     }

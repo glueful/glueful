@@ -24,7 +24,6 @@ vendor/bin/phpunit --bootstrap tests/bootstrap-security.php tests/Integration/Se
 The tests use mock classes to avoid modifying the original classes and to isolate the tests:
 
 - `MockCacheEngine`: Mocks the CacheEngine class
-- `MockAuditLogger`: Mocks the AuditLogger class
 - `MockRateLimiterDistributor`: Mocks the RateLimiterDistributor class
 - `MockRateLimiter`: Mocks the RateLimiter class
 - `MockRateLimiterRule`: Mocks the RateLimiterRule class

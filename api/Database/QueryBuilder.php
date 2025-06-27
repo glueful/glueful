@@ -1725,11 +1725,11 @@ class QueryBuilder
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($flattenedParams);
              // Log successful query with purpose
-            $this->logger->logQuery($sql, $flattenedParams, $timerId, null, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, null, $purpose);
             return $stmt;
         } catch (PDOException $e) {
             // Log failed query with purpose
-            $this->logger->logQuery($sql, $flattenedParams, $timerId, $e, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, $e, $purpose);
             throw $e;
         }
     }

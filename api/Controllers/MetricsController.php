@@ -7,7 +7,6 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Helpers\ExtensionsManager;
 use Glueful\Database\Schema\SchemaManager;
-use Glueful\Logging\AuditEvent;
 
 class MetricsController extends BaseController
 {
@@ -16,10 +15,9 @@ class MetricsController extends BaseController
     public function __construct(
         ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
         ?\Glueful\Auth\AuthenticationManager $authManager = null,
-        ?\Glueful\Logging\AuditLogger $auditLogger = null,
         ?\Symfony\Component\HttpFoundation\Request $request = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
         $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
     }
@@ -55,18 +53,6 @@ class MetricsController extends BaseController
         $this->requirePermission('system.metrics.view', 'metrics:api');
         $this->conditionalRateLimit('api_metrics_view');
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'api_metrics_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'action' => 'view_api_metrics',
-                'resource' => 'metrics:api',
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent')
-            ]
-        );
 
         // Use the new method to get data
         $endpointMetrics = $this->getApiMetricsData();
@@ -92,19 +78,6 @@ class MetricsController extends BaseController
         $this->rateLimit('metrics_reset', 5, 3600);
         $this->requireLowRiskBehavior(0.4, 'metrics_reset');
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_ADMIN,
-            'api_metrics_reset_attempt',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'action' => 'reset_api_metrics',
-                'resource' => 'metrics:api',
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'timestamp' => time()
-            ]
-        );
 
         $metricsService = new \Glueful\Services\ApiMetricsService();
         $success = $metricsService->resetApiMetrics();
@@ -120,30 +93,8 @@ class MetricsController extends BaseController
                 'metrics:system'
             ]);
 
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_ADMIN,
-                'api_metrics_reset_success',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'action' => 'reset_api_metrics_completed',
-                    'resource' => 'metrics:api',
-                    'cache_invalidated' => true
-                ]
-            );
             return Response::success(null, 'API metrics reset successfully');
         } else {
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'api_metrics_reset_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'action' => 'reset_api_metrics_failed',
-                    'resource' => 'metrics:api',
-                    'error' => 'Service reset operation failed'
-                ]
-            );
             return Response::error(
                 'Failed to reset API metrics',
                 Response::HTTP_INTERNAL_SERVER_ERROR
@@ -192,19 +143,6 @@ class MetricsController extends BaseController
         ]);
         $this->requireLowRiskBehavior(0.6, 'system_health_access');
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'system_health_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'action' => 'view_system_health',
-                'resource' => 'metrics:system',
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'is_admin' => $this->isAdmin()
-            ]
-        );
 
         // Use the new method to get data
         $metrics = $this->getSystemHealthData();
@@ -541,19 +479,6 @@ class MetricsController extends BaseController
 
         $extensionName = $extension['name'] ?? 'unknown';
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'extension_health_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'action' => 'view_extension_health',
-                'resource' => 'metrics:extensions',
-                'extension_name' => $extensionName,
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent')
-            ]
-        );
 
         if (!isset($extension['name'])) {
             return Response::error(

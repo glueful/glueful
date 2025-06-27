@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Helpers\ConfigManager;
-use Glueful\Logging\AuditEvent;
 use Glueful\Exceptions\SecurityException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Exceptions\ValidationException;
@@ -59,17 +58,6 @@ class ConfigController extends BaseController
         // Multi-level rate limiting (using BaseController's rateLimitMethod)
         $this->rateLimitMethod('config_file');
 
-        // Audit config file access
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'config_file_access',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'filename' => $filename,
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Remove .php extension if present for consistent lookup
         $configName = str_replace('.php', '', $filename);
@@ -166,17 +154,6 @@ class ConfigController extends BaseController
         // Multi-level rate limiting for write operations
         $this->rateLimitMethod('config_update');
 
-        // Audit config modification attempt
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'config_modification_attempt',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'filename' => $filename,
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Require low risk behavior for sensitive operations (using BaseController)
         $this->requireLowRiskBehavior(0.6, 'config_update');
@@ -222,20 +199,6 @@ class ConfigController extends BaseController
 
         $this->updateEnvVariables($data);
 
-        // Audit config update with before/after values
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'config_updated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'config_file' => $configName,
-                'is_sensitive' => in_array($configName, self::SENSITIVE_CONFIG_FILES),
-                'changes' => array_keys($data),
-                'before' => $this->maskSensitiveData($existingConfig, $configName),
-                'after' => $this->maskSensitiveData($newConfig, $configName)
-            ]
-        );
 
         // Invalidate config cache (using BaseController implementation)
         $this->invalidateResourceCache('config', $configName);
@@ -255,17 +218,6 @@ class ConfigController extends BaseController
         // Multi-level rate limiting for write operations
         $this->rateLimitMethod('config_create');
 
-        // Audit config creation attempt
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'config_creation_attempt',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'config_name' => $name,
-                'ip_address' => $this->request->getClientIp()
-            ]
-        );
 
         // Require low risk behavior for sensitive operations
         $this->requireLowRiskBehavior(0.6, 'config_create');
@@ -322,18 +274,6 @@ class ConfigController extends BaseController
         // Clear configuration cache
         ConfigManager::clearCache();
 
-        // Audit successful config creation
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'config_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'config_file' => $configName,
-                'file_path' => $filePath,
-                'data_keys' => array_keys($data)
-            ]
-        );
 
         // Invalidate config cache
         $this->invalidateResourceCache('config', $configName);
@@ -415,19 +355,6 @@ class ConfigController extends BaseController
 
                 // Validate that config file returns an array
                 if (is_array($config)) {
-                    // Audit config file access
-                    $this->auditLogger->audit(
-                        AuditEvent::CATEGORY_SYSTEM,
-                        'config_file_accessed',
-                        AuditEvent::SEVERITY_INFO,
-                        [
-                            'user_uuid' => $this->getCurrentUserUuid(),
-                            'config_file' => $configName,
-                            'is_sensitive' => in_array($configName, self::SENSITIVE_CONFIG_FILES),
-                            'source' => 'core'
-                        ]
-                    );
-
                     // Mask sensitive data
                     return $this->maskSensitiveData($config, $configName);
                 }
@@ -439,18 +366,6 @@ class ConfigController extends BaseController
             if (isset($extensionConfigs[$configName])) {
                 $extensionConfig = $extensionConfigs[$configName];
 
-                // Audit config file access
-                $this->auditLogger->audit(
-                    AuditEvent::CATEGORY_SYSTEM,
-                    'config_file_accessed',
-                    AuditEvent::SEVERITY_INFO,
-                    [
-                        'user_uuid' => $this->getCurrentUserUuid(),
-                        'config_file' => $configName,
-                        'is_sensitive' => false, // Extension configs are not in sensitive list
-                        'source' => 'extension'
-                    ]
-                );
 
                 return $extensionConfig['content'];
             }

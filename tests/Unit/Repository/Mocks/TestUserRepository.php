@@ -6,7 +6,6 @@ use Glueful\Repository\UserRepository;
 use Glueful\Database\QueryBuilder;
 use Glueful\Validation\Validator;
 use Tests\Unit\Repository\Mocks\MockUserConnection;
-use Glueful\Logging\AuditLogger;
 
 /**
  * Test User Repository
@@ -43,8 +42,7 @@ class TestUserRepository extends UserRepository
         $this->table = 'users';
         $this->primaryKey = 'uuid';
         $this->defaultFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
-        $this->containsSensitiveData = true;
-        $this->sensitiveFields = ['password', 'api_key', 'remember_token', 'reset_token'];
+
 
         if ($queryBuilder || $validator) {
             // Use reflection to set the properties in the parent class
@@ -86,9 +84,6 @@ class TestUserRepository extends UserRepository
             $validatorProperty->setAccessible(true);
             $validatorProperty->setValue($this, $validator);
         }
-
-        // Create a mock AuditLogger for testing
-        $this->auditLogger = $this->createMockAuditLogger();
     }
 
     /**
@@ -186,38 +181,6 @@ class TestUserRepository extends UserRepository
         return $this->findBy('uuid', $uuid, $fields ?? $this->userFields);
     }
 
-    /**
-     * Create a mock AuditLogger instance for testing
-     *
-     * @return AuditLogger
-     */
-    private function createMockAuditLogger(): AuditLogger
-    {
-        // Create a minimal implementation of AuditLogger that does nothing during tests
-        return new class extends AuditLogger
-        {
-            public function __construct()
-            {
-                // Skip parent constructor
-            }
-
-            public function log($level, $message, array $context = []): void
-            {
-                // Do nothing in tests
-                return;
-            }
-        };
-    }
-
-    /**
-     * Expose the mock AuditLogger for testing
-     *
-     * @return \Glueful\Logging\AuditLogger
-     */
-    public function createMockAuditLoggerForTest()
-    {
-        return $this->createMockAuditLogger();
-    }
 
     private function setupUserTables(\PDO $pdo): void
     {

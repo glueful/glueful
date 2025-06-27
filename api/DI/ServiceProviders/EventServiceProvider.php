@@ -95,13 +95,6 @@ class EventServiceProvider implements ServiceProviderInterface
             );
         });
 
-        // Audit logging listener
-        $container->singleton(AuditLoggingListener::class, function ($container) {
-            return new AuditLoggingListener(
-                $container->get(\Glueful\Logging\LogManager::class)
-            );
-        });
-
         // Extension event registry
         $container->singleton(ExtensionEventRegistry::class, function ($container) {
             return new ExtensionEventRegistry(

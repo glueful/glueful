@@ -7,7 +7,6 @@ namespace Glueful\Controllers;
 use Glueful\Http\Response;
 use Glueful\Auth\PasswordHasher;
 use Glueful\Repository\RepositoryFactory;
-use Glueful\Logging\AuditEvent;
 use Glueful\Constants\ErrorCodes;
 
 /**
@@ -115,8 +114,6 @@ class ResourceController extends BaseController
         $result = $this->applyFieldPermissions($result, $table, 'read');
         error_log("ResourceController: Retrieved {$table} list with conditions: " . json_encode($result));
 
-        // Log the resource access
-        $this->logResourceAccess('list', $table);
         $data = $result['data'] ?? [];
         $meta = $result;
         unset($meta['data']); // Remove data from meta
@@ -166,8 +163,6 @@ class ResourceController extends BaseController
         // Apply optional field-level permissions
         $result = $this->applyFieldPermissions($result, $table, 'read');
 
-        // Log the resource access
-        $this->logResourceAccess('read', $table, $params['uuid']);
 
         return Response::success($result);
     }
@@ -215,8 +210,6 @@ class ResourceController extends BaseController
         // Invalidate cache after creation
         $this->invalidateTableCache($table);
 
-        // Log the resource access
-        $this->logResourceAccess('create', $table, $uuid);
 
         $result = [
             'uuid' => $uuid,
@@ -284,8 +277,6 @@ class ResourceController extends BaseController
         // Invalidate cache after update
         $this->invalidateTableCache($table, $uuid);
 
-        // Log the resource access
-        $this->logResourceAccess('update', $table, $uuid);
 
         $result = [
             'affected' => 1,
@@ -342,8 +333,6 @@ class ResourceController extends BaseController
         // Invalidate cache after deletion
         $this->invalidateTableCache($table, $uuid);
 
-        // Log the resource access
-        $this->logResourceAccess('delete', $table, $uuid);
 
         $result = [
             'affected' => 1,
@@ -354,23 +343,6 @@ class ResourceController extends BaseController
         return Response::success($result, 'Resource deleted successfully');
     }
 
-    /**
-     * Log resource access for audit trail
-     */
-    protected function logResourceAccess(string $operation, string $table, ?string $uuid = null): void
-    {
-        $this->auditLogger->audit(
-            'resource_access',
-            $operation,
-            AuditEvent::SEVERITY_INFO,
-            [
-                'table' => $table,
-                'uuid' => $uuid,
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'operation' => $operation
-            ]
-        );
-    }
 
     /**
      * Invalidate cache for a resource table

@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Services\HealthService;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\AuditLogger;
 use Glueful\Constants\ErrorCodes;
 use Glueful\Http\Router;
 use Glueful\Services\ApiMetricsService;
@@ -22,16 +21,14 @@ class HealthController extends BaseController
      *
      * @param RepositoryFactory|null $repositoryFactory
      * @param AuthenticationManager|null $authManager
-     * @param AuditLogger|null $auditLogger
      * @param Request|null $request
      */
     public function __construct(
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
-        ?AuditLogger $auditLogger = null,
         ?Request $request = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
     }
     /**
      * Get overall system health status
@@ -49,19 +46,6 @@ class HealthController extends BaseController
 
         // Cache response with short TTL for monitoring tools
         $response = $this->cacheResponse('health_overall', function () {
-            // Optional audit logging for security monitoring
-            if ($this->getCurrentUser()) {
-                $this->auditLogger->audit(
-                    'health',
-                    'health_check_authenticated',
-                    'info',
-                    [
-                        'user_uuid' => $this->getCurrentUserUuid(),
-                        'endpoint' => 'overall_health',
-                        'ip' => $this->request->getClientIp()
-                    ]
-                );
-            }
 
             $health = HealthService::getOverallHealth();
 
@@ -162,18 +146,6 @@ class HealthController extends BaseController
         // Apply stricter rate limiting for detailed monitoring
         $this->rateLimit('health_detailed', 10, 60); // 10 requests per minute
 
-        // Audit detailed health access
-        $this->auditLogger->audit(
-            'health',
-            'detailed_health_check',
-            'info',
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'endpoint' => 'detailed_health',
-                'ip' => $this->request->getClientIp(),
-                'is_admin' => $this->isAdmin()
-            ]
-        );
 
         // Cache detailed health metrics for shorter duration (more frequent updates)
         $health = $this->cacheResponse('health_detailed', function () {

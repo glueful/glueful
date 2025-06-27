@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Cache\CacheStore;
 use Glueful\Database\QueryCacheService;
 use Glueful\Cache\EdgeCacheService;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Response Caching Trait
@@ -275,18 +274,6 @@ trait ResponseCachingTrait
         }
 
         $this->getCacheStore()->invalidateTags($tags);
-
-        // Log cache invalidation
-        $this->asyncAudit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'cache_invalidated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'tags' => $tags,
-                'controller' => static::class,
-                'user_uuid' => $this->currentUser?->uuid
-            ]
-        );
     }
 
     /**

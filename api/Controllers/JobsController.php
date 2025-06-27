@@ -7,8 +7,6 @@ use Glueful\Http\Response;
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Exceptions\SecurityException;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
@@ -33,10 +31,9 @@ class JobsController extends BaseController
         ?JobScheduler $scheduler = null,
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
-        ?AuditLogger $auditLogger = null,
         ?SymfonyRequest $request = null
     ) {
-        parent::__construct($repositoryFactory, $authManager, $auditLogger, $request);
+        parent::__construct($repositoryFactory, $authManager, $request);
 
         // Initialize scheduler with dependency injection
         $this->scheduler = $scheduler ?? JobScheduler::getInstance();
@@ -95,18 +92,6 @@ class JobsController extends BaseController
         $allowedNames = $this->getAllowedJobNames();
         if (!in_array($jobName, $allowedNames, true)) {
             // Log security violation
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'unauthorized_job_name_attempted',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'attempted_job_name' => $jobName,
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'ip_address' => $this->request->getClientIp(),
-                    'allowed_jobs' => $allowedNames,
-                    'controller' => static::class
-                ]
-            );
 
             throw new SecurityException(
                 'Job name "' . $jobName . '" is not in the allowed list of job names'
@@ -179,18 +164,6 @@ class JobsController extends BaseController
         foreach ($dangerousPatterns as $pattern) {
             if (stripos($serialized, $pattern) !== false) {
                 // Log security violation
-                $this->auditLogger->audit(
-                    AuditEvent::CATEGORY_SYSTEM,
-                    'dangerous_job_data_attempted',
-                    AuditEvent::SEVERITY_CRITICAL,
-                    [
-                        'dangerous_pattern' => $pattern,
-                        'user_uuid' => $this->getCurrentUserUuid(),
-                        'ip_address' => $this->request->getClientIp(),
-                        'job_data_preview' => substr($serialized, 0, 200),
-                        'controller' => static::class
-                    ]
-                );
 
                 throw new SecurityException(
                     'Job data contains potentially dangerous content: ' . $pattern
@@ -305,17 +278,6 @@ class JobsController extends BaseController
         }
 
         // Log the execution for monitoring
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_execution_frequency_check',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $userId,
-                'execution_context' => $context,
-                'timestamp' => time(),
-                'controller' => static::class
-            ]
-        );
     }
 
     /**
@@ -406,19 +368,6 @@ class JobsController extends BaseController
         $this->requirePermission('system.jobs.view');
 
         // Log job list access
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_list_accessed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'controller' => static::class,
-                'action' => 'getScheduledJobs',
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'timestamp' => time()
-            ]
-        );
 
         // Use the new data method to get scheduled jobs
         $jobs = $this->getScheduledJobsData();
@@ -426,18 +375,6 @@ class JobsController extends BaseController
         $executionTime = (microtime(true) - $startTime) * 1000;
 
         // Log successful retrieval with metrics
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_list_retrieved',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'job_count' => count($jobs),
-                'execution_time_ms' => round($executionTime, 2),
-                'cache_used' => true,
-                'controller' => static::class
-            ]
-        );
 
         if (empty($jobs)) {
             return Response::success([], 'No jobs found');
@@ -463,20 +400,6 @@ class JobsController extends BaseController
         }
 
         // Log job execution start
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_execution_started',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'execution_type' => 'due_jobs',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'controller' => static::class,
-                'timestamp' => time()
-            ]
-        );
 
         // Apply rate limiting: 10 attempts per 5 minutes
         $this->rateLimit('run_due_jobs', 10, 300);
@@ -493,37 +416,11 @@ class JobsController extends BaseController
             $success = false;
 
             // Log execution failure
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'job_execution_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'operation_id' => $operationId,
-                    'execution_type' => 'due_jobs',
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'error_message' => $e->getMessage(),
-                    'execution_time_ms' => round($executionTime, 2),
-                    'controller' => static::class
-                ]
-            );
 
             throw $e; // Re-throw for global exception handler
         }
 
         // Log successful execution
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_execution_completed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'execution_type' => 'due_jobs',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'execution_time_ms' => round($executionTime, 2),
-                'success' => $success,
-                'controller' => static::class
-            ]
-        );
 
         // Invalidate job cache after execution
         $this->invalidateCache(['scheduled_jobs', 'job_execution']);
@@ -549,21 +446,6 @@ class JobsController extends BaseController
         }
 
         // Log high-risk operation start
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'high_risk_job_execution_started',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'operation_id' => $operationId,
-                'execution_type' => 'all_jobs',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'is_admin' => $this->isAdmin(),
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'controller' => static::class,
-                'timestamp' => time()
-            ]
-        );
 
         // Apply strict rate limiting for this high-risk operation: 3 attempts per 10 minutes
         $this->rateLimit('run_all_jobs', 3, 600);
@@ -586,37 +468,11 @@ class JobsController extends BaseController
             $success = false;
 
             // Log critical failure
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'high_risk_job_execution_failed',
-                AuditEvent::SEVERITY_CRITICAL,
-                [
-                    'operation_id' => $operationId,
-                    'execution_type' => 'all_jobs',
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'error_message' => $e->getMessage(),
-                    'execution_time_ms' => round($executionTime, 2),
-                    'controller' => static::class
-                ]
-            );
 
             throw $e;
         }
 
         // Log successful high-risk operation
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'high_risk_job_execution_completed',
-            AuditEvent::SEVERITY_WARNING,
-            [
-                'operation_id' => $operationId,
-                'execution_type' => 'all_jobs',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'execution_time_ms' => round($executionTime, 2),
-                'success' => $success,
-                'controller' => static::class
-            ]
-        );
 
         // Invalidate all job-related caches
         $this->invalidateCache(['scheduled_jobs', 'job_execution', 'job_stats']);
@@ -649,21 +505,6 @@ class JobsController extends BaseController
         $this->validateSecurityRequirements('run_specific_job', ['job_name' => $jobName]);
 
         // Log specific job execution start
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'specific_job_execution_started',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'job_name' => $jobName,
-                'execution_type' => 'specific_job',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'controller' => static::class,
-                'timestamp' => time()
-            ]
-        );
 
         // Apply rate limiting: 20 attempts per 5 minutes
         $this->rateLimit('run_specific_job', 20, 300);
@@ -677,39 +518,11 @@ class JobsController extends BaseController
             $success = false;
 
             // Log specific job failure
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'specific_job_execution_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'operation_id' => $operationId,
-                    'job_name' => $jobName,
-                    'execution_type' => 'specific_job',
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'error_message' => $e->getMessage(),
-                    'execution_time_ms' => round($executionTime, 2),
-                    'controller' => static::class
-                ]
-            );
 
             throw $e;
         }
 
         // Log successful specific job execution
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'specific_job_execution_completed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'job_name' => $jobName,
-                'execution_type' => 'specific_job',
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'execution_time_ms' => round($executionTime, 2),
-                'success' => $success,
-                'controller' => static::class
-            ]
-        );
 
         // Invalidate job-specific cache
         $this->invalidateCache(['scheduled_jobs', 'job:' . $jobName]);
@@ -737,19 +550,6 @@ class JobsController extends BaseController
 
         if (!isset($data['job_name']) || !isset($data['job_data'])) {
             // Log validation failure
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'job_creation_validation_failed',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'operation_id' => $operationId,
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'validation_error' => 'Missing required fields: job_name or job_data',
-                    'provided_fields' => array_keys($data),
-                    'ip_address' => $this->request->getClientIp(),
-                    'controller' => static::class
-                ]
-            );
 
             return Response::error('Job name and data are required', Response::HTTP_BAD_REQUEST);
         }
@@ -770,22 +570,6 @@ class JobsController extends BaseController
         $sanitizedJobData = $this->sanitizeJobData($data['job_data']);
 
         // Log job creation attempt with sanitized parameters
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_creation_started',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'job_name' => $data['job_name'],
-                'job_data_type' => gettype($data['job_data']),
-                'job_data_keys' => is_array($data['job_data']) ? array_keys($data['job_data']) : null,
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'ip_address' => $this->request->getClientIp(),
-                'user_agent' => $this->request->headers->get('User-Agent'),
-                'controller' => static::class,
-                'timestamp' => time()
-            ]
-        );
 
         try {
             $this->scheduler->register($data['job_name'], $sanitizedJobData);
@@ -796,37 +580,9 @@ class JobsController extends BaseController
             $success = false;
 
             // Log job creation failure
-            $this->auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'job_creation_failed',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'operation_id' => $operationId,
-                    'job_name' => $data['job_name'],
-                    'user_uuid' => $this->getCurrentUserUuid(),
-                    'error_message' => $e->getMessage(),
-                    'execution_time_ms' => round($executionTime, 2),
-                    'controller' => static::class
-                ]
-            );
 
             throw $e;
         }
-
-        // Log successful job creation
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'job_creation_completed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'operation_id' => $operationId,
-                'job_name' => $data['job_name'],
-                'user_uuid' => $this->getCurrentUserUuid(),
-                'execution_time_ms' => round($executionTime, 2),
-                'success' => $success,
-                'controller' => static::class
-            ]
-        );
 
         // Invalidate job list cache after creating new job
         $this->invalidateCache(['scheduled_jobs', 'job_count']);

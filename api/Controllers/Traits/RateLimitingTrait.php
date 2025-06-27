@@ -10,7 +10,6 @@ use Glueful\Exceptions\RateLimitExceededException;
 use Glueful\Exceptions\SecurityException;
 use Glueful\Permissions\Exceptions\UnauthorizedException;
 use Glueful\Http\Response;
-use Glueful\Logging\AuditEvent;
 
 /**
  * Rate Limiting Trait
@@ -285,19 +284,6 @@ trait RateLimitingTrait
         $behaviorScore = $limiter->getBehaviorScore();
 
         if ($behaviorScore > $maxScore) {
-            $this->asyncAudit(
-                'security',
-                'high_risk_behavior_blocked',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'user_uuid' => $this->currentUser->uuid,
-                    'behavior_score' => $behaviorScore,
-                    'max_allowed_score' => $maxScore,
-                    'operation' => $operation,
-                    'controller' => static::class
-                ]
-            );
-
             throw new SecurityException(
                 'This operation requires additional verification due to unusual account activity',
                 Response::HTTP_FORBIDDEN
@@ -323,17 +309,6 @@ trait RateLimitingTrait
 
         $limiter = new RateLimiter($key, 1, 1);
         $limiter->reset();
-
-        $this->asyncAudit(
-            'admin',
-            'rate_limit_reset',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'admin_uuid' => $this->currentUser->uuid,
-                'reset_key' => $key,
-                'controller' => static::class
-            ]
-        );
     }
 
     /**
