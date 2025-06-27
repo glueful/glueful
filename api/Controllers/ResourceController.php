@@ -74,7 +74,6 @@ class ResourceController extends BaseController
     public function get(array $params, array $queryParams)
     {
         $table = $params['resource'];
-
         // Apply optional table access control
         $this->applyTableAccessControl($table);
 
@@ -114,11 +113,14 @@ class ResourceController extends BaseController
 
         // Apply optional field-level permissions
         $result = $this->applyFieldPermissions($result, $table, 'read');
+        error_log("ResourceController: Retrieved {$table} list with conditions: " . json_encode($result));
 
         // Log the resource access
         $this->logResourceAccess('list', $table);
-
-        return Response::ok($result)->send();
+        $data = $result['data'] ?? [];
+        $meta = $result;
+        unset($meta['data']); // Remove data from meta
+        return Response::successWithMeta($data, $meta, 'Resource list retrieved successfully');
     }
 
     /**
@@ -155,7 +157,7 @@ class ResourceController extends BaseController
         );
 
         if (!$result) {
-            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND);
         }
 
         // Apply optional ownership validation
@@ -167,7 +169,7 @@ class ResourceController extends BaseController
         // Log the resource access
         $this->logResourceAccess('read', $table, $params['uuid']);
 
-        return Response::ok($result)->send();
+        return Response::success($result);
     }
 
     /**
@@ -197,7 +199,7 @@ class ResourceController extends BaseController
         $this->requireLowRiskBehavior();
 
         if (empty($postData)) {
-            return Response::error('No data provided', ErrorCodes::BAD_REQUEST)->send();
+            return Response::error('No data provided', ErrorCodes::BAD_REQUEST);
         }
 
         // check if postData contains 'password' and hash it
@@ -222,7 +224,7 @@ class ResourceController extends BaseController
             'message' => 'Record created successfully'
         ];
 
-        return Response::ok($result)->send();
+        return Response::success($result);
     }
 
     /**
@@ -257,7 +259,7 @@ class ResourceController extends BaseController
         $existing = $repository->find($uuid);
 
         if (!$existing) {
-            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND);
         }
 
         // Apply optional ownership validation
@@ -276,7 +278,7 @@ class ResourceController extends BaseController
         $success = $repository->update($params['uuid'], $updateData);
 
         if (!$success) {
-            return Response::error('Record not found or update failed', ErrorCodes::NOT_FOUND)->send();
+            return Response::error('Record not found or update failed', ErrorCodes::NOT_FOUND);
         }
 
         // Invalidate cache after update
@@ -291,7 +293,7 @@ class ResourceController extends BaseController
             'message' => 'Record updated successfully'
         ];
 
-        return Response::ok($result)->send();
+        return Response::success($result);
     }
 
     /**
@@ -325,7 +327,7 @@ class ResourceController extends BaseController
         $existing = $repository->find($uuid);
 
         if (!$existing) {
-            return Response::error('Record not found', ErrorCodes::NOT_FOUND)->send();
+            return Response::error('Record not found', ErrorCodes::NOT_FOUND);
         }
 
         // Apply optional ownership validation
@@ -334,7 +336,7 @@ class ResourceController extends BaseController
         $success = $repository->delete($params['uuid']);
 
         if (!$success) {
-            return Response::error('Record not found or delete failed', ErrorCodes::NOT_FOUND)->send();
+            return Response::error('Record not found or delete failed', ErrorCodes::NOT_FOUND);
         }
 
         // Invalidate cache after deletion
@@ -349,7 +351,7 @@ class ResourceController extends BaseController
             'message' => 'Record deleted successfully'
         ];
 
-        return Response::ok($result, 'Resource deleted successfully')->send();
+        return Response::success($result, 'Resource deleted successfully');
     }
 
     /**

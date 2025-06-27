@@ -1,12 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Glueful\Http\Middleware;
 
 use Glueful\Performance\MemoryManager;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -52,11 +52,11 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
     /**
      * Process a request and return a response
      *
-     * @param ServerRequestInterface $request
+     * @param Request $request
      * @param RequestHandlerInterface $handler
-     * @return ResponseInterface
+     * @return Response
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    public function process(Request $request, RequestHandlerInterface $handler): Response
     {
         if (!$this->enabled || mt_rand(1, 100) / 100 > $this->sampleRate) {
             return $handler->handle($request);
@@ -77,7 +77,7 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
             $endTime = microtime(true);
 
             // Calculate usage statistics
-            $route = $request->getUri()->getPath();
+            $route = $request->getPathInfo();
             $method = $request->getMethod();
             $memoryUsed = $endMemory - $startMemory;
             $peakIncrease = $endPeakMemory - $startPeakMemory;
@@ -91,8 +91,8 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
 
             // Add memory usage headers to response if significant
             if ($memoryUsed > 1048576) { // More than 1MB used
-                $response = $response->withHeader('X-Memory-Used', $this->formatBytes($memoryUsed));
-                $response = $response->withHeader('X-Memory-Peak', $this->formatBytes($endPeakMemory));
+                $response->headers->set('X-Memory-Used', $this->formatBytes($memoryUsed));
+                $response->headers->set('X-Memory-Peak', $this->formatBytes($endPeakMemory));
             }
 
             return $response;
@@ -102,7 +102,7 @@ class MemoryTrackingMiddleware implements MiddlewareInterface
             $endPeakMemory = memory_get_peak_usage(true);
             $endTime = microtime(true);
 
-            $route = $request->getUri()->getPath();
+            $route = $request->getPathInfo();
             $method = $request->getMethod();
             $memoryUsed = $endMemory - $startMemory;
             $executionTime = ($endTime - $startTime) * 1000; // milliseconds

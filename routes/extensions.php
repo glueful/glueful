@@ -37,7 +37,7 @@ Router::group('/extensions', function () use ($container) {
      */
     Router::get('/', function (Request $request) use ($container) {
         $controller = $container->get(ExtensionsController::class);
-        return $controller->getExtensions();
+        return $controller->getCatalog();
     });
 
     /**

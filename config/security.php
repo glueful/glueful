@@ -40,6 +40,24 @@ return [
         'supports_credentials' => true,
     ],
 
+    // CSRF Protection Configuration
+    'csrf' => [
+        'enabled' => env('CSRF_PROTECTION_ENABLED', true),
+        'tokenLifetime' => env('CSRF_TOKEN_LIFETIME', 3600),
+        'useDoubleSubmit' => env('CSRF_DOUBLE_SUBMIT', false),
+        'exemptRoutes' => [
+            'auth/login',
+            'auth/register',
+            'auth/forgot-password',
+            'auth/reset-password',
+            'auth/verify-email',
+            'auth/verify-otp',
+            'webhooks/*',
+            'public/*',
+            'csrf-token',
+        ],
+    ],
+
     // Security Headers
     'headers' => [
         'x_frame_options' => env('X_FRAME_OPTIONS', 'DENY'),
@@ -120,6 +138,30 @@ return [
             '/spider/i',
             '/scraper/i'
         ]
+    ],
+
+    // Job Execution Security
+    'jobs' => [
+        'allowed_names' => [
+            // Core system jobs that can be executed via API
+            'cache_maintenance',
+            'database_backup',
+            'log_cleaner',
+            'notification_retry_processor',
+            'session_cleaner',
+            'archive_cleanup',
+            'metrics_aggregation',
+            'security_scan',
+            'health_check',
+            'queue_maintenance'
+        ],
+
+        // Whether to auto-allow all jobs from schedule.php
+        'auto_allow_scheduled_jobs' => env('AUTO_ALLOW_SCHEDULED_JOBS', false),
+
+        // Additional validation settings
+        'job_name_pattern' => '/^[a-z][a-z0-9_]*[a-z0-9]$/',
+        'max_job_data_size' => 65536, // 64KB
     ],
 
     // Audit and Monitoring

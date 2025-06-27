@@ -133,9 +133,6 @@ class API
             'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
         ]);
 
-        // Set JSON response headers
-        header('Content-Type: application/json');
-
         // Get router instance
         $router = Router::getInstance();
 
@@ -145,15 +142,15 @@ class API
         // Let router handle the request through middleware pipeline
         $response = $router->handleRequest();
 
-        // Output the response
-        echo json_encode($response);
+        // Send the Symfony Response object (handles headers, content, etc.)
+        $response->send();
 
         // Log successful response
         $totalTime = round((microtime(true) - $startTime) * 1000, 2);
         self::getLogger()->info("API request completed", [
             'request_id' => $requestId,
             'time_ms' => $totalTime,
-            'status' => $response['code'] ?? 200
+            'status' => $response->getStatusCode()
         ]);
     }
 

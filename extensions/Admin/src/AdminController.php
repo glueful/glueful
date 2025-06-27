@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\Admin;
 
 use Glueful\Http\Response;
-use Glueful\Auth\{AuthBootstrap};
-use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
+use Symfony\Component\HttpFoundation\Request;
 use Glueful\Controllers\ConfigController;
 
 class AdminController
@@ -33,111 +32,25 @@ class AdminController
         return $this->configController;
     }
 
-    /**
-     * Lazy load AuthManager
-     */
-    private function getAuthManager()
-    {
-        if ($this->authManager === null || !$this->authInitialized) {
-            AuthBootstrap::initialize();
-            $this->authManager = AuthBootstrap::getManager();
-            $this->authInitialized = true;
-        }
-        return $this->authManager;
-    }
-
-
-    /**
-     * Get all configurations
-     */
-    public function getAllConfigs(SymfonyRequest $request): mixed
-    {
-        try {
-            // Use ConfigController to get all configs
-            $configs = $this->getConfigController()->getConfigs();
-
-            // Transform the data to match API response format
-            $configList = [];
-            foreach ($configs as $config) {
-                $configList[] = [
-                    'name' => $config['name'],
-                    'path' => $config['name'] . '.php'
-                ];
-            }
-
-            return Response::ok($configList, 'Configuration files retrieved successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Failed to get configurations: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'CONFIG_FETCH_FAILED'
-            )->send();
-        }
-    }
-
-    /**
-     * Get configuration by filename
-     */
-    public function getConfig($filename): mixed
-    {
-        try {
-            if (!$filename) {
-                return Response::error(
-                    'Filename is required',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'MISSING_FILENAME'
-                )->send();
-            }
-
-            // Use ConfigController to get the config
-            $content = $this->getConfigController()->getConfigByFile($filename);
-
-            if ($content === null) {
-                return Response::notFound('Configuration file not found')->send();
-            }
-
-            return Response::ok([
-                'name' => $filename,
-                'content' => $content
-            ], 'Configuration retrieved successfully')->send();
-        } catch (\Exception $e) {
-            return Response::error(
-                'Failed to get configuration: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'CONFIG_GET_FAILED'
-            )->send();
-        }
-    }
-
 
     /**
      * Update configuration
      */
-    public function updateConfig(SymfonyRequest $request): mixed
+    public function updateConfig(Request $request): mixed
     {
         try {
             $filename = $request->attributes->get('filename');
             $data = json_decode($request->getContent(), true);
 
             if (!$filename) {
-                return Response::error(
-                    'Filename is required',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'MISSING_FILENAME'
-                )->send();
+                return Response::validation(['filename' => ['Filename is required']], 'Validation failed');
             }
 
             if (!isset($data['content']) || !is_array($data['content'])) {
-                return Response::error(
-                    'Configuration content is required and must be an array',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'INVALID_CONTENT'
-                )->send();
+                return Response::validation(
+                    ['content' => ['Configuration content is required and must be an array']],
+                    'Validation failed'
+                );
             }
 
             // Use ConfigController to update the config
@@ -145,12 +58,7 @@ class AdminController
             $success = $this->getConfigController()->updateConfig($filename, $data['content']);
 
             if (!$success) {
-                return Response::error(
-                    'Failed to update configuration',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_SERVER,
-                    'CONFIG_UPDATE_FAILED'
-                )->send();
+                return Response::serverError('Failed to update configuration');
             }
 
             // Clear configuration cache
@@ -158,66 +66,47 @@ class AdminController
                 \Glueful\Helpers\ConfigManager::clearCache();
             }
 
-            return Response::ok([
+            return Response::success([
                 'success' => true
-            ], 'Configuration updated successfully')->send();
+            ], 'Configuration updated successfully');
         } catch (\Exception $e) {
-            return Response::error(
-                'Failed to update configuration: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'CONFIG_UPDATE_EXCEPTION'
-            )->send();
+            return Response::serverError('Failed to update configuration: ' . $e->getMessage());
         }
     }
 
     /**
      * Create new configuration
      */
-    public function createConfig(SymfonyRequest $request): mixed
+    public function createConfig(Request $request): mixed
     {
         try {
             $data = json_decode($request->getContent(), true);
 
             if (!isset($data['name']) || !isset($data['content'])) {
-                return Response::error(
-                    'Name and content are required',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'MISSING_REQUIRED_FIELDS'
-                )->send();
+                return Response::validation(
+                    ['name' => ['Name is required'], 'content' => ['Content is required']],
+                    'Validation failed'
+                );
             }
 
             if (!is_array($data['content'])) {
-                return Response::error(
-                    'Configuration content must be an array',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'INVALID_CONTENT'
-                )->send();
+                return Response::validation(
+                    ['content' => ['Configuration content must be an array']],
+                    'Validation failed'
+                );
             }
 
             $success = $this->getConfigController()->createConfig($data['name'], $data['content']);
 
             if (!$success) {
-                return Response::error(
-                    'Failed to create configuration',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_SERVER,
-                    'CONFIG_CREATE_FAILED'
-                )->send();
+                return Response::serverError('Failed to create configuration');
             }
 
-            return Response::ok([
+            return Response::success([
                 'success' => true
-            ], 'Configuration created successfully')->send();
+            ], 'Configuration created successfully');
         } catch (\Exception $e) {
-            return Response::error(
-                'Failed to create configuration: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'CONFIG_CREATE_EXCEPTION'
-            )->send();
+            return Response::serverError('Failed to create configuration: ' . $e->getMessage());
         }
     }
 
@@ -234,24 +123,14 @@ class AdminController
 
             // Check if the file exists
             if (!file_exists($htmlPath)) {
-                return Response::error(
-                    'Admin UI file not found',
-                    Response::HTTP_NOT_FOUND,
-                    Response::ERROR_NOT_FOUND,
-                    'ADMIN_UI_NOT_FOUND'
-                )->send();
+                return Response::notFound('Admin UI file not found');
             }
 
             // Read the HTML content
             $htmlContent = file_get_contents($htmlPath);
 
             if ($htmlContent === false) {
-                return Response::error(
-                    'Failed to load Admin UI',
-                    Response::HTTP_INTERNAL_SERVER_ERROR,
-                    Response::ERROR_SERVER,
-                    'ADMIN_UI_LOAD_FAILED'
-                )->send();
+                return Response::serverError('Failed to load Admin UI');
             }
 
             // Return HTML response with proper headers
@@ -270,19 +149,14 @@ class AdminController
             $response->send();
             exit;
         } catch (\Exception $e) {
-            return Response::error(
-                'Failed to render Admin UI: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'ADMIN_UI_RENDER_FAILED'
-            )->send();
+            return Response::serverError('Failed to render Admin UI: ' . $e->getMessage());
         }
     }
 
     /**
      * Get comprehensive dashboard data in a single request
      */
-    public function getDashboardData(SymfonyRequest $request): mixed
+    public function getDashboardData(Request $request): mixed
     {
         try {
             $dashboard = [
@@ -603,14 +477,9 @@ class AdminController
                 $dashboard['roles'] = ['error' => $e->getMessage()];
             }
 
-            return Response::ok($dashboard, 'Dashboard data retrieved successfully')->send();
+            return Response::success($dashboard, 'Dashboard data retrieved successfully');
         } catch (\Exception $e) {
-            return Response::error(
-                'Failed to retrieve dashboard data: ' . $e->getMessage(),
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'DASHBOARD_FETCH_FAILED'
-            )->send();
+            return Response::serverError('Failed to retrieve dashboard data: ' . $e->getMessage());
         }
     }
 }

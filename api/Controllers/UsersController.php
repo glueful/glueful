@@ -169,7 +169,10 @@ class UsersController extends BaseController
             300, // 5 minutes cache for user listing
             ['users', 'user_list']
         );
-         return Response::ok($resData, 'Users retrieved successfully')->send();
+        $data = $resData['data'] ?? [];
+        $meta = $resData;
+        unset($meta['data']); // Remove data from meta to avoid duplication
+        return Response::successWithMeta($data, $meta, 'Users retrieved successfully');
     }
 
     /**
@@ -238,7 +241,7 @@ class UsersController extends BaseController
             600, // 10 minutes cache for user details
             ['users', 'user_' . $uuid]
         );
-        return Response::ok($userRes, 'User details retrieved successfully')->send();
+        return Response::success($userRes, 'User details retrieved successfully');
     }
 
     /**
@@ -261,10 +264,7 @@ class UsersController extends BaseController
         // Enhanced input validation and sanitization
         $validationErrors = $this->validateUserInput($data, 'create');
         if (!empty($validationErrors)) {
-            return Response::error(
-                'Validation failed: ' . implode(', ', $validationErrors),
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::validation($validationErrors, 'Validation failed');
         }
 
         // Sanitize input data
@@ -281,7 +281,7 @@ class UsersController extends BaseController
         // Create user
         $userUuid = $this->userRepository->create($data);
         if (!$userUuid) {
-            return Response::error('Failed to create user', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to create user');
         }
 
         // Note: Role assignment disabled - use RBAC extension API
@@ -341,7 +341,7 @@ class UsersController extends BaseController
         // Invalidate user-related caches
         $this->invalidateCache(['users', 'user_list', 'statistics']);
 
-        return Response::created($user, 'User created successfully')->send();
+        return Response::created($user, 'User created successfully');
     }
 
     /**
@@ -375,10 +375,7 @@ class UsersController extends BaseController
         // Enhanced input validation and sanitization
         $validationErrors = $this->validateUserInput($data, 'update');
         if (!empty($validationErrors)) {
-            return Response::error(
-                'Validation failed: ' . implode(', ', $validationErrors),
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::validation($validationErrors, 'Validation failed');
         }
 
         // Sanitize input data
@@ -460,7 +457,7 @@ class UsersController extends BaseController
         // Invalidate user-specific and list caches
         $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
 
-        return Response::ok($updatedUser, 'User updated successfully')->send();
+        return Response::success($updatedUser, 'User updated successfully');
     }
 
     /**
@@ -514,7 +511,7 @@ class UsersController extends BaseController
         // Invalidate all user-related caches
         $this->invalidateCache(['users', 'user_' . $user['uuid'], 'user_list', 'statistics']);
 
-        return Response::ok(null, 'User deleted successfully')->send();
+        return Response::success(null, 'User deleted successfully');
     }
 
     /**
@@ -557,7 +554,7 @@ class UsersController extends BaseController
             ]
         );
 
-        return Response::ok(null, 'User restored successfully')->send();
+        return Response::success(null, 'User restored successfully');
     }
 
     /**
@@ -581,10 +578,7 @@ class UsersController extends BaseController
         $data = $request->toArray();
 
         if (empty($data['action']) || empty($data['user_ids'])) {
-            return Response::error(
-                'Action and user_ids are required',
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::error('Action and user_ids are required', Response::HTTP_BAD_REQUEST);
         }
 
         $results = [
@@ -701,10 +695,10 @@ class UsersController extends BaseController
             ]
         );
 
-        return Response::ok(
+        return Response::success(
             $results,
             "Bulk operation completed: {$results['success']} succeeded, {$results['failed']} failed"
-        )->send();
+        );
     }
 
     /**
@@ -774,7 +768,7 @@ class UsersController extends BaseController
             ['users', 'statistics']
         );
 
-        return Response::ok($userStats, 'Statistics retrieved successfully')->send();
+        return Response::success($userStats, 'Statistics retrieved successfully');
     }
 
     /**
@@ -844,10 +838,7 @@ class UsersController extends BaseController
         // Note: Role filtering disabled - implement with RBAC extension
         if ($filters['role']) {
             // Role filtering is now handled by the RBAC extension
-            return Response::error(
-                'Role filtering requires RBAC extension',
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::error('Role filtering requires RBAC extension', Response::HTTP_BAD_REQUEST);
         }
 
         // Apply pagination
@@ -878,7 +869,7 @@ class UsersController extends BaseController
             ['users', 'search']
         );
 
-        return Response::ok($res, 'Search completed successfully')->send();
+        return Response::success($res, 'Search completed successfully');
     }
 
     /**
@@ -930,10 +921,7 @@ class UsersController extends BaseController
 
         // Note: Role filtering disabled - implement with RBAC extension
         if ($filters['role']) {
-            return Response::error(
-                'Role filtering requires RBAC extension',
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::error('Role filtering requires RBAC extension', Response::HTTP_BAD_REQUEST);
         }
 
         $users = $exportQuery->get();
@@ -962,7 +950,7 @@ class UsersController extends BaseController
         );
 
         if ($format === 'json') {
-            return Response::ok($users, 'Export completed successfully')->send();
+            return Response::success($users, 'Export completed successfully');
         }
 
         // CSV export
@@ -995,10 +983,7 @@ class UsersController extends BaseController
         $file = $request->files->get('file');
 
         if (!$file) {
-            return Response::error(
-                'File is required',
-                Response::HTTP_BAD_REQUEST
-            )->send();
+            return Response::error('File is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Basic import functionality - for full implementation, consider using a dedicated import service
@@ -1028,7 +1013,7 @@ class UsersController extends BaseController
 
         $message = "Import completed: {$results['created']} created, " .
                   "{$results['updated']} updated, {$results['failed']} failed";
-        return Response::ok($results, $message)->send();
+        return Response::success($results, $message);
     }
 
     /**
@@ -1079,12 +1064,12 @@ class UsersController extends BaseController
         $activityRes = $this->cacheResponse(
             'user_activity_' . $uuid . '_' . $page . '_' . $perPage,
             function () use ($activities) {
-                return Response::ok($activities, 'Activity log retrieved successfully');
+                return Response::success($activities, 'Activity log retrieved successfully');
             },
             600, // 10 minutes cache for activity logs
             ['users', 'user_' . $uuid, 'activity']
         );
-        return Response::ok($activityRes, 'Activity log retrieved successfully')->send();
+        return Response::success($activityRes, 'Activity log retrieved successfully');
     }
 
 
@@ -1147,7 +1132,7 @@ class UsersController extends BaseController
             60, // 1 minute cache for sessions (frequently changing)
             ['users', 'user_' . $uuid, 'sessions']
         );
-        return Response::ok($sessionRes, 'Sessions retrieved successfully')->send();
+        return Response::success($sessionRes, 'Sessions retrieved successfully');
     }
 
     /**
@@ -1215,7 +1200,7 @@ class UsersController extends BaseController
             ]
         );
 
-        return Response::ok(null, 'Session(s) terminated successfully')->send();
+        return Response::success(null, 'Session(s) terminated successfully');
     }
 
     /**

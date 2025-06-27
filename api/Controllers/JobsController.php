@@ -2,7 +2,7 @@
 
 namespace Glueful\Controllers;
 
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Http\Response;
 use Glueful\Scheduler\JobScheduler;
 use Glueful\Repository\RepositoryFactory;
@@ -27,24 +27,7 @@ class JobsController extends BaseController
 {
     private JobScheduler $scheduler;
 
-    // Whitelisted job names for security
-    private const ALLOWED_JOB_NAMES = [
-        'cache_maintenance',
-        'database_backup',
-        'log_cleaner',
-        'notification_retry_processor',
-        'session_cleaner',
-        'archive_cleanup',
-        'metrics_aggregation',
-        'security_scan',
-        'health_check'
-    ];
-
-    // Maximum allowed data size (in bytes)
-    private const MAX_JOB_DATA_SIZE = 65536; // 64KB
-
-    // Job name validation pattern
-    private const JOB_NAME_PATTERN = '/^[a-z][a-z0-9_]*[a-z0-9]$/';
+    // Note: Job security settings are now in config/security.php
 
     public function __construct(
         ?JobScheduler $scheduler = null,
@@ -57,6 +40,28 @@ class JobsController extends BaseController
 
         // Initialize scheduler with dependency injection
         $this->scheduler = $scheduler ?? JobScheduler::getInstance();
+    }
+
+    /**
+     * Get allowed job names from configuration
+     *
+     * @return array List of allowed job names
+     */
+    private function getAllowedJobNames(): array
+    {
+        $allowedNames = config('security.jobs.allowed_names', []);
+
+        // Optionally auto-include scheduled jobs if enabled
+        if (config('security.jobs.auto_allow_scheduled_jobs', false)) {
+            $scheduleConfig = config('schedule.jobs', []);
+            foreach ($scheduleConfig as $job) {
+                if (isset($job['name'])) {
+                    $allowedNames[] = $job['name'];
+                }
+            }
+        }
+
+        return array_unique($allowedNames);
     }
 
     /**
@@ -78,7 +83,8 @@ class JobsController extends BaseController
         }
 
         // Pattern validation
-        if (!preg_match(self::JOB_NAME_PATTERN, $jobName)) {
+        $pattern = config('security.jobs.job_name_pattern', '/^[a-z][a-z0-9_]*[a-z0-9]$/');
+        if (!preg_match($pattern, $jobName)) {
             throw new ValidationException(
                 'Job name must start with a letter, contain only lowercase letters, numbers, ' .
                 'and underscores, and end with a letter or number'
@@ -86,7 +92,8 @@ class JobsController extends BaseController
         }
 
         // Whitelist validation
-        if (!in_array($jobName, self::ALLOWED_JOB_NAMES, true)) {
+        $allowedNames = $this->getAllowedJobNames();
+        if (!in_array($jobName, $allowedNames, true)) {
             // Log security violation
             $this->auditLogger->audit(
                 AuditEvent::CATEGORY_SYSTEM,
@@ -96,7 +103,7 @@ class JobsController extends BaseController
                     'attempted_job_name' => $jobName,
                     'user_uuid' => $this->getCurrentUserUuid(),
                     'ip_address' => $this->request->getClientIp(),
-                    'allowed_jobs' => self::ALLOWED_JOB_NAMES,
+                    'allowed_jobs' => $allowedNames,
                     'controller' => static::class
                 ]
             );
@@ -123,12 +130,13 @@ class JobsController extends BaseController
         }
 
         // Check data size
-        if (strlen($serialized) > self::MAX_JOB_DATA_SIZE) {
+        $maxSize = config('security.jobs.max_job_data_size', 65536);
+        if (strlen($serialized) > $maxSize) {
             throw new ValidationException(
                 sprintf(
                     'Job data size (%d bytes) exceeds maximum allowed size (%d bytes)',
                     strlen($serialized),
-                    self::MAX_JOB_DATA_SIZE
+                    $maxSize
                 )
             );
         }
@@ -432,10 +440,10 @@ class JobsController extends BaseController
         );
 
         if (empty($jobs)) {
-            return Response::ok([], 'No jobs found')->send();
+            return Response::success([], 'No jobs found');
         }
 
-        return Response::ok($jobs, 'Jobs retrieved successfully')->send();
+        return Response::success($jobs, 'Jobs retrieved successfully');
     }
 
     /**
@@ -520,7 +528,7 @@ class JobsController extends BaseController
         // Invalidate job cache after execution
         $this->invalidateCache(['scheduled_jobs', 'job_execution']);
 
-        return Response::ok(null, 'Scheduled tasks completed')->send();
+        return Response::success(null, 'Scheduled tasks completed');
     }
 
     /**
@@ -613,7 +621,7 @@ class JobsController extends BaseController
         // Invalidate all job-related caches
         $this->invalidateCache(['scheduled_jobs', 'job_execution', 'job_stats']);
 
-        return Response::ok(null, 'All scheduled tasks completed')->send();
+        return Response::success(null, 'All scheduled tasks completed');
     }
 
     /**
@@ -624,6 +632,7 @@ class JobsController extends BaseController
      */
     public function runJob($jobName): mixed
     {
+
         $startTime = microtime(true);
         $operationId = uniqid('job_exec_specific_', true);
 
@@ -705,7 +714,7 @@ class JobsController extends BaseController
         // Invalidate job-specific cache
         $this->invalidateCache(['scheduled_jobs', 'job:' . $jobName]);
 
-        return Response::ok(null, 'Scheduled task completed')->send();
+        return Response::success(null, 'Scheduled task completed');
     }
 
     /**
@@ -724,7 +733,7 @@ class JobsController extends BaseController
         // Apply rate limiting: 30 attempts per hour
         $this->rateLimit('create_job', 30, 3600);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['job_name']) || !isset($data['job_data'])) {
             // Log validation failure
@@ -742,7 +751,7 @@ class JobsController extends BaseController
                 ]
             );
 
-            return Response::error('Job name and data are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Job name and data are required', Response::HTTP_BAD_REQUEST);
         }
 
         // Validate job name for security
@@ -822,6 +831,6 @@ class JobsController extends BaseController
         // Invalidate job list cache after creating new job
         $this->invalidateCache(['scheduled_jobs', 'job_count']);
 
-        return Response::ok(null, 'Scheduled task created')->send();
+        return Response::success(null, 'Scheduled task created');
     }
 }

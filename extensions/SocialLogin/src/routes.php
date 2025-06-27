@@ -36,10 +36,10 @@ Router::group('/auth/social', function () {
 
             // If we reach this point, something went wrong as we should have been redirected
             $error = $googleProvider->getError() ?: "Failed to initiate Google authentication";
-            return Response::error($error, ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Google authentication error: " . $e->getMessage());
-            return Response::error("Failed to initialize Google authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to initialize Google authentication: " . $e->getMessage());
         }
     });
 
@@ -68,7 +68,7 @@ Router::group('/auth/social', function () {
             $idToken = $requestData['id_token'] ?? null;
 
             if (empty($idToken)) {
-                return Response::error('Missing ID token', ErrorCodes::BAD_REQUEST)->send();
+                return Response::validation(['id_token' => ['ID token is required']], 'Validation failed');
             }
 
             // Get the Google provider from DI container
@@ -80,20 +80,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $googleProvider->getError() ?: 'Failed to verify Google ID token';
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $googleProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], 'Successfully authenticated with Google')->send();
+            ], 'Successfully authenticated with Google');
         } catch (\Exception $e) {
             error_log('Google token verification error: ' . $e->getMessage());
-            return Response::error('Failed to authenticate with Google: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to authenticate with Google: ' . $e->getMessage());
         }
     });
 
@@ -123,20 +123,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $googleProvider->getError() ?: "Failed to authenticate with Google";
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $googleProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], "Successfully authenticated with Google")->send();
+            ], "Successfully authenticated with Google");
         } catch (\Exception $e) {
             error_log("Google callback error: " . $e->getMessage());
-            return Response::error("Failed to process Google authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to process Google authentication: " . $e->getMessage());
         }
     });
 
@@ -158,10 +158,10 @@ Router::group('/auth/social', function () {
 
             // If we reach this point, something went wrong as we should have been redirected
             $error = $facebookProvider->getError() ?: "Failed to initiate Facebook authentication";
-            return Response::error($error, ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Facebook authentication error: " . $e->getMessage());
-            return Response::error("Failed to initialize Facebook authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to initialize Facebook authentication: " . $e->getMessage());
         }
     });
 
@@ -190,7 +190,7 @@ Router::group('/auth/social', function () {
             $accessToken = $requestData['access_token'] ?? null;
 
             if (empty($accessToken)) {
-                return Response::error('Missing access token', ErrorCodes::BAD_REQUEST)->send();
+                return Response::validation(['access_token' => ['Access token is required']], 'Validation failed');
             }
 
             // Get the Facebook provider from DI container
@@ -202,20 +202,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $facebookProvider->getError() ?: 'Failed to verify Facebook access token';
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $facebookProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], 'Successfully authenticated with Facebook')->send();
+            ], 'Successfully authenticated with Facebook');
         } catch (\Exception $e) {
             error_log('Facebook token verification error: ' . $e->getMessage());
-            return Response::error('Failed to authenticate with Facebook: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to authenticate with Facebook: ' . $e->getMessage());
         }
     });
 
@@ -245,20 +245,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $facebookProvider->getError() ?: "Failed to authenticate with Facebook";
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $facebookProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], "Successfully authenticated with Facebook")->send();
+            ], "Successfully authenticated with Facebook");
         } catch (\Exception $e) {
             error_log("Facebook callback error: " . $e->getMessage());
-            return Response::error("Failed to process Facebook authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to process Facebook authentication: " . $e->getMessage());
         }
     });
 
@@ -280,10 +280,10 @@ Router::group('/auth/social', function () {
 
             // If we reach this point, something went wrong as we should have been redirected
             $error = $githubProvider->getError() ?: "Failed to initiate GitHub authentication";
-            return Response::error($error, ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("GitHub authentication error: " . $e->getMessage());
-            return Response::error("Failed to initialize GitHub authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to initialize GitHub authentication: " . $e->getMessage());
         }
     });
 
@@ -312,7 +312,7 @@ Router::group('/auth/social', function () {
             $accessToken = $requestData['access_token'] ?? null;
 
             if (empty($accessToken)) {
-                return Response::error('Missing access token', ErrorCodes::BAD_REQUEST)->send();
+                return Response::validation(['access_token' => ['Access token is required']], 'Validation failed');
             }
 
             // Get the GitHub provider from DI container
@@ -324,20 +324,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $githubProvider->getError() ?: 'Failed to verify GitHub access token';
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $githubProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], 'Successfully authenticated with GitHub')->send();
+            ], 'Successfully authenticated with GitHub');
         } catch (\Exception $e) {
             error_log('GitHub token verification error: ' . $e->getMessage());
-            return Response::error('Failed to authenticate with GitHub: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to authenticate with GitHub: ' . $e->getMessage());
         }
     });
 
@@ -367,20 +367,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $githubProvider->getError() ?: "Failed to authenticate with GitHub";
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $githubProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], "Successfully authenticated with GitHub")->send();
+            ], "Successfully authenticated with GitHub");
         } catch (\Exception $e) {
             error_log("GitHub callback error: " . $e->getMessage());
-            return Response::error("Failed to process GitHub authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to process GitHub authentication: " . $e->getMessage());
         }
     });
 
@@ -402,10 +402,10 @@ Router::group('/auth/social', function () {
 
             // If we reach this point, something went wrong as we should have been redirected
             $error = $appleProvider->getError() ?: "Failed to initiate Apple authentication";
-            return Response::error($error, ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Apple authentication error: " . $e->getMessage());
-            return Response::error("Failed to initialize Apple authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to initialize Apple authentication: " . $e->getMessage());
         }
     });
 
@@ -434,7 +434,7 @@ Router::group('/auth/social', function () {
             $idToken = $requestData['id_token'] ?? null;
 
             if (empty($idToken)) {
-                return Response::error('Missing ID token', ErrorCodes::BAD_REQUEST)->send();
+                return Response::validation(['id_token' => ['ID token is required']], 'Validation failed');
             }
 
             // Get the Apple provider from DI container
@@ -446,20 +446,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $appleProvider->getError() ?: 'Failed to verify Apple ID token';
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $appleProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], 'Successfully authenticated with Apple')->send();
+            ], 'Successfully authenticated with Apple');
         } catch (\Exception $e) {
             error_log('Apple token verification error: ' . $e->getMessage());
-            return Response::error('Failed to authenticate with Apple: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to authenticate with Apple: ' . $e->getMessage());
         }
     });
 
@@ -491,20 +491,20 @@ Router::group('/auth/social', function () {
 
             if (!$userData) {
                 $error = $appleProvider->getError() ?: "Failed to authenticate with Apple";
-                return Response::error($error, ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized($error);
             }
 
             // Generate authentication tokens
             $tokens = $appleProvider->generateTokens($userData);
 
             // Return tokens along with user data
-            return Response::ok([
+            return Response::success([
                 'user' => $userData,
                 'tokens' => $tokens
-            ], "Successfully authenticated with Apple")->send();
+            ], "Successfully authenticated with Apple");
         } catch (\Exception $e) {
             error_log("Apple callback error: " . $e->getMessage());
-            return Response::error("Failed to process Apple authentication: " . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError("Failed to process Apple authentication: " . $e->getMessage());
         }
     });
 
@@ -536,7 +536,7 @@ Router::group('/user/social-accounts', function () {
             $userData = $request->attributes->get('user');
 
             if (!$userData || !isset($userData['uuid'])) {
-                return Response::error('Unauthorized', ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized('Unauthorized');
             }
 
             $userUuid = $userData['uuid'];
@@ -555,9 +555,9 @@ Router::group('/user/social-accounts', function () {
                 ->where(['user_uuid' => $userUuid])
                 ->get();
 
-            return Response::ok($accounts, 'Social accounts retrieved successfully')->send();
+            return Response::success($accounts, 'Social accounts retrieved successfully');
         } catch (\Exception $e) {
-            return Response::error('Failed to retrieve social accounts: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to retrieve social accounts: ' . $e->getMessage());
         }
     }, requiresAuth: true);
 
@@ -580,7 +580,7 @@ Router::group('/user/social-accounts', function () {
             $userData = $request->attributes->get('user');
 
             if (!$userData || !isset($userData['uuid'])) {
-                return Response::error('Unauthorized', ErrorCodes::UNAUTHORIZED)->send();
+                return Response::unauthorized('Unauthorized');
             }
 
             $userUuid = $userData['uuid'];
@@ -599,7 +599,7 @@ Router::group('/user/social-accounts', function () {
                 ->get();
 
             if (empty($account)) {
-                return Response::error('Social account not found or not owned by user', 404)->send();
+                return Response::notFound('Social account not found or not owned by user');
             }
             // Delete the social account
             $deleted = $db->delete('social_accounts', [
@@ -608,12 +608,12 @@ Router::group('/user/social-accounts', function () {
             ]);
 
             if (!$deleted) {
-                return Response::error('Failed to unlink social account', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to unlink social account');
             }
 
-            return Response::ok(null, 'Social account unlinked successfully')->send();
+            return Response::success(null, 'Social account unlinked successfully');
         } catch (\Exception $e) {
-            return Response::error('Failed to unlink social account: ' . $e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError('Failed to unlink social account: ' . $e->getMessage());
         }
     }, requiresAuth: true);
 });

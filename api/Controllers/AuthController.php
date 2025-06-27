@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Security\EmailVerification;
 use Glueful\Auth\AuthenticationService;
 use Glueful\Auth\AuthBootstrap;
@@ -43,7 +43,7 @@ class AuthController
         $request = SymfonyRequest::createFromGlobals();
 
         // Get credentials using the getPostData method from our Helper Request class
-        $credentials = Request::getPostData();
+        $credentials = RequestHelper::getRequestData();
 
         $clientIp = $request->getClientIp();
         $userAgent = $request->headers->get('User-Agent');
@@ -118,7 +118,7 @@ class AuthController
             }
         }
 
-        return Response::ok($result, 'Login successful')->send();
+        return Response::success($result, 'Login successful');
     }
 
     /**
@@ -166,7 +166,7 @@ class AuthController
                 AuditEvent::SEVERITY_INFO
             );
 
-            return Response::ok(null, 'Logged out successfully')->send();
+            return Response::success(null, 'Logged out successfully');
         }
 
         // Log failed logout
@@ -187,7 +187,7 @@ class AuthController
      */
     public function verifyEmail()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
         if (!isset($postData['email'])) {
             throw new ValidationException('Email address is required');
         }
@@ -203,12 +203,10 @@ class AuthController
             throw new ValidationException($errorMessage);
         }
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Verification code has been sent to your email')->send();
+        return Response::success([
+            'email' => $postData['email'],
+            'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+        ], 'Verification code has been sent to your email');
     }
 
     /**
@@ -218,7 +216,7 @@ class AuthController
      */
     public function verifyOtp()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
         if (!isset($postData['email']) || !isset($postData['otp'])) {
             throw new ValidationException('Email and OTP are required');
         }
@@ -229,13 +227,11 @@ class AuthController
             throw new ValidationException('Invalid or expired OTP');
         }
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'verified' => true,
-                'verified_at' => date('Y-m-d\TH:i:s\Z')
-            ]
-        ], 'OTP verified successfully')->send();
+        return Response::success([
+            'email' => $postData['email'],
+            'verified' => true,
+            'verified_at' => date('Y-m-d\TH:i:s\Z')
+        ], 'OTP verified successfully');
     }
 
     /**
@@ -245,7 +241,7 @@ class AuthController
      */
     public function resendOtp()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
         if (!isset($postData['email'])) {
             throw new ValidationException('Email address is required');
         }
@@ -261,12 +257,10 @@ class AuthController
             throw new ValidationException($errorMessage);
         }
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Verification code has been resent to your email')->send();
+        return Response::success([
+            'email' => $postData['email'],
+            'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+        ], 'Verification code has been resent to your email');
     }
 
     /**
@@ -301,7 +295,7 @@ class AuthController
             throw new AuthenticationException('Failed to refresh permissions');
         }
 
-        return Response::ok($result, 'Permissions refreshed successfully')->send();
+        return Response::success($result, 'Permissions refreshed successfully');
     }
 
     /**
@@ -331,15 +325,15 @@ class AuthController
             throw new AuthenticationException('Invalid token');
         }
 
-        return Response::ok([
+        return Response::success([
             'user' => $userData,
             'is_valid' => true
-        ], 'Token is valid')->send();
+        ], 'Token is valid');
     }
 
     public function forgotPassword()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
         if (!isset($postData['email'])) {
             throw new ValidationException('Email address is required');
         }
@@ -356,12 +350,10 @@ class AuthController
             throw new ValidationException($errorMsg);
         }
 
-        return Response::ok([
-            'data' => [
-                'email' => $postData['email'],
-                'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
-            ]
-        ], 'Password reset instructions have been sent to your email')->send();
+        return Response::success([
+            'email' => $postData['email'],
+            'expires_in' => EmailVerification::OTP_EXPIRY_MINUTES * 60
+        ], 'Password reset instructions have been sent to your email');
     }
 
     /**
@@ -373,7 +365,7 @@ class AuthController
      */
     public function resetPassword()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
         if (!isset($postData['email']) || !isset($postData['password'])) {
             throw new ValidationException('Email and new password are required');
         }
@@ -394,11 +386,9 @@ class AuthController
             throw new AuthenticationException('Failed to update password');
         }
 
-        return Response::ok([
-            'data' => [
-                'updated_at' => date('Y-m-d\TH:i:s\Z')
-            ]
-        ], 'Password has been reset successfully')->send();
+        return Response::success([
+            'updated_at' => date('Y-m-d\TH:i:s\Z')
+        ], 'Password has been reset successfully');
     }
 
     /**
@@ -410,7 +400,7 @@ class AuthController
      */
     public function refreshToken()
     {
-        $postData = Request::getPostData();
+        $postData = RequestHelper::getRequestData();
 
         if (!isset($postData['refresh_token'])) {
             throw new ValidationException('Refresh token is required');
@@ -430,6 +420,6 @@ class AuthController
             $requestContext->updateToken($result['access_token']);
         }
 
-        return Response::ok($result, 'Token refreshed successfully')->send();
+        return Response::success($result, 'Token refreshed successfully');
     }
 }

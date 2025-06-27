@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Migrations\MigrationManager;
 use Glueful\Repository\RepositoryFactory;
@@ -47,7 +47,7 @@ class MigrationsController extends BaseController
         // Apply rate limiting for migration list access (100 attempts per hour)
         $this->rateLimit('getMigrations', 100, 3600);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         // Set default values for pagination and filtering
         $page = (int)($data['page'] ?? 1);
@@ -107,7 +107,10 @@ class MigrationsController extends BaseController
                 ->orderBy(['applied_at' => 'DESC'])
                 ->paginate($page, $perPage);
 
-                return Response::ok($results, 'Migrations retrieved successfully')->send();
+                $data =  $results['data'] ?? [];
+                $meta = $results;
+                unset($meta['data']); // Remove data from meta
+                return Response::successWithMeta($data, $meta, 'Migrations retrieved successfully');
             },
             600  // 10 minute cache for migrations list
         );
@@ -226,7 +229,7 @@ class MigrationsController extends BaseController
                     ]
                 );
 
-                return Response::ok($data, 'Pending migrations retrieved successfully')->send();
+                return Response::success($data, 'Pending migrations retrieved successfully');
             },
             300  // 5 minute cache for pending migrations
         );

@@ -189,8 +189,9 @@ class MiddlewareDispatcher implements RequestHandlerInterface
                 $response = $this->processFallback($request);
             } else {
                 // Take the first middleware and create a new dispatcher with the remaining stack
-                $middleware = array_shift($this->middlewareStack);
+                $middleware = $this->middlewareStack[0];
                 $next = clone $this;
+                $next->middlewareStack = array_slice($this->middlewareStack, 1);
 
                 // Process the request through the middleware
                 $response = $middleware->process($request, $next);

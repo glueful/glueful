@@ -3,7 +3,7 @@
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Validation\Validator;
 
 /**

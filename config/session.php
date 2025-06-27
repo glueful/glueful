@@ -19,6 +19,18 @@ return [
 
     // JWT Settings
     'jwt_algorithm' => env('JWT_ALGORITHM', 'HS256'),  // JWT signing algorithm
+
+    // Session Cleanup Settings
+    // Common Retention Periods:
+    // - 7 days - Basic debugging window
+    // - 14 days - Standard security
+    //   monitoring
+    // - 30 days - Enterprise audit requirements
+    // - 90 days - Regulatory compliance
+    'cleanup_batch_size' => env('SESSION_CLEANUP_BATCH_SIZE', 1000),       // Batch size for cleanup operations
+    'cleanup' => [
+        'revoked_retention_days' => env('REVOKED_SESSION_RETENTION_DAYS', 14),  // How long to keep revoked sessions
+    ],
     'providers' => [
         // 'jwt' => [
         //     'class' => \Glueful\Auth\JwtAuthenticationProvider::class,

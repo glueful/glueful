@@ -440,12 +440,16 @@ class ExtensionsManager
      * Load extension routes from enabled extensions
      *
      * Loads route files specified in the "provides.routes" section of extension manifests
-     * for all currently enabled extensions.
+     * for all currently enabled extensions. Skips loading if routes are already cached.
      *
      * @return void
      */
     public static function loadExtensionRoutes(): void
     {
+        // Skip loading if routes are already loaded from cache
+        if (\Glueful\Http\Router::isUsingCachedRoutes()) {
+            return;
+        }
         $config = self::loadExtensionsConfig();
 
         // Check if this is the new schema version

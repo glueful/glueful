@@ -258,7 +258,7 @@ class {$controllerName} extends BaseController
                 'action' => 'index'
             ]);
 
-            return Response::ok(\$data)->send();
+            return Response::success(\$data);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -295,7 +295,7 @@ class {$controllerName} extends BaseController
                 'id' => \$id
             ]);
 
-            return Response::ok(\$data)->send();
+            return Response::success(\$data);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -304,11 +304,11 @@ class {$controllerName} extends BaseController
     private function handleException(\Exception \$e): Response
     {
         if (\$e instanceof ValidationException) {
-            return Response::error(\$e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error(\$e->getMessage(), Response::HTTP_BAD_REQUEST);
         }
         
         if (\$e instanceof NotFoundException) {
-            return Response::error(\$e->getMessage(), Response::HTTP_NOT_FOUND)->send();
+            return Response::error(\$e->getMessage(), Response::HTTP_NOT_FOUND);
         }
 
         // Log unexpected errors
@@ -317,7 +317,7 @@ class {$controllerName} extends BaseController
             'error' => \$e->getMessage()
         ]);
 
-        return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 }
 PHP;
@@ -369,15 +369,15 @@ class {$controllerName} extends BaseController
     private function handleException(\Exception \$e): Response
     {
         if (\$e instanceof ValidationException) {
-            return Response::error(\$e->getMessage(), Response::HTTP_BAD_REQUEST)->send();
+            return Response::error(\$e->getMessage(), Response::HTTP_BAD_REQUEST);
         }
         
         if (\$e instanceof NotFoundException) {
-            return Response::error(\$e->getMessage(), Response::HTTP_NOT_FOUND)->send();
+            return Response::error(\$e->getMessage(), Response::HTTP_NOT_FOUND);
         }
 
         if (\$e instanceof BusinessLogicException) {
-            return Response::error(\$e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY)->send();
+            return Response::error(\$e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         // Log unexpected errors
@@ -386,7 +386,7 @@ class {$controllerName} extends BaseController
             'error' => \$e->getMessage()
         ]);
 
-        return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR)->send();
+        return Response::error('Internal server error', Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 }
 PHP;
@@ -448,7 +448,7 @@ PHP;
                 'per_page' => \$perPage
             ]);
 
-            return Response::ok(\$data)->send();
+            return Response::success(\$data);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -494,7 +494,7 @@ PHP;
                 'id' => \$id
             ]);
 
-            return Response::ok(\$data)->send();
+            return Response::success(\$data);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -514,7 +514,7 @@ PHP;
     public function create(Request \$request): Response
     {
         // TODO: Return create form view
-        return Response::json([
+        return Response::success([
             'message' => 'Create {$resourceName} form',
             'form_fields' => []
         ]);
@@ -566,7 +566,7 @@ PHP;
                 'data' => \$validatedData
             ]);
 
-            return Response::created(\$responseData)->send();
+            return Response::created(\$responseData);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -587,7 +587,7 @@ PHP;
     public function edit(Request \$request, string \$id): Response
     {
         // TODO: Return edit form view
-        return Response::json([
+        return Response::success([
             'message' => 'Edit {$resourceName} form',
             'id' => \$id,
             'form_fields' => []
@@ -653,7 +653,7 @@ PHP;
                 'data' => \$validatedData
             ]);
 
-            return Response::ok(\$responseData)->send();
+            return Response::success(\$responseData);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }
@@ -703,7 +703,7 @@ PHP;
                 'id' => \$id
             ]);
 
-            return Response::ok(\$responseData)->send();
+            return Response::success(\$responseData);
         } catch (\Exception \$e) {
             return \$this->handleException(\$e);
         }

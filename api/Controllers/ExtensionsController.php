@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\{Request, ExtensionsManager};
+use Glueful\Helpers\{RequestHelper, ExtensionsManager};
 use Glueful\Logging\AuditEvent;
 use Glueful\Permissions\PermissionContext;
 
@@ -113,7 +113,8 @@ class ExtensionsController extends BaseController
             ];
         }, 300); // 5 minutes default TTL
 
-        return Response::ok($data, 'Extensions retrieved successfully')->send();
+        // Use public caching for extension list (changes infrequently)
+        return $this->publicSuccess($data, 'Extensions retrieved successfully', 1800); // 30 minutes
     }
 
     /**
@@ -133,16 +134,16 @@ class ExtensionsController extends BaseController
             'adaptive' => true
         ]);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['extension'])) {
-            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $extensionName = $data['extension'];
 
         if (!ExtensionsManager::extensionExists($extensionName)) {
-            return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('Extension not found');
         }
 
         // Check if it's a core or optional extension before enabling
@@ -164,18 +165,16 @@ class ExtensionsController extends BaseController
                 return Response::error(
                     $result['message'],
                     $statusCode,
-                    Response::ERROR_VALIDATION,
-                    'EXTENSION_DEPENDENCY_ERROR',
                     [
                         'missing_dependencies' => $result['details']['missing_dependencies'],
                         'required_dependencies' => $result['details']['required_dependencies'] ?? [],
                         'tier' => $tierType,
                         'isCoreExtension' => $isCoreExtension
                     ]
-                )->send();
+                );
             }
 
-            return Response::error($result['message'], $statusCode)->send();
+            return Response::error($result['message'], $statusCode);
         }
 
         // Log successful extension enable
@@ -195,14 +194,14 @@ class ExtensionsController extends BaseController
         // Invalidate extensions cache after modification
         $this->invalidateCache(['extensions', 'user:' . $this->getCurrentUserUuid()]);
 
-        return Response::ok(
+        return Response::success(
             [
                 'extension' => $extensionName,
                 'tier' => $tierType,
                 'isCoreExtension' => $isCoreExtension
             ],
             $result['message']
-        )->send();
+        );
     }
 
     /**
@@ -222,16 +221,16 @@ class ExtensionsController extends BaseController
             'adaptive' => true
         ]);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['extension'])) {
-            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $extensionName = $data['extension'];
 
         if (!ExtensionsManager::extensionExists($extensionName)) {
-            return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('Extension not found');
         }
 
         // Check if it's a core extension
@@ -256,33 +255,22 @@ class ExtensionsController extends BaseController
                 return Response::error(
                     $result['message'],
                     $statusCode,
-                    Response::ERROR_VALIDATION,
-                    'EXTENSION_DEPENDENT_ERROR',
                     [
                         'dependent_extensions' => $result['details']['dependent_extensions'],
                         'tier' => $tierType,
                         'isCoreExtension' => $isCoreExtension
                     ]
-                )->send();
+                );
             }
 
             // If it's a core extension without force
             if (isset($result['details']) && isset($result['details']['is_core'])) {
-                return Response::error(
-                    $result['message'],
-                    $statusCode,
-                    Response::ERROR_AUTHORIZATION,
-                    'CORE_EXTENSION_DISABLE_ERROR',
-                    [
-                        'is_core' => true,
-                        'can_force' => $result['details']['can_force'] ?? false,
-                        'warning' => $result['details']['warning'] ?? 'This is a core extension',
-                        'tier' => 'core'
-                    ]
-                )->send();
+                return Response::forbidden(
+                    $result['message'] . ' (Core extension)'
+                );
             }
 
-            return Response::error($result['message'], $statusCode)->send();
+            return Response::error($result['message'], $statusCode);
         }
 
         // Log successful extension disable
@@ -303,7 +291,7 @@ class ExtensionsController extends BaseController
         // Invalidate extensions cache after modification
         $this->invalidateCache(['extensions', 'user:' . $this->getCurrentUserUuid()]);
 
-        return Response::ok(
+        return Response::success(
             [
                 'extension' => $extensionName,
                 'tier' => $tierType,
@@ -311,7 +299,7 @@ class ExtensionsController extends BaseController
                 'wasForced' => $force
             ],
             $result['message']
-        )->send();
+        );
     }
 
     /**
@@ -333,13 +321,13 @@ class ExtensionsController extends BaseController
         ]);
 
         if (!isset($extension['name'])) {
-            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $extensionName = $extension['name'];
 
         if (!ExtensionsManager::extensionExists($extensionName)) {
-            return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('Extension not found');
         }
 
         // Cache health check results with short TTL
@@ -366,7 +354,7 @@ class ExtensionsController extends BaseController
             60 // 1 minute TTL for health checks
         );
 
-        return Response::ok($healthData, 'Extension health status retrieved successfully')->send();
+        return Response::success($healthData, 'Extension health status retrieved successfully');
     }
 
     /**
@@ -458,10 +446,10 @@ class ExtensionsController extends BaseController
             900 // 15 minutes TTL
         );
 
-        return Response::ok(
+        return Response::success(
             $tieredGraph,
             'Extension dependencies retrieved successfully'
-        )->send();
+        );
     }
 
     /**
@@ -573,10 +561,10 @@ class ExtensionsController extends BaseController
             120 // 2 minutes TTL for metrics
         );
 
-        return Response::ok(
+        return Response::success(
             $tieredMetrics,
             'Extension metrics retrieved successfully'
-        )->send();
+        );
     }
 
     /**
@@ -602,16 +590,16 @@ class ExtensionsController extends BaseController
         // Require low risk behavior for deletion
         $this->requireLowRiskBehavior(0.5, 'extension_deletion');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['extension'])) {
-            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Extension name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $extensionName = $data['extension'];
 
         if (!ExtensionsManager::extensionExists($extensionName)) {
-            return Response::error('Extension not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('Extension not found');
         }
 
         // Check if it's a core extension
@@ -656,31 +644,20 @@ class ExtensionsController extends BaseController
                 return Response::error(
                     $result['message'],
                     $statusCode,
-                    Response::ERROR_VALIDATION,
-                    'EXTENSION_ALREADY_ENABLED',
                     [
                         'is_enabled' => true,
                         'can_force' => $result['details']['can_force'] ?? false,
                         'tier' => $tierType,
                         'isCoreExtension' => $isCoreExtension
                     ]
-                )->send();
+                );
             }
 
             // If it's a core extension without force
             if (isset($result['details']) && isset($result['details']['is_core'])) {
-                return Response::error(
-                    $result['message'],
-                    $statusCode,
-                    Response::ERROR_AUTHORIZATION,
-                    'CORE_EXTENSION_ENABLE_ERROR',
-                    [
-                        'is_core' => true,
-                        'can_force' => $result['details']['can_force'] ?? false,
-                        'warning' => $result['details']['warning'] ?? 'This is a core extension',
-                        'tier' => 'core'
-                    ]
-                )->send();
+                return Response::forbidden(
+                    $result['message'] . ' (Core extension)'
+                );
             }
 
             // If there are dependent extensions
@@ -688,18 +665,16 @@ class ExtensionsController extends BaseController
                 return Response::error(
                     $result['message'],
                     $statusCode,
-                    Response::ERROR_VALIDATION,
-                    'EXTENSION_ENABLE_DEPENDENT_ERROR',
                     [
                         'dependent_extensions' => $result['details']['dependent_extensions'],
                         'tier' => $tierType,
                         'isCoreExtension' => $isCoreExtension,
                         'can_force' => true
                     ]
-                )->send();
+                );
             }
 
-            return Response::error($result['message'], $statusCode)->send();
+            return Response::error($result['message'], $statusCode);
         }
 
         // Log successful deletion
@@ -727,7 +702,7 @@ class ExtensionsController extends BaseController
             'user:' . $this->getCurrentUserUuid()
         ]);
 
-        return Response::ok(
+        return Response::success(
             [
                 'extension' => $extensionName,
                 'tier' => $tierType,
@@ -736,7 +711,7 @@ class ExtensionsController extends BaseController
                 'details' => $result['details'] ?? []
             ],
             $result['message']
-        )->send();
+        );
     }
 
     /**
@@ -787,12 +762,11 @@ class ExtensionsController extends BaseController
                     'ip_address' => $this->request->getClientIp()
                 ]
             );
-
-            return Response::ok([
-                'data' => $catalogData,
+            $meta = [
                 'request_filters' => $filters,
                 'cache_used' => $useCache
-            ], 'Extensions catalog retrieved successfully')->send();
+            ];
+            return Response::successWithMeta($catalogData, $meta, 'Extensions catalog retrieved successfully');
         } catch (\Exception $e) {
             // Log the error for debugging
             error_log("Extensions catalog API error: " . $e->getMessage());
@@ -809,13 +783,9 @@ class ExtensionsController extends BaseController
                 ]
             );
 
-            return Response::error(
-                'Failed to retrieve extensions catalog',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_VALIDATION,
-                'CATALOG_FETCH_ERROR',
-                ['message' => $e->getMessage()]
-            )->send();
+            return Response::serverError(
+                'Failed to retrieve extensions catalog: ' . $e->getMessage()
+            );
         }
     }
 

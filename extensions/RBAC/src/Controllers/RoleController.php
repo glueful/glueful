@@ -65,14 +65,17 @@ class RoleController
 
             if ($showTree) {
                 $roleTree = $this->roleService->getRoleTree();
-                return Response::ok($roleTree, 'Role hierarchy retrieved successfully')->send();
+                return Response::success($roleTree, 'Role hierarchy retrieved successfully');
             }
 
             $roles = $this->roleRepository->findAllPaginated($filters, $page, $perPage);
+            $rolesData = $roles['data'];
+            $meta = $roles;
+            unset($meta['data']);
 
-            return Response::ok($roles, 'Roles retrieved successfully')->send();
+            return Response::successWithMeta($rolesData, $meta, 'Roles retrieved successfully');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -100,11 +103,11 @@ class RoleController
             $userCount = count($this->roleRepository->getUsersWithRole($uuid));
             $roleData['user_count'] = $userCount;
 
-            return Response::ok($roleData, 'Role details retrieved successfully')->send();
+            return Response::success($roleData, 'Role details retrieved successfully');
         } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
+            return Response::notFound($e->getMessage());
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -121,22 +124,22 @@ class RoleController
             $data = $request->toArray();
 
             if (empty($data['name']) || empty($data['slug'])) {
-                return Response::error(
-                    'Role name and slug are required',
-                    ErrorCodes::BAD_REQUEST
-                )->send();
+                return Response::validation(
+                    ['name' => ['Role name is required'], 'slug' => ['Role slug is required']],
+                    'Validation failed'
+                );
             }
 
             $role = $this->roleService->createRole($data);
             if (!$role) {
-                return Response::error('Failed to create role', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to create role');
             }
 
-            return Response::created($role->toArray(), 'Role created successfully')->send();
+            return Response::created($role->toArray(), 'Role created successfully');
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
+            return Response::validation(['error' => [$e->getMessage()]], 'Validation failed');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -156,15 +159,15 @@ class RoleController
 
             $updated = $this->roleService->updateRole($uuid, $data);
             if (!$updated) {
-                return Response::error('Failed to update role', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to update role');
             }
 
             $role = $this->roleRepository->findRecordByUuid($uuid);
-            return Response::ok($role, 'Role updated successfully')->send();
+            return Response::success($role, 'Role updated successfully');
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
+            return Response::validation(['error' => [$e->getMessage()]], 'Validation failed');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -184,14 +187,14 @@ class RoleController
 
             $deleted = $this->roleService->deleteRole($uuid, $force);
             if (!$deleted) {
-                return Response::error('Failed to delete role', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to delete role');
             }
 
-            return Response::ok(null, 'Role deleted successfully')->send();
+            return Response::success(null, 'Role deleted successfully');
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
+            return Response::validation(['error' => [$e->getMessage()]], 'Validation failed');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -210,10 +213,7 @@ class RoleController
             $data = $request->toArray();
 
             if (empty($data['user_uuid'])) {
-                return Response::error(
-                    'User UUID is required',
-                    ErrorCodes::BAD_REQUEST
-                )->send();
+                return Response::validation(['user_uuid' => ['User UUID is required']], 'Validation failed');
             }
 
             $options = [
@@ -224,14 +224,14 @@ class RoleController
 
             $assigned = $this->roleService->assignRoleToUser($data['user_uuid'], $roleUuid, $options);
             if (!$assigned) {
-                return Response::error('Failed to assign role', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to assign role');
             }
 
-            return Response::ok(null, 'Role assigned successfully')->send();
+            return Response::success(null, 'Role assigned successfully');
         } catch (\InvalidArgumentException $e) {
-            return Response::error($e->getMessage(), ErrorCodes::BAD_REQUEST)->send();
+            return Response::validation(['error' => [$e->getMessage()]], 'Validation failed');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -250,20 +250,17 @@ class RoleController
             $data = $request->toArray();
 
             if (empty($data['user_uuid'])) {
-                return Response::error(
-                    'User UUID is required',
-                    ErrorCodes::BAD_REQUEST
-                )->send();
+                return Response::validation(['user_uuid' => ['User UUID is required']], 'Validation failed');
             }
 
             $revoked = $this->roleService->revokeRoleFromUser($data['user_uuid'], $roleUuid);
             if (!$revoked) {
-                return Response::error('Failed to revoke role', ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+                return Response::serverError('Failed to revoke role');
             }
 
-            return Response::ok(null, 'Role revoked successfully')->send();
+            return Response::success(null, 'Role revoked successfully');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -288,12 +285,15 @@ class RoleController
             }
 
             $users = $this->roleRepository->getUsersWithRolePaginated($uuid, $page, $perPage);
+            $usersData = $users['data'];
+            $meta = $users;
+            unset($meta['data']);
 
-            return Response::ok($users, 'Role users retrieved successfully')->send();
+            return Response::successWithMeta($usersData, $meta, 'Role users retrieved successfully');
         } catch (NotFoundException $e) {
-            return Response::notFound($e->getMessage())->send();
+            return Response::notFound($e->getMessage());
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -332,9 +332,9 @@ class RoleController
                     ->count('roles', ['level' => $level, 'deleted_at' => null]);
             }
 
-            return Response::ok($stats, 'Role statistics retrieved successfully')->send();
+            return Response::success($stats, 'Role statistics retrieved successfully');
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 
@@ -351,10 +351,10 @@ class RoleController
             $data = $request->toArray();
 
             if (empty($data['action']) || empty($data['role_ids'])) {
-                return Response::error(
-                    'Action and role_ids are required',
-                    ErrorCodes::BAD_REQUEST
-                )->send();
+                return Response::validation(
+                    ['action' => ['Action is required'], 'role_ids' => ['Role IDs are required']],
+                    'Validation failed'
+                );
             }
 
             $results = [
@@ -394,12 +394,12 @@ class RoleController
                 }
             }
 
-            return Response::ok(
+            return Response::success(
                 $results,
                 "Bulk operation completed: {$results['success']} succeeded, {$results['failed']} failed"
-            )->send();
+            );
         } catch (\Exception $e) {
-            return Response::error($e->getMessage(), ErrorCodes::INTERNAL_SERVER_ERROR)->send();
+            return Response::serverError($e->getMessage());
         }
     }
 }

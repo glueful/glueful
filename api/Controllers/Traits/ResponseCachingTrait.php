@@ -216,7 +216,7 @@ trait ResponseCachingTrait
         $this->cacheResponse($cacheKey, fn() => $data, $ttl, $tags);
 
         // Create response
-        $response = Response::ok($data);
+        $response = Response::success($data);
 
         // Add cache headers
         header('ETag: ' . $etag);

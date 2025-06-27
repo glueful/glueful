@@ -72,16 +72,22 @@ class Router
     /** @var string API version prefix for all routes */
     private static string $versionPrefix = '';
 
+    /** @var bool Whether routes were loaded from cache */
+    private static bool $routesLoadedFromCache = false;
+
     /**
      * Initialize the Router
      *
      * Sets up the router with a fresh RouteCollection and empty group stack.
+     * In production, attempts to load cached routes for performance.
      * Should be called before any route registration.
      */
     private function __construct()
     {
         self::$routes = new RouteCollection();
         self::$context = new RequestContext();
+        // Try to load cached routes in production for performance
+        $this->tryLoadCachedRoutes();
     }
 
     /**
@@ -477,14 +483,19 @@ class Router
     public static function addMiddlewareClass(string $middlewareClass, array $constructorArgs = []): void
     {
         // Get DI container
-        $container = app();
+        $container = function_exists('app') ? app() : null;
 
-        // Resolve middleware through DI container
-        if (empty($constructorArgs)) {
-            $middleware = $container->get($middlewareClass);
-        } else {
-            // If constructor args are provided, create instance manually
+        if ($container === null) {
+            // Fallback to manual instantiation if container not available
             $middleware = new $middlewareClass(...$constructorArgs);
+        } else {
+            // Resolve middleware through DI container
+            if (empty($constructorArgs)) {
+                $middleware = $container->get($middlewareClass);
+            } else {
+                // If constructor args are provided, create instance manually
+                $middleware = new $middlewareClass(...$constructorArgs);
+            }
         }
 
         if ($middleware instanceof MiddlewareInterface) {
@@ -560,9 +571,9 @@ class Router
      * handling by the global exception handler.
      *
      * @param Request $request The request to handle
-     * @return array API response array with success/error information
+     * @return Response Symfony Response object
      */
-    public static function dispatch(Request $request): array
+    public static function dispatch(Request $request): Response
     {
         self::$context->fromRequest($request);
         self::$matcher = new UrlMatcher(self::$routes, self::$context);
@@ -668,16 +679,9 @@ class Router
         // Process the request through the middleware pipeline
         $response = $dispatcher->handle($request);
 
-        // Convert the response to an array
-        if ($response instanceof JsonResponse) {
-            return json_decode($response->getContent(), true);
-        }
-
-        return [
-            'success' => true,
-            'data' => $response->getContent(),
-            'code' => $response->getStatusCode()
-        ];
+        // Return the Symfony Response object directly
+        // This allows proper middleware processing and HTTP compliance
+        return $response;
     }
 
     public static function getInstance(): Router
@@ -697,13 +701,92 @@ class Router
      * 3. Executes appropriate handler with parameters
      * 4. Returns formatted response
      *
-     * @return array API response array with success/error information
+     * @return Response Symfony Response object
      */
-    public function handleRequest()
+    public function handleRequest(): Response
     {
         $request = Request::createFromGlobals();
         $response = self::dispatch($request);
         return $response;
+    }
+
+    /**
+     * Try to load cached routes for production performance
+     *
+     * This method checks if we're in production and if a valid route cache exists.
+     * If both conditions are met, routes are loaded from cache instead of
+     * processing route files, providing significant performance improvement.
+     */
+    private function tryLoadCachedRoutes(): void
+    {
+        // Only use route cache in production environment
+        if (!$this->shouldUseCachedRoutes()) {
+            return;
+        }
+
+        try {
+            $cacheService = new \Glueful\Services\RouteCacheService();
+
+            if ($cacheService->isCacheValid()) {
+                $loaded = $cacheService->loadCachedRoutes($this);
+
+                if ($loaded) {
+                    // Mark that routes were loaded from cache
+                    self::$routesLoadedFromCache = true;
+                    return;
+                }
+            }
+        } catch (\Exception $e) {
+            // If cache loading fails, fall back to normal route loading
+            // Log the error but don't break the application
+            error_log("Route cache loading failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if cached routes should be used
+     *
+     * Routes are cached only in production environment and when
+     * the application is not in debug mode.
+     */
+    private function shouldUseCachedRoutes(): bool
+    {
+        $environment = $_ENV['APP_ENV'] ?? 'development';
+        $debug = $_ENV['APP_DEBUG'] ?? 'true';
+
+        // Use cache only in production with debug disabled
+        return $environment === 'production' &&
+               (strtolower($debug) === 'false' || $debug === '0');
+    }
+
+    /**
+     * Check if routes were loaded from cache
+     *
+     * @return bool True if routes were loaded from cache
+     */
+    public static function isUsingCachedRoutes(): bool
+    {
+        return self::$routesLoadedFromCache ?? false;
+    }
+
+    /**
+     * Force reload routes from source files
+     *
+     * This method bypasses the cache and forces routes to be loaded
+     * from source files. Useful for development or cache invalidation.
+     */
+    public static function reloadRoutes(): void
+    {
+        self::$routes = new RouteCollection();
+        self::$protectedRoutes = [];
+        self::$adminProtectedRoutes = [];
+        self::$routeNameCache = [];
+        self::$routesLoadedFromCache = false;
+
+        // Reload routes from source files
+        \Glueful\Helpers\ExtensionsManager::loadEnabledExtensions();
+        \Glueful\Helpers\ExtensionsManager::loadExtensionRoutes();
+        \Glueful\Helpers\RoutesManager::loadRoutes();
     }
 
     /**

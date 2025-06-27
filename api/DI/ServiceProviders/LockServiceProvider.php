@@ -19,7 +19,7 @@ class LockServiceProvider implements ServiceProviderInterface
     public function register(ContainerInterface $container): void
     {
         $container->singleton(LockManagerInterface::class, function ($container) {
-            $config = $container->get('config')['lock'] ?? [];
+            $config = config('lock', []);
             $logger = $container->has(LoggerInterface::class) ? $container->get(LoggerInterface::class) : null;
 
             $storeType = $config['default'] ?? 'file';

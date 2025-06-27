@@ -71,17 +71,12 @@ class MetricsController extends BaseController
         // Use the new method to get data
         $endpointMetrics = $this->getApiMetricsData();
 
-        return $this->withSecurityHeaders(
-            $this->withCacheHeaders(
-                Response::ok($endpointMetrics, 'API metrics retrieved successfully'),
-                [
-                    'public' => false,
-                    'max_age' => $this->isAdmin() ? 60 : 300,
-                    'must_revalidate' => true,
-                    'vary' => ['Authorization']
-                ]
-            )
-        )->send();
+        // Use private caching for metrics (sensitive data)
+        $ttl = $this->isAdmin() ? 60 : 300; // 1 min for admins, 5 min for users
+        return $this->privateCached(
+            Response::success($endpointMetrics, 'API metrics retrieved successfully'),
+            $ttl
+        );
     }
 
     /**
@@ -136,7 +131,7 @@ class MetricsController extends BaseController
                     'cache_invalidated' => true
                 ]
             );
-            return Response::ok(null, 'API metrics reset successfully')->send();
+            return Response::success(null, 'API metrics reset successfully');
         } else {
             $this->auditLogger->audit(
                 AuditEvent::CATEGORY_SYSTEM,
@@ -151,10 +146,8 @@ class MetricsController extends BaseController
             );
             return Response::error(
                 'Failed to reset API metrics',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'METRICS_RESET_FAILED'
-            )->send();
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            );
         }
     }
 
@@ -216,17 +209,12 @@ class MetricsController extends BaseController
         // Use the new method to get data
         $metrics = $this->getSystemHealthData();
 
-        return $this->withSecurityHeaders(
-            $this->withCacheHeaders(
-                Response::ok($metrics, 'System health metrics retrieved successfully'),
-                [
-                    'public' => false, // Private cache for sensitive data
-                    'max_age' => $this->isAdmin() ? 300 : 600,
-                    'must_revalidate' => true,
-                    'vary' => ['Authorization', 'User-Agent']
-                ]
-            )
-        )->send();
+        // Use private caching for system health metrics (sensitive data)
+        $ttl = $this->isAdmin() ? 300 : 600; // 5 min for admins, 10 min for users
+        return $this->privateCached(
+            Response::success($metrics, 'System health metrics retrieved successfully'),
+            $ttl
+        );
     }
 
     /**
@@ -570,10 +558,8 @@ class MetricsController extends BaseController
         if (!isset($extension['name'])) {
             return Response::error(
                 'Extension name is required',
-                Response::HTTP_BAD_REQUEST,
-                Response::ERROR_VALIDATION,
-                'MISSING_EXTENSION_NAME'
-            )->send();
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         $extensionName = $extension['name'];
@@ -582,10 +568,8 @@ class MetricsController extends BaseController
             return Response::error(
                 'Extension not found',
                 Response::HTTP_NOT_FOUND,
-                Response::ERROR_NOT_FOUND,
-                'EXTENSION_NOT_FOUND',
                 ['extension_name' => $extensionName]
-            )->send();
+            );
         }
 
         // Cache extension health data
@@ -603,7 +587,7 @@ class MetricsController extends BaseController
 
         return $this->withSecurityHeaders(
             $this->withCacheHeaders(
-                Response::ok([
+                Response::success([
                     'extension' => $extensionName,
                     'health' => $healthData
                 ], 'Extension health status retrieved successfully'),
@@ -614,7 +598,7 @@ class MetricsController extends BaseController
                     'vary' => ['Authorization']
                 ]
             )
-        )->send();
+        );
     }
 
     /**

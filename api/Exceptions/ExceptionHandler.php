@@ -2,6 +2,7 @@
 
 namespace Glueful\Exceptions;
 
+use Glueful\Helpers\Utils;
 use Glueful\Logging\LogManagerInterface;
 use Glueful\Logging\LogManager;
 use Glueful\Logging\AuditLogger;
@@ -938,8 +939,10 @@ class ExceptionHandler
             }
         } catch (\Throwable $auditException) {
             // If audit logging fails, don't throw an exception
-            // Just log it to the regular error log
-            error_log('Failed to log exception to audit system: ' . $auditException->getMessage());
+            // Just log it to the regular error log (but not during tests to avoid noise)
+            if (!self::$testMode && !Utils::isTestEnvironment()) {
+                error_log('Failed to log exception to audit system: ' . $auditException->getMessage());
+            }
         }
     }
 
@@ -970,20 +973,14 @@ class ExceptionHandler
 
         // Use Response class for consistent output format
         if ($statusCode >= 400) {
-            // Determine appropriate error type based on status code
-            $errorType = match ($statusCode) {
-                400, 422 => \Glueful\Http\Response::ERROR_VALIDATION,
-                401 => \Glueful\Http\Response::ERROR_AUTHENTICATION,
-                403 => \Glueful\Http\Response::ERROR_AUTHORIZATION,
-                404 => \Glueful\Http\Response::ERROR_NOT_FOUND,
-                429 => \Glueful\Http\Response::ERROR_RATE_LIMIT,
-                default => \Glueful\Http\Response::ERROR_SERVER
-            };
-
-            \Glueful\Http\Response::error($message, $statusCode, $errorType, null, $data)->send();
+            // Create error response
+            $response = \Glueful\Http\Response::error($message, $statusCode, $data);
         } else {
             // Success response (shouldn't happen in exception handler, but for completeness)
-            \Glueful\Http\Response::ok($data, $message)->send();
+            $response = \Glueful\Http\Response::success($data, $message);
         }
+
+        // Send the response
+        $response->send();
     }
 }

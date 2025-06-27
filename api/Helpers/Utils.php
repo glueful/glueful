@@ -767,4 +767,22 @@ class Utils
         // This ensures cache keys are compatible with all cache drivers
         return str_replace([':', '[', ']', '/', '\\', ' '], '_', $key);
     }
+
+    /**
+     * Check if the application is running in a test environment
+     *
+     * This method detects various indicators that the code is being executed
+     * during automated testing, allowing components to adjust their behavior
+     * accordingly (e.g., disable logging to reduce test noise).
+     *
+     * @return bool True if running in test environment, false otherwise
+     */
+    public static function isTestEnvironment(): bool
+    {
+        // Check various indicators that we're in a test environment
+        return defined('PHPUNIT_COMPOSER_INSTALL') ||
+               (function_exists('env') && env('APP_ENV') === 'testing') ||
+               (isset($_ENV['APP_ENV']) && $_ENV['APP_ENV'] === 'testing') ||
+               (php_sapi_name() === 'cli' && strpos($_SERVER['SCRIPT_NAME'] ?? '', 'phpunit') !== false);
+    }
 }

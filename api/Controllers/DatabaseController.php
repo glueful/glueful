@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\{QueryBuilder};
 use Glueful\Logging\AuditEvent;
-use Glueful\Http\SecureErrorResponse;
 
 /**
  * Database Controller
@@ -59,10 +58,10 @@ class DatabaseController extends BaseController
         // Rate limiting for table creation
         $this->rateLimitResource('database.tables', 'write', 5, 300);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name']) || !isset($data['columns'])) {
-            return Response::error('Table name and columns are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name and columns are required', Response::HTTP_BAD_REQUEST);
         }
 
             $tableName = $data['table_name'];
@@ -165,12 +164,12 @@ class DatabaseController extends BaseController
                 ]
             );
 
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'columns' => $columnsData,
                 'indexes' => $data['indexes'] ?? [],
                 'foreign_keys' => $data['foreign_keys'] ?? []
-            ], 'Table created successfully')->send();
+            ], 'Table created successfully');
     }
 
     /**
@@ -187,15 +186,15 @@ class DatabaseController extends BaseController
         // Require low risk behavior for destructive operations
         $this->requireLowRiskBehavior(0.3, 'table_deletion');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $result = $this->schemaManager->dropTable($data['table_name']);
         if (!$result) {
-            return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Failed to drop table', Response::HTTP_BAD_REQUEST);
         }
 
         // Audit log table deletion
@@ -210,7 +209,7 @@ class DatabaseController extends BaseController
             ]
         );
 
-        return Response::ok(null, 'Table dropped successfully')->send();
+        return Response::success(null, 'Table dropped successfully');
     }
 
     /**
@@ -231,7 +230,7 @@ class DatabaseController extends BaseController
             ['database', 'tables']
         );
 
-        return Response::ok($data, 'Tables retrieved successfully')->send();
+        return Response::success($data, 'Tables retrieved successfully');
     }
 
     /**
@@ -246,7 +245,7 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.tables', 'read');
 
         if (!isset($table['name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         $data = $this->cacheResponse(
@@ -262,7 +261,7 @@ class DatabaseController extends BaseController
             ['database', 'table_' . $table['name']]
         );
 
-        return Response::ok($data, 'Table size retrieved successfully')->send();
+        return Response::success($data, 'Table size retrieved successfully');
     }
 
     /**
@@ -289,7 +288,7 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.metadata', 'read');
 
         if (!isset($table['name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
             $tableName = $table['name'];
@@ -338,7 +337,7 @@ class DatabaseController extends BaseController
                 1800, // 30 minutes cache
                 ['database', 'table_' . $tableName, 'metadata']
             );
-            return Response::ok($data, 'Table metadata retrieved successfully')->send();
+            return Response::success($data, 'Table metadata retrieved successfully');
     }
 
     /**
@@ -372,12 +371,12 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.data', 'read');
 
         if (!isset($table['name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
-            $request = new Request();
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
 
             // Get request data
-            $queryParams = $request->getQueryParams();
+            $queryParams = $request->query->all();
             // Set default values for pagination and filtering
             $page = (int)($queryParams['page'] ?? 1);
             $perPage = (int)($queryParams['per_page'] ?? 25);
@@ -452,7 +451,14 @@ class DatabaseController extends BaseController
                 'requested' => $filters
             ];
         }
-        return Response::ok($results, 'Data retrieved successfully')->send();
+
+
+        $mainData = $results['data'] ?? [];
+        $meta = $results;
+        // Remove data from meta to avoid duplication
+        unset($meta['data']);
+
+         return Response::successWithMeta($mainData, $meta, 'Table data retrieved successfully');
     }
 
     /**
@@ -470,7 +476,7 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.columns', 'read');
 
         if (!isset($params['name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
             $tableName = $params['name'];
@@ -480,7 +486,7 @@ class DatabaseController extends BaseController
 
         if (empty($columns)) {
             $errorMsg = "No columns found or table '$tableName' does not exist";
-            return Response::error($errorMsg, Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound($errorMsg);
         }
 
             $data =  $this->cacheResponse(
@@ -494,7 +500,7 @@ class DatabaseController extends BaseController
                 3600, // 1 hour cache
                 ['database', 'table_' . $tableName, 'columns']
             );
-            return Response::ok($data, 'Table columns retrieved successfully')->send();
+            return Response::success($data, 'Table columns retrieved successfully');
     }
 
     /**
@@ -512,14 +518,14 @@ class DatabaseController extends BaseController
         // Rate limiting for column operations
         $this->rateLimitResource('database.columns', 'write', 10, 300);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['column']) && !isset($data['columns'])) {
-            return Response::error('Column details are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Column details are required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -563,23 +569,23 @@ class DatabaseController extends BaseController
         // Check if all columns were added successfully
         if (empty($failed)) {
             // All columns were added successfully
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'columns_added' => $results
-            ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully')->send();
+            ], count($results) > 1 ? 'Columns added successfully' : 'Column added successfully');
         } elseif (empty($results)) {
             // All columns failed to add
             return Response::error(
                 'Failed to add column(s): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Some columns were added, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'columns_added' => $results,
                 'columns_failed' => $failed
-            ], 'Some columns were added successfully, but others failed')->send();
+            ], 'Some columns were added successfully, but others failed');
         }
     }
 
@@ -601,14 +607,14 @@ class DatabaseController extends BaseController
         // Require low risk behavior for destructive operations
         $this->requireLowRiskBehavior(0.4, 'column_deletion');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['column_name']) && !isset($data['column_names'])) {
-            return Response::error('Column name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Column name(s) are required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -638,23 +644,23 @@ class DatabaseController extends BaseController
         // Check if all columns were dropped successfully
         if (empty($failed)) {
             // All columns were dropped successfully
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'columns_dropped' => $results
-            ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully')->send();
+            ], count($results) > 1 ? 'Columns dropped successfully' : 'Column dropped successfully');
         } elseif (empty($results)) {
             // All columns failed to drop
             return Response::error(
                 'Failed to drop column(s): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Some columns were dropped, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'columns_dropped' => $results,
                 'columns_failed' => $failed
-            ], 'Some columns were dropped successfully, but others failed')->send();
+            ], 'Some columns were dropped successfully, but others failed');
         }
     }
 
@@ -673,14 +679,14 @@ class DatabaseController extends BaseController
         // Rate limiting for index operations
         $this->rateLimitResource('database.indexes', 'write', 10, 300);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['index']) && !isset($data['indexes'])) {
-            return Response::error('Index definition is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Index definition is required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -744,16 +750,16 @@ class DatabaseController extends BaseController
             );
 
             // All indexes were added successfully
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'indexes_added' => $results
-            ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully')->send();
+            ], count($results) > 1 ? 'Indexes added successfully' : 'Index added successfully');
         } elseif (empty($results)) {
             // All indexes failed to add
             return Response::error(
                 'Failed to add index(es): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Audit log partial index creation
             $this->auditLogger->audit(
@@ -772,11 +778,11 @@ class DatabaseController extends BaseController
             );
 
             // Some indexes were added, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'indexes_added' => $results,
                 'indexes_failed' => $failed
-            ], 'Some indexes were added successfully, but others failed')->send();
+            ], 'Some indexes were added successfully, but others failed');
         }
     }
 
@@ -798,14 +804,14 @@ class DatabaseController extends BaseController
         // Require low risk behavior for destructive operations
         $this->requireLowRiskBehavior(0.4, 'index_deletion');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['index_name']) && !isset($data['index_names'])) {
-            return Response::error('Index name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Index name(s) are required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -849,16 +855,16 @@ class DatabaseController extends BaseController
             );
 
             // All indexes were dropped successfully
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'indexes_dropped' => $results
-            ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully')->send();
+            ], count($results) > 1 ? 'Indexes dropped successfully' : 'Index dropped successfully');
         } elseif (empty($results)) {
             // All indexes failed to drop
             return Response::error(
                 'Failed to drop index(es): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Audit log partial index deletion
             $this->auditLogger->audit(
@@ -877,11 +883,11 @@ class DatabaseController extends BaseController
             );
 
             // Some indexes were dropped, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'indexes_dropped' => $results,
                 'indexes_failed' => $failed
-            ], 'Some indexes were dropped successfully, but others failed')->send();
+            ], 'Some indexes were dropped successfully, but others failed');
         }
     }
 
@@ -906,14 +912,14 @@ class DatabaseController extends BaseController
         // Rate limiting for foreign key operations
         $this->rateLimitResource('database.foreign_keys', 'write', 8, 600);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['foreign_key']) && !isset($data['foreign_keys'])) {
-            return Response::error('Foreign key definition is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Foreign key definition is required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -973,7 +979,7 @@ class DatabaseController extends BaseController
             );
 
             // All foreign keys were added successfully
-            return Response::ok(
+            return Response::success(
                 [
                 'table' => $tableName,
                 'constraints_added' => $results
@@ -981,13 +987,13 @@ class DatabaseController extends BaseController
                 count($results) > 1
                     ? 'Foreign key constraints added successfully'
                     : 'Foreign key constraint added successfully'
-            )->send();
+            );
         } elseif (empty($results)) {
             // All foreign keys failed to add
             return Response::error(
                 'Failed to add foreign key(s): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Audit log partial foreign key creation
             $this->auditLogger->audit(
@@ -1006,11 +1012,11 @@ class DatabaseController extends BaseController
             );
 
             // Some foreign keys were added, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'constraints_added' => $results,
                 'constraints_failed' => $failed
-            ], 'Some foreign key constraints were added successfully, but others failed')->send();
+            ], 'Some foreign key constraints were added successfully, but others failed');
         }
     }
 
@@ -1032,14 +1038,14 @@ class DatabaseController extends BaseController
         // Require low risk behavior for destructive operations
         $this->requireLowRiskBehavior(0.4, 'foreign_key_deletion');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['constraint_name']) && !isset($data['constraint_names'])) {
-            return Response::error('Constraint name(s) are required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Constraint name(s) are required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -1086,7 +1092,7 @@ class DatabaseController extends BaseController
             );
 
             // All constraints were dropped successfully
-            return Response::ok(
+            return Response::success(
                 [
                 'table' => $tableName,
                 'constraints_dropped' => $results
@@ -1094,13 +1100,13 @@ class DatabaseController extends BaseController
                 count($results) > 1
                     ? 'Foreign key constraints dropped successfully'
                     : 'Foreign key constraint dropped successfully'
-            )->send();
+            );
         } elseif (empty($results)) {
             // All constraints failed to drop
             return Response::error(
                 'Failed to drop foreign key constraint(s): ' . implode(', ', $failed),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         } else {
             // Audit log partial foreign key deletion
             $this->auditLogger->audit(
@@ -1119,11 +1125,11 @@ class DatabaseController extends BaseController
             );
 
             // Some constraints were dropped, but some failed
-            return Response::ok([
+            return Response::success([
                 'table' => $tableName,
                 'constraints_dropped' => $results,
                 'constraints_failed' => $failed
-            ], 'Some foreign key constraints were dropped successfully, but others failed')->send();
+            ], 'Some foreign key constraints were dropped successfully, but others failed');
         }
     }
 
@@ -1146,10 +1152,10 @@ class DatabaseController extends BaseController
         // Require very low risk behavior for SQL execution
         $this->requireLowRiskBehavior(0.2, 'raw_sql_execution');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['query'])) {
-            return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('SQL query is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Get the SQL query from the request
@@ -1158,17 +1164,16 @@ class DatabaseController extends BaseController
 
         // Safety checks
         if (empty($sql)) {
-            return Response::error('SQL query cannot be empty', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('SQL query cannot be empty', Response::HTTP_BAD_REQUEST);
         }
 
         // Prevent destructive operations if the safety flag is not set
         $isSafeQuery = $data['allow_write'] ?? false;
         $firstWord = strtoupper(explode(' ', $sql)[0]);
         if (!$isSafeQuery && in_array($firstWord, ['DELETE', 'TRUNCATE', 'DROP', 'ALTER', 'UPDATE', 'INSERT'])) {
-            return Response::error(
-                'Write operations require explicit allow_write flag for safety',
-                Response::HTTP_FORBIDDEN
-            )->send();
+            return Response::forbidden(
+                'Write operations require explicit allow_write flag for safety'
+            );
         }
 
         // Execute the query and get results
@@ -1201,7 +1206,7 @@ class DatabaseController extends BaseController
             'count' => count($results)
         ];
 
-        return Response::ok($responseData, $message)->send();
+        return Response::success($responseData, $message);
     }
 
     /**
@@ -1225,10 +1230,10 @@ class DatabaseController extends BaseController
         // Require low risk behavior for complex schema operations
         $this->requireLowRiskBehavior(0.3, 'schema_update');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
             $tableName = $data['table_name'];
@@ -1370,13 +1375,13 @@ class DatabaseController extends BaseController
 
             // Return appropriate response based on results
             if (empty($results['failed_operations'])) {
-                return Response::ok($results, 'Table schema updated successfully')->send();
+                return Response::success($results, 'Table schema updated successfully');
             } else {
                 // Some operations failed, but others might have succeeded
-                return Response::ok(
+                return Response::success(
                     $results,
                     'Some schema update operations completed with warnings'
-                )->send();
+                );
             }
     }
 
@@ -1460,7 +1465,7 @@ class DatabaseController extends BaseController
         // Use the data method that includes caching
         $data = $this->getDatabaseStatsData();
 
-        return Response::ok($data, 'Database statistics retrieved successfully')->send();
+        return Response::success($data, 'Database statistics retrieved successfully');
     }
 
     /**
@@ -1486,28 +1491,28 @@ class DatabaseController extends BaseController
         $this->requireLowRiskBehavior(0.5, 'data_import');
 
         if (!is_array($params)) {
-            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST);
         }
         $tableName = $params['name'] ?? null;
         if (!$tableName) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Get request data
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!is_array($data)) {
             return Response::error(
                 'Invalid request format. Expected JSON object.',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         if (!isset($data['data']) || !is_array($data['data'])) {
             return Response::error(
                 'Import data is required and must be an array',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         $importData = $data['data'];
@@ -1518,7 +1523,7 @@ class DatabaseController extends BaseController
 
         // Check if table exists
         if (!$this->schemaManager->tableExists($tableName)) {
-            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // Get table columns to validate import data
@@ -1599,7 +1604,7 @@ class DatabaseController extends BaseController
             $message .= ", {$failed} failed";
         }
 
-        return Response::ok($result, $message)->send();
+        return Response::success($result, $message);
     }
 
     /**
@@ -1679,7 +1684,7 @@ class DatabaseController extends BaseController
             $message .= ", {$failed} failed";
         }
 
-        return Response::ok($result, $message)->send();
+        return Response::success($result, $message);
     }
 
     /**
@@ -1759,29 +1764,29 @@ class DatabaseController extends BaseController
         $this->requireLowRiskBehavior(0.2, 'bulk_deletion');
 
         if (!is_array($params)) {
-            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $params['name'] ?? null;
         if (!$tableName) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Get request data
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!is_array($data)) {
             return Response::error(
                 'Invalid request format. Expected JSON object.',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
             return Response::error(
                 'IDs array is required and cannot be empty',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         $ids = $data['ids'];
@@ -1797,13 +1802,13 @@ class DatabaseController extends BaseController
                 return Response::error(
                     'All IDs must be scalar values',
                     Response::HTTP_BAD_REQUEST
-                )->send();
+                );
             }
         }
 
         // Check if table exists
         if (!$this->schemaManager->tableExists($tableName)) {
-            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // If soft delete is requested, validate that the status column exists
@@ -1815,7 +1820,7 @@ class DatabaseController extends BaseController
                 return Response::error(
                     "Column '{$statusColumn}' does not exist in table '{$tableName}'. Cannot perform soft delete.",
                     Response::HTTP_BAD_REQUEST
-                )->send();
+                );
             }
         }
 
@@ -1833,12 +1838,12 @@ class DatabaseController extends BaseController
 
             $this->queryBuilder->commit();
 
-            return Response::ok([
+            return Response::success([
             'soft_deleted' => $affectedCount,
             'ids' => $ids,
             'status_column' => $statusColumn,
             'deleted_value' => $deletedValue
-            ], "Successfully soft deleted {$affectedCount} record(s)")->send();
+            ], "Successfully soft deleted {$affectedCount} record(s)");
         } else {
             // Perform hard delete
             $sql = $this->buildBulkDeleteQuery($tableName, $placeholders);
@@ -1847,10 +1852,10 @@ class DatabaseController extends BaseController
 
             $this->queryBuilder->commit();
 
-            return Response::ok([
+            return Response::success([
             'deleted' => $deletedCount,
             'ids' => $ids
-            ], "Successfully deleted {$deletedCount} record(s)")->send();
+            ], "Successfully deleted {$deletedCount} record(s)");
         }
     }
 
@@ -1872,36 +1877,36 @@ class DatabaseController extends BaseController
         $this->requireLowRiskBehavior(0.4, 'bulk_update');
 
         if (!is_array($params)) {
-            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Invalid parameters', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $params['name'] ?? null;
         if (!$tableName) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Get request data
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!is_array($data)) {
             return Response::error(
                 'Invalid request format. Expected JSON object.',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         if (!isset($data['ids']) || !is_array($data['ids']) || empty($data['ids'])) {
             return Response::error(
                 'IDs array is required and cannot be empty',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         if (!isset($data['data']) || !is_array($data['data']) || empty($data['data'])) {
             return Response::error(
                 'Update data is required and cannot be empty',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         $ids = $data['ids'];
@@ -1913,13 +1918,13 @@ class DatabaseController extends BaseController
                 return Response::error(
                     'All IDs must be scalar values',
                     Response::HTTP_BAD_REQUEST
-                )->send();
+                );
             }
         }
 
         // Check if table exists
         if (!$this->schemaManager->tableExists($tableName)) {
-            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // Get table columns to validate update data
@@ -1938,7 +1943,7 @@ class DatabaseController extends BaseController
             return Response::error(
                 'No valid columns found in update data',
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         // Perform bulk update using transaction
@@ -1963,11 +1968,11 @@ class DatabaseController extends BaseController
 
         $this->queryBuilder->commit();
 
-        return Response::ok([
+        return Response::success([
         'updated' => $updatedCount,
         'ids' => $ids,
         'data' => $filteredUpdateData
-        ], "Successfully updated {$updatedCount} record(s)")->send();
+        ], "Successfully updated {$updatedCount} record(s)");
     }
 
     /**
@@ -2071,14 +2076,14 @@ class DatabaseController extends BaseController
         // Rate limiting for schema preview operations
         $this->rateLimitResource('database.schema', 'read', 15, 300);
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['changes'])) {
-            return Response::error('Changes array is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Changes array is required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -2086,7 +2091,7 @@ class DatabaseController extends BaseController
 
         // Validate table exists
         if (!$this->schemaManager->tableExists($tableName)) {
-            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // Get current schema for comparison
@@ -2095,13 +2100,13 @@ class DatabaseController extends BaseController
         // Generate preview of changes
         $preview = $this->schemaManager->generateChangePreview($tableName, $changes);
 
-        return Response::ok([
+        return Response::success([
         'table_name' => $tableName,
         'current_schema' => $currentSchema,
         'proposed_changes' => $changes,
         'preview' => $preview,
         'generated_at' => date('Y-m-d H:i:s')
-        ])->send();
+        ]);
     }
 
     /**
@@ -2118,19 +2123,19 @@ class DatabaseController extends BaseController
         $this->rateLimitResource('database.schema', 'export', 5, 300);
 
         $params = $_GET;
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         // Support both GET and POST
         $tableName = $params['table'] ?? $data['table'] ?? null;
         $format = $params['format'] ?? $data['format'] ?? 'json';
 
         if (!$tableName) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Validate table exists
         if (!$this->schemaManager->tableExists($tableName)) {
-            return Response::error("Table '{$tableName}' does not exist", Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // Validate format
@@ -2139,7 +2144,7 @@ class DatabaseController extends BaseController
             return Response::error(
                 "Unsupported format '{$format}'. Supported formats: " . implode(', ', $supportedFormats),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         // Export schema
@@ -2160,7 +2165,7 @@ class DatabaseController extends BaseController
             ]
         );
 
-        return Response::ok([
+        return Response::success([
             'table_name' => $tableName,
             'format' => $format,
             'schema' => $schema,
@@ -2169,7 +2174,7 @@ class DatabaseController extends BaseController
             'export_size' => strlen(json_encode($schema)),
             'format_version' => '1.0'
             ]
-        ])->send();
+        ]);
     }
 
     /**
@@ -2188,14 +2193,14 @@ class DatabaseController extends BaseController
         // Require low risk behavior for schema changes
         $this->requireLowRiskBehavior(0.3, 'schema_import');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['table_name'])) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         if (!isset($data['schema'])) {
-            return Response::error('Schema definition is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Schema definition is required', Response::HTTP_BAD_REQUEST);
         }
 
         $tableName = $data['table_name'];
@@ -2209,16 +2214,16 @@ class DatabaseController extends BaseController
             return Response::error(
                 'Invalid schema: ' . implode(', ', $validation['errors']),
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         // Check if validation-only mode
         if ($options['validate_only'] ?? false) {
-            return Response::ok([
+            return Response::success([
             'table_name' => $tableName,
             'validation' => $validation,
             'validated_at' => date('Y-m-d H:i:s')
-            ])->send();
+            ]);
         }
 
         // Import schema
@@ -2241,12 +2246,12 @@ class DatabaseController extends BaseController
             ]
         );
 
-        return Response::ok([
+        return Response::success([
             'table_name' => $tableName,
             'format' => $format,
             'result' => $result,
             'imported_at' => date('Y-m-d H:i:s')
-        ])->send();
+        ]);
     }
 
     /**
@@ -2268,7 +2273,7 @@ class DatabaseController extends BaseController
         $offset = (int)($params['offset'] ?? 0);
 
         if (!$tableName) {
-            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Table name is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Query audit logs for schema-related events
@@ -2277,7 +2282,7 @@ class DatabaseController extends BaseController
         // Get migration history from migrations table
         $migrationHistory = $this->getMigrationHistory($tableName);
 
-        return Response::ok([
+        return Response::success([
         'table_name' => $tableName,
         'schema_changes' => $historyEvents,
         'migrations' => $migrationHistory,
@@ -2287,7 +2292,7 @@ class DatabaseController extends BaseController
             'total' => count($historyEvents)
         ],
         'retrieved_at' => date('Y-m-d H:i:s')
-        ])->send();
+        ]);
     }
 
     /**
@@ -2306,10 +2311,10 @@ class DatabaseController extends BaseController
         // Require very low risk behavior for critical operations
         $this->requireLowRiskBehavior(0.2, 'schema_revert');
 
-        $data = Request::getPostData();
+        $data = RequestHelper::getRequestData();
 
         if (!isset($data['change_id'])) {
-            return Response::error('Change ID is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('Change ID is required', Response::HTTP_BAD_REQUEST);
         }
 
         $changeId = $data['change_id'];
@@ -2319,7 +2324,7 @@ class DatabaseController extends BaseController
         $originalChange = $this->getAuditLogById($changeId);
 
         if (!$originalChange) {
-            return Response::error('Change not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('Change not found');
         }
 
         // Generate revert operations
@@ -2327,13 +2332,13 @@ class DatabaseController extends BaseController
 
         // If not confirmed, return preview
         if (!$confirm) {
-            return Response::ok([
+            return Response::success([
             'change_id' => $changeId,
             'original_change' => $originalChange,
             'revert_operations' => $revertOps,
             'preview_only' => true,
             'message' => 'Preview of revert operations. Set confirm=true to execute.'
-            ])->send();
+            ]);
         }
 
         // Execute revert operations
@@ -2355,11 +2360,11 @@ class DatabaseController extends BaseController
             ]
         );
 
-        return Response::ok([
+        return Response::success([
             'change_id' => $changeId,
             'result' => $result,
             'reverted_at' => date('Y-m-d H:i:s')
-        ])->send();
+        ]);
     }
 
     /**
@@ -2419,18 +2424,17 @@ class DatabaseController extends BaseController
      */
     private function getMigrationHistory(string $tableName): array
     {
-        // Database-agnostic query - LIKE operator works the same across MySQL, PostgreSQL, and SQLite
-        $sql = "SELECT * FROM migrations 
-                WHERE migration LIKE ? OR migration LIKE ?
-                ORDER BY executed_at DESC";
-
-        $patterns = [
-        "%{$tableName}%",
-        "%create_{$tableName}%"
-        ];
-
-        $stmt = $this->queryBuilder->executeQuery($sql, $patterns);
-        return $stmt->fetchAll();
+        // Use QueryBuilder's fluent interface instead of raw SQL
+        // Build OR condition using whereRaw - LIKE operator is database agnostic
+        return $this->queryBuilder
+            ->withPurpose("Retrieve migration history for table: {$tableName}")
+            ->select('migrations', ['*'])
+            ->whereRaw('(migration LIKE ? OR migration LIKE ?)', [
+                "%{$tableName}%",
+                "%create_{$tableName}%"
+            ])
+            ->orderBy(['applied_at' => 'DESC'])
+            ->get();
     }
 
     /**
@@ -2441,11 +2445,12 @@ class DatabaseController extends BaseController
      */
     private function getAuditLogById(string $changeId): ?array
     {
-        // Database-agnostic query - LIMIT works the same across MySQL, PostgreSQL, and SQLite
-        $sql = "SELECT * FROM audit_logs WHERE id = ? LIMIT 1";
-        $stmt = $this->queryBuilder->executeQuery($sql, [$changeId]);
-        $result = $stmt->fetchAll();
-        return $result[0] ?? null;
+        // Use QueryBuilder's fluent interface instead of raw SQL
+        return $this->queryBuilder
+            ->withPurpose("Retrieve audit log entry by ID: {$changeId}")
+            ->select('audit_logs', ['*'])
+            ->where(['id' => $changeId])
+            ->first(); // Use first() instead of limit(1) + get() + array access
     }
 
     /**

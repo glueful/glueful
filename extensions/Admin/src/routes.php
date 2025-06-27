@@ -21,8 +21,10 @@ use Glueful\Controllers\{
     DatabaseController,
     MigrationsController,
     JobsController,
-    MetricsController
+    MetricsController,
+    ConfigController
 };
+use Glueful\Helpers\RequestHelper;
 use Symfony\Component\HttpFoundation\Request;
 
 // Get the container from the global app() helper
@@ -881,8 +883,9 @@ Router::group('/admin', function () use ($container) {
          * @response 404 application/json "Job not found"
          */
         Router::post('/run', function (Request $request) use ($container) {
+            $postData = RequestHelper::getRequestData();
             $jobsController = $container->get(JobsController::class);
-            return $jobsController->runJob($request);
+            return $jobsController->runJob($postData['job']);
         });
 
         /**
@@ -919,8 +922,8 @@ Router::group('/admin', function () use ($container) {
          * @response 403 application/json "Permission denied"
          */
         Router::get('/', function (Request $request) use ($container) {
-            $adminController = $container->get(AdminController::class);
-            return $adminController->getAllConfigs($request);
+            $configController = $container->get(ConfigController::class);
+            return $configController->getConfigs($request);
         });
 
         /**
@@ -938,8 +941,8 @@ Router::group('/admin', function () use ($container) {
          * @response 404 application/json "Configuration file not found"
          */
         Router::get('/{filename}', function (array $params) use ($container) {
-            $adminController = $container->get(AdminController::class);
-            return $adminController->getConfig($params['filename']);
+            $configController = $container->get(ConfigController::class);
+            return $configController->getConfigByFile($params['filename']);
         });
 
         /**

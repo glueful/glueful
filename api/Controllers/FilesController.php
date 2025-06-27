@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\Request;
+use Glueful\Helpers\RequestHelper;
 use Glueful\Uploader\FileUploader;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Repository\Interfaces\RepositoryInterface;
@@ -74,8 +74,8 @@ class FilesController extends BaseController
     public function getFile()
     {
         // Authentication handled by AuthenticationMiddleware
-        $request = new Request();
-        $requestData = $request->getQueryParams();
+        $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+        $requestData = $request->query->all();
 
         // Get parameters from request
         $uuid = $requestData['uuid'] ?? null;
@@ -85,7 +85,7 @@ class FilesController extends BaseController
         $this->applyFileAccessRateLimiting($type);
 
         if (!isset($uuid)) {
-            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Process image parameters if needed
@@ -102,7 +102,7 @@ class FilesController extends BaseController
         // Get the blob data from repository
         $fileInfo = $this->blobRepository->find($uuid);
         if (!$fileInfo) {
-            return Response::error('File not found', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('File not found');
         }
 
         // Check file access permissions using permission system
@@ -146,9 +146,9 @@ class FilesController extends BaseController
 
         // Return cached response with appropriate headers
         return $this->withCacheHeaders(
-            Response::ok($result, 'File retrieved successfully'),
+            Response::success($result, 'File retrieved successfully'),
             $this->getFileCacheOptions($type)
-        )->send();
+        );
     }
 
     /**
@@ -169,22 +169,22 @@ class FilesController extends BaseController
         $this->rateLimitResource('files', 'write', 10, 300); // 10 uploads per 5 minutes
         $this->requireLowRiskBehavior(0.7, 'file_upload');
 
-        $request = new Request();
-        $contentType = $request->getContentType();
+        $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+        $contentType = $request->headers->get('Content-Type', '');
 
         // Handle multipart form data (regular file upload)
         if (strpos($contentType, 'multipart/form-data') !== false) {
-            if (empty($request->getFiles())) {
-                return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST)->send();
+            if (empty($request->files->all())) {
+                return Response::error('No file uploaded', Response::HTTP_BAD_REQUEST);
             }
 
             // Add current user UUID to the request params for file ownership
-            $params = array_merge($request->getQueryParams(), [
+            $params = array_merge($request->query->all(), [
                 'created_by' => $this->currentUser->uuid
             ]);
 
             // Check file-specific upload permissions and apply additional rate limiting
-            $files = $request->getFiles();
+            $files = $request->files->all();
             $this->checkUploadPermissions($files);
             $this->applyFileSpecificRateLimiting($files);
 
@@ -218,16 +218,16 @@ class FilesController extends BaseController
             // Invalidate user-specific file cache after upload
             $this->invalidateUserFileCache();
 
-            return Response::ok($result, 'File uploaded successfully')->send();
+            return Response::success($result, 'File uploaded successfully');
         } else {
             // Handle JSON/base64 upload
-            $postData = Request::getPostData();
+            $postData = RequestHelper::getRequestData();
             if (!isset($postData['base64'])) {
-                return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST)->send();
+                return Response::error('Base64 content required', Response::HTTP_BAD_REQUEST);
             }
 
             // Add current user UUID to the request params for file ownership
-            $params = array_merge($request->getQueryParams(), [
+            $params = array_merge($request->query->all(), [
                 'created_by' => $this->currentUser->uuid
             ]);
 
@@ -256,7 +256,7 @@ class FilesController extends BaseController
                 $base64FileInfo
             );
 
-            return Response::ok($result, 'File uploaded successfully')->send();
+            return Response::success($result, 'File uploaded successfully');
         }
     }
 
@@ -278,7 +278,7 @@ class FilesController extends BaseController
         $uuid = $params['uuid'] ?? null;
 
         if (!$uuid) {
-            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('File UUID is required', Response::HTTP_BAD_REQUEST);
         }
 
         // Check if file exists using repository
@@ -332,10 +332,10 @@ class FilesController extends BaseController
         }
 
         if (!$result) {
-            return Response::error('File not found or could not be deleted', Response::HTTP_NOT_FOUND)->send();
+            return Response::notFound('File not found or could not be deleted');
         }
 
-        return Response::ok(['uuid' => $uuid], 'File deleted successfully')->send();
+        return Response::success(['uuid' => $uuid], 'File deleted successfully');
     }
 
     /**
@@ -352,8 +352,8 @@ class FilesController extends BaseController
         // Apply rate limiting for file listing
         $this->rateLimitResource('files', 'read', 50, 60); // 50 listings per minute
 
-        $request = new Request();
-        $requestData = $request->getQueryParams();
+        $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+        $requestData = $request->query->all();
 
         $page = (int)($requestData['page'] ?? 1);
         $perPage = min((int)($requestData['per_page'] ?? 25), 100); // Max 100 per page
@@ -382,14 +382,14 @@ class FilesController extends BaseController
 
         // Return with cache headers for file listings
         return $this->withCacheHeaders(
-            Response::ok($result, 'File list retrieved successfully'),
+            Response::success($result, 'File list retrieved successfully'),
             [
                 'public' => false, // User-specific data
                 'max_age' => 300, // 5 minutes
                 'must_revalidate' => true,
                 'vary' => ['Authorization']
             ]
-        )->send();
+        );
     }
 
     /**
@@ -900,7 +900,7 @@ class FilesController extends BaseController
         $result = $this->processFileRequest($fileInfo, $type, $params);
 
         // Create response with caching headers
-        $response = Response::ok($result);
+        $response = Response::success($result);
 
         // Add ETag and cache headers
         header('ETag: ' . $etag);

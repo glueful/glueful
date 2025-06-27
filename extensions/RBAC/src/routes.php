@@ -23,8 +23,8 @@ use Glueful\Extensions\RBAC\Controllers\{
 };
 use Symfony\Component\HttpFoundation\Request;
 
-// Get the container from the global app() helper
-$container = app();
+// Get the container from the global app() helper with null checking
+$container = function_exists('app') ? app() : null;
 
 // Controllers will be resolved from the DI container when routes are called
 // This ensures proper dependency injection and lazy loading

@@ -229,7 +229,7 @@ Router::group('/auth', function () use ($container) {
 Router::get('/csrf-token', function (Request $request) {
     try {
         $tokenData = Utils::csrfTokenData($request);
-        return Response::ok($tokenData, 'CSRF token retrieved successfully');
+        return Response::success($tokenData, 'CSRF token retrieved successfully');
     } catch (\Exception $e) {
         return Response::error('Failed to generate CSRF token: ' . $e->getMessage(), 500);
     }

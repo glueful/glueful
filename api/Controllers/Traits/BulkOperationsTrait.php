@@ -53,7 +53,7 @@ trait BulkOperationsTrait
     public function bulkDelete(array $params, array $deleteData)
     {
         if (!$this->enableBulkOperations) {
-            return Response::error('Bulk operations are disabled', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Bulk operations are disabled', Response::HTTP_FORBIDDEN);
         }
 
         $table = $params['resource'];
@@ -61,7 +61,7 @@ trait BulkOperationsTrait
 
         // Validate bulk operation
         if (empty($uuids) || !is_array($uuids)) {
-            return Response::error('No UUIDs provided for bulk delete', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('No UUIDs provided for bulk delete', Response::HTTP_BAD_REQUEST);
         }
 
         // Apply table access control
@@ -87,7 +87,7 @@ trait BulkOperationsTrait
             return Response::error(
                 "Cannot delete more than {$maxDeletes} records at once",
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         $repository = $this->repositoryFactory->getRepository($table);
@@ -142,7 +142,7 @@ trait BulkOperationsTrait
             'message' => "Bulk delete completed: {$deleted} deleted, " . count($failed) . " failed"
         ];
 
-        return Response::ok($result)->send();
+        return Response::success($result);
     }
 
     /**
@@ -155,7 +155,7 @@ trait BulkOperationsTrait
     public function bulkUpdate(array $params, array $updateData)
     {
         if (!$this->enableBulkOperations) {
-            return Response::error('Bulk operations are disabled', Response::HTTP_FORBIDDEN)->send();
+            return Response::error('Bulk operations are disabled', Response::HTTP_FORBIDDEN);
         }
 
         $table = $params['resource'];
@@ -163,7 +163,7 @@ trait BulkOperationsTrait
 
         // Validate bulk operation
         if (empty($updates) || !is_array($updates)) {
-            return Response::error('No updates provided for bulk update', Response::HTTP_BAD_REQUEST)->send();
+            return Response::error('No updates provided for bulk update', Response::HTTP_BAD_REQUEST);
         }
 
         // Apply table access control
@@ -189,7 +189,7 @@ trait BulkOperationsTrait
             return Response::error(
                 "Cannot update more than {$maxUpdates} records at once",
                 Response::HTTP_BAD_REQUEST
-            )->send();
+            );
         }
 
         $repository = $this->repositoryFactory->getRepository($table);
@@ -259,7 +259,7 @@ trait BulkOperationsTrait
             'message' => "Bulk update completed: {$updated} updated, " . count($failed) . " failed"
         ];
 
-        return Response::ok($result)->send();
+        return Response::success($result);
     }
 
     /**

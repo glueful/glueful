@@ -58,6 +58,8 @@ class ConsoleServiceProvider implements ServiceProviderInterface
             \Glueful\Console\Commands\Migrate\RollbackCommand::class,
             // Development commands
             \Glueful\Console\Commands\ServeCommand::class,
+            // Route commands
+            \Glueful\Console\Commands\RouteCommand::class,
             // Cache commands
             \Glueful\Console\Commands\Cache\ClearCommand::class,
             \Glueful\Console\Commands\Cache\StatusCommand::class,

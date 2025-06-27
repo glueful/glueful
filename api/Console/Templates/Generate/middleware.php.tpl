@@ -4,7 +4,7 @@ namespace Glueful\Http\Middleware;
 
 use Glueful\Http\Middleware\MiddlewareInterface;
 use Glueful\Http\Middleware\RequestHandlerInterface;
-use Glueful\Helpers\Request;
+use Symfony\Component\HttpFoundation\Request;
 use Glueful\Http\Response;
 
 /**

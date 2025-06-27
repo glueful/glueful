@@ -32,22 +32,7 @@ return [
         // CSRF protection - consolidated configuration
         [
             'class' => \Glueful\Http\Middleware\CSRFMiddleware::class,
-            'config' => [
-                'enabled' => env('CSRF_PROTECTION_ENABLED', true),
-                'tokenLifetime' => env('CSRF_TOKEN_LIFETIME', 3600),
-                'useDoubleSubmit' => env('CSRF_DOUBLE_SUBMIT', false),
-                'exemptRoutes' => [
-                    'auth/login',
-                    'auth/register',
-                    'auth/forgot-password',
-                    'auth/reset-password',
-                    'auth/verify-email',
-                    'auth/verify-otp',
-                    'webhooks/*',
-                    'public/*',
-                    'csrf-token',
-                ],
-            ],
+            'config_ref' => 'security.csrf',
         ],
 
         // Memory tracking - uses config/app.php settings

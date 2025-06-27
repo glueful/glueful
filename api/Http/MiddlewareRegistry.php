@@ -176,8 +176,7 @@ class MiddlewareRegistry
                                 // Logger not available, will use NullLogger fallback
                             }
 
-                            $instance = new MemoryTrackingMiddleware($memoryManager, $logger);
-                            return $instance instanceof MiddlewareInterface ? $instance : null;
+                            return new MemoryTrackingMiddleware($memoryManager, $logger);
                         } catch (\Exception $e) {
                             error_log("MemoryTrackingMiddleware: Failed to resolve dependencies - " . $e->getMessage());
                             return null;
@@ -190,8 +189,7 @@ class MiddlewareRegistry
                     // and requires EdgeCacheService, not array config
                     if (self::$container && self::$container->has('Glueful\Cache\EdgeCacheService')) {
                         $cacheService = self::$container->get('Glueful\Cache\EdgeCacheService');
-                        $instance = new EdgeCacheMiddleware($cacheService);
-                        return $instance instanceof MiddlewareInterface ? $instance : null;
+                        return new EdgeCacheMiddleware($cacheService);
                     }
                     return null;
 

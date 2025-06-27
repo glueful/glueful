@@ -64,17 +64,9 @@ class SessionCacheManager
     private function initializeServices(): void
     {
         try {
-            // Try to get services from DI container using actual Glueful service names
-            if (function_exists('app')) {
-                $container = app();
-
-                // Try to resolve RBAC permission provider (primary)
-                if ($container->has('rbac.permission_provider')) {
-                    $this->permissionService = $container->get('rbac.permission_provider');
-                } elseif ($container->has('rbac.role_service')) {
-                    // Fallback to role service if permission provider not available
-                    $this->permissionService = $container->get('rbac.role_service');
-                }
+            // Try to get services from DI container using the container() helper
+            if (function_exists('container')) {
+                $container = container();
 
                 // Try to resolve queue service
                 if ($container->has('queue.service')) {
@@ -83,9 +75,17 @@ class SessionCacheManager
                     $this->queueService = $container->get('QueueService');
                 }
             }
+
+            // Initialize PermissionManager's provider for efficient permission loading
+            if (class_exists('Glueful\\Permissions\\PermissionManager')) {
+                $manager = \Glueful\Permissions\PermissionManager::getInstance();
+                if ($manager->hasActiveProvider()) {
+                    $this->permissionService = $manager->getProvider();
+                }
+            }
         } catch (\Throwable $e) {
-            // Services not available, will fall back to PermissionManager
-            error_log("SessionCacheManager: Failed to initialize services via DI: " . $e->getMessage());
+            // Container not available or services not found - this is expected during early initialization
+            // Will fall back to container-based repositories for permissions
         }
     }
 
@@ -681,7 +681,7 @@ class SessionCacheManager
             ]);
         } catch (\Throwable $e) {
             // Log error but don't fail session creation
-            error_log("Failed to load permissions for user {$userUuid}: " . $e->getMessage());
+            error_log("Failed to load permissions for user 1 {$userUuid}: " . $e->getMessage());
             return array_merge($userData, [
             'permissions' => [],
             'roles' => [],
@@ -699,27 +699,23 @@ class SessionCacheManager
     private function loadUserPermissions(string $userUuid): array
     {
         try {
-            // 1. Use DI-injected RBAC permission provider (primary)
+            // 1. Use initialized permission service (PermissionManager's provider)
             if ($this->permissionService && method_exists($this->permissionService, 'getUserPermissions')) {
                 return $this->permissionService->getUserPermissions($userUuid);
             }
 
-            // 2. Fallback to PermissionManager with active provider
-            if (class_exists('Glueful\\Permissions\\PermissionManager')) {
-                $manager = \Glueful\Permissions\PermissionManager::getInstance();
-                if ($manager->hasActiveProvider()) {
-                    $provider = $manager->getProvider();
-                    if ($provider && method_exists($provider, 'getUserPermissions')) {
-                        return $provider->getUserPermissions($userUuid);
+            // 2. Fallback to direct RBAC repository access if service not available
+            if (function_exists('container')) {
+                try {
+                    $container = container();
+                    if ($container->has('rbac.repository.user_permission')) {
+                        $userPermRepo = $container->get('rbac.repository.user_permission');
+                        if (method_exists($userPermRepo, 'getUserPermissions')) {
+                            return $userPermRepo->getUserPermissions($userUuid);
+                        }
                     }
-                }
-            }
-
-            // 3. Direct RBAC repository access if available
-            if (function_exists('app') && app()->has('rbac.repository.user_permission')) {
-                $userPermRepo = app()->get('rbac.repository.user_permission');
-                if (method_exists($userPermRepo, 'getUserPermissions')) {
-                    return $userPermRepo->getUserPermissions($userUuid);
+                } catch (\Throwable $e) {
+                    // Container not available, return empty permissions
                 }
             }
 
@@ -745,18 +741,32 @@ class SessionCacheManager
             }
 
             // 2. Try RBAC role service directly
-            if (function_exists('app') && app()->has('rbac.role_service')) {
-                $roleService = app()->get('rbac.role_service');
-                if (method_exists($roleService, 'getUserRoles')) {
-                    return $roleService->getUserRoles($userUuid);
+            if (function_exists('container')) {
+                try {
+                    $container = container();
+                    if ($container->has('rbac.role_service')) {
+                        $roleService = $container->get('rbac.role_service');
+                        if (method_exists($roleService, 'getUserRoles')) {
+                            return $roleService->getUserRoles($userUuid);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Container not available, continue to fallbacks
                 }
             }
 
             // 3. Try RBAC role repository
-            if (function_exists('app') && app()->has('rbac.repository.user_role')) {
-                $userRoleRepo = app()->get('rbac.repository.user_role');
-                if (method_exists($userRoleRepo, 'getUserRoles')) {
-                    return $userRoleRepo->getUserRoles($userUuid);
+            if (function_exists('container')) {
+                try {
+                    $container = container();
+                    if ($container->has('rbac.repository.user_role')) {
+                        $userRoleRepo = $container->get('rbac.repository.user_role');
+                        if (method_exists($userRoleRepo, 'getUserRoles')) {
+                            return $userRoleRepo->getUserRoles($userUuid);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Container not available, continue to fallbacks
                 }
             }
 
