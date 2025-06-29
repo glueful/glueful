@@ -9,6 +9,8 @@ use Glueful\Helpers\CDNAdapterManager;
 use Glueful\Services\FileFinder;
 use Glueful\Services\FileManager;
 use Glueful\DI\ContainerBootstrap;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Extensions Manager
@@ -2024,32 +2026,23 @@ class ExtensionsManager
 
         // Handle URL or local file
         if (filter_var($source, FILTER_VALIDATE_URL)) {
-            // It's a URL, download it
-            $ch = curl_init($source);
-            $fp = fopen($tempFile, 'wb');
+            // It's a URL, download it using HTTP Client
+            try {
+                $client = new Client([
+                    'timeout' => 60,
+                    'connect_timeout' => 10
+                ]);
 
-            if (!$ch || !$fp) {
-                self::debug("Failed to initialize download");
-                return false;
-            }
+                $response = $client->get($source, [
+                    'sink' => $tempFile
+                ]);
 
-            curl_setopt($ch, CURLOPT_FILE, $fp);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-
-            if (!curl_exec($ch)) {
-                self::debug("Download failed: " . curl_error($ch));
-                curl_close($ch);
-                fclose($fp);
-                return false;
-            }
-
-            $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            fclose($fp);
-
-            if ($statusCode !== 200) {
-                self::debug("Download failed with HTTP status code: $statusCode");
+                if (!$response->isSuccessful()) {
+                    self::debug("Download failed with HTTP status code: " . $response->getStatusCode());
+                    return false;
+                }
+            } catch (HttpException $e) {
+                self::debug("Download failed: " . $e->getMessage());
                 return false;
             }
         } else {
@@ -3548,39 +3541,39 @@ class ExtensionsManager
             'php_version' => PHP_VERSION
         ]);
 
-        // Set up curl request
-        $ch = curl_init($url);
-
-        if (!$ch) {
-            self::debug("Failed to initialize curl for update check");
-            return null;
-        }
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
-
-        // Set authorization header if provided
-        if (isset($source['auth_token'])) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $source['auth_token']
+        // Set up HTTP Client request
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'headers' => [
+                    'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
+                ]
             ]);
-        }
 
-        $response = curl_exec($ch);
-        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+            $options = [];
 
-        if ($statusCode !== 200 || empty($response)) {
-            self::debug("Update API returned status code $statusCode");
-            return null;
-        }
+            // Set authorization header if provided
+            if (isset($source['auth_token'])) {
+                $options['headers'] = [
+                    'Authorization' => 'Bearer ' . $source['auth_token']
+                ];
+            }
 
-        // Parse response
-        $data = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            self::debug("Failed to parse update API response: " . json_last_error_msg());
+            $response = $client->get($url, $options);
+
+            if (!$response->isSuccessful()) {
+                self::debug("Update API returned status code " . $response->getStatusCode());
+                return null;
+            }
+            // Parse response
+            try {
+                $data = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("Failed to parse update API response: " . $e->getMessage());
+                return null;
+            }
+        } catch (HttpException $e) {
+            self::debug("Failed to check for updates: " . $e->getMessage());
             return null;
         }
 
@@ -3612,77 +3605,76 @@ class ExtensionsManager
         $repo = $source['repository'];
         $apiUrl = "https://api.github.com/repos/$repo/releases/latest";
 
-        // Set up curl request
-        $ch = curl_init($apiUrl);
-
-        if (!$ch) {
-            self::debug("Failed to initialize curl for GitHub update check");
-            return null;
-        }
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
-
-        // Set GitHub token if provided
-        if (isset($source['github_token'])) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: token ' . $source['github_token']
-            ]);
-        }
-
-        $response = curl_exec($ch);
-        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($statusCode !== 200 || empty($response)) {
-            self::debug("GitHub API returned status code $statusCode");
-            return null;
-        }
-
-        // Parse response
+        // Set up HTTP Client request
         try {
-            $data = json_decode($response, true);
+            $client = new Client([
+                'timeout' => 10,
+                'headers' => [
+                    'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
+                ]
+            ]);
 
-            // GitHub releases use tag_name for version
-            if (!isset($data['tag_name'])) {
+            $options = [];
+
+            // Set GitHub token if provided
+            if (isset($source['github_token'])) {
+                $options['headers'] = [
+                    'Authorization' => 'token ' . $source['github_token']
+                ];
+            }
+
+            $response = $client->get($apiUrl, $options);
+
+            if (!$response->isSuccessful()) {
+                self::debug("GitHub API returned status code " . $response->getStatusCode());
                 return null;
             }
-
-            // Remove 'v' prefix if present
-            $version = ltrim($data['tag_name'], 'v');
-
-            // Find zip asset
-            $downloadUrl = null;
-            if (isset($data['assets']) && is_array($data['assets'])) {
-                foreach ($data['assets'] as $asset) {
-                    if (
-                        isset($asset['browser_download_url']) &&
-                        (str_ends_with($asset['browser_download_url'], '.zip') ||
-                         str_ends_with($asset['browser_download_url'], '.tar.gz'))
-                    ) {
-                        $downloadUrl = $asset['browser_download_url'];
-                        break;
-                    }
-                }
+            // Parse response
+            try {
+                $data = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("Failed to parse GitHub API response: " . $e->getMessage());
+                return null;
             }
-
-            // If no specific asset found, use the source code zip
-            if ($downloadUrl === null && isset($data['zipball_url'])) {
-                $downloadUrl = $data['zipball_url'];
-            }
-
-            return [
-                'version' => $version,
-                'download_url' => $downloadUrl,
-                'release_notes' => $data['body'] ?? null,
-                'release_date' => $data['published_at'] ?? null
-            ];
-        } catch (\Throwable $e) {
-            self::debug("Failed to parse GitHub API response: " . $e->getMessage());
+        } catch (HttpException $e) {
+            self::debug("Failed to check GitHub for updates: " . $e->getMessage());
             return null;
         }
+
+        // GitHub releases use tag_name for version
+        if (!isset($data['tag_name'])) {
+            return null;
+        }
+
+        // Remove 'v' prefix if present
+        $version = ltrim($data['tag_name'], 'v');
+
+        // Find zip asset
+        $downloadUrl = null;
+        if (isset($data['assets']) && is_array($data['assets'])) {
+            foreach ($data['assets'] as $asset) {
+                if (
+                    isset($asset['browser_download_url']) &&
+                    (str_ends_with($asset['browser_download_url'], '.zip') ||
+                     str_ends_with($asset['browser_download_url'], '.tar.gz'))
+                ) {
+                    $downloadUrl = $asset['browser_download_url'];
+                    break;
+                }
+            }
+        }
+
+        // If no specific asset found, use the source code zip
+        if ($downloadUrl === null && isset($data['zipball_url'])) {
+            $downloadUrl = $data['zipball_url'];
+        }
+
+        return [
+            'version' => $version,
+            'download_url' => $downloadUrl,
+            'release_notes' => $data['body'] ?? null,
+            'release_date' => $data['published_at'] ?? null
+        ];
     }
 
     /**
@@ -4826,50 +4818,31 @@ class ExtensionsManager
 
         self::debug("Fetching extensions catalog from: {$catalogUrl}");
 
-        // Initialize cURL
-        $curl = curl_init();
-        if ($curl === false) {
-            self::debug("Failed to initialize cURL");
-            return null;
-        }
-
         try {
-            // Configure cURL options
-            curl_setopt_array($curl, [
-                CURLOPT_URL => $catalogUrl,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => $timeout,
-                CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_MAXREDIRS => 3,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-                CURLOPT_USERAGENT => 'Glueful-Framework/' . (config('app.version_full') ?? '1.0.0'),
-                CURLOPT_HTTPHEADER => [
-                    'Accept: application/json',
-                    'Cache-Control: no-cache'
+            // Configure HTTP Client
+            $client = new Client([
+                'timeout' => $timeout,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'User-Agent' => 'Glueful-Framework/' . (config('app.version_full') ?? '1.0.0'),
+                    'Accept' => 'application/json',
+                    'Cache-Control' => 'no-cache'
                 ]
             ]);
 
             // Execute request
-            $response = curl_exec($curl);
-            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            $error = curl_error($curl);
+            $response = $client->get($catalogUrl);
 
-            if ($response === false || !empty($error)) {
-                self::debug("cURL error: {$error}");
-                return null;
-            }
-
-            if ($httpCode !== 200) {
-                self::debug("HTTP error: {$httpCode}");
+            if (!$response->isSuccessful()) {
+                self::debug("HTTP error: " . $response->getStatusCode());
                 return null;
             }
 
             // Parse JSON response
-            $catalogData = json_decode($response, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                self::debug("JSON decode error: " . json_last_error_msg());
+            try {
+                $catalogData = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("JSON decode error: " . $e->getMessage());
                 return null;
             }
 
@@ -4900,11 +4873,12 @@ class ExtensionsManager
             }
 
             return $catalogData;
-        } catch (\Exception $e) {
-            self::debug("Exception while fetching catalog: " . $e->getMessage());
+        } catch (HttpException $e) {
+            self::debug("Failed to fetch catalog: " . $e->getMessage());
             return null;
-        } finally {
-            curl_close($curl);
+        } catch (\JsonException $e) {
+            self::debug("Failed to parse catalog JSON: " . $e->getMessage());
+            return null;
         }
     }
 

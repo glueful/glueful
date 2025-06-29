@@ -7,6 +7,8 @@ namespace Glueful\Extensions\SocialLogin\Providers;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * GitHub Authentication Provider
@@ -256,28 +258,36 @@ class GithubAuthProvider extends AbstractSocialProvider
         ];
 
         // Make POST request to token endpoint
-        $ch = curl_init($tokenUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/x-www-form-urlencoded',
-            'Accept: application/json'
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'Accept' => 'application/json'
+                ]
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->post($tokenUrl, [
+                'form_params' => $params
+            ]);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Token exchange failed with HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $tokenData = json_decode($response, true);
+            // Parse JSON response
+            $tokenData = $response->json();
 
-        if (!is_array($tokenData)) {
-            throw new \Exception("Invalid token response: $response");
+            if (!is_array($tokenData)) {
+                throw new \Exception("Invalid token response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to exchange code for token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from token endpoint: " . $e->getMessage());
         }
 
         return $tokenData;
@@ -295,27 +305,36 @@ class GithubAuthProvider extends AbstractSocialProvider
         $userInfoUrl = 'https://api.github.com/user';
 
         // Make GET request with access token
-        $ch = curl_init($userInfoUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: token ' . $accessToken,
-            'User-Agent: Glueful/SocialLogin',
-            'Accept: application/json'
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'Authorization' => 'token ' . $accessToken,
+                    'User-Agent' => 'Glueful/SocialLogin',
+                    'Accept' => 'application/json'
+                ]
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($userInfoUrl);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to get user profile, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $userProfile = json_decode($response, true);
+            // Parse JSON response
+            $userProfile = $response->json();
 
-        if (!is_array($userProfile)) {
-            throw new \Exception("Invalid profile response: $response");
+            if (!is_array($userProfile)) {
+                throw new \Exception("Invalid profile response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to get user profile: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from GitHub API: " . $e->getMessage());
         }
 
         // Format profile data to our standard format
@@ -351,27 +370,36 @@ class GithubAuthProvider extends AbstractSocialProvider
         $emailsUrl = 'https://api.github.com/user/emails';
 
         // Make GET request with access token
-        $ch = curl_init($emailsUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: token ' . $accessToken,
-            'User-Agent: Glueful/SocialLogin',
-            'Accept: application/json'
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'Authorization' => 'token ' . $accessToken,
+                    'User-Agent' => 'Glueful/SocialLogin',
+                    'Accept' => 'application/json'
+                ]
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($emailsUrl);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to get user emails, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $emails = json_decode($response, true);
+            // Parse JSON response
+            $emails = $response->json();
 
-        if (!is_array($emails)) {
-            throw new \Exception("Invalid emails response: $response");
+            if (!is_array($emails)) {
+                throw new \Exception("Invalid emails response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to get user emails: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from GitHub emails API: " . $e->getMessage());
         }
 
         return $emails;

@@ -9,6 +9,8 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
 use Glueful\Auth\JWTService;
 use Glueful\Extensions\SocialLogin\Providers\ASN1Parser;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Apple Authentication Provider
@@ -262,25 +264,33 @@ class AppleAuthProvider extends AbstractSocialProvider
         ];
 
         // Make POST request to token endpoint
-        $ch = curl_init($tokenUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->post($tokenUrl, [
+                'form_params' => $params
+            ]);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Token exchange failed with HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $tokenData = json_decode($response, true);
+            // Parse JSON response
+            $tokenData = $response->json();
 
-        if (!is_array($tokenData)) {
-            throw new \Exception("Invalid token response: $response");
+            if (!is_array($tokenData)) {
+                throw new \Exception("Invalid token response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to exchange code for token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from token endpoint: " . $e->getMessage());
         }
 
         return $tokenData;
@@ -533,18 +543,27 @@ class AppleAuthProvider extends AbstractSocialProvider
         // Get Apple's public keys
         $jwksUrl = 'https://appleid.apple.com/auth/keys';
 
-        $ch = curl_init($jwksUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($jwksUrl);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to fetch JWKS, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
+
+            $jwks = $response->json();
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to fetch Apple JWKS: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from Apple JWKS endpoint: " . $e->getMessage());
         }
-
-        $jwks = json_decode($response, true);
 
         if (!is_array($jwks) || !isset($jwks['keys']) || !is_array($jwks['keys'])) {
             throw new \Exception("Invalid JWKS response from Apple");

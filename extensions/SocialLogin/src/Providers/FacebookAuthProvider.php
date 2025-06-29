@@ -7,6 +7,8 @@ namespace Glueful\Extensions\SocialLogin\Providers;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Facebook Authentication Provider
@@ -232,23 +234,36 @@ class FacebookAuthProvider extends AbstractSocialProvider
         ];
 
         // Make request to token endpoint
-        $ch = curl_init($tokenUrl . '?' . http_build_query($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'Accept' => 'application/json'
+                ]
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($tokenUrl, [
+                'query' => $params
+            ]);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Token exchange failed with HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $tokenData = json_decode($response, true);
+            // Parse JSON response
+            $tokenData = $response->json();
 
-        if (!is_array($tokenData)) {
-            throw new \Exception("Invalid token response: $response");
+            if (!is_array($tokenData)) {
+                throw new \Exception("Invalid token response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to exchange code for token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from token endpoint: " . $e->getMessage());
         }
 
         return $tokenData;
@@ -267,22 +282,31 @@ class FacebookAuthProvider extends AbstractSocialProvider
         $userInfoUrl = "https://graph.facebook.com/v15.0/me?fields={$fields}&access_token={$accessToken}";
 
         // Make GET request
-        $ch = curl_init($userInfoUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($userInfoUrl);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to get user profile, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $userProfile = json_decode($response, true);
+            // Parse JSON response
+            $userProfile = $response->json();
 
-        if (!is_array($userProfile)) {
-            throw new \Exception("Invalid profile response: $response");
+            if (!is_array($userProfile)) {
+                throw new \Exception("Invalid profile response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to get user profile: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from Facebook Graph API: " . $e->getMessage());
         }
 
         // Extract picture URL from nested structure
@@ -409,22 +433,33 @@ class FacebookAuthProvider extends AbstractSocialProvider
         ];
 
         // Make the request to Facebook
-        $ch = curl_init($debugTokenUrl . '?' . http_build_query($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($debugTokenUrl, [
+                'query' => $params
+            ]);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to verify access token, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $data = json_decode($response, true);
+            // Parse JSON response
+            $data = $response->json();
 
-        if (!is_array($data) || !isset($data['data'])) {
-            throw new \Exception("Invalid debug token response: $response");
+            if (!is_array($data) || !isset($data['data'])) {
+                throw new \Exception("Invalid debug token response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to verify access token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from Facebook debug token endpoint: " . $e->getMessage());
         }
 
         return $data['data'];

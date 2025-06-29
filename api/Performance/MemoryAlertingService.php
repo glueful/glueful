@@ -4,6 +4,8 @@ namespace Glueful\Performance;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Service for monitoring memory usage and triggering alerts
@@ -274,26 +276,27 @@ class MemoryAlertingService
         ]);
 
         // Send the notification - in a production system, this would be queued
-        $ch = curl_init($slackConfig['webhook_url']);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'Content-Length: ' . strlen($payload)
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5
+            ]);
 
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $response = $client->post($slackConfig['webhook_url'], [
+                'json' => json_decode($payload, true)
+            ]);
 
-        if ($httpCode != 200) {
-            $this->logger->warning('Failed to send Slack alert', [
-                'http_code' => $httpCode,
-                'response' => $result
+            if (!$response->isSuccessful()) {
+                $this->logger->warning('Failed to send Slack alert', [
+                    'http_code' => $response->getStatusCode(),
+                    'response' => $response->getBody()
+                ]);
+            }
+        } catch (HttpException $e) {
+            $this->logger->error('Failed to send Slack alert', [
+                'error' => $e->getMessage()
             ]);
         }
-
-        curl_close($ch);
     }
 
     /**
@@ -343,27 +346,30 @@ class MemoryAlertingService
         ]);
 
         // Send the notification
-        $ch = curl_init($webhookConfig['url']);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'Content-Length: ' . strlen($payload),
-            'X-Alert-Type: memory'
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5,
+                'headers' => [
+                    'X-Alert-Type' => 'memory'
+                ]
+            ]);
 
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $response = $client->post($webhookConfig['url'], [
+                'json' => json_decode($payload, true)
+            ]);
 
-        if ($httpCode < 200 || $httpCode >= 300) {
-            $this->logger->warning('Failed to send webhook alert', [
-                'http_code' => $httpCode,
-                'response' => $result
+            if (!$response->isSuccessful()) {
+                $this->logger->warning('Failed to send webhook alert', [
+                    'http_code' => $response->getStatusCode(),
+                    'response' => $response->getBody()
+                ]);
+            }
+        } catch (HttpException $e) {
+            $this->logger->error('Failed to send webhook alert', [
+                'error' => $e->getMessage()
             ]);
         }
-
-        curl_close($ch);
     }
 
     /**

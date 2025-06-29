@@ -7,6 +7,8 @@ namespace Glueful\Extensions\SocialLogin\Providers;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Google Authentication Provider
@@ -237,25 +239,33 @@ class GoogleAuthProvider extends AbstractSocialProvider
         ];
 
         // Make POST request to token endpoint
-        $ch = curl_init($tokenUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->post($tokenUrl, [
+                'form_params' => $params
+            ]);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Token exchange failed with HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $tokenData = json_decode($response, true);
+            // Parse JSON response
+            $tokenData = $response->json();
 
-        if (!is_array($tokenData)) {
-            throw new \Exception("Invalid token response: $response");
+            if (!is_array($tokenData)) {
+                throw new \Exception("Invalid token response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to exchange code for token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from token endpoint: " . $e->getMessage());
         }
 
         return $tokenData;
@@ -273,25 +283,34 @@ class GoogleAuthProvider extends AbstractSocialProvider
         $userInfoUrl = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
         // Make GET request with access token
-        $ch = curl_init($userInfoUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $accessToken
-        ]);
+        try {
+            $client = new Client([
+                'timeout' => 30,
+                'connect_timeout' => 10,
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken
+                ]
+            ]);
 
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($userInfoUrl);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Failed to get user profile, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        // Parse JSON response
-        $userProfile = json_decode($response, true);
+            // Parse JSON response
+            $userProfile = $response->json();
 
-        if (!is_array($userProfile)) {
-            throw new \Exception("Invalid profile response: $response");
+            if (!is_array($userProfile)) {
+                throw new \Exception("Invalid profile response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to get user profile: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from user info endpoint: " . $e->getMessage());
         }
 
         // Format profile data to our standard format
@@ -355,27 +374,31 @@ class GoogleAuthProvider extends AbstractSocialProvider
         $url = $tokenInfoUrl . '?id_token=' . urlencode($idToken);
 
         // Make GET request to verify token
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        try {
+            $client = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5
+            ]);
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $response = $client->get($url);
 
-        if ($error) {
-            throw new \Exception("cURL error: $error");
-        }
+            if (!$response->isSuccessful()) {
+                throw new \Exception(
+                    "Invalid token, HTTP code: " . $response->getStatusCode() .
+                    ", Response: " . $response->getBody()
+                );
+            }
 
-        if ($httpCode !== 200) {
-            throw new \Exception("Invalid token, HTTP code: $httpCode, Response: $response");
-        }
+            // Parse JSON response
+            $tokenInfo = $response->json();
 
-        // Parse JSON response
-        $tokenInfo = json_decode($response, true);
-
-        if (!is_array($tokenInfo)) {
-            throw new \Exception("Invalid token info response: $response");
+            if (!is_array($tokenInfo)) {
+                throw new \Exception("Invalid token info response: " . $response->getBody());
+            }
+        } catch (HttpException $e) {
+            throw new \Exception("Failed to verify ID token: " . $e->getMessage());
+        } catch (\JsonException $e) {
+            throw new \Exception("Invalid JSON response from token info endpoint: " . $e->getMessage());
         }
 
         // Verify token was issued for our client
