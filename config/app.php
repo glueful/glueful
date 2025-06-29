@@ -86,19 +86,4 @@ return [
         ]
     ],
 
-    // Logging Configuration
-    'logging' => [
-        'log_channel' => env('LOG_CHANNEL', 'app'),
-        // Smart environment-aware log level (error in production, debug in development)
-        'log_level' => env('LOG_LEVEL', match (env('APP_ENV')) {
-            'production' => 'error',
-            'staging' => 'warning',
-            default => 'debug'
-        }),
-        'log_to_file' => env('LOG_TO_FILE', true),
-        'log_to_db' => env('LOG_TO_DB', true),
-        'log_file_path' => dirname(__DIR__) . '/storage/logs/',
-        'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
-        'log_rotation_days' => env('LOG_ROTATION_DAYS', 30),
-    ],
 ];

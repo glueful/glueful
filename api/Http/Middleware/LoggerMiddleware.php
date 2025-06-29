@@ -7,6 +7,7 @@ namespace Glueful\Http\Middleware;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Glueful\Logging\LogManager;
+use Glueful\Exceptions\HttpProtocolException;
 
 /**
  * Logger Middleware
@@ -57,10 +58,13 @@ class LoggerMiddleware implements MiddlewareInterface
         // Record the start time
         $startTime = microtime(true);
 
-        // Log the incoming request
-        $this->logRequest($request, $requestId);
-
         try {
+            // NEW: Validate HTTP protocol (framework concern)
+            $this->validateHttpProtocol($request);
+
+            // Log the incoming request
+            $this->logRequest($request, $requestId);
+
             // Process the request through the middleware pipeline
             $response = $handler->handle($request);
 
@@ -69,6 +73,9 @@ class LoggerMiddleware implements MiddlewareInterface
 
             // Log the response
             $this->logResponse($request, $response, $requestId, $processingTime);
+
+            // NEW: Check for slow requests (framework concern)
+            $this->checkSlowRequest($request, $response, $processingTime);
 
             // Add the request ID to the response for correlation
             $response->headers->set('X-Request-ID', $requestId);
@@ -207,5 +214,74 @@ class LoggerMiddleware implements MiddlewareInterface
         }
 
         return $parameters;
+    }
+
+    /**
+     * NEW: Validate HTTP protocol requirements (framework concern)
+     *
+     * @param Request $request
+     * @throws HttpProtocolException
+     */
+    private function validateHttpProtocol(Request $request): void
+    {
+        // Check for malformed JSON (framework concern)
+        $contentType = $request->headers->get('Content-Type');
+        if ($contentType && strpos($contentType, 'application/json') !== false) {
+            $content = $request->getContent();
+            if (!empty($content) && json_decode($content) === null && json_last_error() !== JSON_ERROR_NONE) {
+                $this->logger->error('Malformed JSON request body', [
+                    'type' => 'request_error',
+                    'path' => $request->getPathInfo(),
+                    'method' => $request->getMethod(),
+                    'error_code' => 'JSON_PARSE_ERROR',
+                    'request_id' => $request->attributes->get('request_id'),
+                    'timestamp' => date('c')
+                ]);
+                throw HttpProtocolException::malformedJson('JSON parse error: ' . json_last_error_msg());
+            }
+        }
+
+        // Check for required HTTP headers (framework concern)
+        $requiredHeaders = config('http.required_headers', []);
+        foreach ($requiredHeaders as $header) {
+            if (!$request->headers->has($header)) {
+                $this->logger->error('Missing required header', [
+                    'type' => 'request_error',
+                    'path' => $request->getPathInfo(),
+                    'method' => $request->getMethod(),
+                    'missing_header' => $header,
+                    'error_code' => 'MISSING_HEADER',
+                    'request_id' => $request->attributes->get('request_id'),
+                    'timestamp' => date('c')
+                ]);
+                throw HttpProtocolException::missingHeader($header);
+            }
+        }
+    }
+
+    /**
+     * NEW: Check for slow requests and log performance issues (framework concern)
+     *
+     * @param Request $request
+     * @param Response $response
+     * @param float $processingTime
+     */
+    private function checkSlowRequest(Request $request, Response $response, float $processingTime): void
+    {
+        $slowThreshold = config('logging.framework.slow_requests.threshold_ms', 1000);
+
+        if ($processingTime > $slowThreshold) {
+            $this->logger->warning('Slow request detected', [
+                'type' => 'performance',
+                'message' => 'Request exceeded performance threshold',
+                'path' => $request->getPathInfo(),
+                'method' => $request->getMethod(),
+                'status' => $response->getStatusCode(),
+                'processing_time_ms' => $processingTime,
+                'threshold_ms' => $slowThreshold,
+                'request_id' => $request->attributes->get('request_id'),
+                'timestamp' => date('c')
+            ]);
+        }
     }
 }

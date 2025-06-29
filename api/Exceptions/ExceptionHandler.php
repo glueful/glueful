@@ -2,19 +2,28 @@
 
 namespace Glueful\Exceptions;
 
-use Glueful\Logging\LogManagerInterface;
-use Glueful\Logging\LogManager;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Exceptions\AuthenticationException;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Exceptions\ApiException;
+use Glueful\Exceptions\HttpProtocolException;
+use Glueful\Exceptions\HttpAuthException;
+use Glueful\Events\Http\ExceptionEvent;
+use Glueful\Http\RequestContext;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class ExceptionHandler
 {
     /**
-     * @var LogManagerInterface|null
+     * @var LoggerInterface|null PSR-3 compliant logger
      */
-    private static ?LogManagerInterface $logManager = null;
+    private static ?LoggerInterface $logger = null;
+
+    /**
+     * @var EventDispatcherInterface|null Event dispatcher for business logging hooks
+     */
+    private static ?EventDispatcherInterface $eventDispatcher = null;
 
     /**
      * @var bool Flag to disable exit for testing
@@ -550,13 +559,23 @@ class ExceptionHandler
     }
 
     /**
-     * Set the log manager instance for testing
+     * Set the logger instance for testing
      *
-     * @param LogManagerInterface|null $logManager
+     * @param LoggerInterface|null $logger
      */
-    public static function setLogManager(?LogManagerInterface $logManager): void
+    public static function setLogger(?LoggerInterface $logger): void
     {
-        self::$logManager = $logManager;
+        self::$logger = $logger;
+    }
+
+    /**
+     * Set event dispatcher for emitting business events
+     *
+     * @param EventDispatcherInterface|null $eventDispatcher
+     */
+    public static function setEventDispatcher(?EventDispatcherInterface $eventDispatcher): void
+    {
+        self::$eventDispatcher = $eventDispatcher;
     }
 
 
@@ -564,17 +583,17 @@ class ExceptionHandler
 
 
     /**
-     * Get the log manager instance
+     * Get the PSR-3 logger instance
      *
-     * @return LogManagerInterface
+     * @return LoggerInterface
      */
-    private static function getLogManager(): LogManagerInterface
+    private static function getLogger(): LoggerInterface
     {
-        if (self::$logManager === null) {
-            self::$logManager = LogManager::getInstance();
+        if (self::$logger === null) {
+            self::$logger = container()->get(LoggerInterface::class);
         }
 
-        return self::$logManager;
+        return self::$logger;
     }
 
     /**
@@ -601,6 +620,22 @@ class ExceptionHandler
 
         // Log the error with enhanced context
         self::logError($exception, $context);
+
+        // NEW: Emit event for application business logic
+        if (self::$eventDispatcher !== null) {
+            try {
+                $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+                $event = new ExceptionEvent(
+                    $request,
+                    $exception,
+                    $context
+                );
+                self::$eventDispatcher->dispatch($event);
+            } catch (\Throwable $eventException) {
+                // Don't let event dispatching errors break exception handling
+                error_log("Failed to dispatch exception event: " . $eventException->getMessage());
+            }
+        }
 
 
         // Determine appropriate status code, message, and data based on exception type
@@ -701,27 +736,33 @@ class ExceptionHandler
      */
     public static function logError(\Throwable $exception, array $customContext = []): void
     {
+        // Determine if this is a framework-level exception
+        $isFrameworkException = self::isFrameworkException($exception);
+
         // Get the appropriate log channel based on exception type
-        $channel = self::$channelMap['default'];
-
-        foreach (self::$channelMap as $exceptionClass => $mappedChannel) {
-            if ($exceptionClass === 'default') {
-                continue;
-            }
-
-            if ($exception instanceof $exceptionClass) {
-                $channel = $mappedChannel;
-                break;
+        if ($isFrameworkException) {
+            $channel = 'framework';
+        } else {
+            $channel = self::$channelMap['default'];
+            foreach (self::$channelMap as $exceptionClass => $mappedChannel) {
+                if ($exceptionClass === 'default') {
+                    continue;
+                }
+                if ($exception instanceof $exceptionClass) {
+                    $channel = $mappedChannel;
+                    break;
+                }
             }
         }
 
-        // Build the context array with exception information
+        // Add framework-specific context for framework exceptions
         $context = [
-            'exception' => $exception,
+            'type' => $isFrameworkException ? 'framework_exception' : 'application_exception',
+            'exception' => get_class($exception),
             'file' => $exception->getFile(),
             'line' => $exception->getLine(),
             'trace' => $exception->getTraceAsString(),
-            'type' => get_class($exception)
+            'timestamp' => date('c')
         ];
 
         // Merge custom context if provided
@@ -730,17 +771,47 @@ class ExceptionHandler
         }
 
         try {
-            // Get log manager and log the exception
-            $logManager = self::getLogManager();
+            // Get PSR-3 logger and log the exception
+            $logger = self::getLogger();
 
-            // Get logger for the specific channel and log the exception
-            $logger = $logManager->getLogger($channel);
+            // Add channel to context for framework vs application logging distinction
+            $context['channel'] = $channel;
+
             $logger->error($exception->getMessage(), $context);
         } catch (\Throwable $e) {
             // Fallback to error_log if logging fails
             error_log("Error logging exception: {$exception->getMessage()} - {$e->getMessage()}");
             error_log($exception->getTraceAsString());
         }
+    }
+
+    /**
+     * Determine if exception is framework-level vs application-level
+     *
+     * @param \Throwable $exception
+     * @return bool
+     */
+    private static function isFrameworkException(\Throwable $exception): bool
+    {
+        // Framework exceptions: unhandled errors, ErrorException (converted PHP errors)
+        $frameworkExceptions = [
+            \ErrorException::class,
+            \Error::class,
+            \ParseError::class,
+            \TypeError::class,
+            \ArgumentCountError::class,
+            HttpProtocolException::class,
+            HttpAuthException::class
+        ];
+
+        // Also consider uncaught exceptions in framework code (by file path)
+        $exceptionFile = $exception->getFile();
+        $isFrameworkFile = strpos($exceptionFile, '/api/') !== false &&
+                          !strpos($exceptionFile, '/Controllers/') &&
+                          !strpos($exceptionFile, '/Services/') &&
+                          !strpos($exceptionFile, '/Repository/');
+
+        return in_array(get_class($exception), $frameworkExceptions) || $isFrameworkFile;
     }
 
     /**

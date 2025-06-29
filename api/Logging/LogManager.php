@@ -139,7 +139,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
         $this->minimumLevel = Level::Debug;
 
         // Get log directory from config
-        $logDirectory = config('app.logging.log_file_path') ?: dirname(dirname(__FILE__)) . '/storage/logs/';
+        $logDirectory = config('logging.paths.log_directory') ?: dirname(dirname(__FILE__)) . '/storage/logs/';
 
         // Create logs directory if it doesn't exist
         if (!is_dir($logDirectory) && !mkdir($logDirectory, 0755, true)) {
@@ -152,7 +152,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         // Get max files setting from config
-        $this->maxFiles = config('app.logging.log_rotation_days', 30);
+        $this->maxFiles = config('logging.rotation.days', 30);
 
         // Create logger
         $this->logger = new Logger($defaultChannel);
@@ -194,7 +194,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
         $this->logger->pushHandler($defaultHandler);  // Other logs go to default log
 
         // Add database handler if configured
-        if (config('app.logging.database_logging', false)) {
+        if (config('logging.application.database_logging', false)) {
             $this->logger->pushHandler(new DatabaseLogHandler());
         }
 
@@ -960,7 +960,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
      */
     private function getLogFilename(string $channel, Level $level): string
     {
-        $baseDir = config('app.logging.log_file_path') ?: dirname(dirname(__FILE__)) . '/logs/';
+        $baseDir = config('logging.paths.log_directory') ?: dirname(dirname(__FILE__)) . '/logs/';
 
         // Organize logs in subdirectories by channel for better organization
         $channelDir = $baseDir . ($channel !== 'app' ? $channel . '/' : '');

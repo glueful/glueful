@@ -7,7 +7,7 @@ namespace Glueful;
 use Glueful\Http\{Router};
 use Glueful\Helpers\{ExtensionsManager, RoutesManager};
 use Glueful\Scheduler\JobScheduler;
-use Glueful\Logging\LogManager;
+use Psr\Log\LoggerInterface;
 
 /**
  * Main API Initialization and Request Handler (Cleaned)
@@ -17,8 +17,8 @@ use Glueful\Logging\LogManager;
  */
 class API
 {
-    /** @var LogManager|null Central logger instance */
-    private static ?LogManager $logger = null;
+    /** @var LoggerInterface|null PSR-3 compliant framework logger */
+    private static ?LoggerInterface $logger = null;
 
     /**
      * Initialize the API Framework
@@ -30,11 +30,25 @@ class API
      */
     public static function init(): void
     {
-        // Log initialization start
-        self::getLogger()->info("API initialization started");
+        // Framework logs initialization start
+        self::getLogger()->info('Framework initialization started', [
+            'type' => 'framework',
+            'message' => 'Glueful framework bootstrap initiated',
+            'version' => config('app.version_full'),
+            'environment' => config('app.env'),
+            'php_version' => PHP_VERSION,
+            'timestamp' => date('c')
+        ]);
 
-        // Initialize core components (without manual middleware registration)
         self::initializeCore();
+
+        // Framework logs core initialization success
+        self::getLogger()->info('Framework core initialized', [
+            'type' => 'framework',
+            'message' => 'Core components loaded successfully',
+            'components' => ['config', 'auth', 'database', 'cache'],
+            'timestamp' => date('c')
+        ]);
 
         // Register ALL middleware from configuration in one place
         self::getLogger()->debug("Registering middleware from configuration...");
@@ -58,8 +72,18 @@ class API
             JobScheduler::getInstance();
         }
 
-        // Initialization complete
-        self::getLogger()->info("API initialization completed successfully");
+        // Framework logs successful startup
+        self::getLogger()->info('Framework initialization completed', [
+            'type' => 'framework',
+            'message' => 'Glueful framework ready to handle requests',
+            'version' => config('app.version_full'),
+            'environment' => config('app.env'),
+            'config' => [
+                'debug' => config('app.debug'),
+                'middleware_registered' => count(\Glueful\Http\MiddlewareRegistry::getRegisteredMiddleware())
+            ],
+            'timestamp' => date('c')
+        ]);
     }
 
     /**
@@ -103,16 +127,15 @@ class API
     }
 
     /**
-     * Get logger instance
+     * Get PSR-3 logger instance (framework logging)
      *
-     * @return LogManager
+     * @return LoggerInterface
      */
-    public static function getLogger(): LogManager
+    public static function getLogger(): LoggerInterface
     {
-        if (!isset(self::$logger)) {
-            self::$logger = $GLOBALS['logger'] ?? new LogManager('api');
+        if (self::$logger === null) {
+            self::$logger = container()->get(LoggerInterface::class);
         }
-
         return self::$logger;
     }
 
@@ -126,13 +149,6 @@ class API
         $startTime = microtime(true);
         $requestId = uniqid('req-');
 
-        // Log request start
-        self::getLogger()->info("API request started", [
-            'request_id' => $requestId,
-            'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
-            'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
-        ]);
-
         // Get router instance
         $router = Router::getInstance();
 
@@ -145,12 +161,17 @@ class API
         // Send the Symfony Response object (handles headers, content, etc.)
         $response->send();
 
-        // Log successful response
+        // Framework logs request lifecycle (since this is framework request processing)
         $totalTime = round((microtime(true) - $startTime) * 1000, 2);
-        self::getLogger()->info("API request completed", [
+        self::getLogger()->info('Framework request completed', [
+            'type' => 'framework',
+            'message' => 'Request processing pipeline completed',
             'request_id' => $requestId,
+            'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
+            'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
             'time_ms' => $totalTime,
-            'status' => $response->getStatusCode()
+            'status' => $response->getStatusCode(),
+            'timestamp' => date('c')
         ]);
     }
 

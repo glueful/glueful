@@ -37,20 +37,32 @@ class CoreServiceProvider implements ServiceProviderInterface
 {
     public function register(ContainerInterface $container): void
     {
-        // Logging services
-        $container->singleton(LoggerInterface::class, function () {
+        // Logging services - PSR-3 compliant framework logger
+        $container->singleton(LoggerInterface::class, function ($container) {
+            // Framework logging should be optional and configurable
+            $config = config('logging.framework', []);
+
+            if (!($config['enabled'] ?? true)) {
+                return new NullLogger();
+            }
+
             if (env('APP_ENV') === 'testing') {
                 return new NullLogger();
             }
 
-            $logger = new Logger('glueful');
-            $logLevel = Logger::toMonologLevel('info');
+            // Use framework-specific logging configuration
+            $channelConfig = config('logging.channels.framework', []);
+            $logLevel = Logger::toMonologLevel($config['level'] ?? 'info');
 
             if (env('APP_DEBUG', false)) {
                 $logLevel = Logger::toMonologLevel('debug');
             }
 
-            $logPath = dirname(__DIR__, 3) . '/storage/logs/app-' . date('Y-m-d') . '.log';
+            // Create framework logger with proper channel
+            $logger = new Logger($config['channel'] ?? 'framework');
+
+            // Set up framework log file with proper path
+            $logPath = $channelConfig['path'] ?? (dirname(__DIR__, 3) . '/storage/logs/framework-' . date('Y-m-d') . '.log');
             $handler = new StreamHandler($logPath, $logLevel);
             $logger->pushHandler($handler);
 
