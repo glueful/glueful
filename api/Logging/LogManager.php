@@ -152,7 +152,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         // Get max files setting from config
-        $this->maxFiles = config('logging.rotation.days', 30);
+        $this->maxFiles = (int) config('logging.rotation.days', 30);
 
         // Create logger
         $this->logger = new Logger($defaultChannel);
