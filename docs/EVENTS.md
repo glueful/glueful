@@ -10,6 +10,7 @@ The Glueful framework includes a comprehensive event system built on Symfony Eve
 - [Cache Events](#cache-events)
 - [Database Events](#database-events)
 - [HTTP Events](#http-events)
+- [Security Events](#security-events)
 - [Event Listeners](#event-listeners)
 - [Extension Integration](#extension-integration)
 - [Creating Custom Events](#creating-custom-events)
@@ -29,12 +30,22 @@ The event system allows decoupled communication between different parts of the a
 
 ### Key Features
 
-- 17 built-in event classes
+- 20+ built-in event classes
 - Symfony EventDispatcher integration
 - Extension event subscriber system
 - Performance monitoring capabilities
 - Security-focused event data
+- Framework vs Application logging boundaries
 - Type-safe PHP 8.2+ implementation
+
+### Framework vs Application Logging
+
+The event system supports clear separation between framework and application concerns:
+
+- **Framework Events**: Infrastructure/protocol concerns (HTTP auth failures, rate limits, protocol errors)
+- **Application Events**: Business logic concerns (user actions, business state changes, custom analytics)
+
+Framework emits events that applications can listen to for implementing business-specific logging and responses.
 
 ## Event Categories
 
@@ -54,6 +65,12 @@ The event system allows decoupled communication between different parts of the a
 ### 4. HTTP Events (`Glueful\Events\Http`)
 - Request and response events
 - Exception handling events
+- HTTP authentication events
+
+### 5. Security Events (`Glueful\Events\Security`)
+- Rate limiting events
+- CSRF violation events
+- Framework security events
 
 ## Authentication Events
 
@@ -137,6 +154,8 @@ $eventDispatcher->addListener(AuthenticationFailedEvent::class, function(Authent
 **Triggered**: When rate limits are exceeded
 
 **Usage**: Security monitoring, adaptive rate limiting
+
+**Note**: This event is now detailed in the [Security Events](#security-events) section as part of the framework vs application logging boundaries.
 
 ## Cache Events
 
@@ -293,6 +312,181 @@ $eventDispatcher->addListener(RequestEvent::class, function(RequestEvent $event)
 **Triggered**: When exceptions occur during request processing
 
 **Usage**: Error handling, logging, debugging
+
+### HttpAuthFailureEvent
+
+**Triggered**: When HTTP-level authentication failures occur (framework logs protocol errors, application handles business logic)
+
+**Properties**:
+```php
+readonly string $reason        // Failure reason (missing_authorization_header, malformed_jwt_token)
+readonly Request $request      // HTTP request object
+readonly ?string $tokenPrefix  // First 10 chars of token for debugging (null if no token)
+```
+
+**Usage Example**:
+```php
+use Glueful\Events\Http\HttpAuthFailureEvent;
+
+$eventDispatcher->addListener(HttpAuthFailureEvent::class, function(HttpAuthFailureEvent $event) {
+    // Application handles business context of auth failures
+    $logger->info('Authentication attempt failed', [
+        'reason' => $event->reason,
+        'ip_address' => $event->request->getClientIp(),
+        'endpoint' => $event->request->getPathInfo(),
+        'user_agent' => $event->request->headers->get('User-Agent'),
+        'timestamp' => now()->toISOString()
+    ]);
+    
+    // Business logic: Track failed authentication patterns
+    $this->trackFailedAuthPattern($event);
+});
+```
+
+### HttpAuthSuccessEvent
+
+**Triggered**: When HTTP-level authentication succeeds (framework validates protocol, application tracks business context)
+
+**Properties**:
+```php
+readonly Request $request        // HTTP request object
+readonly array $tokenMetadata   // Token validation metadata (e.g., token_prefix)
+```
+
+**Usage**: Business authentication tracking, user session analytics
+
+### HttpClientFailureEvent
+
+**Triggered**: When HTTP client infrastructure failures occur (connection timeouts, DNS issues, server errors)
+
+**Properties**:
+```php
+readonly string $method        // HTTP method (GET, POST, etc.)
+readonly string $url          // Target URL that failed
+readonly \Throwable $exception // The exception that occurred
+readonly string $failureType  // Type of failure (connection_failed, request_failed)
+```
+
+**Usage Example**:
+```php
+use Glueful\Events\Http\HttpClientFailureEvent;
+
+$eventDispatcher->addListener(HttpClientFailureEvent::class, function(HttpClientFailureEvent $event) {
+    // Application handles business context of external service failures
+    $logger->error('External service failure', [
+        'type' => 'integration',
+        'service' => $this->getServiceNameFromUrl($event->url),
+        'method' => $event->method,
+        'url' => $event->url,
+        'failure_type' => $event->failureType,
+        'error' => $event->exception->getMessage(),
+        'timestamp' => now()->toISOString()
+    ]);
+});
+```
+
+## Security Events
+
+Framework emits these events for infrastructure/protocol security concerns. Applications should listen and implement business security logic.
+
+### RateLimitExceededEvent
+
+**Triggered**: When rate limits are exceeded (framework detects, application responds)
+
+**Properties**:
+```php
+readonly string $ipAddress    // Client IP address
+readonly string $endpoint     // Requested endpoint
+readonly string $method       // HTTP method
+readonly array $limits        // Rate limit configuration that was exceeded
+readonly Request $request     // Full request object for additional context
+```
+
+**Usage Example**:
+```php
+use Glueful\Events\Security\RateLimitExceededEvent;
+
+$eventDispatcher->addListener(RateLimitExceededEvent::class, function(RateLimitExceededEvent $event) {
+    // Application handles business security response
+    $logger->warning('Rate limit violation detected', [
+        'ip_address' => $event->ipAddress,
+        'endpoint' => $event->endpoint,
+        'method' => $event->method,
+        'limits' => $event->limits,
+        'user_agent' => $event->request->headers->get('User-Agent'),
+        'timestamp' => now()->toISOString()
+    ]);
+    
+    // Business logic: Custom security responses
+    if ($this->isSuspiciousActivity($event)) {
+        $this->blacklistIp($event->ipAddress);
+        $this->sendSecurityAlert($event);
+    }
+});
+```
+
+### CSRFViolationEvent
+
+**Triggered**: When CSRF token validation fails (framework validates, application responds)
+
+**Properties**:
+```php
+readonly string $reason    // Violation reason (missing_token, invalid_token, expired_token)
+readonly Request $request  // HTTP request object
+```
+
+**Usage Example**:
+```php
+use Glueful\Events\Security\CSRFViolationEvent;
+
+$eventDispatcher->addListener(CSRFViolationEvent::class, function(CSRFViolationEvent $event) {
+    // Application handles business security logging
+    $logger->error('CSRF violation detected', [
+        'reason' => $event->reason,
+        'ip_address' => $event->request->getClientIp(),
+        'endpoint' => $event->request->getPathInfo(),
+        'method' => $event->request->getMethod(),
+        'user_agent' => $event->request->headers->get('User-Agent'),
+        'referer' => $event->request->headers->get('Referer'),
+        'timestamp' => now()->toISOString()
+    ]);
+    
+    // Business response to CSRF attack
+    $this->handleCSRFAttack($event);
+});
+```
+
+### UnhandledException
+
+**Triggered**: When unhandled exceptions occur (framework logs, application analyzes business impact)
+
+**Properties**:
+```php
+readonly \Throwable $exception  // The unhandled exception
+readonly array $context         // Additional context from exception handler
+```
+
+**Usage Example**:
+```php
+use Glueful\Events\Security\UnhandledException;
+
+$eventDispatcher->addListener(UnhandledException::class, function(UnhandledException $event) {
+    // Application analyzes exceptions for business/security implications
+    if ($this->isBusinessCriticalException($event->exception)) {
+        $logger->error('Business critical exception occurred', [
+            'exception_type' => get_class($event->exception),
+            'message' => $event->exception->getMessage(),
+            'file' => $event->exception->getFile(),
+            'line' => $event->exception->getLine(),
+            'context' => $event->context,
+            'timestamp' => now()->toISOString()
+        ]);
+        
+        // Business logic: Handle critical failures
+        $this->handleCriticalFailure($event);
+    }
+});
+```
 
 ## Event Listeners
 
@@ -523,6 +717,13 @@ $eventDispatcher->addListener('*', function($event) {
 - **Provide clear documentation** for extension events
 - **Test event integration** thoroughly
 - **Handle missing events gracefully** in extensions
+
+### 5. Framework vs Application Logging
+
+- **Framework Events**: Listen to framework security/infrastructure events for business responses
+- **Application Logging**: Implement business-specific logging in event listeners
+- **Separation of Concerns**: Framework logs protocol/infrastructure, applications log business logic
+- **Event-Driven Security**: Use security events (rate limits, CSRF, auth failures) for custom business responses
 
 ## Example: Complete Event Flow
 
