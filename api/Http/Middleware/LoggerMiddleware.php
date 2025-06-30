@@ -58,6 +58,63 @@ class LoggerMiddleware implements MiddlewareInterface
         // Record the start time
         $startTime = microtime(true);
 
+        // NEW: Add contextual logging helper to request
+        $request->attributes->set('logger_context', [
+            'request_id' => $requestId,
+            'ip' => $request->getClientIp(),
+            'user_agent' => $request->headers->get('User-Agent'),
+            'path' => $request->getPathInfo(),
+            'method' => $request->getMethod()
+        ]);
+
+        // NEW: Add contextual logger method to request for easy use by other components
+        $request->attributes->set('contextual_logger', function () use ($request) {
+            $context = $request->attributes->get('logger_context', []);
+
+            // Add user context if available (after authentication middleware)
+            $user = $request->attributes->get('user');
+            if ($user) {
+                $context['user_id'] = $user->uuid ?? $user->id ?? null;
+            }
+
+            // Return a wrapper object that automatically includes context
+            return new class ($this->logger, $context) {
+                private LogManager $logger;
+                private array $context;
+
+                public function __construct(LogManager $logger, array $context)
+                {
+                    $this->logger = $logger;
+                    $this->context = $context;
+                }
+
+                public function info($message, array $extraContext = []): void
+                {
+                    $this->logger->info($message, array_merge($this->context, $extraContext));
+                }
+
+                public function error($message, array $extraContext = []): void
+                {
+                    $this->logger->error($message, array_merge($this->context, $extraContext));
+                }
+
+                public function warning($message, array $extraContext = []): void
+                {
+                    $this->logger->warning($message, array_merge($this->context, $extraContext));
+                }
+
+                public function debug($message, array $extraContext = []): void
+                {
+                    $this->logger->debug($message, array_merge($this->context, $extraContext));
+                }
+
+                public function log($level, $message, array $extraContext = []): void
+                {
+                    $this->logger->log($level, $message, array_merge($this->context, $extraContext));
+                }
+            };
+        });
+
         try {
             // NEW: Validate HTTP protocol (framework concern)
             $this->validateHttpProtocol($request);

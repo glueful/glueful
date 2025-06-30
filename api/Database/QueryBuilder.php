@@ -1262,7 +1262,7 @@ class QueryBuilder
      */
     public function paginate(int $page = 1, int $perPage = 10): array
     {
-        $timerId = $this->logger->startTiming('pagination');
+        $timerId = $this->logger->startTiming();
 
         $this->logger->logEvent("Executing paginated query", [
             'page' => $page,

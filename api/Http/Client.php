@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Glueful\Http;
 
 use Glueful\Exceptions\HttpException;
+use Glueful\Events\Http\HttpClientFailureEvent;
+use Glueful\Events\Event;
+use Psr\Log\LoggerInterface;
 
 /**
  * HTTP Client
@@ -27,6 +30,9 @@ class Client
         'sink' => null, // File path to save response body
     ];
 
+    /** @var LoggerInterface|null Optional framework logger for infrastructure logging */
+    private ?LoggerInterface $logger = null;
+
     /**
      * Create a new Client instance
      *
@@ -35,6 +41,18 @@ class Client
     public function __construct(array $defaultOptions = [])
     {
         $this->defaultOptions = array_merge($this->defaultOptions, $defaultOptions);
+    }
+
+    /**
+     * Set logger for framework infrastructure logging
+     *
+     * @param LoggerInterface $logger Framework logger instance
+     * @return self
+     */
+    public function setLogger(LoggerInterface $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
     }
 
     /**
@@ -113,6 +131,8 @@ class Client
      */
     public function request(string $method, string $url, array $options = []): HttpResponse
     {
+        $startTime = microtime(true);
+
         // Merge default options with request-specific options
         $options = array_merge($this->defaultOptions, $options);
 
@@ -213,9 +233,73 @@ class Client
         // Close cURL handle
         curl_close($ch);
 
-        // Handle errors
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+        // Handle cURL errors (framework infrastructure failures)
         if ($errorCode !== 0) {
-            throw new HttpException("cURL error ($errorCode): $error", $errorCode);
+            // Framework logs infrastructure failures
+            if ($this->logger) {
+                $this->logger->error('HTTP client connection failed', [
+                    'type' => 'http_client',
+                    'message' => 'cURL connection error',
+                    'url' => $url,
+                    'method' => $method,
+                    'error' => $error,
+                    'error_code' => $errorCode,
+                    'timeout' => $options['timeout'],
+                    'timestamp' => date('c')
+                ]);
+            }
+
+            $exception = new HttpException("cURL error ($errorCode): $error", $errorCode);
+
+            // Emit event for application business logic
+            Event::dispatch(new HttpClientFailureEvent(
+                $method,
+                $url,
+                $exception,
+                'connection_failed',
+                ['duration_ms' => $duration, 'curl_error_code' => $errorCode]
+            ));
+
+            throw $exception;
+        }
+
+        // Framework logs server errors (HTTP 5xx)
+        if ($responseCode >= 500 && $this->logger) {
+            $this->logger->error('HTTP client server error', [
+                'type' => 'http_client',
+                'message' => 'Server error response received',
+                'url' => $url,
+                'method' => $method,
+                'status' => $responseCode,
+                'duration_ms' => $duration,
+                'timestamp' => date('c')
+            ]);
+
+            // Emit event for application business logic to handle server errors
+            $exception = new HttpException("HTTP $responseCode error from server", $responseCode);
+            Event::dispatch(new HttpClientFailureEvent(
+                $method,
+                $url,
+                $exception,
+                'server_error',
+                ['duration_ms' => $duration, 'status_code' => $responseCode]
+            ));
+        }
+
+        // Optional: Framework logs slow HTTP requests
+        $slowThreshold = config('logging.framework.http_client.slow_threshold_ms', 5000);
+        if ($duration > $slowThreshold && $this->logger) {
+            $this->logger->warning('HTTP client slow request', [
+                'type' => 'performance',
+                'message' => 'HTTP request exceeded threshold',
+                'url' => $url,
+                'method' => $method,
+                'duration_ms' => $duration,
+                'threshold_ms' => $slowThreshold,
+                'timestamp' => date('c')
+            ]);
         }
 
         // Create response object

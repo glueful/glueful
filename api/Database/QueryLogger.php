@@ -2,23 +2,24 @@
 
 namespace Glueful\Database;
 
-use Glueful\Logging\LogManager;
 use Monolog\Level;
+use Psr\Log\LoggerInterface;
 
 /**
  * Database Query Logger
  *
- * Provides specialized logging for database operations with:
- * - SQL query logging with parameter sanitization
- * - Query timing and performance tracking
- * - Error reporting
- * - Query statistics
- * - Integration with LogManager for centralized logging
+ * Framework-level database infrastructure logging with:
+ * - Slow query detection (configurable threshold)
+ * - N+1 query pattern detection
+ * - Performance monitoring and statistics
+ * - Event emission for application-level logging
+ *
+ * Applications should listen to QueryExecutedEvent for business-specific logging.
  */
 class QueryLogger
 {
-    /** @var LogManager|null Logger implementation */
-    protected ?LogManager $logger;
+    /** @var LoggerInterface|null Framework logger for infrastructure concerns */
+    protected ?LoggerInterface $logger;
 
     /** @var bool Enable debug mode */
     protected bool $debugMode = false;
@@ -53,22 +54,25 @@ class QueryLogger
         'total_time' => 0
     ];
 
+    /** @var array Framework logging configuration */
+    protected array $config;
+
 
     /**
      * Create a new query logger instance
      *
-     * @param LogManager|null $logger LogManager instance
-     * @param string $channel Channel name for database logs
+     * @param LoggerInterface|null $logger Framework logger instance
      */
-    public function __construct(?LogManager $logger = null, string $channel = 'db_queries')
+    public function __construct(?LoggerInterface $logger = null)
     {
-        // Use provided LogManager or create a new one
-        if ($logger instanceof LogManager) {
-            $this->logger = $logger->channel($channel);
-        } else {
-            // Don't create LogManager automatically to prevent circular dependency
-            $this->logger = null;
-        }
+        $this->logger = $logger;
+
+        // Load framework logging configuration
+        $this->config = config('logging.framework.slow_queries', [
+            'enabled' => true,
+            'threshold_ms' => 200,
+            'log_level' => 'warning'
+        ]);
 
         // Default configuration based on application settings
         $this->debugMode = config('app.debug');
@@ -89,25 +93,27 @@ class QueryLogger
         $this->enableTiming = $enableTiming;
         $this->maxLogSize = $maxLogSize;
 
-        // Configure LogManager at the same time
-        if ($this->logger) {
-            if ($enableDebug) {
-                $this->logger->setMinimumLevel(Level::Debug);
-            } else {
-                // When not in debug mode, only log warning and above
-                $this->logger->setMinimumLevel(Level::Warning);
-            }
-        }
-
         return $this;
     }
 
     /**
-     * Access the underlying LogManager
+     * Set framework logger for infrastructure logging
      *
-     * @return LogManager|null
+     * @param LoggerInterface $logger Framework logger instance
+     * @return self
      */
-    public function getLogger(): ?LogManager
+    public function setLogger(LoggerInterface $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
+    }
+
+    /**
+     * Get the framework logger
+     *
+     * @return LoggerInterface|null
+     */
+    public function getLogger(): ?LoggerInterface
     {
         return $this->logger;
     }
@@ -180,10 +186,7 @@ class QueryLogger
         // Calculate execution time
         $executionTime = null;
         if ($startTime !== null && $this->enableTiming) {
-            if (is_string($startTime) && $this->logger) {
-                // Using LogManager timer system
-                $executionTime = $this->logger->endTimer($startTime, ['sql' => $sql]);
-            } elseif (is_float($startTime)) {
+            if (is_float($startTime)) {
                 // Using simple microtime
                 $executionTime = (microtime(true) - $startTime) * 1000; // Convert to ms
                 $executionTime = round($executionTime, 2);
@@ -258,32 +261,40 @@ class QueryLogger
             $context['execution_time'] = $executionTime;
         }
 
-        // Log through LogManager
-        if ($error) {
-            // Add error details
-            $context['error'] = [
-                'message' => $error->getMessage(),
-                'code' => $error->getCode(),
-                'file' => $error->getFile(),
-                'line' => $error->getLine()
-            ];
+        // Framework logs slow queries (configurable infrastructure concern)
+        if ($this->config['enabled'] && $executionTime && $executionTime > $this->config['threshold_ms']) {
+            $this->logSlowQuery($sql, $executionTime);
+        }
 
-            if ($this->logger) {
-                $this->logger->error("Query failed: $sql", $context);
+        // Emit QueryExecutedEvent for application-level logging
+        // Applications can listen to this event for business-specific query logging
+        if (class_exists('\\Glueful\\Events\\Event')) {
+            $metadata = [];
+            if ($error) {
+                $metadata['error'] = [
+                    'message' => $error->getMessage(),
+                    'code' => $error->getCode(),
+                    'file' => $error->getFile(),
+                    'line' => $error->getLine()
+                ];
             }
-        } else {
-            // Use appropriate level based on execution time and complexity
-            if ($this->logger) {
-                if ($executionTime && $executionTime > 1000) {
-                    $this->logger->warning("Slow query: $sql", $context);
-                } elseif ($executionTime && $executionTime > 500) {
-                    $this->logger->notice("Potentially slow query: $sql", $context);
-                } elseif ($complexity > 7) {
-                    $this->logger->notice("Complex query: $sql", $context);
-                } else {
-                    $this->logger->debug("Query executed: $sql", $context);
-                }
+            if ($purpose) {
+                $metadata['purpose'] = $purpose;
             }
+            if ($complexity > 0) {
+                $metadata['complexity'] = $complexity;
+            }
+            if (!empty($tables)) {
+                $metadata['tables'] = $tables;
+            }
+
+            \Glueful\Events\Event::dispatch(new \Glueful\Events\Database\QueryExecutedEvent(
+                $sql,
+                $params,
+                $executionTime ? $executionTime / 1000 : 0.0, // Convert ms to seconds
+                'default', // connection name
+                $metadata
+            ));
         }
 
         // Check for N+1 query patterns after logging
@@ -295,48 +306,28 @@ class QueryLogger
     /**
      * Start timing a query
      *
-     * @param string|null $operation Optional name for the operation
-     * @return string|float Timer ID from LogManager or microtime
+     * @param string|null $operation Optional operation name (for backward compatibility)
+     * @return float Current microtime
      */
-    public function startTiming(?string $operation = null): string|float
+    public function startTiming(?string $operation = null): float
     {
-        if (!$this->enableTiming) {
-            return microtime(true); // Return current time even if timing disabled
-        }
-
-        if ($operation && $this->logger) {
-            // Use LogManager's timer system
-            return $this->logger->startTimer("db_query:" . $operation);
-        }
-
-        // Simple timing fallback
         return microtime(true);
     }
 
     /**
      * End timing for an operation
      *
-     * @param string|float $timerIdOrStart Timer ID or start time
-     * @param array $context Additional context for the timing log
+     * @param float $startTime Start time from startTiming()
      * @return float|null Duration in milliseconds
      */
-    public function endTiming($timerIdOrStart, array $context = []): ?float
+    public function endTiming(float $startTime): ?float
     {
         if (!$this->enableTiming) {
             return null;
         }
 
-        if (is_string($timerIdOrStart) && $this->logger) {
-            // Use LogManager's timer system
-            return $this->logger->endTimer($timerIdOrStart, $context);
-        } elseif (is_float($timerIdOrStart)) {
-            // Calculate duration using microtime
-            $duration = (microtime(true) - $timerIdOrStart) * 1000;
-            return round($duration, 2);
-        } else {
-            // Default fallback for any other type
-            return 0.0;
-        }
+        $duration = (microtime(true) - $startTime) * 1000;
+        return round($duration, 2);
     }
 
     /**
@@ -370,10 +361,45 @@ class QueryLogger
             };
         }
 
-        // Log the event through LogManager
+        // Log the event through framework logger
         if ($this->logger) {
             $this->logger->log($level, $message, $context);
         }
+    }
+
+    /**
+     * Log slow query to framework logger (framework concern)
+     *
+     * @param string $sql SQL statement
+     * @param float $executionTime Execution time in milliseconds
+     * @return void
+     */
+    private function logSlowQuery(string $sql, float $executionTime): void
+    {
+        if (!$this->logger) {
+            return;
+        }
+
+        $this->logger->log($this->config['log_level'], 'Slow query detected', [
+            'type' => 'performance',
+            'message' => 'Database query exceeded threshold',
+            'execution_time_ms' => round($executionTime, 2),
+            'threshold_ms' => $this->config['threshold_ms'],
+            'sql' => $this->sanitizeSql($sql),
+            'timestamp' => date('c')
+        ]);
+    }
+
+    /**
+     * Sanitize SQL for framework logging (remove potential sensitive data)
+     *
+     * @param string $sql SQL statement
+     * @return string Sanitized SQL
+     */
+    private function sanitizeSql(string $sql): string
+    {
+        // Remove potential sensitive data from SQL for framework logging
+        return preg_replace('/\b\d{16,}\b/', '***', $sql); // Hide credit card numbers
     }
 
     /**
@@ -738,6 +764,7 @@ class QueryLogger
                     // Log the potential N+1 issue
                     if ($this->logger) {
                         $this->logger->warning("Potential N+1 query pattern detected", [
+                            'type' => 'performance',
                             'pattern_count' => $count,
                             'threshold' => $this->n1Threshold,
                             'time_window_seconds' => $this->n1TimeWindow,
