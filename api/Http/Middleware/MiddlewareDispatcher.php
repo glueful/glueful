@@ -12,7 +12,7 @@ use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Events\Http\RequestEvent;
 use Glueful\Events\Http\ResponseEvent;
 use Glueful\Events\Http\ExceptionEvent;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Glueful\Events\Event;
 
 /**
  * PSR-15 Compatible Middleware Dispatcher
@@ -32,8 +32,6 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /** @var ContainerInterface|null DI Container */
     private ?ContainerInterface $container;
 
-    /** @var EventDispatcherInterface|null Event dispatcher for HTTP lifecycle events */
-    private ?EventDispatcherInterface $eventDispatcher;
 
     /**
      * Create a new middleware dispatcher
@@ -44,11 +42,6 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     public function __construct(?callable $fallbackHandler = null, ?ContainerInterface $container = null)
     {
         $this->container = $container ?? $this->getDefaultContainer();
-
-        // Get event dispatcher from container if available
-        $this->eventDispatcher = $this->container?->has(EventDispatcherInterface::class)
-            ? $this->container->get(EventDispatcherInterface::class)
-            : null;
 
         $this->fallbackHandler = $fallbackHandler ?: function (Request $request) {
             // Default fallback handler returns a JSON 404 response
@@ -176,13 +169,10 @@ class MiddlewareDispatcher implements RequestHandlerInterface
 
         try {
             // Dispatch request started event
-            if ($this->eventDispatcher) {
-                $requestEvent = new RequestEvent($request, [
-                    'start_time' => $startTime,
-                    'middleware_count' => count($this->middlewareStack)
-                ]);
-                $this->eventDispatcher->dispatch($requestEvent);
-            }
+            Event::dispatch(new RequestEvent($request, [
+                'start_time' => $startTime,
+                'middleware_count' => count($this->middlewareStack)
+            ]));
 
             // If there are no middleware, use the fallback handler
             if (empty($this->middlewareStack)) {
@@ -198,28 +188,22 @@ class MiddlewareDispatcher implements RequestHandlerInterface
             }
 
             // Dispatch response event
-            if ($this->eventDispatcher) {
-                $processingTime = microtime(true) - $startTime;
-                $responseEvent = new ResponseEvent($request, $response, [
-                    'processing_time' => $processingTime,
-                    'memory_usage' => memory_get_usage(true),
-                    'middleware_count' => count($this->middlewareStack)
-                ]);
-                $this->eventDispatcher->dispatch($responseEvent);
-            }
+            $processingTime = microtime(true) - $startTime;
+            Event::dispatch(new ResponseEvent($request, $response, [
+                'processing_time' => $processingTime,
+                'memory_usage' => memory_get_usage(true),
+                'middleware_count' => count($this->middlewareStack)
+            ]));
 
             return $response;
         } catch (\Throwable $exception) {
             // Dispatch exception event
-            if ($this->eventDispatcher) {
-                $processingTime = microtime(true) - $startTime;
-                $exceptionEvent = new ExceptionEvent($request, $exception, [
-                    'processing_time' => $processingTime,
-                    'memory_usage' => memory_get_usage(true),
-                    'middleware_count' => count($this->middlewareStack)
-                ]);
-                $this->eventDispatcher->dispatch($exceptionEvent);
-            }
+            $processingTime = microtime(true) - $startTime;
+            Event::dispatch(new ExceptionEvent($request, $exception, [
+                'processing_time' => $processingTime,
+                'memory_usage' => memory_get_usage(true),
+                'middleware_count' => count($this->middlewareStack)
+            ]));
 
             // Let the global exception handler deal with this
             throw $exception;

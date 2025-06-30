@@ -11,7 +11,7 @@ use Glueful\Exceptions\HttpAuthException;
 use Glueful\Events\Http\ExceptionEvent;
 use Glueful\Http\RequestContext;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Glueful\Events\Event;
 
 class ExceptionHandler
 {
@@ -20,10 +20,6 @@ class ExceptionHandler
      */
     private static ?LoggerInterface $logger = null;
 
-    /**
-     * @var EventDispatcherInterface|null Event dispatcher for business logging hooks
-     */
-    private static ?EventDispatcherInterface $eventDispatcher = null;
 
     /**
      * @var bool Flag to disable exit for testing
@@ -568,15 +564,6 @@ class ExceptionHandler
         self::$logger = $logger;
     }
 
-    /**
-     * Set event dispatcher for emitting business events
-     *
-     * @param EventDispatcherInterface|null $eventDispatcher
-     */
-    public static function setEventDispatcher(?EventDispatcherInterface $eventDispatcher): void
-    {
-        self::$eventDispatcher = $eventDispatcher;
-    }
 
 
 
@@ -622,19 +609,17 @@ class ExceptionHandler
         self::logError($exception, $context);
 
         // NEW: Emit event for application business logic
-        if (self::$eventDispatcher !== null) {
-            try {
-                $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
-                $event = new ExceptionEvent(
-                    $request,
-                    $exception,
-                    $context
-                );
-                self::$eventDispatcher->dispatch($event);
-            } catch (\Throwable $eventException) {
-                // Don't let event dispatching errors break exception handling
-                error_log("Failed to dispatch exception event: " . $eventException->getMessage());
-            }
+        try {
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+            $event = new ExceptionEvent(
+                $request,
+                $exception,
+                $context
+            );
+            Event::dispatch($event);
+        } catch (\Throwable $eventException) {
+            // Don't let event dispatching errors break exception handling
+            error_log("Failed to dispatch exception event: " . $eventException->getMessage());
         }
 
 

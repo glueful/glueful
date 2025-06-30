@@ -76,8 +76,7 @@ class EventServiceProvider implements ServiceProviderInterface
         // Cache invalidation listener
         $container->singleton(CacheInvalidationListener::class, function ($container) {
             return new CacheInvalidationListener(
-                $container->get(\Glueful\Cache\CacheStore::class),
-                $container->get(EventDispatcherInterface::class)
+                $container->get(\Glueful\Cache\CacheStore::class)
             );
         });
 

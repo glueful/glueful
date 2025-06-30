@@ -11,6 +11,8 @@ use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
 use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Exceptions\RateLimitExceededException;
+use Glueful\Events\Auth\RateLimitExceededEvent;
+use Glueful\Events\Event;
 
 /**
  * Rate Limiter Middleware
@@ -49,6 +51,7 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var ContainerInterface|null DI Container */
     private ?ContainerInterface $container;
 
+
     /**
      * Create a new rate limiter middleware
      *
@@ -72,6 +75,7 @@ class RateLimiterMiddleware implements MiddlewareInterface
         $this->windowSeconds = $windowSeconds;
         $this->type = $type;
 
+
         // Default to config values if not specified
         $this->useAdaptiveLimiter = $useAdaptiveLimiter ??
             (bool) config('security.rate_limiter.enable_adaptive', false);
@@ -93,6 +97,22 @@ class RateLimiterMiddleware implements MiddlewareInterface
 
         // Check if the rate limit has been exceeded
         if ($limiter->isExceeded()) {
+            // Emit event for application business logic
+            $currentAttempts = $this->maxAttempts - $limiter->remaining();
+            Event::dispatch(new RateLimitExceededEvent(
+                $request->getClientIp() ?: '0.0.0.0',
+                $this->type,
+                $currentAttempts,
+                $this->maxAttempts,
+                $this->windowSeconds,
+                [
+                    'endpoint' => $request->getPathInfo(),
+                    'method' => $request->getMethod(),
+                    'user_agent' => $request->headers->get('User-Agent'),
+                    'request_id' => $request->attributes->get('request_id')
+                ]
+            ));
+
             // Let exceptions bubble up instead of returning response directly
             throw new RateLimitExceededException('Too Many Requests', $limiter->getRetryAfter());
         }

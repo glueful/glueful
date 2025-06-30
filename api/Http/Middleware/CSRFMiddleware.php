@@ -10,6 +10,8 @@ use Glueful\Security\RandomStringGenerator;
 use Glueful\Cache\CacheStore;
 use Glueful\Exceptions\SecurityException;
 use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\Events\Security\CSRFViolationEvent;
+use Glueful\Events\Event;
 
 /**
  * CSRF Protection Middleware
@@ -72,6 +74,7 @@ class CSRFMiddleware implements MiddlewareInterface
     /** @var CacheStore|null Cache instance */
     private ?CacheStore $cache;
 
+
     /**
      * Create CSRF middleware
      *
@@ -106,6 +109,7 @@ class CSRFMiddleware implements MiddlewareInterface
             }
         }
 
+
         // Container is available for future enhancements
         unset($this->container);
     }
@@ -139,6 +143,12 @@ class CSRFMiddleware implements MiddlewareInterface
 
         // Validate CSRF token for protected methods
         if (!$this->validateToken($request)) {
+            // Emit event for application security logging
+            Event::dispatch(new CSRFViolationEvent(
+                'csrf_token_mismatch',
+                $request
+            ));
+
             throw new SecurityException(
                 'CSRF token validation failed. Please refresh the page and try again.',
                 419, // 419 Page Expired (Laravel convention for CSRF failures)

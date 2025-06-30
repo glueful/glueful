@@ -54,6 +54,8 @@ return [
         'project_extensions' => dirname(__DIR__) . '/extensions/',
         'archives' => dirname(__DIR__) . '/storage/archives/',
         'migrations' => dirname(__DIR__) . '/database/migrations',
+        'app_events' => dirname(__DIR__) . '/app/Events',
+        'app_listeners' => dirname(__DIR__) . '/app/Events/Listeners',
     ],
 
     // Pagination Settings

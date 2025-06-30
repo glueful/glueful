@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Glueful\Cache\CacheStore;
-use Glueful\Security\SecureSerializer;
 
 /**
  * Session Cache Management System

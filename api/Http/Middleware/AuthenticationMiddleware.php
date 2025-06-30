@@ -8,8 +8,13 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\AuthBootstrap;
+use Glueful\Auth\TokenManager;
 use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Exceptions\AuthenticationException;
+use Glueful\Events\Http\HttpAuthFailureEvent;
+use Glueful\Events\Http\HttpAuthSuccessEvent;
+use Glueful\Events\Event;
+use Psr\Log\LoggerInterface;
 
 /**
  * Authentication Middleware
@@ -31,6 +36,10 @@ class AuthenticationMiddleware implements MiddlewareInterface
 
     /** @var ContainerInterface|null DI Container */
     private ?ContainerInterface $container;
+
+
+    /** @var LoggerInterface|null Framework logger for HTTP-level auth logging */
+    private ?LoggerInterface $logger = null;
 
     /**
      * Create a new authentication middleware
@@ -58,6 +67,11 @@ class AuthenticationMiddleware implements MiddlewareInterface
             $this->authManager = AuthBootstrap::getManager();
         }
 
+        // Initialize logger from container
+        if ($this->container && $this->container->has(LoggerInterface::class)) {
+            $this->logger = $this->container->get(LoggerInterface::class);
+        }
+
         // Default to using JWT and API key auth if none specified
         $this->providerNames = !empty($providerNames) ? $providerNames : ['jwt', 'api_key'];
     }
@@ -71,26 +85,92 @@ class AuthenticationMiddleware implements MiddlewareInterface
      */
     public function process(Request $request, RequestHandlerInterface $handler): Response
     {
-        // Try to authenticate the request
-        $userData = $this->authenticate($request);
-        if (!$userData) {
-            // Let exceptions bubble up instead of returning response directly
-            throw new AuthenticationException('Authentication failed. Please provide valid credentials.');
+        try {
+            // Check for Authorization header first (framework concern)
+            $token = TokenManager::extractTokenFromRequest();
+
+            if (!$token) {
+                // Framework logs HTTP-level auth failure
+                if ($this->logger) {
+                    $this->logger->warning('Missing Authorization header', [
+                        'type' => 'auth_framework',
+                        'message' => 'Missing Authorization header',
+                        'path' => $request->getPathInfo(),
+                        'method' => $request->getMethod(),
+                        'ip' => $request->getClientIp(),
+                        'request_id' => $request->attributes->get('request_id')
+                    ]);
+                }
+
+                // Emit event for application business logic
+                Event::dispatch(new HttpAuthFailureEvent(
+                    'missing_authorization_header',
+                    $request
+                ));
+
+                throw new AuthenticationException('Authorization header required');
+            }
+
+            // Try to authenticate the request
+            $userData = $this->authenticate($request);
+            if (!$userData) {
+                // Emit event for application business logic
+                Event::dispatch(new HttpAuthFailureEvent(
+                    'authentication_failed',
+                    $request,
+                    substr($token, 0, 10)
+                ));
+
+                throw new AuthenticationException('Authentication failed. Please provide valid credentials.');
+            }
+
+            // Attach user data to request attributes for controllers to access
+            $request->attributes->set('user', $userData);
+
+            // Check admin permissions if required
+            if ($this->requiresAdmin && !$this->authManager->isAdmin($userData)) {
+                throw new AuthenticationException('Insufficient permissions, admin access required');
+            }
+
+            // Emit success event for application to handle business auth logic
+            Event::dispatch(new HttpAuthSuccessEvent(
+                $request,
+                ['token_prefix' => substr($token, 0, 10)]
+            ));
+
+            // Log successful authentication
+            $this->authManager->logAccess($userData, $request);
+
+            // Authentication passed, continue to next middleware
+            return $handler->handle($request);
+        } catch (AuthenticationException $e) {
+            // Check if this is a JWT-specific error (framework concern)
+            if (
+                str_contains($e->getMessage(), 'Invalid token format') ||
+                str_contains($e->getMessage(), 'token expired')
+            ) {
+                // Framework logs HTTP protocol JWT failures
+                if ($this->logger) {
+                    $this->logger->warning('JWT token validation failed', [
+                        'type' => 'auth_framework',
+                        'message' => 'JWT validation failed',
+                        'reason' => $e->getMessage(),
+                        'token_prefix' => isset($token) ? substr($token, 0, 10) : null,
+                        'path' => $request->getPathInfo(),
+                        'request_id' => $request->attributes->get('request_id')
+                    ]);
+                }
+
+                // Emit event for application business logic
+                Event::dispatch(new HttpAuthFailureEvent(
+                    'malformed_jwt_token',
+                    $request,
+                    isset($token) ? substr($token, 0, 10) : null
+                ));
+            }
+
+            throw $e;
         }
-
-        // Attach user data to request attributes for controllers to access
-        $request->attributes->set('user', $userData);
-
-        // Check admin permissions if required
-        if ($this->requiresAdmin && !$this->authManager->isAdmin($userData)) {
-            throw new AuthenticationException('Insufficient permissions, admin access required');
-        }
-
-        // Log successful authentication
-        $this->authManager->logAccess($userData, $request);
-
-        // Authentication passed, continue to next middleware
-        return $handler->handle($request);
     }
 
     /**
