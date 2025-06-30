@@ -12,6 +12,7 @@ use Glueful\Events\Http\ExceptionEvent;
 use Glueful\Http\RequestContext;
 use Psr\Log\LoggerInterface;
 use Glueful\Events\Event;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class ExceptionHandler
 {
@@ -562,6 +563,19 @@ class ExceptionHandler
     public static function setLogger(?LoggerInterface $logger): void
     {
         self::$logger = $logger;
+    }
+
+    /**
+     * Set the event dispatcher instance for testing
+     *
+     * @param EventDispatcherInterface|null $eventDispatcher
+     */
+    public static function setEventDispatcher(?EventDispatcherInterface $eventDispatcher): void
+    {
+        // Initialize the Event class with the test dispatcher
+        if ($eventDispatcher) {
+            Event::initialize($eventDispatcher);
+        }
     }
 
 

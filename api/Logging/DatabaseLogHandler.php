@@ -46,7 +46,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         parent::__construct($options['level'] ?? Level::Debug);
         $connection = new Connection();
         $this->schema = $connection->getSchemaManager();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver(), null);
 
         // Ensure logs table exists
         if (isset($options['table'])) {

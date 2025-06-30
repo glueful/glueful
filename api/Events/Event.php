@@ -54,6 +54,11 @@ class Event
             self::initializeFromContainer();
         }
 
+        // If no dispatcher is available, silently return the event without dispatching
+        if (!self::$dispatcher) {
+            return $event;
+        }
+
         $eventName = $eventName ?? get_class($event);
 
         // Optional event logging for debugging
@@ -174,17 +179,23 @@ class Event
             return;
         }
 
-        $container = container();
-        if (!$container) {
+        try {
+            $container = container();
+            if (!$container) {
+                return;
+            }
+
+            if ($container->has(SymfonyEventDispatcherInterface::class)) {
+                self::$dispatcher = $container->get(SymfonyEventDispatcherInterface::class);
+            }
+
+            if ($container->has(LoggerInterface::class)) {
+                self::$logger = $container->get(LoggerInterface::class);
+            }
+        } catch (\Throwable) {
+            // Silently fail when container is not available (e.g., in tests)
+            // This prevents event dispatching from breaking the application
             return;
-        }
-
-        if ($container->has(SymfonyEventDispatcherInterface::class)) {
-            self::$dispatcher = $container->get(SymfonyEventDispatcherInterface::class);
-        }
-
-        if ($container->has(LoggerInterface::class)) {
-            self::$logger = $container->get(LoggerInterface::class);
         }
     }
 }

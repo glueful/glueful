@@ -17,8 +17,8 @@ use Monolog\Level;
  */
 class QueryLogger
 {
-    /** @var LogManager Logger implementation */
-    protected LogManager $logger;
+    /** @var LogManager|null Logger implementation */
+    protected ?LogManager $logger;
 
     /** @var bool Enable debug mode */
     protected bool $debugMode = false;
@@ -66,7 +66,8 @@ class QueryLogger
         if ($logger instanceof LogManager) {
             $this->logger = $logger->channel($channel);
         } else {
-            $this->logger = new LogManager($channel);
+            // Don't create LogManager automatically to prevent circular dependency
+            $this->logger = null;
         }
 
         // Default configuration based on application settings
@@ -89,11 +90,13 @@ class QueryLogger
         $this->maxLogSize = $maxLogSize;
 
         // Configure LogManager at the same time
-        if ($enableDebug) {
-            $this->logger->setMinimumLevel(Level::Debug);
-        } else {
-            // When not in debug mode, only log warning and above
-            $this->logger->setMinimumLevel(Level::Warning);
+        if ($this->logger) {
+            if ($enableDebug) {
+                $this->logger->setMinimumLevel(Level::Debug);
+            } else {
+                // When not in debug mode, only log warning and above
+                $this->logger->setMinimumLevel(Level::Warning);
+            }
         }
 
         return $this;
@@ -102,9 +105,9 @@ class QueryLogger
     /**
      * Access the underlying LogManager
      *
-     * @return LogManager
+     * @return LogManager|null
      */
-    public function getLogger(): LogManager
+    public function getLogger(): ?LogManager
     {
         return $this->logger;
     }
@@ -177,7 +180,7 @@ class QueryLogger
         // Calculate execution time
         $executionTime = null;
         if ($startTime !== null && $this->enableTiming) {
-            if (is_string($startTime)) {
+            if (is_string($startTime) && $this->logger) {
                 // Using LogManager timer system
                 $executionTime = $this->logger->endTimer($startTime, ['sql' => $sql]);
             } elseif (is_float($startTime)) {
@@ -265,17 +268,21 @@ class QueryLogger
                 'line' => $error->getLine()
             ];
 
-            $this->logger->error("Query failed: $sql", $context);
+            if ($this->logger) {
+                $this->logger->error("Query failed: $sql", $context);
+            }
         } else {
             // Use appropriate level based on execution time and complexity
-            if ($executionTime && $executionTime > 1000) {
-                $this->logger->warning("Slow query: $sql", $context);
-            } elseif ($executionTime && $executionTime > 500) {
-                $this->logger->notice("Potentially slow query: $sql", $context);
-            } elseif ($complexity > 7) {
-                $this->logger->notice("Complex query: $sql", $context);
-            } else {
-                $this->logger->debug("Query executed: $sql", $context);
+            if ($this->logger) {
+                if ($executionTime && $executionTime > 1000) {
+                    $this->logger->warning("Slow query: $sql", $context);
+                } elseif ($executionTime && $executionTime > 500) {
+                    $this->logger->notice("Potentially slow query: $sql", $context);
+                } elseif ($complexity > 7) {
+                    $this->logger->notice("Complex query: $sql", $context);
+                } else {
+                    $this->logger->debug("Query executed: $sql", $context);
+                }
             }
         }
 
@@ -297,7 +304,7 @@ class QueryLogger
             return microtime(true); // Return current time even if timing disabled
         }
 
-        if ($operation) {
+        if ($operation && $this->logger) {
             // Use LogManager's timer system
             return $this->logger->startTimer("db_query:" . $operation);
         }
@@ -319,7 +326,7 @@ class QueryLogger
             return null;
         }
 
-        if (is_string($timerIdOrStart)) {
+        if (is_string($timerIdOrStart) && $this->logger) {
             // Use LogManager's timer system
             return $this->logger->endTimer($timerIdOrStart, $context);
         } elseif (is_float($timerIdOrStart)) {
@@ -364,7 +371,9 @@ class QueryLogger
         }
 
         // Log the event through LogManager
-        $this->logger->log($level, $message, $context);
+        if ($this->logger) {
+            $this->logger->log($level, $message, $context);
+        }
     }
 
     /**
@@ -727,17 +736,19 @@ class QueryLogger
                         : null;
 
                     // Log the potential N+1 issue
-                    $this->logger->warning("Potential N+1 query pattern detected", [
-                        'pattern_count' => $count,
-                        'threshold' => $this->n1Threshold,
-                        'time_window_seconds' => $this->n1TimeWindow,
-                        'timespan' => $timespan,
-                        'sample_query' => $sampleQuery,
-                        'tables' => $tables[$signature],
-                        'avg_execution_time' => $avgExecutionTime,
-                        'total_execution_time' => $avgExecutionTime ? $avgExecutionTime * $count : null,
-                        'recommendation' => $this->generateN1FixRecommendation($sampleQuery, $tables[$signature])
-                    ]);
+                    if ($this->logger) {
+                        $this->logger->warning("Potential N+1 query pattern detected", [
+                            'pattern_count' => $count,
+                            'threshold' => $this->n1Threshold,
+                            'time_window_seconds' => $this->n1TimeWindow,
+                            'timespan' => $timespan,
+                            'sample_query' => $sampleQuery,
+                            'tables' => $tables[$signature],
+                            'avg_execution_time' => $avgExecutionTime,
+                            'total_execution_time' => $avgExecutionTime ? $avgExecutionTime * $count : null,
+                            'recommendation' => $this->generateN1FixRecommendation($sampleQuery, $tables[$signature])
+                        ]);
+                    }
 
                     // Clear out this pattern to avoid repeated alerts for the same issue
                     foreach ($this->recentQueries as $key => $query) {
