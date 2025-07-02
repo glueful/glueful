@@ -1,542 +1,1219 @@
 # Glueful Event System Documentation
 
-The Glueful framework includes a comprehensive event system built on Symfony EventDispatcher, providing extensible hooks throughout the application lifecycle for monitoring, logging, and custom functionality.
+## Overview
+
+The Glueful framework provides a comprehensive event system built on Symfony EventDispatcher, enabling decoupled communication between framework components and application code. The system clearly separates framework infrastructure concerns from application business logic through well-defined event boundaries.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Event Categories](#event-categories)
+- [Architecture](#architecture)
+- [Framework vs Application Boundaries](#framework-vs-application-boundaries)
+- [Core Event Categories](#core-event-categories)
 - [Authentication Events](#authentication-events)
-- [Cache Events](#cache-events)
-- [Database Events](#database-events)
-- [HTTP Events](#http-events)
 - [Security Events](#security-events)
+- [Session Analytics Events](#session-analytics-events)
+- [HTTP Events](#http-events)
+- [Database Events](#database-events)
+- [Cache Events](#cache-events)
+- [Logging System Integration](#logging-system-integration)
 - [Event Listeners](#event-listeners)
-- [Extension Integration](#extension-integration)
 - [Creating Custom Events](#creating-custom-events)
-- [Performance Considerations](#performance-considerations)
+- [Extension Integration](#extension-integration)
+- [Performance Monitoring](#performance-monitoring)
 - [Best Practices](#best-practices)
+- [Command Reference](#command-reference)
 
-## Overview
+## Architecture
 
-The event system allows decoupled communication between different parts of the application. Events are dispatched when significant actions occur, and listeners can respond to these events for:
+### Event Flow
 
-- **Logging and monitoring**
-- **Performance analytics**
-- **Security monitoring**
-- **Cache invalidation**
-- **Extension integration**
-- **Custom business logic**
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  Framework      │───▶│  Event System    │───▶│  Application    │
+│  Components     │    │  (Dispatcher)    │    │  Listeners      │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │  Extensions     │
+                       │  Listeners      │
+                       └─────────────────┘
+```
 
 ### Key Features
 
-- 20+ built-in event classes
-- Symfony EventDispatcher integration
-- Extension event subscriber system
-- Performance monitoring capabilities
-- Security-focused event data
-- Framework vs Application logging boundaries
-- Type-safe PHP 8.2+ implementation
+- **Type-safe events** with PHP 8.2+ readonly properties
+- **Framework boundary separation** for clear responsibility division
+- **Performance monitoring** built into event system
+- **Extension integration** with priority-based listeners
+- **Logging system integration** with structured context
+- **Session analytics** for user behavior tracking
+- **Security event monitoring** for threat detection
 
-### Framework vs Application Logging
+## Framework vs Application Boundaries
 
-The event system supports clear separation between framework and application concerns:
+### Framework Responsibilities
 
-- **Framework Events**: Infrastructure/protocol concerns (HTTP auth failures, rate limits, protocol errors)
-- **Application Events**: Business logic concerns (user actions, business state changes, custom analytics)
+The framework emits events for **infrastructure and protocol concerns**:
 
-Framework emits events that applications can listen to for implementing business-specific logging and responses.
+- HTTP protocol validation (auth headers, CSRF tokens)
+- Rate limiting enforcement
+- Database query execution
+- Cache operations
+- Session lifecycle management
+- Security policy violations
 
-## Event Categories
+### Application Responsibilities
+
+Applications listen to framework events and implement **business logic responses**:
+
+- User behavior analytics
+- Business rule enforcement
+- Custom security policies
+- Audit trail creation
+- Notification dispatch
+- Integration with external services
+
+### Boundary Example
+
+```php
+// Framework: Detects rate limit violation (infrastructure concern)
+$event = new RateLimitExceededEvent($ip, $endpoint, $limits);
+$dispatcher->dispatch($event);
+
+// Application: Responds with business logic
+$eventDispatcher->addListener(RateLimitExceededEvent::class, function($event) {
+    // Business decision: Should we block this user?
+    if ($this->threatAnalyzer->isSuspicious($event->getClientIp())) {
+        $this->userManager->temporaryBlock($event->getUserId());
+        $this->notifications->alertSecurityTeam($event);
+    }
+});
+```
+
+## Core Event Categories
 
 ### 1. Authentication Events (`Glueful\Events\Auth`)
-- Session lifecycle events
-- Authentication failures
-- Rate limiting events
+- User session lifecycle
+- Authentication attempts and failures  
+- Token management
+- Session analytics
 
-### 2. Cache Events (`Glueful\Events\Cache`)
-- Cache hits and misses
-- Cache invalidation events
+### 2. Security Events (`Glueful\Events\Security`)
+- Rate limiting violations
+- CSRF protection failures
+- Security policy violations
+- Threat detection
 
-### 3. Database Events (`Glueful\Events\Database`)
-- Query execution events
-- Entity lifecycle events
+### 3. HTTP Events (`Glueful\Events\Http`)
+- Request/response lifecycle
+- HTTP authentication
+- Exception handling
+- Client interaction tracking
 
-### 4. HTTP Events (`Glueful\Events\Http`)
-- Request and response events
-- Exception handling events
-- HTTP authentication events
+### 4. Database Events (`Glueful\Events\Database`)
+- Query execution monitoring
+- Entity lifecycle management
+- Performance tracking
+- Data modification auditing
 
-### 5. Security Events (`Glueful\Events\Security`)
-- Rate limiting events
-- CSRF violation events
-- Framework security events
+### 5. Cache Events (`Glueful\Events\Cache`)
+- Cache operations (hit/miss/invalidation)
+- Performance monitoring
+- Cache strategy optimization
+
+### 6. Session Analytics Events (`Glueful\Events\Analytics`)
+- User behavior tracking
+- Session pattern analysis
+- Usage statistics
+- Performance metrics
 
 ## Authentication Events
 
-### SessionCreatedEvent
+### UserAuthenticatedEvent
 
-**Triggered**: When a new user session is created during authentication
+**When**: User successfully authenticates
+**Purpose**: Track successful authentications for analytics and security
 
-**Properties**:
 ```php
-readonly array $sessionData  // User data (uuid, username, email)
-readonly array $tokens      // Access and refresh tokens
-readonly array $metadata    // Additional session metadata
+namespace Glueful\Events\Auth;
+
+class UserAuthenticatedEvent extends Event
+{
+    public function __construct(
+        public readonly string $userId,
+        public readonly string $username,
+        public readonly string $authMethod, // password, oauth, etc.
+        public readonly array $sessionData,
+        public readonly ?string $clientIp = null,
+        public readonly ?string $userAgent = null,
+        public readonly array $metadata = []
+    ) {}
+}
 ```
 
 **Usage Example**:
 ```php
-use Glueful\Events\Auth\SessionCreatedEvent;
-
-// Listen for session creation
-$eventDispatcher->addListener(SessionCreatedEvent::class, function(SessionCreatedEvent $event) {
-    $userUuid = $event->getUserUuid();
-    $accessToken = $event->getAccessToken();
-    
-    // Log session creation
-    $logger->info('New session created', [
-        'user_uuid' => $userUuid,
-        'session_data' => $event->getSessionData()
+$dispatcher->addListener(UserAuthenticatedEvent::class, function(UserAuthenticatedEvent $event) {
+    // Business logic: Track login patterns
+    $this->analyticsService->recordLogin([
+        'user_id' => $event->userId,
+        'method' => $event->authMethod,
+        'ip' => $event->clientIp,
+        'timestamp' => now()->toISOString()
     ]);
+    
+    // Security: Check for unusual login patterns
+    if ($this->securityAnalyzer->isUnusualLogin($event)) {
+        $this->notificationService->sendSecurityAlert($event->userId);
+    }
 });
 ```
-
-**Key Methods**:
-- `getUserUuid(): ?string` - Get user UUID
-- `getUsername(): ?string` - Get username
-- `getAccessToken(): ?string` - Get access token
-- `getRefreshToken(): ?string` - Get refresh token
-- `getMetadata(): array` - Get session metadata
 
 ### AuthenticationFailedEvent
 
-**Triggered**: When authentication attempts fail
+**When**: Authentication attempt fails
+**Purpose**: Security monitoring and user experience improvement
 
-**Properties**:
 ```php
-readonly string $username      // Attempted username/email
-readonly string $reason       // Failure reason
-readonly ?string $clientIp    // Client IP address
-readonly ?string $userAgent   // Client user agent
-readonly array $metadata      // Additional failure metadata
-```
+namespace Glueful\Events\Auth;
 
-**Usage Example**:
-```php
-use Glueful\Events\Auth\AuthenticationFailedEvent;
-
-$eventDispatcher->addListener(AuthenticationFailedEvent::class, function(AuthenticationFailedEvent $event) {
-    if ($event->isSuspicious()) {
-        // Handle potential brute force
-        $securityService->flagSuspiciousActivity(
-            $event->getClientIp(),
-            $event->getUsername(),
-            $event->getReason()
-        );
+class AuthenticationFailedEvent extends Event
+{
+    public function __construct(
+        public readonly string $attemptedUsername,
+        public readonly string $failureReason,
+        public readonly ?string $clientIp = null,
+        public readonly ?string $userAgent = null,
+        public readonly array $context = []
+    ) {}
+    
+    public function isCredentialFailure(): bool
+    {
+        return $this->failureReason === 'invalid_credentials';
     }
-});
+    
+    public function isAccountLocked(): bool
+    {
+        return $this->failureReason === 'account_locked';
+    }
+    
+    public function isPotentialBruteForce(): bool
+    {
+        return isset($this->context['attempt_count']) && 
+               $this->context['attempt_count'] > 3;
+    }
+}
 ```
 
-**Key Methods**:
-- `isInvalidCredentials(): bool` - Check if credentials were invalid
-- `isUserDisabled(): bool` - Check if user account is disabled
-- `isSuspicious(): bool` - Check if this appears to be a brute force attempt
+### SessionCreatedEvent
+
+**When**: New user session is established
+**Purpose**: Session analytics and initialization
+
+```php
+namespace Glueful\Events\Auth;
+
+class SessionCreatedEvent extends Event
+{
+    public function __construct(
+        public readonly string $sessionId,
+        public readonly string $userId,
+        public readonly array $sessionData,
+        public readonly array $tokens,
+        public readonly bool $rememberMe = false,
+        public readonly array $metadata = []
+    ) {}
+    
+    public function getAccessToken(): string
+    {
+        return $this->tokens['access_token'];
+    }
+    
+    public function getRefreshToken(): ?string
+    {
+        return $this->tokens['refresh_token'] ?? null;
+    }
+}
+```
 
 ### SessionDestroyedEvent
 
-**Triggered**: When user sessions are terminated
+**When**: User session is terminated
+**Purpose**: Cleanup and analytics
 
-**Usage**: Session cleanup, security logging
-
-### RateLimitExceededEvent
-
-**Triggered**: When rate limits are exceeded
-
-**Usage**: Security monitoring, adaptive rate limiting
-
-**Note**: This event is now detailed in the [Security Events](#security-events) section as part of the framework vs application logging boundaries.
-
-## Cache Events
-
-### CacheHitEvent
-
-**Triggered**: When a cache key is successfully retrieved
-
-**Properties**:
 ```php
-readonly string $key           // Cache key
-readonly mixed $value         // Retrieved value
-readonly array $tags          // Cache tags
-readonly float $retrievalTime // Retrieval time in seconds
-```
+namespace Glueful\Events\Auth;
 
-**Usage Example**:
-```php
-use Glueful\Events\Cache\CacheHitEvent;
-
-$eventDispatcher->addListener(CacheHitEvent::class, function(CacheHitEvent $event) {
-    // Monitor slow cache retrievals
-    if ($event->isSlow(0.1)) {
-        $logger->warning('Slow cache retrieval', [
-            'key' => $event->getKey(),
-            'time' => $event->getRetrievalTime(),
-            'size' => $event->getValueSize()
-        ]);
-    }
-});
-```
-
-**Key Methods**:
-- `getValueSize(): int` - Get value size in bytes
-- `isSlow(float $threshold = 0.1): bool` - Check if retrieval was slow
-
-### CacheMissEvent
-
-**Triggered**: When a cache key is not found
-
-**Usage**: Cache miss analytics, optimization strategies
-
-### CacheInvalidatedEvent
-
-**Triggered**: When cache entries are invalidated
-
-**Usage**: Cache management, debugging invalidation patterns
-
-## Database Events
-
-### QueryExecutedEvent
-
-**Triggered**: When database queries are executed
-
-**Properties**:
-```php
-readonly string $sql            // SQL query
-readonly array $bindings       // Query bindings
-readonly float $executionTime  // Execution time in seconds
-readonly string $connectionName // Database connection name
-readonly array $metadata       // Additional metadata
-```
-
-**Usage Example**:
-```php
-use Glueful\Events\Database\QueryExecutedEvent;
-
-$eventDispatcher->addListener(QueryExecutedEvent::class, function(QueryExecutedEvent $event) {
-    // Log slow queries
-    if ($event->isSlow(1.0)) {
-        $logger->warning('Slow database query detected', [
-            'sql' => $event->getSql(),
-            'execution_time' => $event->getExecutionTime(),
-            'type' => $event->getQueryType(),
-            'bindings' => $event->getBindings()
-        ]);
+class SessionDestroyedEvent extends Event
+{
+    public function __construct(
+        public readonly string $sessionId,
+        public readonly string $userId,
+        public readonly string $reason, // logout, timeout, forced
+        public readonly int $duration, // session duration in seconds
+        public readonly array $metadata = []
+    ) {}
+    
+    public function wasForced(): bool
+    {
+        return $this->reason === 'forced';
     }
     
-    // Track modifying queries
-    if ($event->isModifying()) {
-        $auditService->logDataModification($event->getFullQuery());
+    public function wasTimeout(): bool
+    {
+        return $this->reason === 'timeout';
     }
-});
-```
-
-**Key Methods**:
-- `getFullQuery(): string` - Get query with bindings interpolated
-- `isSlow(float $threshold = 1.0): bool` - Check if query is slow
-- `getQueryType(): string` - Get query type (SELECT, INSERT, UPDATE, DELETE)
-- `isModifying(): bool` - Check if query modifies data
-
-### EntityCreatedEvent
-
-**Triggered**: When database entities are created
-
-**Usage**: Data synchronization, audit trails
-
-### EntityUpdatedEvent
-
-**Triggered**: When database entities are updated
-
-**Usage**: Change tracking, audit trails
-
-## HTTP Events
-
-### RequestEvent
-
-**Triggered**: When HTTP requests are received and processed
-
-**Properties**:
-```php
-readonly Request $request  // Symfony HTTP request object
-readonly array $metadata  // Additional request metadata
-```
-
-**Usage Example**:
-```php
-use Glueful\Events\Http\RequestEvent;
-
-$eventDispatcher->addListener(RequestEvent::class, function(RequestEvent $event) {
-    // Log API requests
-    $logger->info('API request received', [
-        'method' => $event->getMethod(),
-        'uri' => $event->getUri(),
-        'client_ip' => $event->getClientIp(),
-        'user_agent' => $event->getUserAgent(),
-        'is_secure' => $event->isSecure(),
-        'is_ajax' => $event->isXmlHttpRequest()
-    ]);
-    
-    // Security monitoring
-    if (!$event->isSecure() && $event->getUri() !== '/health') {
-        $securityService->flagInsecureRequest($event->getClientIp());
-    }
-});
-```
-
-**Key Methods**:
-- `getMethod(): string` - Get HTTP method
-- `getUri(): string` - Get request URI
-- `getClientIp(): ?string` - Get client IP address
-- `getUserAgent(): ?string` - Get user agent
-- `getContentType(): ?string` - Get content type
-- `isXmlHttpRequest(): bool` - Check if AJAX request
-- `isSecure(): bool` - Check if HTTPS request
-
-### ResponseEvent
-
-**Triggered**: When HTTP responses are sent
-
-**Usage**: Response logging, performance metrics
-
-### ExceptionEvent
-
-**Triggered**: When exceptions occur during request processing
-
-**Usage**: Error handling, logging, debugging
-
-### HttpAuthFailureEvent
-
-**Triggered**: When HTTP-level authentication failures occur (framework logs protocol errors, application handles business logic)
-
-**Properties**:
-```php
-readonly string $reason        // Failure reason (missing_authorization_header, malformed_jwt_token)
-readonly Request $request      // HTTP request object
-readonly ?string $tokenPrefix  // First 10 chars of token for debugging (null if no token)
-```
-
-**Usage Example**:
-```php
-use Glueful\Events\Http\HttpAuthFailureEvent;
-
-$eventDispatcher->addListener(HttpAuthFailureEvent::class, function(HttpAuthFailureEvent $event) {
-    // Application handles business context of auth failures
-    $logger->info('Authentication attempt failed', [
-        'reason' => $event->reason,
-        'ip_address' => $event->request->getClientIp(),
-        'endpoint' => $event->request->getPathInfo(),
-        'user_agent' => $event->request->headers->get('User-Agent'),
-        'timestamp' => now()->toISOString()
-    ]);
-    
-    // Business logic: Track failed authentication patterns
-    $this->trackFailedAuthPattern($event);
-});
-```
-
-### HttpAuthSuccessEvent
-
-**Triggered**: When HTTP-level authentication succeeds (framework validates protocol, application tracks business context)
-
-**Properties**:
-```php
-readonly Request $request        // HTTP request object
-readonly array $tokenMetadata   // Token validation metadata (e.g., token_prefix)
-```
-
-**Usage**: Business authentication tracking, user session analytics
-
-### HttpClientFailureEvent
-
-**Triggered**: When HTTP client infrastructure failures occur (connection timeouts, DNS issues, server errors)
-
-**Properties**:
-```php
-readonly string $method        // HTTP method (GET, POST, etc.)
-readonly string $url          // Target URL that failed
-readonly \Throwable $exception // The exception that occurred
-readonly string $failureType  // Type of failure (connection_failed, request_failed)
-```
-
-**Usage Example**:
-```php
-use Glueful\Events\Http\HttpClientFailureEvent;
-
-$eventDispatcher->addListener(HttpClientFailureEvent::class, function(HttpClientFailureEvent $event) {
-    // Application handles business context of external service failures
-    $logger->error('External service failure', [
-        'type' => 'integration',
-        'service' => $this->getServiceNameFromUrl($event->url),
-        'method' => $event->method,
-        'url' => $event->url,
-        'failure_type' => $event->failureType,
-        'error' => $event->exception->getMessage(),
-        'timestamp' => now()->toISOString()
-    ]);
-});
+}
 ```
 
 ## Security Events
 
-Framework emits these events for infrastructure/protocol security concerns. Applications should listen and implement business security logic.
-
 ### RateLimitExceededEvent
 
-**Triggered**: When rate limits are exceeded (framework detects, application responds)
+**When**: Rate limit is exceeded
+**Purpose**: Security monitoring and adaptive responses
 
-**Properties**:
 ```php
-readonly string $ipAddress    // Client IP address
-readonly string $endpoint     // Requested endpoint
-readonly string $method       // HTTP method
-readonly array $limits        // Rate limit configuration that was exceeded
-readonly Request $request     // Full request object for additional context
+namespace Glueful\Events\Security;
+
+class RateLimitExceededEvent extends Event
+{
+    public function __construct(
+        public readonly string $clientIp,
+        public readonly string $endpoint,
+        public readonly string $method,
+        public readonly array $limitConfig,
+        public readonly int $currentCount,
+        public readonly Request $request,
+        public readonly ?string $userId = null
+    ) {}
+    
+    public function getExcessPercentage(): float
+    {
+        return ($this->currentCount / $this->limitConfig['max_requests']) * 100;
+    }
+    
+    public function isSeverViolation(): bool
+    {
+        return $this->getExcessPercentage() > 200;
+    }
+}
 ```
 
 **Usage Example**:
 ```php
-use Glueful\Events\Security\RateLimitExceededEvent;
-
-$eventDispatcher->addListener(RateLimitExceededEvent::class, function(RateLimitExceededEvent $event) {
-    // Application handles business security response
-    $logger->warning('Rate limit violation detected', [
-        'ip_address' => $event->ipAddress,
-        'endpoint' => $event->endpoint,
-        'method' => $event->method,
-        'limits' => $event->limits,
-        'user_agent' => $event->request->headers->get('User-Agent'),
-        'timestamp' => now()->toISOString()
-    ]);
-    
-    // Business logic: Custom security responses
-    if ($this->isSuspiciousActivity($event)) {
-        $this->blacklistIp($event->ipAddress);
-        $this->sendSecurityAlert($event);
+$dispatcher->addListener(RateLimitExceededEvent::class, function(RateLimitExceededEvent $event) {
+    // Progressive response based on violation severity
+    if ($event->isSeverViolation()) {
+        // Severe violation: Temporary IP block
+        $this->securityManager->blockIP($event->clientIp, '1 hour');
+        $this->alertService->criticalAlert('Severe rate limit violation', $event);
+    } else {
+        // Minor violation: Increase rate limit temporarily
+        $this->rateLimiter->penaltyMode($event->clientIp, '10 minutes');
     }
+    
+    // Analytics
+    $this->analyticsService->recordSecurityEvent('rate_limit_exceeded', [
+        'ip' => $event->clientIp,
+        'endpoint' => $event->endpoint,
+        'severity' => $event->getExcessPercentage()
+    ]);
 });
 ```
 
 ### CSRFViolationEvent
 
-**Triggered**: When CSRF token validation fails (framework validates, application responds)
+**When**: CSRF token validation fails
+**Purpose**: Security monitoring and attack prevention
 
-**Properties**:
 ```php
-readonly string $reason    // Violation reason (missing_token, invalid_token, expired_token)
-readonly Request $request  // HTTP request object
+namespace Glueful\Events\Security;
+
+class CSRFViolationEvent extends Event
+{
+    public function __construct(
+        public readonly string $reason, // missing_token, invalid_token, expired_token
+        public readonly Request $request,
+        public readonly ?string $expectedToken = null,
+        public readonly ?string $providedToken = null
+    ) {}
+    
+    public function isMissingToken(): bool
+    {
+        return $this->reason === 'missing_token';
+    }
+    
+    public function isExpiredToken(): bool
+    {
+        return $this->reason === 'expired_token';
+    }
+}
+```
+
+### SuspiciousActivityDetectedEvent
+
+**When**: Anomalous behavior patterns are detected
+**Purpose**: Proactive threat detection
+
+```php
+namespace Glueful\Events\Security;
+
+class SuspiciousActivityDetectedEvent extends Event
+{
+    public function __construct(
+        public readonly string $activityType,
+        public readonly string $clientIp,
+        public readonly array $indicators,
+        public readonly float $riskScore,
+        public readonly ?string $userId = null,
+        public readonly array $context = []
+    ) {}
+    
+    public function isHighRisk(): bool
+    {
+        return $this->riskScore >= 0.8;
+    }
+    
+    public function getCriticalIndicators(): array
+    {
+        return array_filter($this->indicators, fn($i) => $i['severity'] === 'critical');
+    }
+}
+```
+
+## Session Analytics Events
+
+### SessionActivityEvent
+
+**When**: User performs actions during session
+**Purpose**: User behavior analytics and experience optimization
+
+```php
+namespace Glueful\Events\Analytics;
+
+class SessionActivityEvent extends Event
+{
+    public function __construct(
+        public readonly string $sessionId,
+        public readonly string $userId,
+        public readonly string $action,
+        public readonly string $resource,
+        public readonly array $parameters = [],
+        public readonly float $responseTime = 0.0,
+        public readonly array $metadata = []
+    ) {}
+    
+    public function isSlowResponse(): bool
+    {
+        return $this->responseTime > 2.0;
+    }
+    
+    public function isErrorResponse(): bool
+    {
+        return isset($this->metadata['status_code']) && 
+               $this->metadata['status_code'] >= 400;
+    }
+}
 ```
 
 **Usage Example**:
 ```php
-use Glueful\Events\Security\CSRFViolationEvent;
-
-$eventDispatcher->addListener(CSRFViolationEvent::class, function(CSRFViolationEvent $event) {
-    // Application handles business security logging
-    $logger->error('CSRF violation detected', [
-        'reason' => $event->reason,
-        'ip_address' => $event->request->getClientIp(),
-        'endpoint' => $event->request->getPathInfo(),
-        'method' => $event->request->getMethod(),
-        'user_agent' => $event->request->headers->get('User-Agent'),
-        'referer' => $event->request->headers->get('Referer'),
+$dispatcher->addListener(SessionActivityEvent::class, function(SessionActivityEvent $event) {
+    // User behavior analytics
+    $this->analyticsService->recordUserAction([
+        'user_id' => $event->userId,
+        'action' => $event->action,
+        'resource' => $event->resource,
+        'response_time' => $event->responseTime,
         'timestamp' => now()->toISOString()
     ]);
     
-    // Business response to CSRF attack
-    $this->handleCSRFAttack($event);
+    // Performance monitoring
+    if ($event->isSlowResponse()) {
+        $this->performanceMonitor->recordSlowAction($event);
+    }
+    
+    // User experience optimization
+    if ($event->isErrorResponse()) {
+        $this->uxAnalyzer->recordErrorPattern($event);
+    }
 });
 ```
 
-### UnhandledException
+### SessionPatternEvent
 
-**Triggered**: When unhandled exceptions occur (framework logs, application analyzes business impact)
+**When**: Session usage patterns are analyzed
+**Purpose**: Advanced analytics and personalization
 
-**Properties**:
 ```php
-readonly \Throwable $exception  // The unhandled exception
-readonly array $context         // Additional context from exception handler
+namespace Glueful\Events\Analytics;
+
+class SessionPatternEvent extends Event
+{
+    public function __construct(
+        public readonly string $userId,
+        public readonly string $patternType, // usage, navigation, preference
+        public readonly array $pattern,
+        public readonly float $confidence,
+        public readonly array $recommendations = []
+    ) {}
+    
+    public function isHighConfidence(): bool
+    {
+        return $this->confidence >= 0.85;
+    }
+}
+```
+
+## HTTP Events
+
+### RequestReceivedEvent
+
+**When**: HTTP request is received and parsed
+**Purpose**: Request tracking and analysis
+
+```php
+namespace Glueful\Events\Http;
+
+class RequestReceivedEvent extends Event
+{
+    public function __construct(
+        public readonly Request $request,
+        public readonly float $timestamp,
+        public readonly array $metadata = []
+    ) {}
+    
+    public function isAPIRequest(): bool
+    {
+        return str_starts_with($this->request->getPathInfo(), '/api/');
+    }
+    
+    public function isSecure(): bool
+    {
+        return $this->request->isSecure();
+    }
+    
+    public function getEndpoint(): string
+    {
+        return $this->request->getMethod() . ' ' . $this->request->getPathInfo();
+    }
+}
+```
+
+### ResponseSentEvent
+
+**When**: HTTP response is sent to client
+**Purpose**: Performance monitoring and analytics
+
+```php
+namespace Glueful\Events\Http;
+
+class ResponseSentEvent extends Event
+{
+    public function __construct(
+        public readonly Request $request,
+        public readonly Response $response,
+        public readonly float $processingTime,
+        public readonly array $metrics = []
+    ) {}
+    
+    public function isError(): bool
+    {
+        return $this->response->getStatusCode() >= 400;
+    }
+    
+    public function isSlowResponse(): bool
+    {
+        return $this->processingTime > 1.0;
+    }
+    
+    public function getStatusCode(): int
+    {
+        return $this->response->getStatusCode();
+    }
+}
+```
+
+## Database Events
+
+### QueryExecutedEvent
+
+**When**: Database query is executed
+**Purpose**: Performance monitoring and audit
+
+```php
+namespace Glueful\Events\Database;
+
+class QueryExecutedEvent extends Event
+{
+    public function __construct(
+        public readonly string $sql,
+        public readonly array $bindings,
+        public readonly float $executionTime,
+        public readonly string $connectionName = 'default',
+        public readonly array $metadata = []
+    ) {}
+    
+    public function isSlow(float $threshold = 1.0): bool
+    {
+        return $this->executionTime > $threshold;
+    }
+    
+    public function isModifying(): bool
+    {
+        $query = strtoupper(trim($this->sql));
+        return str_starts_with($query, 'INSERT') ||
+               str_starts_with($query, 'UPDATE') ||
+               str_starts_with($query, 'DELETE');
+    }
+    
+    public function getQueryType(): string
+    {
+        return strtoupper(explode(' ', trim($this->sql))[0]);
+    }
+    
+    public function getAffectedTable(): ?string
+    {
+        // Extract table name from query
+        if (preg_match('/(?:FROM|INTO|UPDATE|DELETE FROM)\s+`?(\w+)`?/i', $this->sql, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
 ```
 
 **Usage Example**:
 ```php
-use Glueful\Events\Security\UnhandledException;
-
-$eventDispatcher->addListener(UnhandledException::class, function(UnhandledException $event) {
-    // Application analyzes exceptions for business/security implications
-    if ($this->isBusinessCriticalException($event->exception)) {
-        $logger->error('Business critical exception occurred', [
-            'exception_type' => get_class($event->exception),
-            'message' => $event->exception->getMessage(),
-            'file' => $event->exception->getFile(),
-            'line' => $event->exception->getLine(),
-            'context' => $event->context,
+$dispatcher->addListener(QueryExecutedEvent::class, function(QueryExecutedEvent $event) {
+    // Performance monitoring
+    if ($event->isSlow()) {
+        $this->performanceLogger->warning('Slow query detected', [
+            'query' => $event->sql,
+            'execution_time' => $event->executionTime,
+            'table' => $event->getAffectedTable()
+        ]);
+    }
+    
+    // Audit trail for data modifications
+    if ($event->isModifying()) {
+        $this->auditService->logDataChange([
+            'operation' => $event->getQueryType(),
+            'table' => $event->getAffectedTable(),
+            'query' => $event->sql,
             'timestamp' => now()->toISOString()
         ]);
-        
-        // Business logic: Handle critical failures
-        $this->handleCriticalFailure($event);
+    }
+    
+    // Query analytics
+    $this->queryAnalytics->recordQuery($event);
+});
+```
+
+### EntityLifecycleEvent
+
+**When**: Entity is created, updated, or deleted
+**Purpose**: Business logic triggers and audit
+
+```php
+namespace Glueful\Events\Database;
+
+class EntityLifecycleEvent extends Event
+{
+    public function __construct(
+        public readonly string $action, // created, updated, deleted
+        public readonly string $entityType,
+        public readonly string $entityId,
+        public readonly array $entityData = [],
+        public readonly array $changes = [],
+        public readonly ?string $userId = null
+    ) {}
+    
+    public function isCreated(): bool
+    {
+        return $this->action === 'created';
+    }
+    
+    public function isUpdated(): bool
+    {
+        return $this->action === 'updated';
+    }
+    
+    public function isDeleted(): bool
+    {
+        return $this->action === 'deleted';
+    }
+    
+    public function hasFieldChanged(string $field): bool
+    {
+        return isset($this->changes[$field]);
+    }
+}
+```
+
+## Cache Events
+
+### CacheOperationEvent
+
+**When**: Cache operations are performed
+**Purpose**: Performance optimization and monitoring
+
+```php
+namespace Glueful\Events\Cache;
+
+class CacheOperationEvent extends Event
+{
+    public function __construct(
+        public readonly string $operation, // hit, miss, set, delete, invalidate
+        public readonly string $key,
+        public readonly ?string $value = null,
+        public readonly float $operationTime = 0.0,
+        public readonly array $tags = [],
+        public readonly array $metadata = []
+    ) {}
+    
+    public function isHit(): bool
+    {
+        return $this->operation === 'hit';
+    }
+    
+    public function isMiss(): bool
+    {
+        return $this->operation === 'miss';
+    }
+    
+    public function isSlow(float $threshold = 0.1): bool
+    {
+        return $this->operationTime > $threshold;
+    }
+    
+    public function getValueSize(): int
+    {
+        return $this->value ? strlen($this->value) : 0;
+    }
+}
+```
+
+**Usage Example**:
+```php
+$dispatcher->addListener(CacheOperationEvent::class, function(CacheOperationEvent $event) {
+    // Cache performance monitoring
+    if ($event->isSlow()) {
+        $this->performanceLogger->warning('Slow cache operation', [
+            'operation' => $event->operation,
+            'key' => $event->key,
+            'time' => $event->operationTime,
+            'size' => $event->getValueSize()
+        ]);
+    }
+    
+    // Cache hit rate analytics
+    $this->cacheAnalytics->recordOperation([
+        'operation' => $event->operation,
+        'key_pattern' => $this->extractPattern($event->key),
+        'hit' => $event->isHit(),
+        'timestamp' => now()->toISOString()
+    ]);
+    
+    // Cache strategy optimization
+    if ($event->isMiss()) {
+        $this->cacheOptimizer->analyzeMissPattern($event->key);
     }
 });
+```
+
+## Logging System Integration
+
+### Structured Event Logging
+
+The framework provides seamless integration with the logging system through event-driven structured logging:
+
+```php
+namespace Glueful\Logging;
+
+class EventLoggerListener
+{
+    public function __construct(
+        private LoggerInterface $logger,
+        private ContextEnricher $contextEnricher
+    ) {}
+    
+    public function logAuthenticationEvent(UserAuthenticatedEvent $event): void
+    {
+        $context = $this->contextEnricher->enrich([
+            'event_type' => 'authentication',
+            'user_id' => $event->userId,
+            'auth_method' => $event->authMethod,
+            'client_ip' => $event->clientIp,
+            'user_agent' => $event->userAgent,
+            'session_data' => $event->sessionData
+        ]);
+        
+        $this->logger->info('User authenticated successfully', $context);
+    }
+    
+    public function logSecurityEvent(RateLimitExceededEvent $event): void
+    {
+        $context = $this->contextEnricher->enrich([
+            'event_type' => 'security_violation',
+            'violation_type' => 'rate_limit_exceeded',
+            'client_ip' => $event->clientIp,
+            'endpoint' => $event->endpoint,
+            'current_count' => $event->currentCount,
+            'limit_config' => $event->limitConfig,
+            'severity' => $event->isSeverViolation() ? 'high' : 'medium'
+        ]);
+        
+        $this->logger->warning('Rate limit exceeded', $context);
+    }
+    
+    public function logPerformanceEvent(QueryExecutedEvent $event): void
+    {
+        if ($event->isSlow()) {
+            $context = $this->contextEnricher->enrich([
+                'event_type' => 'performance',
+                'component' => 'database',
+                'query_type' => $event->getQueryType(),
+                'execution_time' => $event->executionTime,
+                'affected_table' => $event->getAffectedTable(),
+                'query_hash' => hash('sha256', $event->sql)
+            ]);
+            
+            $this->logger->warning('Slow database query detected', $context);
+        }
+    }
+}
+```
+
+### Context Enrichment
+
+```php
+namespace Glueful\Logging;
+
+class ContextEnricher
+{
+    public function enrich(array $context): array
+    {
+        return array_merge($context, [
+            'timestamp' => now()->toISOString(),
+            'request_id' => $this->getRequestId(),
+            'trace_id' => $this->getTraceId(),
+            'user_session' => $this->getCurrentSession(),
+            'environment' => config('app.env'),
+            'version' => config('app.version')
+        ]);
+    }
+    
+    private function getRequestId(): ?string
+    {
+        return request()?->headers->get('X-Request-ID');
+    }
+    
+    private function getTraceId(): ?string
+    {
+        return request()?->headers->get('X-Trace-ID');
+    }
+    
+    private function getCurrentSession(): ?array
+    {
+        $session = session();
+        return $session ? [
+            'id' => $session->getId(),
+            'user_id' => $session->get('user_id')
+        ] : null;
+    }
+}
 ```
 
 ## Event Listeners
 
-The framework includes built-in event listeners:
+### Built-in Framework Listeners
 
-### CacheInvalidationListener
+#### SecurityMonitoringListener
 
-Handles automatic cache invalidation based on data changes.
+```php
+namespace Glueful\Events\Listeners;
 
-### SecurityMonitoringListener
+class SecurityMonitoringListener
+{
+    public function __construct(
+        private SecurityAnalyzer $analyzer,
+        private ThreatDetector $threatDetector,
+        private AlertService $alertService
+    ) {}
+    
+    public function onAuthenticationFailed(AuthenticationFailedEvent $event): void
+    {
+        $this->analyzer->recordFailedAttempt($event);
+        
+        if ($this->threatDetector->isBruteForcePattern($event)) {
+            $this->alertService->securityAlert('brute_force_detected', $event);
+        }
+    }
+    
+    public function onRateLimitExceeded(RateLimitExceededEvent $event): void
+    {
+        $this->analyzer->recordRateLimitViolation($event);
+        
+        if ($event->isSeverViolation()) {
+            $this->alertService->criticalAlert('severe_rate_limit_violation', $event);
+        }
+    }
+    
+    public function onSuspiciousActivity(SuspiciousActivityDetectedEvent $event): void
+    {
+        if ($event->isHighRisk()) {
+            $this->alertService->securityAlert('high_risk_activity', $event);
+            $this->analyzer->initiateDetailedAnalysis($event);
+        }
+    }
+}
+```
 
-Monitors security-related events for threat detection.
+#### PerformanceMonitoringListener
 
-### PerformanceMonitoringListener
+```php
+namespace Glueful\Events\Listeners;
 
-Tracks performance metrics across the application.
+class PerformanceMonitoringListener
+{
+    public function __construct(
+        private MetricsCollector $metrics,
+        private PerformanceAnalyzer $analyzer,
+        private AlertService $alertService
+    ) {}
+    
+    public function onQueryExecuted(QueryExecutedEvent $event): void
+    {
+        $this->metrics->recordQueryMetrics([
+            'execution_time' => $event->executionTime,
+            'query_type' => $event->getQueryType(),
+            'table' => $event->getAffectedTable()
+        ]);
+        
+        if ($event->isSlow()) {
+            $this->analyzer->analyzeSlowQuery($event);
+        }
+    }
+    
+    public function onResponseSent(ResponseSentEvent $event): void
+    {
+        $this->metrics->recordResponseMetrics([
+            'processing_time' => $event->processingTime,
+            'status_code' => $event->getStatusCode(),
+            'endpoint' => $event->request->getPathInfo()
+        ]);
+        
+        if ($event->isSlowResponse()) {
+            $this->analyzer->analyzeSlowResponse($event);
+        }
+    }
+    
+    public function onCacheOperation(CacheOperationEvent $event): void
+    {
+        $this->metrics->recordCacheMetrics([
+            'operation' => $event->operation,
+            'hit' => $event->isHit(),
+            'operation_time' => $event->operationTime
+        ]);
+    }
+}
+```
+
+#### AnalyticsListener
+
+```php
+namespace Glueful\Events\Listeners;
+
+class AnalyticsListener
+{
+    public function __construct(
+        private AnalyticsService $analytics,
+        private UserBehaviorTracker $behaviorTracker
+    ) {}
+    
+    public function onUserAuthenticated(UserAuthenticatedEvent $event): void
+    {
+        $this->analytics->recordEvent('user_login', [
+            'user_id' => $event->userId,
+            'method' => $event->authMethod,
+            'timestamp' => now()->toISOString()
+        ]);
+    }
+    
+    public function onSessionActivity(SessionActivityEvent $event): void
+    {
+        $this->behaviorTracker->recordActivity([
+            'user_id' => $event->userId,
+            'action' => $event->action,
+            'resource' => $event->resource,
+            'response_time' => $event->responseTime
+        ]);
+    }
+    
+    public function onSessionDestroyed(SessionDestroyedEvent $event): void
+    {
+        $this->analytics->recordEvent('session_ended', [
+            'user_id' => $event->userId,
+            'duration' => $event->duration,
+            'reason' => $event->reason
+        ]);
+    }
+}
+```
+
+### Custom Application Listeners
+
+```php
+// In your application
+class MyApplicationEventListener
+{
+    public function __construct(
+        private BusinessAnalytics $analytics,
+        private NotificationService $notifications
+    ) {}
+    
+    public function onUserAuthenticated(UserAuthenticatedEvent $event): void
+    {
+        // Business-specific login tracking
+        $this->analytics->userLoggedIn($event->userId);
+        
+        // Send welcome notification for first-time users
+        if ($this->isFirstLogin($event->userId)) {
+            $this->notifications->sendWelcomeMessage($event->userId);
+        }
+    }
+    
+    public function onEntityCreated(EntityLifecycleEvent $event): void
+    {
+        // Business workflow triggers
+        if ($event->entityType === 'order' && $event->isCreated()) {
+            $this->processNewOrder($event->entityId, $event->entityData);
+        }
+    }
+    
+    private function isFirstLogin(string $userId): bool
+    {
+        return $this->analytics->getLoginCount($userId) === 1;
+    }
+    
+    private function processNewOrder(string $orderId, array $orderData): void
+    {
+        // Business logic for new orders
+        $this->notifications->notifyWarehouse($orderId);
+        $this->analytics->recordSale($orderData);
+    }
+}
+```
+
+## Creating Custom Events
+
+### Step 1: Define Event Class
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Events;
+
+use Symfony\Contracts\EventDispatcher\Event;
+
+class OrderShippedEvent extends Event
+{
+    public function __construct(
+        public readonly string $orderId,
+        public readonly string $customerId,
+        public readonly string $trackingNumber,
+        public readonly string $carrier,
+        public readonly array $items,
+        public readonly array $shippingAddress,
+        public readonly float $shippingCost,
+        public readonly array $metadata = []
+    ) {}
+    
+    public function getItemCount(): int
+    {
+        return count($this->items);
+    }
+    
+    public function isExpressShipping(): bool
+    {
+        return ($this->metadata['shipping_method'] ?? '') === 'express';
+    }
+    
+    public function isInternational(): bool
+    {
+        return ($this->shippingAddress['country'] ?? 'US') !== 'US';
+    }
+}
+```
+
+### Step 2: Dispatch Event
+
+```php
+namespace App\Services;
+
+class OrderService
+{
+    public function __construct(
+        private EventDispatcherInterface $eventDispatcher
+    ) {}
+    
+    public function shipOrder(string $orderId): void
+    {
+        $order = $this->getOrder($orderId);
+        
+        // Ship the order
+        $trackingNumber = $this->shippingProvider->ship($order);
+        
+        // Update order status
+        $this->updateOrderStatus($orderId, 'shipped');
+        
+        // Dispatch event
+        $event = new OrderShippedEvent(
+            orderId: $orderId,
+            customerId: $order['customer_id'],
+            trackingNumber: $trackingNumber,
+            carrier: $order['shipping_carrier'],
+            items: $order['items'],
+            shippingAddress: $order['shipping_address'],
+            shippingCost: $order['shipping_cost'],
+            metadata: [
+                'shipping_method' => $order['shipping_method'],
+                'shipped_at' => now()->toISOString()
+            ]
+        );
+        
+        $this->eventDispatcher->dispatch($event);
+    }
+}
+```
+
+### Step 3: Create Listeners
+
+```php
+// Service for handling shipping notifications
+class ShippingNotificationService
+{
+    public function onOrderShipped(OrderShippedEvent $event): void
+    {
+        // Send tracking email to customer
+        $this->emailService->sendTrackingEmail(
+            $event->customerId,
+            $event->orderId,
+            $event->trackingNumber,
+            $event->carrier
+        );
+        
+        // Send SMS for express shipping
+        if ($event->isExpressShipping()) {
+            $this->smsService->sendShippingAlert(
+                $event->customerId,
+                $event->trackingNumber
+            );
+        }
+    }
+}
+
+// Analytics service
+class ShippingAnalyticsService
+{
+    public function onOrderShipped(OrderShippedEvent $event): void
+    {
+        $this->analytics->recordShipping([
+            'order_id' => $event->orderId,
+            'carrier' => $event->carrier,
+            'item_count' => $event->getItemCount(),
+            'shipping_cost' => $event->shippingCost,
+            'is_express' => $event->isExpressShipping(),
+            'is_international' => $event->isInternational(),
+            'timestamp' => now()->toISOString()
+        ]);
+    }
+}
+```
 
 ## Extension Integration
 
-Extensions can register event subscribers using the `ExtensionEventRegistry`:
-
-### Creating Event Subscribers in Extensions
+### Registering Event Listeners in Extensions
 
 ```php
-// In your extension class
-class MyExtension
+namespace Glueful\Extensions\MyExtension;
+
+use Glueful\Core\Extension\BaseExtension;
+
+class Extension extends BaseExtension
 {
-    /**
-     * Get event subscribers for this extension
-     */
-    public static function getEventSubscribers(): array
+    public function boot(Container $container): void
+    {
+        // Register event listeners
+        $this->registerEventListeners($container);
+    }
+    
+    protected function registerEventListeners(Container $container): void
+    {
+        $dispatcher = $container->get(EventDispatcherInterface::class);
+        
+        // Register listeners with priority
+        $dispatcher->addListener(UserAuthenticatedEvent::class, [$this, 'onUserAuthenticated'], 10);
+        $dispatcher->addListener(QueryExecutedEvent::class, [$this, 'onQueryExecuted'], 5);
+        $dispatcher->addListener(RateLimitExceededEvent::class, [$this, 'onRateLimitExceeded'], 100);
+    }
+    
+    public function onUserAuthenticated(UserAuthenticatedEvent $event): void
+    {
+        // Extension-specific logic
+        $this->trackUserLogin($event);
+    }
+    
+    public function onQueryExecuted(QueryExecutedEvent $event): void
+    {
+        // Extension-specific database monitoring
+        if ($event->isSlow()) {
+            $this->alertSlowQuery($event);
+        }
+    }
+    
+    public function onRateLimitExceeded(RateLimitExceededEvent $event): void
+    {
+        // Extension-specific rate limit handling
+        $this->handleRateLimitViolation($event);
+    }
+}
+```
+
+### Event Subscriber Pattern
+
+```php
+namespace Glueful\Extensions\MyExtension;
+
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+
+class MyEventSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
     {
         return [
-            // Simple method mapping
-            SessionCreatedEvent::class => 'onSessionCreated',
-            
-            // Method with priority
-            QueryExecutedEvent::class => ['onQueryExecuted', 10],
-            
-            // Multiple listeners for same event
-            AuthenticationFailedEvent::class => [
-                ['onAuthFailed', 10],
-                ['logAuthFailure', 5]
-            ]
+            UserAuthenticatedEvent::class => [
+                ['onUserAuthenticated', 10],
+                ['logAuthentication', 0]
+            ],
+            QueryExecutedEvent::class => 'onQueryExecuted',
+            RateLimitExceededEvent::class => ['onRateLimitExceeded', 100]
         ];
     }
     
-    public function onSessionCreated(SessionCreatedEvent $event): void
+    public function onUserAuthenticated(UserAuthenticatedEvent $event): void
     {
-        // Handle session creation
+        // Handle authentication
+    }
+    
+    public function logAuthentication(UserAuthenticatedEvent $event): void
+    {
+        // Log authentication
     }
     
     public function onQueryExecuted(QueryExecutedEvent $event): void
@@ -544,225 +1221,300 @@ class MyExtension
         // Handle query execution
     }
     
-    public function onAuthFailed(AuthenticationFailedEvent $event): void
+    public function onRateLimitExceeded(RateLimitExceededEvent $event): void
     {
-        // Handle authentication failure
-    }
-    
-    public function logAuthFailure(AuthenticationFailedEvent $event): void
-    {
-        // Additional logging
+        // Handle rate limit exceeded
     }
 }
 ```
 
-### Event Subscriber Priorities
+## Performance Monitoring
 
-Higher priority listeners execute first:
-- **10+**: Critical system operations
-- **5-9**: Important business logic
-- **0-4**: Logging and monitoring
-- **Negative**: Cleanup operations
-
-## Creating Custom Events
-
-### Step 1: Create Event Class
+### Event Performance Metrics
 
 ```php
-<?php
+namespace Glueful\Events\Monitoring;
 
-declare(strict_types=1);
-
-namespace Glueful\Events\Custom;
-
-use Symfony\Contracts\EventDispatcher\Event;
-
-/**
- * Custom Business Event
- */
-class OrderProcessedEvent extends Event
+class EventPerformanceMonitor
 {
-    public function __construct(
-        private readonly string $orderId,
-        private readonly array $orderData,
-        private readonly float $processingTime,
-        private readonly array $metadata = []
-    ) {
-    }
-
-    public function getOrderId(): string
+    private array $metrics = [];
+    
+    public function startTiming(string $eventClass): void
     {
-        return $this->orderId;
+        $this->metrics[$eventClass]['start'] = microtime(true);
     }
-
-    public function getOrderData(): array
+    
+    public function endTiming(string $eventClass): void
     {
-        return $this->orderData;
+        if (isset($this->metrics[$eventClass]['start'])) {
+            $duration = microtime(true) - $this->metrics[$eventClass]['start'];
+            $this->metrics[$eventClass]['durations'][] = $duration;
+            
+            if ($duration > 0.1) { // 100ms threshold
+                $this->logSlowEventProcessing($eventClass, $duration);
+            }
+        }
     }
-
-    public function getProcessingTime(): float
+    
+    public function getAverageTime(string $eventClass): float
     {
-        return $this->processingTime;
+        $durations = $this->metrics[$eventClass]['durations'] ?? [];
+        return count($durations) > 0 ? array_sum($durations) / count($durations) : 0.0;
     }
-
-    public function getMetadata(): array
+    
+    private function logSlowEventProcessing(string $eventClass, float $duration): void
     {
-        return $this->metadata;
-    }
-
-    public function wasSlowToProcess(float $threshold = 5.0): bool
-    {
-        return $this->processingTime > $threshold;
-    }
-}
-```
-
-### Step 2: Dispatch the Event
-
-```php
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Glueful\Events\Custom\OrderProcessedEvent;
-
-// In your service class
-public function processOrder(array $orderData): void
-{
-    $startTime = microtime(true);
-    
-    // Process order logic here
-    $orderId = $this->createOrder($orderData);
-    
-    $processingTime = microtime(true) - $startTime;
-    
-    // Dispatch event
-    $event = new OrderProcessedEvent(
-        $orderId,
-        $orderData,
-        $processingTime,
-        ['user_id' => $this->getCurrentUserId()]
-    );
-    
-    $this->eventDispatcher->dispatch($event);
-}
-```
-
-### Step 3: Listen for the Event
-
-```php
-use Glueful\Events\Custom\OrderProcessedEvent;
-
-$eventDispatcher->addListener(OrderProcessedEvent::class, function(OrderProcessedEvent $event) {
-    // Send notification
-    if ($event->wasSlowToProcess()) {
-        $alertService->sendSlowProcessingAlert($event->getOrderId(), $event->getProcessingTime());
-    }
-    
-    // Update analytics
-    $analyticsService->recordOrderProcessing($event->getOrderData(), $event->getProcessingTime());
-});
-```
-
-## Performance Considerations
-
-### Event Performance Tips
-
-1. **Keep listeners lightweight** - Avoid heavy processing in event listeners
-2. **Use appropriate priorities** - Critical operations should have higher priority
-3. **Consider async processing** - For heavy operations, queue them instead of processing synchronously
-4. **Limit event data** - Only include necessary data in events to reduce memory usage
-
-### Monitoring Event Performance
-
-```php
-$eventDispatcher->addListener('*', function($event) {
-    $startTime = microtime(true);
-    
-    // Original event processing happens here
-    
-    $executionTime = microtime(true) - $startTime;
-    
-    if ($executionTime > 0.1) {
-        $logger->warning('Slow event processing', [
-            'event_class' => get_class($event),
-            'execution_time' => $executionTime
+        logger()->warning('Slow event processing detected', [
+            'event_class' => $eventClass,
+            'duration' => $duration,
+            'threshold' => 0.1
         ]);
     }
-});
+}
+```
+
+### Memory Usage Monitoring
+
+```php
+namespace Glueful\Events\Monitoring;
+
+class EventMemoryMonitor
+{
+    private int $baselineMemory;
+    
+    public function __construct()
+    {
+        $this->baselineMemory = memory_get_usage(true);
+    }
+    
+    public function checkMemoryUsage(string $eventClass): void
+    {
+        $currentMemory = memory_get_usage(true);
+        $memoryIncrease = $currentMemory - $this->baselineMemory;
+        
+        // Alert if memory increase is significant (> 10MB)
+        if ($memoryIncrease > 10 * 1024 * 1024) {
+            logger()->warning('High memory usage during event processing', [
+                'event_class' => $eventClass,
+                'memory_increase' => $memoryIncrease,
+                'current_memory' => $currentMemory,
+                'peak_memory' => memory_get_peak_usage(true)
+            ]);
+        }
+    }
+}
 ```
 
 ## Best Practices
 
 ### 1. Event Design
 
-- **Use readonly properties** for immutable events
-- **Include relevant metadata** for debugging and analytics
-- **Provide helper methods** for common checks (e.g., `isSlow()`, `isModifying()`)
-- **Use descriptive class names** ending in "Event"
-
-### 2. Event Dispatching
-
-- **Dispatch at the right time** - After the action is complete
-- **Include timing information** for performance monitoring
-- **Add security context** when relevant (IP, user agent, user ID)
-
-### 3. Event Listening
-
-- **Keep listeners focused** - One responsibility per listener
-- **Handle exceptions gracefully** - Don't let listeners break the main flow
-- **Use appropriate log levels** - Debug for frequent events, warning for issues
-- **Consider performance impact** - Avoid slow operations in listeners
-
-### 4. Extension Integration
-
-- **Use static methods** for event subscriber registration
-- **Provide clear documentation** for extension events
-- **Test event integration** thoroughly
-- **Handle missing events gracefully** in extensions
-
-### 5. Framework vs Application Logging
-
-- **Framework Events**: Listen to framework security/infrastructure events for business responses
-- **Application Logging**: Implement business-specific logging in event listeners
-- **Separation of Concerns**: Framework logs protocol/infrastructure, applications log business logic
-- **Event-Driven Security**: Use security events (rate limits, CSRF, auth failures) for custom business responses
-
-## Example: Complete Event Flow
-
-Here's a complete example showing how events work throughout a user login:
-
+**✅ Good Event Design**:
 ```php
-// 1. Authentication attempt triggers RequestEvent
-$requestEvent = new RequestEvent($request, ['start_time' => microtime(true)]);
-$eventDispatcher->dispatch($requestEvent);
-
-// 2. If authentication fails
-if (!$authResult->isSuccess()) {
-    $authFailedEvent = new AuthenticationFailedEvent(
-        $username,
-        'invalid_credentials',
-        $request->getClientIp(),
-        $request->headers->get('User-Agent')
-    );
-    $eventDispatcher->dispatch($authFailedEvent);
-    return;
+class UserProfileUpdatedEvent extends Event
+{
+    public function __construct(
+        public readonly string $userId,
+        public readonly array $changes,
+        public readonly array $previousData,
+        public readonly ?string $updatedBy = null,
+        public readonly array $metadata = []
+    ) {}
+    
+    public function hasEmailChanged(): bool
+    {
+        return isset($this->changes['email']);
+    }
+    
+    public function wasProfilePictureUpdated(): bool
+    {
+        return isset($this->changes['profile_picture']);
+    }
 }
-
-// 3. If authentication succeeds, session is created
-$sessionEvent = new SessionCreatedEvent(
-    $sessionData,
-    $tokens,
-    ['login_method' => 'password', 'remember_me' => $rememberMe]
-);
-$eventDispatcher->dispatch($sessionEvent);
-
-// 4. Database queries trigger QueryExecutedEvent
-// (automatically dispatched by QueryLogger)
-
-// 5. Cache operations trigger CacheHitEvent/CacheMissEvent
-// (automatically dispatched by CacheStore)
-
-// 6. Response sent triggers ResponseEvent
-$responseEvent = new ResponseEvent($response, ['processing_time' => $processingTime]);
-$eventDispatcher->dispatch($responseEvent);
 ```
 
-This documentation provides a comprehensive guide to the Glueful event system. For specific implementation details, refer to the event class files in `/api/Events/`.
+**❌ Poor Event Design**:
+```php
+class UserEvent extends Event
+{
+    public $data; // Not readonly, not typed
+    public $action; // Unclear what this represents
+    
+    public function __construct($data, $action)
+    {
+        $this->data = $data;
+        $this->action = $action;
+    }
+}
+```
+
+### 2. Listener Implementation
+
+**✅ Good Listener**:
+```php
+class UserNotificationListener
+{
+    public function onUserProfileUpdated(UserProfileUpdatedEvent $event): void
+    {
+        try {
+            if ($event->hasEmailChanged()) {
+                $this->sendEmailChangeConfirmation($event->userId);
+            }
+            
+            if ($event->wasProfilePictureUpdated()) {
+                $this->updateProfilePictureCache($event->userId);
+            }
+        } catch (Exception $e) {
+            logger()->error('Failed to process user profile update', [
+                'user_id' => $event->userId,
+                'error' => $e->getMessage()
+            ]);
+            // Don't re-throw - listener failures shouldn't break main flow
+        }
+    }
+}
+```
+
+**❌ Poor Listener**:
+```php
+class BadListener
+{
+    public function handleEvent($event): void
+    {
+        // No type hints
+        // Doing too much in one listener
+        $this->sendEmail($event->data);
+        $this->updateDatabase($event->data);
+        $this->callExternalAPI($event->data);
+        $this->generateReport($event->data);
+        // No error handling
+    }
+}
+```
+
+### 3. Framework vs Application Separation
+
+**✅ Proper Separation**:
+```php
+// Framework: Detects and reports security violation
+class SecurityMiddleware
+{
+    public function handle(Request $request, Closure $next)
+    {
+        if ($this->rateLimiter->isExceeded($request->getClientIp())) {
+            $event = new RateLimitExceededEvent(/* ... */);
+            $this->dispatcher->dispatch($event);
+            return new Response('Rate limit exceeded', 429);
+        }
+        
+        return $next($request);
+    }
+}
+
+// Application: Responds with business logic
+class BusinessSecurityListener
+{
+    public function onRateLimitExceeded(RateLimitExceededEvent $event): void
+    {
+        // Business decision: How to respond to this violation
+        if ($this->isTrustedClient($event->clientIp)) {
+            // Increase limits for trusted clients
+            $this->rateLimiter->increaseLimit($event->clientIp);
+        } else {
+            // Apply business-specific penalties
+            $this->applySecurityPenalty($event);
+        }
+    }
+}
+```
+
+### 4. Performance Considerations
+
+```php
+// ✅ Lightweight event processing
+class PerformantListener
+{
+    public function onHeavyEvent(HeavyEvent $event): void
+    {
+        // Queue heavy processing instead of doing it synchronously
+        $this->queue->push(ProcessHeavyEventJob::class, [
+            'event_data' => $event->getEventData()
+        ]);
+    }
+}
+
+// ✅ Conditional processing
+class ConditionalListener
+{
+    public function onFrequentEvent(FrequentEvent $event): void
+    {
+        // Only process if certain conditions are met
+        if ($event->requiresProcessing()) {
+            $this->doProcessing($event);
+        }
+    }
+}
+```
+
+## Command Reference
+
+### Creating Events and Listeners
+
+```bash
+# Create a new event class
+php glueful event:create OrderShippedEvent
+
+# Create an event listener
+php glueful event:listener OrderShippedListener
+
+# Create an event subscriber
+php glueful event:subscriber OrderEventSubscriber
+
+# List all registered events and listeners
+php glueful event:list
+
+# Debug event listeners for a specific event
+php glueful event:debug UserAuthenticatedEvent
+```
+
+### Event System Diagnostics
+
+```bash
+# Monitor event performance
+php glueful event:monitor --duration=60s
+
+# Show event statistics
+php glueful event:stats
+
+# Test event dispatching
+php glueful event:test UserAuthenticatedEvent
+
+# Validate event listener configuration
+php glueful event:validate
+```
+
+### Example Output
+
+```bash
+$ php glueful event:stats
+
+Event System Statistics
+======================
+Total Events Dispatched: 1,247
+Active Listeners: 23
+Average Processing Time: 2.3ms
+
+Top Events by Frequency:
+  1. QueryExecutedEvent (45.2%)
+  2. RequestReceivedEvent (23.1%)
+  3. CacheOperationEvent (12.8%)
+  4. SessionActivityEvent (8.9%)
+  5. ResponseSentEvent (6.7%)
+
+Slowest Listeners:
+  1. AnalyticsListener::onSessionActivity (15.2ms avg)
+  2. SecurityMonitor::onRateLimitExceeded (8.7ms avg)
+  3. ReportGenerator::onUserAuthenticated (5.1ms avg)
+```
+
+This comprehensive event system documentation provides the foundation for building robust, maintainable applications with clear separation between framework infrastructure and application business logic. The event-driven architecture enables powerful integration patterns while maintaining performance and reliability.
