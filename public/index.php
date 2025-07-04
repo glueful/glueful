@@ -14,13 +14,14 @@ $container = require_once __DIR__ . '/../api/bootstrap.php';
 
 use Glueful\API;
 use Glueful\Http\ServerRequestFactory;
-use Glueful\Logging\LogManager;
 use Glueful\Http\Cors;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 // Create global request logger
-$requestLogger = $container->has(LogManager::class)
-    ? $container->get(LogManager::class)
-    : new LogManager('request');
+$requestLogger = $container->has(LoggerInterface::class)
+    ? $container->get(LoggerInterface::class)
+    : new NullLogger();
 
 // Get request URI and method
 $requestUri = $_SERVER['REQUEST_URI'] ?? '/';

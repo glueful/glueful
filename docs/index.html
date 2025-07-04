@@ -99,7 +99,7 @@
 
       // Load and sort OpenAPI spec
       const timestamp = new Date().getTime(); // Add timestamp for cache busting
-      const openApiUrl = `swagger.json?v=${timestamp}`;
+      const openApiUrl = `/api/v1/swagger.json?v=${timestamp}`;
       loadAndSortOpenAPISpec(openApiUrl);
     </script>
   

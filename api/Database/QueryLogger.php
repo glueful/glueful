@@ -363,6 +363,7 @@ class QueryLogger
 
         // Log the event through framework logger
         if ($this->logger) {
+            // Pass Level enum directly to LogManager
             $this->logger->log($level, $message, $context);
         }
     }
@@ -380,6 +381,7 @@ class QueryLogger
             return;
         }
 
+        // Pass Level enum directly to LogManager
         $this->logger->log($this->config['log_level'], 'Slow query detected', [
             'type' => 'performance',
             'message' => 'Database query exceeded threshold',

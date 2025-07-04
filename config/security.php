@@ -67,10 +67,7 @@ return [
             'HSTS_HEADER',
             env('APP_ENV') === 'production' ? 'max-age=31536000; includeSubDomains' : null
         ),
-        'content_security_policy' => env(
-            'CSP_HEADER',
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-        ),
+        'content_security_policy' => env('CSP_HEADER'),
     ],
 
     // Adaptive Rate Limiting settings

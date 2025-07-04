@@ -156,7 +156,13 @@ class ApiDefinitionsCommand extends BaseCommand
         $this->info('Next steps:');
         $this->line('1. Review generated API definition files');
         $this->line('2. Customize definitions as needed for your API');
-        $this->line('3. Generate API documentation with: generate:api-docs');
+
+        // Build documentation URL dynamically from configuration
+        $apiBaseUrl = rtrim(config('app.paths.api_base_url'), '/');
+        $apiVersion = config('app.api_version');
+        $docsUrlWithApi = $apiBaseUrl . '/' . $apiVersion . '/docs';
+
+        $this->line("3. Visit the API documentation with api explorer at {$docsUrlWithApi}");
         $this->line('4. Test your API endpoints');
     }
 }

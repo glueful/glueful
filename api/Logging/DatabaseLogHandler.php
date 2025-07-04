@@ -86,10 +86,10 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     {
         try {
             // Insert log entry using SchemaManager
-            $this->db->insert('app_logs', [
+            $this->db->insert($this->table, [
                 'uuid' => Utils::generateNanoID(),
                 'channel' => $record->channel,
-                'level' => $record->level,
+                'level' => $record->level->name,
                 'message' => $record->message,
                 'context' => json_encode(
                     $record->context,
@@ -105,10 +105,10 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     private function ensureLogsTable(): void
     {
-        $this->schema->createTable('app_logs', [
+        $this->schema->createTable($this->table, [
             'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
-            'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
+            'level' => "ENUM('Debug', 'Info', 'Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency') NOT NULL",
             'message' => 'TEXT NOT NULL',
             'context' => 'JSON NULL',
             'exec_time' => 'FLOAT NULL',

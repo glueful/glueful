@@ -150,10 +150,22 @@ class ApiDocsCommand extends BaseCommand
         $this->line('');
         $this->info('Accessing your API documentation:');
 
+        // Build URLs dynamically from configuration
+        $baseUrl = rtrim(config('app.paths.domain'), '/');
+        $apiBaseUrl = rtrim(config('app.paths.api_base_url'), '/');
+        $apiVersion = config('app.api_version');
+        $docsUrl = config('app.paths.api_docs_url');
+
+        // Build the full API URL with version
+        $fullApiUrl = $apiBaseUrl . '/' . $apiVersion;
+        $docsUrlWithApi = $fullApiUrl . '/docs';
+
+        $this->line("• API Documentation: {$docsUrl}");
+        $this->line("• API Interactive Docs: {$docsUrlWithApi}");
+
         if (config('app.env') === 'development') {
-            $baseUrl = 'http://localhost:8000';
-            $this->line("• Development: {$baseUrl}/docs");
-            $this->line("• API Explorer: {$baseUrl}/api-explorer");
+            $this->line("• Swagger JSON: {$fullApiUrl}/swagger.json");
+            $this->line("• API Explorer: {$docsUrlWithApi}");
         }
 
         $this->line('• Check your documentation output directory');

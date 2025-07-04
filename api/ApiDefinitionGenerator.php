@@ -260,10 +260,10 @@ class ApiDefinitionGenerator
             }
 
             try {
-                $docGenerator->generateFromJson($file);
-                $this->log("Processed Table API doc for: " . basename($file));
+                $docGenerator->generateFromJson($file->getPathname());
+                $this->log("Processed Table API doc for: " . $file->getFilename());
             } catch (\Exception $e) {
-                $this->log("Error processing table definition {$file}: " . $e->getMessage());
+                $this->log("Error processing table definition {$file->getPathname()}: " . $e->getMessage());
             }
         }
 

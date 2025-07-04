@@ -667,8 +667,10 @@ class LogManager implements LoggerInterface, LogManagerInterface
         foreach ($this->logBatch as $entry) {
             // Ensure channel is not null to prevent withName() error
             $channel = $entry['channel'] ?? $this->defaultChannel ?? 'default';
+            // Convert Level enum to RFC 5424 level name for Monolog compatibility
+            $logLevel = $entry['level'] instanceof Level ? strtolower($entry['level']->name) : $entry['level'];
             $this->logger->withName($channel)
-                        ->log($entry['level'], $entry['message'], $entry['context']);
+                        ->log($logLevel, $entry['message'], $entry['context']);
         }
 
         $this->logBatch = [];
@@ -688,6 +690,19 @@ class LogManager implements LoggerInterface, LogManagerInterface
     public function log($level, $message, array $context = []): void
     {
         try {
+            // Keep the original level for internal methods
+            $originalLevel = $level;
+
+            // Convert string level to Level enum if needed
+            if (is_string($level)) {
+                try {
+                    $level = Level::fromName(ucfirst(strtolower($level)));
+                } catch (\ValueError $e) {
+                    // Fallback to Debug level if conversion fails
+                    $level = Level::Debug;
+                }
+            }
+
             // Extract channel from context if present
             $channel = null;
             if (isset($context['_channel'])) {
@@ -709,7 +724,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
             $context['channel'] = $currentChannel;
 
             // Convert message to string if it's Stringable
-            $messageStr = $message instanceof \Stringable ? (string)$message : $message;
+            $messageStr = $message instanceof \Stringable ? (string)$message : (string)$message;
 
             // Sanitize sensitive data in context
             $sanitizedContext = $this->sanitizeContext($context);
@@ -723,11 +738,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
             // Handle batch mode
             if (
                 $this->batchMode &&
-                (($level instanceof Level && $level->value < Level::Error->value) ||
-                (is_int($level) && $level < Level::Error->value) ||
-                (is_string($level) && strtolower($level) != 'error' &&
-                strtolower($level) != 'critical' && strtolower($level) != 'alert' &&
-                strtolower($level) != 'emergency'))
+                $level instanceof Level && $level->value < Level::Error->value
             ) {
                 // Add to batch (but log errors immediately)
                 $this->logBatch[] = [
@@ -742,8 +753,9 @@ class LogManager implements LoggerInterface, LogManagerInterface
                     $this->flush();
                 }
             } else {
-                // Log immediately
-                $this->logger->withName($currentChannel)->log($level, $messageStr, $enrichedContext);
+                // Log immediately - convert Level enum to RFC 5424 level name for Monolog compatibility
+                $logLevel = $level instanceof Level ? strtolower($level->name) : $level;
+                $this->logger->withName($currentChannel)->log($logLevel, $messageStr, $enrichedContext);
             }
 
             // Track log metrics
@@ -757,11 +769,20 @@ class LogManager implements LoggerInterface, LogManagerInterface
             }
 
             // Try to log the failure using error_log as fallback
-            error_log("Logging failure: {$e->getMessage()} - Original message: $messageStr");
+            $levelStr = $level instanceof \Monolog\Level ? $level->name : $level;
+            $exceptionDetails = sprintf(
+                "Logging failure: %s - Original message: %s - Level: %s - File: %s:%d",
+                $e->getMessage(),
+                $messageStr,
+                $levelStr,
+                $e->getFile(),
+                $e->getLine()
+            );
+            error_log($exceptionDetails);
 
             // Try to log to a fallback file if possible
             try {
-                $fallbackLog = dirname(dirname(__FILE__)) . '/logs/fallback.log';
+                $fallbackLog = dirname(dirname(dirname(__FILE__))) . '/storage/logs/fallback.log';
                 file_put_contents(
                     $fallbackLog,
                     date('[Y-m-d H:i:s]') . " LOGGING FAILURE: {$e->getMessage()} - Original: $messageStr\n",
@@ -850,7 +871,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
             return;
         }
 
-        $levelName = $level instanceof Level ? $level->getName() : (string)$level;
+        $levelName = $level instanceof Level ? $level->name : (string)$level;
 
         if (!isset($this->logStatistics['total'])) {
             $this->logStatistics['total'] = 0;
@@ -1217,15 +1238,15 @@ class LogManager implements LoggerInterface, LogManagerInterface
      */
     private function shouldLog($level): bool
     {
-        // If level is a string, convert it to a Monolog Level
+        // Convert level to integer value for comparison
         if (is_string($level)) {
-            $level = Level::fromName(ucfirst($level));
-        } elseif (is_int($level)) {
-            $level = Level::fromValue($level);
+            $level = Level::fromName(ucfirst($level))->value;
+        } elseif ($level instanceof Level) {
+            $level = $level->value;
         }
 
         // Skip logging if level is below minimum configured level
-        return $level->value >= $this->minimumLevel->value;
+        return $level >= $this->minimumLevel->value;
     }
 
     /**
@@ -1242,7 +1263,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
         }
 
         // Always log errors and above regardless of sampling
-        if ($level->value >= Level::Error->value) {
+        if ($level instanceof Level && $level->value >= Level::Error->value) {
             return true;
         }
 
@@ -1340,7 +1361,7 @@ class LogManager implements LoggerInterface, LogManagerInterface
     private function addToRecentLogs($level, string $message, array $context): void
     {
         // Convert Monolog Level to string if needed
-        $levelName = $level instanceof Level ? $level->getName() : (string)$level;
+        $levelName = $level instanceof Level ? $level->name : (string)$level;
 
         $this->recentLogs[] = [
             'level' => $levelName,

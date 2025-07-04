@@ -25,5 +25,4 @@ parameters:
         - '#Constructor of class Glueful\\Logging\\LogManager has an unused parameter \$logFile\.#'
         - '#Variable \$messageStr might not be defined\.#'
         - '#Method .* is unused\.#'
-        - '#Parameter \#1 \$value of static method Monolog\\Level::fromValue\(\) expects 100\|200\|250\|300\|400\|500\|550\|600, int given\.#'
         
