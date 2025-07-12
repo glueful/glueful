@@ -4,7 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Glueful is a modern PHP 8.2+ API framework with enterprise-grade features:
+Glueful is a modern PHP 8.2+ API framework platform designed for building robust APIs with enterprise-grade features.
+
+### Framework Platform Architecture
+
+**Glueful is an API framework platform that will:**
+- Ship with 4 core extensions (Admin, EmailNotification, RBAC, SocialLogin)
+- Support a growing ecosystem of third-party extensions
+- Be used by other developers to build and distribute extensions
+- Provide comprehensive APIs for extension development
+
+This platform approach justifies enterprise-grade extension architecture including:
+- Rich metadata and manifest systems for extension discovery
+- Comprehensive event system for extensibility hooks
+- Robust validation and security for third-party extensions
+- Installation/marketplace capabilities for distribution
+- Health monitoring and dependency resolution for production stability
+
+### Core Framework Features
+
+Glueful provides enterprise-grade features:
 - RESTful API endpoints with OpenAPI/Swagger documentation
 - JWT-based authentication with dual-layer session storage (database + cache)
 - Dependency Injection (DI) container for service management

@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Glueful;
 
 use Glueful\Http\{Router};
-use Glueful\Helpers\{ExtensionsManager, RoutesManager};
+use Glueful\Helpers\{RoutesManager};
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Scheduler\JobScheduler;
 use Psr\Log\LoggerInterface;
 
@@ -56,11 +57,12 @@ class API
 
         // Load enabled extensions first - they may register routes
         self::getLogger()->debug("Loading extensions...");
-        ExtensionsManager::loadEnabledExtensions();
+        $extensionManager = container()->get(ExtensionManager::class);
+        $extensionManager->loadEnabledExtensions();
 
         // Load extension routes from enabled extensions
         self::getLogger()->debug("Loading extension routes...");
-        ExtensionsManager::loadExtensionRoutes();
+        $extensionManager->loadExtensionRoutes();
 
         // Now load all core route definitions
         self::getLogger()->debug("Loading core routes...");

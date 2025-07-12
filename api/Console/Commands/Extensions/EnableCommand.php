@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -59,7 +59,7 @@ class EnableCommand extends BaseExtensionCommand
         try {
             $this->info("Enabling extension: {$extensionName}");
 
-            $extensionsManager = new ExtensionsManager();
+            $extensionsManager = $this->getService(ExtensionManager::class);
 
             // Validate extension exists
             if (!$this->validateExtensionExists($extensionsManager, $extensionName)) {
@@ -86,14 +86,27 @@ class EnableCommand extends BaseExtensionCommand
             }
 
             // Enable the extension
-            $result = ExtensionsManager::enableExtension($extensionName);
+            try {
+                $result = $extensionsManager->enable($extensionName);
 
-            if (!empty($result['error'])) {
-                $this->error($result['error']);
+                if (is_bool($result)) {
+                    if (!$result) {
+                        $this->error("Failed to enable extension '{$extensionName}'");
+                        return self::FAILURE;
+                    }
+                } else {
+                    // Handle array response format
+                    if (!$result['success']) {
+                        $this->error($result['error'] ?? "Failed to enable extension '{$extensionName}'");
+                        return self::FAILURE;
+                    }
+                }
+
+                $this->success("Extension '{$extensionName}' enabled successfully!");
+            } catch (\Exception $e) {
+                $this->error("Failed to enable extension '{$extensionName}': " . $e->getMessage());
                 return self::FAILURE;
             }
-
-            $this->success("Extension '{$extensionName}' enabled successfully!");
             $this->displayNextSteps($extensionName);
 
             return self::SUCCESS;
@@ -104,7 +117,7 @@ class EnableCommand extends BaseExtensionCommand
         }
     }
 
-    private function validateExtensionExists(ExtensionsManager $manager, string $name): bool
+    private function validateExtensionExists(ExtensionManager $manager, string $name): bool
     {
         $extension = $this->findExtension($manager, $name);
 
@@ -112,8 +125,8 @@ class EnableCommand extends BaseExtensionCommand
             $this->error("Extension '{$name}' not found.");
 
             // Suggest similar extensions
-            $extensions = $manager->getLoadedExtensions();
-            $available = array_column($extensions, 'name');
+            $extensions = $manager->listInstalled();
+            $available = array_map(fn($ext) => $ext['name'], $extensions);
             $suggestions = $this->findSimilarExtensions($name, $available);
 
             if (!empty($suggestions)) {
@@ -137,7 +150,7 @@ class EnableCommand extends BaseExtensionCommand
     }
 
 
-    private function validateDependencies(ExtensionsManager $manager, string $name): bool
+    private function validateDependencies(ExtensionManager $manager, string $name): bool
     {
         $this->info('Validating dependencies...');
 
@@ -178,7 +191,7 @@ class EnableCommand extends BaseExtensionCommand
             if ($this->confirm('Enable required dependencies automatically?', true)) {
                 foreach ($disabledDeps as $dep) {
                     $this->line("Enabling dependency: {$dep}");
-                    $manager->enableExtension($dep);
+                    $manager->enable($dep);
                 }
             } else {
                 return false;

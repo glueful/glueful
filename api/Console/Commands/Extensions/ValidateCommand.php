@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -142,57 +142,50 @@ class ValidateCommand extends BaseExtensionCommand
     ): int {
         $this->info("🔍 Validating extension: {$extensionName}");
 
-        if (!$this->extensionDirectoryExists($extensionName)) {
-            $extensionPath = $this->getExtensionPath($extensionName);
-            $this->error("Extension directory not found: {$extensionPath}");
-            return self::FAILURE;
-        }
+        try {
+            $extensionsManager = $this->getService(ExtensionManager::class);
 
-        $extensionPath = $this->getExtensionPath($extensionName);
-        $results = [];
+            // Use the new ExtensionManager validation system
+            $validationResult = $extensionsManager->validate($extensionName);
 
-        // Perform validations based on options
-        if (!$configOnly && !$focusDependencies) {
-            if (!$focusStructure) {
-                $results = array_merge($results, $this->validateStructure($extensionPath, $extensionName, $autoFix));
+            if (!$validationResult || !$validationResult['valid']) {
+                // Handle simple error response for non-existent extensions
+                if (
+                    isset($validationResult['issues']) &&
+                    in_array('Extension not found', $validationResult['issues'])
+                ) {
+                    $this->error("Extension '{$extensionName}' not found.");
+                    return self::FAILURE;
+                }
             }
-            $results = array_merge($results, $this->validateConfiguration($extensionPath, $extensionName, $autoFix));
-            $results = array_merge($results, $this->validatePermissions($extensionPath));
-        }
 
-        if ($focusStructure && !$configOnly) {
-            $results = array_merge($results, $this->validateStructure($extensionPath, $extensionName, $autoFix));
-        }
+            // Convert new validation format to old display format
+            $results = $this->convertValidationResults($validationResult, $extensionName);
 
-        if ($configOnly || !$focusStructure) {
-            $results = array_merge($results, $this->validateConfiguration($extensionPath, $extensionName, $autoFix));
-        }
+            // Add additional validations based on options
+            if ($strict) {
+                $extensionPath = $this->getExtensionPath($extensionName);
+                $results = array_merge($results, $this->validateStrict($extensionPath, $extensionName));
+            }
 
-        if (!$configOnly && !$focusStructure) {
-            $results = array_merge($results, $this->validateExtensionDependencies($extensionPath, $extensionName));
-        }
+            if ($validateSchema) {
+                $extensionPath = $this->getExtensionPath($extensionName);
+                $results = array_merge($results, $this->validateJsonSchema($extensionPath, $extensionName));
+            }
 
-        if ($focusDependencies) {
-            $results = array_merge($results, $this->validateExtensionDependencies($extensionPath, $extensionName));
-        }
+            $this->displayValidationResults($results);
 
-        if ($strict) {
-            $results = array_merge($results, $this->validateStrict($extensionPath, $extensionName));
-        }
+            $hasErrors = array_filter($results, fn($result) => $result['type'] === 'error');
 
-        if ($validateSchema) {
-            $results = array_merge($results, $this->validateJsonSchema($extensionPath, $extensionName));
-        }
-
-        $this->displayValidationResults($results);
-
-        $hasErrors = array_filter($results, fn($result) => $result['type'] === 'error');
-
-        if (empty($hasErrors)) {
-            $this->success("✅ Extension '{$extensionName}' validation passed!");
-            return self::SUCCESS;
-        } else {
-            $this->error("❌ Extension '{$extensionName}' validation failed with errors.");
+            if (empty($hasErrors)) {
+                $this->success("✅ Extension '{$extensionName}' validation passed!");
+                return self::SUCCESS;
+            } else {
+                $this->error("❌ Extension '{$extensionName}' validation failed with errors.");
+                return self::FAILURE;
+            }
+        } catch (\Exception $e) {
+            $this->error("Validation failed: " . $e->getMessage());
             return self::FAILURE;
         }
     }
@@ -208,40 +201,59 @@ class ValidateCommand extends BaseExtensionCommand
         $this->info('🔍 Validating all extensions and global configuration');
         $this->line('====================================================');
 
-        $allResults = [];
+        try {
+            $extensionsManager = $this->getService(ExtensionManager::class);
+            $allResults = [];
 
-        // Validate global configuration first
-        $globalResults = $this->performGlobalConfigValidation($autoFix);
-        $allResults = array_merge($allResults, $globalResults);
+            // Validate global configuration first
+            $globalResults = $this->validateGlobalConfigurationNew($extensionsManager);
+            $allResults = array_merge($allResults, $globalResults);
 
-        // Validate all individual extensions
-        $extensionsDir = dirname(__DIR__, 6) . '/extensions';
-        if (is_dir($extensionsDir)) {
-            $directories = scandir($extensionsDir);
+            // Get all installed extensions using ExtensionManager
+            $installedExtensions = $extensionsManager->listInstalled();
             $validExtensions = 0;
-            $totalExtensions = 0;
+            $totalExtensions = count($installedExtensions);
 
-            foreach ($directories as $dir) {
-                if ($dir === '.' || $dir === '..' || !is_dir("{$extensionsDir}/{$dir}")) {
-                    continue;
-                }
+            $this->info("Found {$totalExtensions} installed extensions");
 
-                $totalExtensions++;
-                $extensionResults = $this->performSingleExtensionValidation(
-                    "{$extensionsDir}/{$dir}",
-                    $dir,
-                    $autoFix,
-                    $strict,
-                    $validateSchema,
-                    $focusDependencies,
-                    $focusStructure,
-                    $configOnly
-                );
-                $allResults = array_merge($allResults, $extensionResults);
+            // Validate each extension using the new system
+            foreach ($installedExtensions as $extensionData) {
+                $extensionName = $extensionData['name'];
+                $this->line("Validating extension: {$extensionName}");
 
-                $hasErrors = array_filter($extensionResults, fn($result) => $result['type'] === 'error');
-                if (empty($hasErrors)) {
-                    $validExtensions++;
+                try {
+                    // Use the new validation system
+                    $validationResult = $extensionsManager->validate($extensionName);
+
+                    // Convert to display format
+                    $extensionResults = $this->convertValidationResults($validationResult, $extensionName);
+
+                    // Add additional validations based on options
+                    if ($strict) {
+                        $extensionPath = $this->getExtensionPath($extensionName);
+                        $strictResults = $this->validateStrict($extensionPath, $extensionName);
+                        $extensionResults = array_merge($extensionResults, $strictResults);
+                    }
+
+                    if ($validateSchema) {
+                        $extensionPath = $this->getExtensionPath($extensionName);
+                        $schemaResults = $this->validateJsonSchema($extensionPath, $extensionName);
+                        $extensionResults = array_merge($extensionResults, $schemaResults);
+                    }
+
+                    $allResults = array_merge($allResults, $extensionResults);
+
+                    // Check if this extension passed validation
+                    $hasErrors = array_filter($extensionResults, fn($result) => $result['type'] === 'error');
+                    if (empty($hasErrors)) {
+                        $validExtensions++;
+                    }
+                } catch (\Exception $e) {
+                    $allResults[] = [
+                        'type' => 'error',
+                        'message' => "Failed to validate extension {$extensionName}: " . $e->getMessage(),
+                        'category' => "Extension: {$extensionName}"
+                    ];
                 }
             }
 
@@ -251,23 +263,20 @@ class ValidateCommand extends BaseExtensionCommand
                 'message' => "Extension validation summary: {$validExtensions}/{$totalExtensions} extensions passed",
                 'category' => 'Validation Summary'
             ];
-        }
 
-        // Global dependency validation
-        if ($focusDependencies || !$configOnly) {
-            $depResults = $this->validateAllDependencies();
-            $allResults = array_merge($allResults, $depResults);
-        }
+            $this->displayValidationResults($allResults);
 
-        $this->displayValidationResults($allResults);
+            $hasErrors = array_filter($allResults, fn($result) => $result['type'] === 'error');
 
-        $hasErrors = array_filter($allResults, fn($result) => $result['type'] === 'error');
-
-        if (empty($hasErrors)) {
-            $this->success('✅ All extensions validation passed!');
-            return self::SUCCESS;
-        } else {
-            $this->error('❌ Extensions validation failed with errors.');
+            if (empty($hasErrors)) {
+                $this->success('✅ All extensions validation passed!');
+                return self::SUCCESS;
+            } else {
+                $this->error('❌ Extensions validation failed with errors.');
+                return self::FAILURE;
+            }
+        } catch (\Exception $e) {
+            $this->error("Failed to validate extensions: " . $e->getMessage());
             return self::FAILURE;
         }
     }
@@ -567,7 +576,7 @@ class ValidateCommand extends BaseExtensionCommand
             return $results;
         }
 
-        $extensionsManager = new ExtensionsManager();
+        $extensionsManager = $this->getService(ExtensionManager::class);
 
         if (is_array($dependencies)) {
             foreach ($dependencies as $depName => $version) {
@@ -965,5 +974,145 @@ class ValidateCommand extends BaseExtensionCommand
             ['⚠️  Warnings', $warningCount],
             ['❌ Errors', $errorCount]
         ]);
+    }
+
+    /**
+     * Convert new validation results to old display format
+     */
+    private function convertValidationResults(array $validationResult, string $extensionName): array
+    {
+        $results = [];
+        $category = "Extension: {$extensionName}";
+
+        // Structure validation
+        if (isset($validationResult['structure_valid']) && $validationResult['structure_valid']) {
+            $results[] = [
+                'type' => 'success',
+                'message' => 'Extension structure is valid',
+                'category' => $category
+            ];
+        }
+
+        // Syntax validation
+        if (isset($validationResult['syntax_valid']) && $validationResult['syntax_valid']) {
+            $results[] = [
+                'type' => 'success',
+                'message' => 'Extension syntax is valid',
+                'category' => $category
+            ];
+        }
+
+        // Process issues
+        foreach ($validationResult['issues'] ?? [] as $issue) {
+            $results[] = [
+                'type' => 'error',
+                'message' => $issue,
+                'category' => $category
+            ];
+        }
+
+        // Process warnings
+        foreach ($validationResult['warnings'] ?? [] as $warning) {
+            $results[] = [
+                'type' => 'warning',
+                'message' => $warning,
+                'category' => $category
+            ];
+        }
+
+        // Process security issues (as warnings since we've relaxed them)
+        foreach ($validationResult['security_issues'] ?? [] as $securityIssue) {
+            $results[] = [
+                'type' => 'warning',
+                'message' => "Security notice: " . $securityIssue,
+                'category' => $category
+            ];
+        }
+
+        // Process dependency issues
+        foreach ($validationResult['dependency_issues'] ?? [] as $dependencyIssue) {
+            $results[] = [
+                'type' => 'error',
+                'message' => "Dependency issue: " . $dependencyIssue,
+                'category' => $category
+            ];
+        }
+
+        // Overall validation status
+        if ($validationResult['valid']) {
+            $results[] = [
+                'type' => 'success',
+                'message' => 'Overall validation passed',
+                'category' => $category
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Validate global configuration using the new ExtensionManager
+     */
+    private function validateGlobalConfigurationNew(ExtensionManager $extensionsManager): array
+    {
+        $results = [];
+        $category = 'Global Configuration';
+
+        // Check if extensions directory exists (using ExtensionManager's internal path)
+        try {
+            $installedExtensions = $extensionsManager->listInstalled();
+            $results[] = [
+                'type' => 'success',
+                'message' => 'Extensions directory exists and is accessible',
+                'category' => $category
+            ];
+
+            $results[] = [
+                'type' => 'info',
+                'message' => "Found " . count($installedExtensions) . " installed extensions",
+                'category' => $category
+            ];
+        } catch (\Exception $e) {
+            $results[] = [
+                'type' => 'error',
+                'message' => 'Failed to access extensions directory: ' . $e->getMessage(),
+                'category' => $category
+            ];
+        }
+
+        // Validate extension system health
+        try {
+            // Check if at least core extensions are available
+            $coreExtensions = ['Admin', 'RBAC'];
+            $missingCore = [];
+
+            foreach ($coreExtensions as $coreExt) {
+                if (!$extensionsManager->isInstalled($coreExt)) {
+                    $missingCore[] = $coreExt;
+                }
+            }
+
+            if (empty($missingCore)) {
+                $results[] = [
+                    'type' => 'success',
+                    'message' => 'Core extensions are installed',
+                    'category' => $category
+                ];
+            } else {
+                $results[] = [
+                    'type' => 'warning',
+                    'message' => 'Missing core extensions: ' . implode(', ', $missingCore),
+                    'category' => $category
+                ];
+            }
+        } catch (\Exception $e) {
+            $results[] = [
+                'type' => 'warning',
+                'message' => 'Could not verify core extensions: ' . $e->getMessage(),
+                'category' => $category
+            ];
+        }
+
+        return $results;
     }
 }

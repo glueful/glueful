@@ -1,8 +1,10 @@
 <?php
 
-    declare(strict_types=1);
+declare(strict_types=1);
 
-    namespace Glueful\Extensions;
+namespace Glueful\Extensions;
+
+use Glueful\Extensions\Traits\ExtensionDocumentationTrait;
 
 /**
  * Admin Extension
@@ -14,6 +16,8 @@
  */
 class Admin extends \Glueful\Extensions
 {
+    use ExtensionDocumentationTrait;
+
     /**
      * Extension configuration
      */
@@ -34,64 +38,6 @@ class Admin extends \Glueful\Extensions
         }
 
         // Additional initialization code here
-    }
-
-    /**
-     * Get the extension's service provider
-     *
-     * @return \Glueful\DI\Interfaces\ServiceProviderInterface
-     */
-    public static function getServiceProvider(): \Glueful\DI\Interfaces\ServiceProviderInterface
-    {
-        return new \Glueful\Extensions\Admin\AdminServiceProvider();
-    }
-
-    /**
-     * Register extension-provided middleware
-     *
-     * @return void
-     */
-    public static function registerMiddleware(): void
-    {
-        // Register middleware here
-    }
-
-    /**
-     * Process extension request
-     *
-     * Main request handler for extension endpoints.
-     *
-     * @param array $getParams Query parameters
-     * @param array $postParams Post data
-     * @return array Extension response
-     */
-    public static function process(array $getParams, array $postParams): array
-    {
-        // Example implementation of the process method
-        $action = $getParams['action'] ?? 'default';
-
-        return match ($action) {
-            'greet' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'message' => self::greet($getParams['name'] ?? 'World')
-                ]
-            ],
-            'default' => [
-                'success' => true,
-                'code' => 200,
-                'data' => [
-                    'extension' => 'Admin',
-                    'message' => 'Extension is working properly'
-                ]
-            ],
-            default => [
-                'success' => false,
-                'code' => 400,
-                'error' => 'Unknown action: ' . $action
-            ]
-        };
     }
 
     /**
@@ -117,13 +63,6 @@ class Admin extends \Glueful\Extensions
                 'extensions' => [],
                 'dependencies' => []
             ],
-
-            // Optional fields - uncomment and customize as needed
-            // 'homepage' => 'https://example.com/Admin',
-            // 'documentation' => 'https://docs.example.com/extensions/Admin',
-            // 'license' => 'MIT',
-            // 'keywords' => ['keyword1', 'keyword2', 'keyword3'],
-            // 'category' => 'utilities',
 
             'features' => [
                 'Interactive API visualization dashboard with metrics and analytics',
@@ -159,36 +98,7 @@ class Admin extends \Glueful\Extensions
     }
 
     /**
-     * Get extension dependencies
-     *
-     * Returns a list of other extensions this extension depends on.
-     *
-     * @return array List of extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        // By default, get dependencies from metadata
-        $metadata = self::getMetadata();
-        return $metadata['requires']['extensions'] ?? [];
-    }
-
-    /**
-     * Check environment-specific configuration
-     *
-     * Determines if the extension should be enabled in the current environment.
-     *
-     * @param string $environment Current environment (dev, staging, production)
-     * @return bool Whether the extension should be enabled in this environment
-     */
-    public static function isEnabledForEnvironment(string $environment): bool
-    {
-        // By default, enable in all environments
-        // Override this method to enable only in specific environments
-        return true;
-    }
-
-    /**
-     * Validate extension health
+     * Check extension health
      *
      * Checks if the extension is functioning correctly.
      *
@@ -216,24 +126,6 @@ class Admin extends \Glueful\Extensions
                 'database_queries' => 0, // Track queries if your extension uses the database
                 'cache_usage' => 0 // Track cache usage if applicable
             ]
-        ];
-    }
-
-    /**
-     * Get extension resource usage
-     *
-     * Returns information about resources used by this extension.
-     *
-     * @return array Resource usage metrics
-     */
-    public static function getResourceUsage(): array
-    {
-        // Customize with your own resource metrics
-        return [
-            'memory_usage' => memory_get_usage(true),
-            'execution_time' => 0,
-            'database_queries' => 0,
-            'cache_usage' => 0
         ];
     }
 

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Glueful;
+namespace Glueful\Extensions;
+
+use Glueful\Extensions\Interfaces\ExtensionInterface;
 
 /**
  * Base Extensions Class
@@ -18,9 +20,9 @@ namespace Glueful;
  * Optional features available via traits:
  * - ExtensionDocumentationTrait - For getScreenshots() and getChangelog()
  *
- * @package Glueful
+ * @package Glueful\Extensions
  */
-abstract class Extensions implements IExtensions
+abstract class BaseExtension implements ExtensionInterface
 {
     /**
      * Initialize extension
@@ -43,12 +45,8 @@ abstract class Extensions implements IExtensions
      * to provide custom metadata.
      *
      * This method follows the Glueful Extension Metadata Standard.
-     * Required fields:
-     * - name: Display name of the extension
-     * - description: Brief description of what the extension does
-     * - version: Semantic version (e.g. "1.0.0")
-     * - author: Author name or organization
-     * - requires: Object containing dependency requirements
+     * Primary: Load from manifest.json v2.0
+     * Fallback: Generate from class reflection (for backward compatibility)
      *
      * @see https://docs.glueful.com/extensions/metadata-standard
      * @return array Extension metadata
@@ -56,6 +54,18 @@ abstract class Extensions implements IExtensions
     public static function getMetadata(): array
     {
         $reflection = new \ReflectionClass(static::class);
+        $extensionPath = dirname($reflection->getFileName());
+
+        // Primary: Load from manifest.json v2.0
+        $manifestPath = $extensionPath . '/manifest.json';
+        if (file_exists($manifestPath)) {
+            $manifest = json_decode(file_get_contents($manifestPath), true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $manifest;
+            }
+        }
+
+        // Fallback: Generate from class reflection (for backward compatibility)
         $shortName = $reflection->getShortName();
         $docComment = $reflection->getDocComment();
 
@@ -68,27 +78,34 @@ abstract class Extensions implements IExtensions
             if (preg_match('/@description\s+(.*)\r?\n/m', $docComment, $matches)) {
                 $description = trim($matches[1]);
             }
-
             if (preg_match('/@version\s+(.*)\r?\n/m', $docComment, $matches)) {
                 $version = trim($matches[1]);
             }
-
             if (preg_match('/@author\s+(.*)\r?\n/m', $docComment, $matches)) {
                 $author = trim($matches[1]);
             }
         }
 
         return [
+            'manifestVersion' => '2.0',
+            'id' => strtolower($shortName),
             'name' => $shortName,
-            'description' => $description,
+            'displayName' => $shortName,
             'version' => $version,
+            'description' => $description,
             'author' => $author,
-            'type' => 'optional', // core or optional
-            'requires' => [
+            'main' => "./{$shortName}.php",
+            'engines' => [
                 'glueful' => '>=0.27.0',
-                'php' => '>=8.2.0',
-                'extensions' => [] // List of required extensions
-            ]
+                'php' => '>=8.2.0'
+            ],
+            'dependencies' => [
+                'composer' => [],
+                'extensions' => []
+            ],
+            'provides' => [],
+            'capabilities' => [],
+            'assets' => []
         ];
     }
 
@@ -98,11 +115,12 @@ abstract class Extensions implements IExtensions
      * Checks if the extension is functioning correctly. Extensions can
      * override this to perform custom health checks.
      *
-     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
+     * @return array Health status
      */
     public static function checkHealth(): array
     {
         return [
+            'status' => 'healthy',
             'healthy' => true,
             'issues' => [],
             'metrics' => [

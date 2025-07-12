@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\{RequestHelper, ExtensionsManager};
+use Glueful\Helpers\{RequestHelper};
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Permissions\PermissionContext;
 
 /**
@@ -22,6 +23,12 @@ use Glueful\Permissions\PermissionContext;
  */
 class ExtensionsController extends BaseController
 {
+    public function __construct(
+        private ExtensionManager $extensionManager
+    ) {
+        parent::__construct();
+    }
+
     /**
      * Get all extensions with pagination and status
      *
@@ -43,40 +50,30 @@ class ExtensionsController extends BaseController
 
         // Cache extensions list with permission-aware TTL
         $data = $this->cacheByPermission('extensions_list', function () {
-            // Get extension configuration file path
-            $extensionConfigFile = ExtensionsManager::getConfigPath();
-
-            // Read extensions from config file
-            $content = file_get_contents($extensionConfigFile);
-            $config = json_decode($content, true);
-
-            if (!is_array($config) || !isset($config['extensions'])) {
-                return ['extensions' => [], 'grouped' => [], 'summary' => []];
-            }
-
-            // Get core and optional lists from config
-            $coreExtensions = $config['core'] ?? [];
-            $optionalExtensions = $config['optional'] ?? [];
+            // Get installed extensions
+            $installedExtensions = $this->extensionManager->listInstalled();
+            $coreExtensions = $this->extensionManager->getCoreExtensions();
 
             $extensionData = [];
 
-            // Process extensions from config without loading their classes
-            foreach ($config['extensions'] as $extensionName => $extensionInfo) {
-                $tierType = in_array($extensionName, $coreExtensions) ? 'core' : 'optional';
+            // Process installed extensions
+            foreach ($installedExtensions as $extensionName) {
+                $tierType = $this->extensionManager->isCoreExtension($extensionName) ? 'core' : 'optional';
+                // Get metadata for each extension
+                $metadata = $this->extensionManager->getExtensionMetadata($extensionName) ?? [];
 
-                // Get all metadata directly from config
-                $description = $extensionInfo['description'] ?? 'No description available';
-                $version = $extensionInfo['version'] ?? 'unknown';
-                $author = $extensionInfo['author'] ?? 'unknown';
+                $description = $metadata['description'] ?? 'No description available';
+                $version = $metadata['version'] ?? 'unknown';
+                $author = $metadata['author'] ?? 'unknown';
 
                 $extensionData[] = [
                     'name' => $extensionName,
                     'description' => $description,
                     'version' => $version,
                     'author' => $author,
-                    'enabled' => $extensionInfo['enabled'] ?? false,
+                    'enabled' => $this->extensionManager->isEnabled($extensionName),
                     'tier' => $tierType,  // Added tier type information
-                    'isCoreExtension' => in_array($extensionName, $coreExtensions),  // Explicit flag
+                    'isCoreExtension' => $this->extensionManager->isCoreExtension($extensionName),  // Explicit flag
                     'extensionId' => $extensionName, // Include the extension ID for actions
                 ];
             }
@@ -98,7 +95,7 @@ class ExtensionsController extends BaseController
                     'total' => count($extensionData),
                     'enabled' => $enabledCount,
                     'core' => count($coreExtensions),
-                    'optional' => count($optionalExtensions)
+                    'optional' => count($installedExtensions) - count($coreExtensions)
                 ]
             ];
         }, 300); // 5 minutes default TTL
@@ -132,12 +129,12 @@ class ExtensionsController extends BaseController
 
         $extensionName = $data['extension'];
 
-        if (!ExtensionsManager::extensionExists($extensionName)) {
+        if (!$this->extensionManager->isInstalled($extensionName)) {
             return Response::notFound('Extension not found');
         }
 
         // Check if it's a core or optional extension before enabling
-        $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
+        $isCoreExtension = $this->extensionManager->isCoreExtension($extensionName);
         $tierType = $isCoreExtension ? 'core' : 'optional';
 
         // Additional permission check for core extensions
@@ -145,26 +142,20 @@ class ExtensionsController extends BaseController
             $this->requirePermission('extensions.core.manage');
         }
 
-        $result = ExtensionsManager::enableExtension($extensionName);
+        try {
+            $success = $this->extensionManager->enable($extensionName);
 
-        if (!$result['success']) {
-            $statusCode = Response::HTTP_BAD_REQUEST;
-
-            // If the issue is related to missing dependencies, return detailed information
-            if (isset($result['details']) && isset($result['details']['missing_dependencies'])) {
+            if (!$success) {
                 return Response::error(
-                    $result['message'],
-                    $statusCode,
-                    [
-                        'missing_dependencies' => $result['details']['missing_dependencies'],
-                        'required_dependencies' => $result['details']['required_dependencies'] ?? [],
-                        'tier' => $tierType,
-                        'isCoreExtension' => $isCoreExtension
-                    ]
+                    "Failed to enable extension '$extensionName'",
+                    Response::HTTP_BAD_REQUEST
                 );
             }
-
-            return Response::error($result['message'], $statusCode);
+        } catch (\Exception $e) {
+            return Response::error(
+                $e->getMessage(),
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         // Log successful extension enable
@@ -178,7 +169,7 @@ class ExtensionsController extends BaseController
                 'tier' => $tierType,
                 'isCoreExtension' => $isCoreExtension
             ],
-            $result['message']
+            "Extension '$extensionName' enabled successfully"
         );
     }
 
@@ -207,12 +198,12 @@ class ExtensionsController extends BaseController
 
         $extensionName = $data['extension'];
 
-        if (!ExtensionsManager::extensionExists($extensionName)) {
+        if (!$this->extensionManager->isInstalled($extensionName)) {
             return Response::notFound('Extension not found');
         }
 
         // Check if it's a core extension
-        $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
+        $isCoreExtension = $this->extensionManager->isCoreExtension($extensionName);
         $tierType = $isCoreExtension ? 'core' : 'optional';
 
         // If it's a core extension, we may need to handle differently
@@ -223,32 +214,17 @@ class ExtensionsController extends BaseController
             $this->requirePermission('extensions.core.manage');
         }
 
-        $result = ExtensionsManager::disableExtension($extensionName, $force);
+        try {
+            $success = $this->extensionManager->disable($extensionName);
+        } catch (\Exception $e) {
+            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST);
+        }
 
-        if (!$result['success']) {
-            $statusCode = Response::HTTP_BAD_REQUEST;
-
-            // If the issue is related to dependent extensions, return detailed information
-            if (isset($result['details']) && isset($result['details']['dependent_extensions'])) {
-                return Response::error(
-                    $result['message'],
-                    $statusCode,
-                    [
-                        'dependent_extensions' => $result['details']['dependent_extensions'],
-                        'tier' => $tierType,
-                        'isCoreExtension' => $isCoreExtension
-                    ]
-                );
-            }
-
-            // If it's a core extension without force
-            if (isset($result['details']) && isset($result['details']['is_core'])) {
-                return Response::forbidden(
-                    $result['message'] . ' (Core extension)'
-                );
-            }
-
-            return Response::error($result['message'], $statusCode);
+        if (!$success) {
+            return Response::error(
+                "Failed to disable extension '$extensionName'",
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         // Log successful extension disable
@@ -263,7 +239,7 @@ class ExtensionsController extends BaseController
                 'isCoreExtension' => $isCoreExtension,
                 'wasForced' => $force
             ],
-            $result['message']
+            "Extension '$extensionName' disabled successfully"
         );
     }
 
@@ -291,7 +267,7 @@ class ExtensionsController extends BaseController
 
         $extensionName = $extension['name'];
 
-        if (!ExtensionsManager::extensionExists($extensionName)) {
+        if (!$this->extensionManager->isInstalled($extensionName)) {
             return Response::notFound('Extension not found');
         }
 
@@ -299,12 +275,12 @@ class ExtensionsController extends BaseController
         $healthData = $this->cacheResponse(
             'extension_health_' . $extensionName,
             function () use ($extensionName) {
-                $health = ExtensionsManager::checkExtensionHealth($extensionName);
+                $health = $this->extensionManager->checkHealth($extensionName);
 
                 // Get the tier information
-                $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
+                $isCoreExtension = $this->extensionManager->isCoreExtension($extensionName);
                 $tierType = $isCoreExtension ? 'core' : 'optional';
-                $isEnabled = ExtensionsManager::isExtensionEnabled($extensionName);
+                $isEnabled = $this->extensionManager->isEnabled($extensionName);
 
                 return [
                     'extension' => $extensionName,
@@ -346,11 +322,12 @@ class ExtensionsController extends BaseController
         $tieredGraph = $this->cacheResponse(
             'extension_dependencies',
             function () {
-                $graph = ExtensionsManager::buildDependencyGraph();
+                // TODO: Implement buildDependencyGraph in new ExtensionManager
+                $graph = ['nodes' => [], 'edges' => []]; // Placeholder with expected structure
 
                 // Add summary information about the tiered nature of the dependencies
-                $coreNodes = array_filter($graph['nodes'], fn($node) => $node['type'] === 'core');
-                $optionalNodes = array_filter($graph['nodes'], fn($node) => $node['type'] === 'optional');
+                $coreNodes = [];
+                $optionalNodes = [];
 
                 // Categorize edges by tier
                 $coreToCoreEdges = [];
@@ -358,30 +335,8 @@ class ExtensionsController extends BaseController
                 $optionalToCoreEdges = [];
                 $optionalToOptionalEdges = [];
 
-                foreach ($graph['edges'] as $edge) {
-                    // Helper function to get node type
-                    $getNodeType = function ($nodes, $nodeId) {
-                        foreach ($nodes as $node) {
-                            if ($node['id'] === $nodeId) {
-                                return $node['type'];
-                            }
-                        }
-                        return 'optional';
-                    };
-
-                    $fromType = $getNodeType($graph['nodes'], $edge['from']);
-                    $toType = $getNodeType($graph['nodes'], $edge['to']);
-
-                    if ($fromType === 'core' && $toType === 'core') {
-                        $coreToCoreEdges[] = $edge;
-                    } elseif ($fromType === 'core' && $toType === 'optional') {
-                        $coreToOptionalEdges[] = $edge;
-                    } elseif ($fromType === 'optional' && $toType === 'core') {
-                        $optionalToCoreEdges[] = $edge;
-                    } elseif ($fromType === 'optional' && $toType === 'optional') {
-                        $optionalToOptionalEdges[] = $edge;
-                    }
-                }
+                // Since this is placeholder data, skip edge processing
+                // When buildDependencyGraph is implemented, this logic will work with real data
 
                 // Enhance the graph with tiered information
                 return [
@@ -417,22 +372,6 @@ class ExtensionsController extends BaseController
         );
     }
 
-    /**
-     * Helper method to get node type from nodes array by ID
-     *
-     * @param array $nodes Array of nodes
-     * @param string $nodeId Node ID to find
-     * @return string Node type (core or optional)
-     */
-    private function getNodeType(array $nodes, string $nodeId): string
-    {
-        foreach ($nodes as $node) {
-            if ($node['id'] === $nodeId) {
-                return $node['type'];
-            }
-        }
-        return 'optional'; // Default to optional if not found
-    }
 
     /**
      * Get resource usage metrics for extensions
@@ -458,70 +397,29 @@ class ExtensionsController extends BaseController
         $tieredMetrics = $this->cacheResponse(
             'extension_metrics',
             function () {
-                $metrics = ExtensionsManager::getExtensionMetrics();
-
-                // Get extension tier information
-                $coreExtensions = ExtensionsManager::getCoreExtensions();
-
-                // Group metrics by tier
-                $coreMetrics = [];
-                $optionalMetrics = [];
-                $totalCoreMemory = 0;
-                $totalOptionalMemory = 0;
-                $totalCoreExecutionTime = 0;
-                $totalOptionalExecutionTime = 0;
-
-                foreach ($metrics['extensions'] as $extName => $extMetrics) {
-                    if (in_array($extName, $coreExtensions)) {
-                        $coreMetrics[$extName] = $extMetrics;
-                        $totalCoreMemory += ($extMetrics['memory_usage'] ?? 0);
-                        $totalCoreExecutionTime += ($extMetrics['execution_time'] ?? 0);
-                    } else {
-                        $optionalMetrics[$extName] = $extMetrics;
-                        $totalOptionalMemory += ($extMetrics['memory_usage'] ?? 0);
-                        $totalOptionalExecutionTime += ($extMetrics['execution_time'] ?? 0);
-                    }
-                }
-
-                // Create tiered metrics response
-                $tieredMetrics = [
+                // TODO: Implement getExtensionMetrics in new ExtensionManager
+                // Return placeholder structure until method is implemented
+                return [
                     'overall' => [
-                        'total_memory_usage' => $metrics['total_memory_usage'],
-                        'total_execution_time' => $metrics['total_execution_time'],
+                        'total_memory_usage' => 0,
+                        'total_execution_time' => 0,
                     ],
                     'by_tier' => [
                         'core' => [
-                            'total_memory_usage' => $totalCoreMemory,
-                            'total_execution_time' => $totalCoreExecutionTime,
-                            'extensions_count' => count($coreMetrics),
-                            'extensions' => $coreMetrics
+                            'total_memory_usage' => 0,
+                            'total_execution_time' => 0,
+                            'extensions_count' => 0,
+                            'extensions' => []
                         ],
                         'optional' => [
-                            'total_memory_usage' => $totalOptionalMemory,
-                            'total_execution_time' => $totalOptionalExecutionTime,
-                            'extensions_count' => count($optionalMetrics),
-                            'extensions' => $optionalMetrics
+                            'total_memory_usage' => 0,
+                            'total_execution_time' => 0,
+                            'extensions_count' => 0,
+                            'extensions' => []
                         ]
                     ],
-                    'all_extensions' => $metrics['extensions']
+                    'all_extensions' => []
                 ];
-
-                // Add percentage distributions
-                if ($metrics['total_memory_usage'] > 0) {
-                    $coreMemPct = ($totalCoreMemory / $metrics['total_memory_usage']) * 100;
-                    $optMemPct = ($totalOptionalMemory / $metrics['total_memory_usage']) * 100;
-                    $tieredMetrics['by_tier']['core']['memory_percentage'] = round($coreMemPct, 2);
-                    $tieredMetrics['by_tier']['optional']['memory_percentage'] = round($optMemPct, 2);
-                }
-
-                if ($metrics['total_execution_time'] > 0) {
-                    $coreTimePct = ($totalCoreExecutionTime / $metrics['total_execution_time']) * 100;
-                    $optTimePct = ($totalOptionalExecutionTime / $metrics['total_execution_time']) * 100;
-                    $tieredMetrics['by_tier']['core']['execution_time_percentage'] = round($coreTimePct, 2);
-                    $tieredMetrics['by_tier']['optional']['execution_time_percentage'] = round($optTimePct, 2);
-                }
-
-                return $tieredMetrics;
             },
             120 // 2 minutes TTL for metrics
         );
@@ -563,12 +461,12 @@ class ExtensionsController extends BaseController
 
         $extensionName = $data['extension'];
 
-        if (!ExtensionsManager::extensionExists($extensionName)) {
+        if (!$this->extensionManager->isInstalled($extensionName)) {
             return Response::notFound('Extension not found');
         }
 
         // Check if it's a core extension
-        $isCoreExtension = ExtensionsManager::isCoreExtension($extensionName);
+        $isCoreExtension = $this->extensionManager->isCoreExtension($extensionName);
         $tierType = $isCoreExtension ? 'core' : 'optional';
 
         // Use force parameter if provided
@@ -580,7 +478,7 @@ class ExtensionsController extends BaseController
         }
 
         // Log deletion attempt with context
-        $context = new PermissionContext(
+        new PermissionContext(
             data: [
                 'extension' => $extensionName,
                 'tier' => $tierType,
@@ -593,7 +491,11 @@ class ExtensionsController extends BaseController
         );
 
 
-        $result = ExtensionsManager::deleteExtension($extensionName, $force);
+        try {
+            $result = $this->extensionManager->delete($extensionName, $force);
+        } catch (\Exception $e) {
+            return Response::error($e->getMessage(), Response::HTTP_BAD_REQUEST);
+        }
 
         if (!$result['success']) {
             $statusCode = Response::HTTP_BAD_REQUEST;
@@ -690,8 +592,9 @@ class ExtensionsController extends BaseController
 
             // Cache catalog data with permission-aware TTL
             $cacheKey = 'extensions_catalog_' . md5(serialize($filters)) . '_' . ($useCache ? '1' : '0');
-            $catalogData = $this->cacheByPermission($cacheKey, function () use ($filters, $useCache) {
-                return ExtensionsManager::getSynchronizedCatalog($filters, $useCache);
+            $catalogData = $this->cacheByPermission($cacheKey, function () {
+                // TODO: Implement getSynchronizedCatalog in new ExtensionManager
+                return ['extensions' => []]; // Placeholder
             }, 300); // 5 minutes TTL
 
             // Log catalog access

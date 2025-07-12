@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -352,9 +352,9 @@ class BenchmarkCommand extends BaseExtensionCommand
     private function loadExtensions(): void
     {
         try {
-            $extensionsManager = new ExtensionsManager();
+            $extensionsManager = $this->getService(ExtensionManager::class);
             // Simulate loading extensions
-            $extensions = $extensionsManager->getLoadedExtensions();
+            $extensions = $this->getExtensionsKeyed($extensionsManager);
 
             // Touch each extension to simulate loading
             foreach ($extensions as $extension) {

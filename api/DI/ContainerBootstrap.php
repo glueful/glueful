@@ -15,6 +15,7 @@ use Glueful\DI\ServiceProviders\VarDumperServiceProvider;
 use Glueful\DI\ServiceProviders\EventServiceProvider;
 use Glueful\DI\ServiceProviders\ConsoleServiceProvider;
 use Glueful\DI\ServiceProviders\LockServiceProvider;
+use Glueful\DI\ServiceProviders\ExtensionServiceProvider;
 
 /**
  * Container Bootstrap
@@ -46,6 +47,7 @@ class ContainerBootstrap
         $container->register(new EventServiceProvider());
         $container->register(new ConsoleServiceProvider($container));
         $container->register(new LockServiceProvider());
+        $container->register(new ExtensionServiceProvider());
 
         // Boot all providers
         $container->boot();

@@ -784,8 +784,9 @@ class Router
         self::$routesLoadedFromCache = false;
 
         // Reload routes from source files
-        \Glueful\Helpers\ExtensionsManager::loadEnabledExtensions();
-        \Glueful\Helpers\ExtensionsManager::loadExtensionRoutes();
+        $extensionManager = container()->get(\Glueful\Extensions\ExtensionManager::class);
+        $extensionManager->loadEnabledExtensions();
+        $extensionManager->loadExtensionRoutes();
         \Glueful\Helpers\RoutesManager::loadRoutes();
     }
 

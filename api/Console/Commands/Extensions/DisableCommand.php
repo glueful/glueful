@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -57,7 +57,7 @@ class DisableCommand extends BaseExtensionCommand
         try {
             $this->info("Disabling extension: {$extensionName}");
 
-            $extensionsManager = new ExtensionsManager();
+            $extensionsManager = $this->getService(ExtensionManager::class);
 
             // Validate extension exists and is enabled
             if (!$this->validateExtensionCanBeDisabled($extensionsManager, $extensionName)) {
@@ -78,14 +78,26 @@ class DisableCommand extends BaseExtensionCommand
             }
 
             // Disable the extension
-            $result = ExtensionsManager::disableExtension($extensionName, $force);
+            try {
+                $result = $extensionsManager->disable($extensionName);
 
-            if (!empty($result['error'])) {
-                $this->error($result['error']);
+                if (is_bool($result)) {
+                    if (!$result) {
+                        $this->error("Failed to disable extension '{$extensionName}'");
+                        return self::FAILURE;
+                    }
+                } else {
+                    // Handle array response format
+                    if (!$result['success']) {
+                        $this->error($result['error'] ?? "Failed to disable extension '{$extensionName}'");
+                        return self::FAILURE;
+                    }
+                }
+                $this->success("Extension '{$extensionName}' disabled successfully!");
+            } catch (\Exception $e) {
+                $this->error("Failed to disable extension '{$extensionName}': " . $e->getMessage());
                 return self::FAILURE;
             }
-
-            $this->success("Extension '{$extensionName}' disabled successfully!");
             $this->displayNextSteps($extensionName);
 
             return self::SUCCESS;
@@ -95,7 +107,7 @@ class DisableCommand extends BaseExtensionCommand
         }
     }
 
-    private function validateExtensionCanBeDisabled(ExtensionsManager $manager, string $name): bool
+    private function validateExtensionCanBeDisabled(ExtensionManager $manager, string $name): bool
     {
         $extension = $this->findExtension($manager, $name);
 
@@ -112,11 +124,11 @@ class DisableCommand extends BaseExtensionCommand
         return true;
     }
 
-    private function validateDependents(ExtensionsManager $manager, string $name, bool $force): bool
+    private function validateDependents(ExtensionManager $manager, string $name, bool $force): bool
     {
         $this->info('Checking for dependent extensions...');
 
-        $extensions = $manager->getLoadedExtensions();
+        $extensions = $this->getExtensionsKeyed($manager);
         $dependents = [];
 
         foreach ($extensions as $extension) {
@@ -163,7 +175,7 @@ class DisableCommand extends BaseExtensionCommand
             case 'disable-dependents':
                 foreach ($dependents as $dependent) {
                     $this->line("Disabling dependent extension: {$dependent}");
-                    $manager->disableExtension($dependent);
+                    $manager->disable($dependent);
                 }
                 $this->success('Dependent extensions disabled successfully');
                 return true;

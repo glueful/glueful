@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Glueful;
+namespace Glueful\Extensions\Interfaces;
 
-interface IExtensions
+interface ExtensionInterface
 {
     /**
      * Initialize extension
@@ -16,14 +16,14 @@ interface IExtensions
     /**
      * Get extension metadata
      *
-     * @return array<string, mixed> Extension metadata
+     * @return array Extension metadata
      */
     public static function getMetadata(): array;
 
     /**
      * Check extension health
      *
-     * @return array<string, mixed> Health status
+     * @return array Health status
      */
     public static function checkHealth(): array;
 }

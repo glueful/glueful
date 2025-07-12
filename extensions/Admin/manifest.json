@@ -1,0 +1,65 @@
+{
+  "manifestVersion": "2.0",
+  "id": "admin",
+  "name": "Admin",
+  "displayName": "Admin",
+  "version": "0.18.0",
+  "description": "Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface",
+  "author": {
+    "name": "Glueful Team",
+    "email": "dev@glueful.com",
+    "url": "https://glueful.com"
+  },
+  "publisher": "glueful-team",
+  "license": "MIT",
+  "main": "./Admin.php",
+  "categories": ["admin", "dashboard", "management"],
+  "keywords": ["admin", "dashboard", "management", "ui", "interface"],
+  "engines": {
+    "glueful": ">=0.27.0",
+    "php": ">=8.2.0"
+  },
+  "dependencies": {
+    "composer": {},
+    "extensions": []
+  },
+  "provides": {
+    "services": ["AdminServiceProvider"],
+    "commands": [],
+    "middleware": [],
+    "routes": ["admin"],
+    "channels": []
+  },
+  "capabilities": [
+    "admin.dashboard",
+    "admin.system.health",
+    "admin.extensions.management",
+    "admin.database.migrations",
+    "admin.users.management",
+    "admin.api.testing"
+  ],
+  "assets": {
+    "templates": "./templates/",
+    "public": "./public/",
+    "config": "./config/"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1F2937",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/Admin"
+  },
+  "support": {
+    "documentation": "https://docs.glueful.com/extensions/admin",
+    "issues": "https://github.com/glueful/extensions/issues",
+    "email": "support@glueful.com"
+  },
+  "compatibility": {
+    "environments": ["production", "development"],
+    "platforms": ["linux", "macos", "windows"],
+    "browsers": ["Chrome", "Firefox", "Safari", "Edge"]
+  }
+}

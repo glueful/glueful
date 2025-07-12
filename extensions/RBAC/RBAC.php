@@ -3,11 +3,8 @@
 namespace Glueful\Extensions\RBAC;
 
 use Glueful\Extensions;
-use Glueful\IExtensions;
-use Glueful\DI\Interfaces\ServiceProviderInterface;
+use Glueful\Extensions\Traits\ExtensionDocumentationTrait;
 use Glueful\Extensions\RBAC\RBACPermissionProvider;
-use Glueful\Extensions\RBAC\Services\RBACServiceProvider;
-use Glueful\Permissions\PermissionManager;
 
 /**
  * RBAC Extension
@@ -23,36 +20,15 @@ use Glueful\Permissions\PermissionManager;
  * - Multi-layer caching
  * - Scoped permissions for multi-tenancy
  */
-class RBAC extends Extensions implements IExtensions
+class RBAC extends Extensions
 {
+    use ExtensionDocumentationTrait;
+
     /** @var RBACPermissionProvider|null Permission provider instance */
     private static ?RBACPermissionProvider $permissionProvider = null;
 
     /** @var array Extension configuration */
     private static array $config = [];
-
-    /**
-     * Process extension request
-     */
-    public static function process(array $queryParams, array $bodyParams): array
-    {
-        // This method handles direct API calls to the extension
-        // For RBAC, this might be used for permission checking endpoints
-
-        $action = $queryParams['action'] ?? 'info';
-
-        switch ($action) {
-            case 'check':
-                return self::handlePermissionCheck($queryParams, $bodyParams);
-            case 'permissions':
-                return self::handleGetUserPermissions($queryParams);
-            case 'health':
-                return self::checkHealth();
-            case 'info':
-            default:
-                return self::getMetadata();
-        }
-    }
 
     /**
      * Initialize the RBAC extension
@@ -66,25 +42,11 @@ class RBAC extends Extensions implements IExtensions
             // Load configuration
             self::$config = self::loadConfiguration();
 
-            // Register middleware if configured
-            static::registerMiddleware();
-
-            // Run database migrations if needed
-            static::runMigrations();
-
             error_log("RBAC Extension initialized successfully");
         } catch (\Exception $e) {
             error_log("RBAC Extension initialization failed: " . $e->getMessage());
             throw $e;
         }
-    }
-
-    /**
-     * Get the extension's service provider
-     */
-    public static function getServiceProvider(): ServiceProviderInterface
-    {
-        return new RBACServiceProvider();
     }
 
     /**
@@ -101,6 +63,11 @@ class RBAC extends Extensions implements IExtensions
             'license' => 'MIT',
             'type' => 'permission',
             'priority' => 100,
+            'requires' => [
+                'glueful' => '>=0.27.0',
+                'php' => '>=8.2.0',
+                'extensions' => ['core_permissions']
+            ],
             'capabilities' => [
                 'hierarchical_roles',
                 'direct_permissions',
@@ -136,71 +103,43 @@ class RBAC extends Extensions implements IExtensions
     }
 
     /**
-     * Get extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        return [
-            'core_permissions' // Requires the core permission system
-        ];
-    }
-
-    /**
-     * Validate extension security
-     */
-    public static function validateSecurity(): array
-    {
-        $security = [
-            'status' => 'secure',
-            'issues' => [],
-            'recommendations' => []
-        ];
-
-        try {
-            // Check for system roles protection
-            if (!self::$config['protect_system_roles'] ?? true) {
-                $security['issues'][] = 'System roles protection is disabled';
-                $security['status'] = 'warning';
-            }
-
-            // Check for audit logging
-            if (!self::$config['audit_enabled'] ?? true) {
-                $security['recommendations'][] = 'Enable audit logging for security tracking';
-            }
-
-            // Check for permission expiry support
-            if (!self::$config['support_expiry'] ?? true) {
-                $security['recommendations'][] = 'Enable temporal permissions for enhanced security';
-            }
-
-            // Validate database permissions
-            $dbCheck = self::validateDatabaseSecurity();
-            if (!$dbCheck['secure']) {
-                $security['issues'] = array_merge($security['issues'], $dbCheck['issues']);
-                $security['status'] = 'error';
-            }
-        } catch (\Exception $e) {
-            $security['status'] = 'error';
-            $security['issues'][] = 'Security validation failed: ' . $e->getMessage();
-        }
-
-        return $security;
-    }
-
-    /**
      * Check extension health
      */
     public static function checkHealth(): array
     {
+        $healthy = true;
+        $issues = [];
+
+        // Check if permission provider is initialized
         if (!self::$permissionProvider) {
-            return [
-                'status' => 'error',
-                'message' => 'Permission provider not initialized',
-                'timestamp' => date('Y-m-d H:i:s')
-            ];
+            $healthy = false;
+            $issues[] = 'Permission provider not initialized';
         }
 
-        return self::$permissionProvider->healthCheck();
+        // Check configuration
+        if (empty(self::$config)) {
+            $healthy = false;
+            $issues[] = 'Configuration not loaded';
+        }
+
+        // Check database tables exist
+        try {
+            // TODO: Add database table existence checks
+        } catch (\Exception $e) {
+            $healthy = false;
+            $issues[] = 'Database check failed: ' . $e->getMessage();
+        }
+
+        return [
+            'healthy' => $healthy,
+            'issues' => $issues,
+            'metrics' => [
+                'memory_usage' => memory_get_usage(true),
+                'execution_time' => 0,
+                'database_queries' => 0,
+                'cache_usage' => 0
+            ]
+        ];
     }
 
     /**
@@ -235,109 +174,5 @@ class RBAC extends Extensions implements IExtensions
         }
 
         return $defaultConfig;
-    }
-
-    public static function registerMiddleware(): void
-    {
-        // TODO: Register RBAC middleware with the framework
-        // This would typically register permission checking middleware
-    }
-
-    public static function runMigrations(): array
-    {
-        // Use parent implementation to run migrations
-        return parent::runMigrations();
-    }
-
-    private static function handlePermissionCheck(array $queryParams, array $bodyParams): array
-    {
-        if (!self::$permissionProvider) {
-            return [
-                'error' => 'Permission provider not initialized',
-                'allowed' => false
-            ];
-        }
-
-        $userUuid = $queryParams['user'] ?? $bodyParams['user'] ?? '';
-        $permission = $queryParams['permission'] ?? $bodyParams['permission'] ?? '';
-        $resource = $queryParams['resource'] ?? $bodyParams['resource'] ?? '*';
-        $context = $bodyParams['context'] ?? [];
-
-        if (empty($userUuid) || empty($permission)) {
-            return [
-                'error' => 'Missing required parameters: user, permission',
-                'allowed' => false
-            ];
-        }
-
-        try {
-            $allowed = self::$permissionProvider->can($userUuid, $permission, $resource, $context);
-            return [
-                'allowed' => $allowed,
-                'user' => $userUuid,
-                'permission' => $permission,
-                'resource' => $resource,
-                'timestamp' => date('Y-m-d H:i:s')
-            ];
-        } catch (\Exception $e) {
-            return [
-                'error' => 'Permission check failed: ' . $e->getMessage(),
-                'allowed' => false
-            ];
-        }
-    }
-
-    private static function handleGetUserPermissions(array $queryParams): array
-    {
-        if (!self::$permissionProvider) {
-            return [
-                'error' => 'Permission provider not initialized',
-                'permissions' => []
-            ];
-        }
-
-        $userUuid = $queryParams['user'] ?? '';
-
-        if (empty($userUuid)) {
-            return [
-                'error' => 'Missing required parameter: user',
-                'permissions' => []
-            ];
-        }
-
-        try {
-            $permissions = self::$permissionProvider->getUserPermissions($userUuid);
-            return [
-                'user' => $userUuid,
-                'permissions' => $permissions,
-                'timestamp' => date('Y-m-d H:i:s')
-            ];
-        } catch (\Exception $e) {
-            return [
-                'error' => 'Failed to get user permissions: ' . $e->getMessage(),
-                'permissions' => []
-            ];
-        }
-    }
-
-    private static function validateDatabaseSecurity(): array
-    {
-        $result = [
-            'secure' => true,
-            'issues' => []
-        ];
-
-        try {
-            // TODO: Implement database security validation
-            // - Check table permissions
-            // - Validate foreign key constraints
-            // - Check for SQL injection vulnerabilities
-            // - Validate data encryption if required
-        } catch (\Exception $e) {
-            $result['secure'] = false;
-            $result['issues'][] = 'Database validation failed: ' . $e->getMessage();
-        }
-
-        return $result;
     }
 }

@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -128,7 +128,7 @@ class InfoCommand extends BaseExtensionCommand
         }
 
         try {
-            $extensionsManager = new ExtensionsManager();
+            $extensionsManager = $this->getService(ExtensionManager::class);
 
             if ($namespaceFocus) {
                 // Namespace-focused mode
@@ -160,7 +160,7 @@ class InfoCommand extends BaseExtensionCommand
     }
 
     private function executeListMode(
-        ExtensionsManager $manager,
+        ExtensionManager $manager,
         string $status,
         string $format,
         bool $showAutoload,
@@ -182,24 +182,24 @@ class InfoCommand extends BaseExtensionCommand
         return self::SUCCESS;
     }
 
-    private function executeDetailedMode(ExtensionsManager $manager, string $extensionName): int
+    private function executeDetailedMode(ExtensionManager $manager, string $extensionName): int
     {
         $extension = $this->findExtension($manager, $extensionName);
 
         if (!$extension) {
             $this->error("Extension '{$extensionName}' not found.");
-            $extensions = $manager->getLoadedExtensions();
-            $available = array_column($extensions, 'name');
+            $extensions = $manager->listInstalled();
+            $available = $extensions;
             $this->suggestSimilarExtensions($extensionName, $available);
             return self::FAILURE;
         }
 
-        $this->displayExtensionInfo($extensionName, $extension['metadata'], $manager);
+        $this->displayExtensionInfo($extensionName, $extension, $manager);
         return self::SUCCESS;
     }
 
     private function executeNamespaceMode(
-        ExtensionsManager $manager,
+        ExtensionManager $manager,
         ?string $extensionName,
         bool $checkConflicts,
         bool $showPerformance,
@@ -250,9 +250,9 @@ class InfoCommand extends BaseExtensionCommand
         return self::SUCCESS;
     }
 
-    private function getFilteredExtensions(ExtensionsManager $manager, string $status): array
+    private function getFilteredExtensions(ExtensionManager $manager, string $status): array
     {
-        $allExtensions = $manager->getLoadedExtensions();
+        $allExtensions = $this->getExtensionsKeyed($manager);
 
         if ($status === 'all') {
             return $allExtensions;
@@ -359,7 +359,7 @@ class InfoCommand extends BaseExtensionCommand
         $this->line('• Place extensions in the extensions/ directory');
     }
 
-    private function displayExtensionInfo(string $name, array $extension, ExtensionsManager $manager): void
+    private function displayExtensionInfo(string $name, array $extension, ExtensionManager $manager): void
     {
         $this->info("Extension Information: {$name}");
         $this->line('');
@@ -388,12 +388,12 @@ class InfoCommand extends BaseExtensionCommand
         $status = $extension['enabled'] ? '<info>✓ Enabled</info>' : '<comment>• Disabled</comment>';
 
         $basicInfo = [
-            ['Property', 'Value'],
             ['Name', $name],
             ['Status', $status],
             ['Version', $extension['version'] ?? 'Unknown'],
-            ['Description', $extension['description'] ?? 'No description'],
-            ['Author', $extension['author'] ?? 'Unknown'],
+            ['Description', is_array($extension['description'] ?? '') ?
+                json_encode($extension['description']) : ($extension['description'] ?? 'No description')],
+            ['Author', $this->formatAuthor($extension['author'] ?? 'Unknown')],
             ['License', $extension['license'] ?? 'Unknown'],
         ];
 
@@ -404,7 +404,7 @@ class InfoCommand extends BaseExtensionCommand
         $this->table(['Property', 'Value'], $basicInfo);
     }
 
-    private function displayDependencies(array $extension, ExtensionsManager $manager): void
+    private function displayDependencies(array $extension, ExtensionManager $manager): void
     {
         $this->line('');
         $this->info('Dependencies:');
@@ -430,13 +430,13 @@ class InfoCommand extends BaseExtensionCommand
         $this->table(['Dependency', 'Required Version', 'Status'], $depRows);
     }
 
-    private function displayDependents(string $name, ExtensionsManager $manager): void
+    private function displayDependents(string $name, ExtensionManager $manager): void
     {
         $this->line('');
         $this->info('Dependent Extensions:');
 
         $dependents = [];
-        $allExtensions = $manager->getLoadedExtensions();
+        $allExtensions = $this->getExtensionsKeyed($manager);
         foreach ($allExtensions as $extension) {
             $deps = $extension['metadata']['dependencies']['extensions'] ?? [];
             if (in_array($name, $deps)) {
@@ -512,7 +512,24 @@ class InfoCommand extends BaseExtensionCommand
         $this->line('');
         $this->info('Namespaces:');
 
-        $autoload = $extension['autoload']['psr-4'] ?? [];
+        // Try to get autoload from extension config (extensions.json)
+        $autoload = [];
+        // First check if it's in the extension metadata
+        if (isset($extension['autoload']['psr-4'])) {
+            $autoload = $extension['autoload']['psr-4'];
+        } else {
+            // Get from extension configuration via ExtensionConfig service
+            try {
+                $configService = $this->getService(
+                    \Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface::class
+                );
+                $config = $configService->getExtensionConfig($name);
+                $autoload = $config['autoload']['psr-4'] ?? [];
+            } catch (\Exception) {
+                // Fall back to empty if we can't get the config
+                $autoload = [];
+            }
+        }
 
         if (empty($autoload)) {
             $this->line('  No PSR-4 namespaces defined');
@@ -521,20 +538,22 @@ class InfoCommand extends BaseExtensionCommand
 
         $namespaceRows = [];
         foreach ($autoload as $namespace => $path) {
-            $extensionPath = $this->getExtensionPath($name) . '/' . $path;
-            $pathExists = is_dir($extensionPath) ? '<info>✓ Exists</info>' : '<error>✗ Missing</error>';
+            // Path is relative to project root, not extension directory
+            $projectRoot = dirname(__DIR__, 4); // Go up from api/Console/Commands/Extensions
+            $fullPath = $projectRoot . '/' . $path;
+            $pathExists = is_dir($fullPath) ? '<info>✓ Exists</info>' : '<error>✗ Missing</error>';
             $namespaceRows[] = [$namespace, $path, $pathExists];
         }
 
         $this->table(['Namespace', 'Path', 'Status'], $namespaceRows);
     }
 
-    private function collectNamespaces(ExtensionsManager $manager, ?string $extensionName = null): array
+    private function collectNamespaces(ExtensionManager $manager, ?string $extensionName = null): array
     {
         $namespaces = [];
 
         try {
-            $extensions = $manager->getLoadedExtensions();
+            $extensions = $this->getExtensionsKeyed($manager);
 
             foreach ($extensions as $extension) {
                 // Filter by specific extension if provided
@@ -586,7 +605,7 @@ class InfoCommand extends BaseExtensionCommand
                 continue;
             }
 
-            $configFile = "{$extensionsDir}/{$dir}/extension.json";
+            $configFile = "{$extensionsDir}/{$dir}/manifest.json";
             if (!file_exists($configFile)) {
                 continue;
             }
@@ -820,5 +839,29 @@ class InfoCommand extends BaseExtensionCommand
     private function truncateText(string $text, int $length): string
     {
         return strlen($text) > $length ? substr($text, 0, $length - 3) . '...' : $text;
+    }
+
+    /**
+     * Format author information for display
+     *
+     * @param string|array $author Author data
+     * @return string Formatted author string
+     */
+    private function formatAuthor($author): string
+    {
+        if (is_array($author)) {
+            $name = $author['name'] ?? 'Unknown';
+            $email = $author['email'] ?? null;
+            $url = $author['url'] ?? null;
+            $formatted = $name;
+            if ($email) {
+                $formatted .= " <{$email}>";
+            }
+            if ($url) {
+                $formatted .= " ({$url})";
+            }
+            return $formatted;
+        }
+        return (string) $author;
     }
 }

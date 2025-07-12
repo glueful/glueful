@@ -82,15 +82,6 @@ class EmailNotification extends \Glueful\Extensions
     }
 
 
-    /**
-     * Register middleware if needed
-     *
-     * @return void
-     */
-    public static function registerMiddleware(): void
-    {
-        // No middleware needed for email notifications
-    }
 
     /**
      * Load configuration for the extension
@@ -141,39 +132,7 @@ class EmailNotification extends \Glueful\Extensions
         ];
     }
 
-    /**
-     * Get extension dependencies
-     *
-     * Returns a list of other extensions this extension depends on.
-     *
-     * @return array List of extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        // Currently no dependencies on other extensions
-        return [];
-    }
 
-    /**
-     * Check environment-specific configuration
-     *
-     * Determines if the extension should be enabled in the current environment.
-     *
-     * @param string $environment Current environment (dev, staging, production)
-     * @return bool Whether the extension should be enabled in this environment
-     */
-    public static function isEnabledForEnvironment(string $environment): bool
-    {
-        // Enable in all environments by default
-        // For email notifications, you might want specialized configurations per environment
-        if ($environment === 'dev' || $environment === 'testing') {
-            // Check if we have a testing configuration that allows emails in dev
-            return self::$config['allow_emails_in_development'] ?? false;
-        }
-
-        // Always enable in staging and production
-        return true;
-    }
 
     /**
      * Validate extension health
@@ -259,29 +218,6 @@ class EmailNotification extends \Glueful\Extensions
         ];
     }
 
-    /**
-     * Get extension resource usage
-     *
-     * Returns information about resources used by this extension.
-     *
-     * @return array Resource usage metrics
-     */
-    public static function getResourceUsage(): array
-    {
-        // Basic resource measurements
-        $metrics = [
-            'memory_usage' => memory_get_usage(true),
-            'peak_memory_usage' => memory_get_peak_usage(true)
-        ];
-
-        // Add email-specific metrics if provider is available
-        if (self::$provider) {
-            $emailMetrics = self::$provider->getMetrics();
-            $metrics = array_merge($metrics, $emailMetrics);
-        }
-
-        return $metrics;
-    }
 
     /**
      * Check if the email provider is properly configured
@@ -301,15 +237,5 @@ class EmailNotification extends \Glueful\Extensions
     public static function getProvider(): ?EmailNotificationProvider
     {
         return self::$provider;
-    }
-
-    /**
-     * Get the service provider for this extension
-     *
-     * @return \Glueful\DI\Interfaces\ServiceProviderInterface
-     */
-    public static function getServiceProvider(): \Glueful\DI\Interfaces\ServiceProviderInterface
-    {
-        return new EmailNotificationServiceProvider();
     }
 }

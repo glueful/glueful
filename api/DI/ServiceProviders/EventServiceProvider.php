@@ -9,7 +9,6 @@ use Glueful\DI\Interfaces\ContainerInterface;
 use Glueful\Events\Listeners\CacheInvalidationListener;
 use Glueful\Events\Listeners\SecurityMonitoringListener;
 use Glueful\Events\Listeners\PerformanceMonitoringListener;
-use Glueful\Events\Listeners\AuditLoggingListener;
 use Glueful\Extensions\ExtensionEventRegistry;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;

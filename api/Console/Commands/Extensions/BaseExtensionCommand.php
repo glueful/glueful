@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\BaseCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Services\FileFinder;
 use Glueful\Services\FileManager;
 
@@ -24,38 +24,53 @@ abstract class BaseExtensionCommand extends BaseCommand
     /** @var FileManager|null */
     protected ?FileManager $fileManager = null;
     /**
-     * Find an extension by name from loaded extensions
+     * Find an extension by name from installed extensions
      *
-     * @param ExtensionsManager $manager ExtensionsManager instance
+     * @param ExtensionManager $manager ExtensionManager instance
      * @param string $extensionName Extension name to find
      * @return array|null Extension data or null if not found
      */
-    protected function findExtension(ExtensionsManager $manager, string $extensionName): ?array
+    protected function findExtension(ExtensionManager $manager, string $extensionName): ?array
     {
-        $extensions = $manager->getLoadedExtensions();
-
-        foreach ($extensions as $extension) {
-            if ($extension['name'] === $extensionName) {
-                return $extension;
-            }
+        if (!$manager->isInstalled($extensionName)) {
+            return null;
         }
 
-        return null;
+        $metadata = $manager->getExtensionMetadata($extensionName);
+        if (!$metadata) {
+            return null;
+        }
+
+        // Merge metadata with extension state info for backward compatibility
+        $extensionData = array_merge($metadata, [
+            'name' => $extensionName,
+            'enabled' => $manager->isEnabled($extensionName),
+            'type' => $manager->isCoreExtension($extensionName) ? 'core' : 'optional'
+        ]);
+
+        // Also keep the nested structure for compatibility
+        $extensionData['metadata'] = $extensionData;
+
+        return $extensionData;
     }
 
     /**
      * Get all extensions as a keyed array by extension name
      *
-     * @param ExtensionsManager $manager ExtensionsManager instance
+     * @param ExtensionManager $manager ExtensionManager instance
      * @return array Extensions keyed by name
      */
-    protected function getExtensionsKeyed(ExtensionsManager $manager): array
+    protected function getExtensionsKeyed(ExtensionManager $manager): array
     {
-        $extensions = $manager->getLoadedExtensions();
+        $installedExtensions = $manager->listInstalled();
         $keyed = [];
 
-        foreach ($extensions as $extension) {
-            $keyed[$extension['name']] = $extension;
+        foreach ($installedExtensions as $extensionData) {
+            $extensionName = $extensionData['name'];
+            $extension = $this->findExtension($manager, $extensionName);
+            if ($extension) {
+                $keyed[$extensionName] = $extension;
+            }
         }
 
         return $keyed;
@@ -64,26 +79,25 @@ abstract class BaseExtensionCommand extends BaseCommand
     /**
      * Check if an extension exists
      *
-     * @param ExtensionsManager $manager ExtensionsManager instance
+     * @param ExtensionManager $manager ExtensionManager instance
      * @param string $extensionName Extension name to check
      * @return bool True if extension exists
      */
-    protected function extensionExists(ExtensionsManager $manager, string $extensionName): bool
+    protected function extensionExists(ExtensionManager $manager, string $extensionName): bool
     {
-        return $this->findExtension($manager, $extensionName) !== null;
+        return $manager->isInstalled($extensionName);
     }
 
     /**
      * Check if an extension is enabled
      *
-     * @param ExtensionsManager $manager ExtensionsManager instance
+     * @param ExtensionManager $manager ExtensionManager instance
      * @param string $extensionName Extension name to check
      * @return bool True if extension is enabled
      */
-    protected function isExtensionEnabled(ExtensionsManager $manager, string $extensionName): bool
+    protected function isExtensionEnabled(ExtensionManager $manager, string $extensionName): bool
     {
-        $extension = $this->findExtension($manager, $extensionName);
-        return $extension ? ($extension['metadata']['enabled'] ?? false) : false;
+        return $manager->isEnabled($extensionName);
     }
 
     /**
@@ -100,19 +114,23 @@ abstract class BaseExtensionCommand extends BaseCommand
     /**
      * Find extensions that depend on the given extension
      *
-     * @param ExtensionsManager $manager ExtensionsManager instance
+     * @param ExtensionManager $manager ExtensionManager instance
      * @param string $extensionName Extension name to check dependents for
      * @return array Array of dependent extension names
      */
-    protected function findDependentExtensions(ExtensionsManager $manager, string $extensionName): array
+    protected function findDependentExtensions(ExtensionManager $manager, string $extensionName): array
     {
-        $extensions = $manager->getLoadedExtensions();
+        $installedExtensions = $manager->listInstalled();
         $dependents = [];
 
-        foreach ($extensions as $extension) {
-            $dependencies = $this->getExtensionDependencies($extension);
-            if (in_array($extensionName, $dependencies)) {
-                $dependents[] = $extension['name'];
+        foreach ($installedExtensions as $extensionData) {
+            $installedExtensionName = $extensionData['name'];
+            $extension = $this->findExtension($manager, $installedExtensionName);
+            if ($extension) {
+                $dependencies = $this->getExtensionDependencies($extension);
+                if (in_array($extensionName, $dependencies)) {
+                    $dependents[] = $extension['name'];
+                }
             }
         }
 
@@ -281,7 +299,7 @@ abstract class BaseExtensionCommand extends BaseCommand
      */
     protected function getExtensionPath(string $extensionName): string
     {
-        return dirname(__DIR__, 6) . "/extensions/{$extensionName}";
+        return dirname(__DIR__, 4) . "/extensions/{$extensionName}";
     }
 
     /**
@@ -292,7 +310,7 @@ abstract class BaseExtensionCommand extends BaseCommand
      */
     protected function getExtensionConfigPath(string $extensionName): string
     {
-        return $this->getExtensionPath($extensionName) . '/extension.json';
+        return $this->getExtensionPath($extensionName) . '/manifest.json';
     }
 
     /**
@@ -324,7 +342,7 @@ abstract class BaseExtensionCommand extends BaseCommand
      */
     protected function getExtensionsDirectory(): string
     {
-        return dirname(__DIR__, 6) . '/extensions';
+        return dirname(__DIR__, 4) . '/extensions';
     }
 
     /**

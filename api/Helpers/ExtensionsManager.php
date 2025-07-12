@@ -1237,7 +1237,8 @@ class ExtensionsManager
         // Get dependencies from extension metadata
         $dependencies = [];
         try {
-            $dependencies = $extensionClass::getDependencies();
+            $metadata = $extensionClass::getMetadata();
+            $dependencies = $metadata['requires']['extensions'] ?? [];
         } catch (\Throwable $e) {
             self::debug("Error getting dependencies for $extensionName: " . $e->getMessage());
         }
@@ -1303,7 +1304,8 @@ class ExtensionsManager
             }
 
             try {
-                $dependencies = $extensionClass::getDependencies();
+                $metadata = $extensionClass::getMetadata();
+                $dependencies = $metadata['requires']['extensions'] ?? [];
                 if (in_array($extensionName, $dependencies)) {
                     $dependentExtensions[] = $enabledExt;
                 }
@@ -1412,7 +1414,8 @@ class ExtensionsManager
                 ];
 
                 // Get dependencies and create edges
-                $dependencies = $extensionClass::getDependencies();
+                $metadata = $extensionClass::getMetadata();
+                $dependencies = $metadata['requires']['extensions'] ?? [];
                 $allDependencies[$shortName] = $dependencies;
 
                 foreach ($dependencies as $dependency) {
@@ -2345,21 +2348,11 @@ class ExtensionsManager
         $dependencies = [];
 
         try {
-            // Get dependencies from the extension
-            if ($reflection->hasMethod('getDependencies') && class_exists($extensionClass)) {
-                $dependencies = call_user_func([$extensionClass, 'getDependencies']);
-            }
-
-            // Check if the extension implements getMetadata() method
+            // Get dependencies from the extension metadata
             if ($reflection->hasMethod('getMetadata') && class_exists($extensionClass)) {
                 $metadata = call_user_func([$extensionClass, 'getMetadata']);
-                if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
-                    $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
-                }
+                $dependencies = $metadata['requires']['extensions'] ?? [];
             }
-
-            // Remove duplicates
-            $dependencies = array_unique($dependencies);
 
             if (!empty($dependencies)) {
                 foreach ($dependencies as $dependency) {
@@ -2390,25 +2383,12 @@ class ExtensionsManager
                 }
 
                 try {
-                    // Check if the extension implements getDependencies() method
-                    if ($otherReflection->hasMethod('getDependencies')) {
-                        $otherDependencies = $otherExtension::getDependencies();
-                        if (in_array($extensionName, $otherDependencies)) {
-                            $dependentExtensions[] = $otherName;
-                        }
-                    }
-
                     // Check if the extension implements getMetadata() method
                     if ($otherReflection->hasMethod('getMetadata')) {
                         $otherMetadata = $otherExtension::getMetadata();
-                        if (
-                            isset($otherMetadata['requires']) &&
-                            isset($otherMetadata['requires']['extensions']) &&
-                            in_array($extensionName, $otherMetadata['requires']['extensions'])
-                        ) {
-                            if (!in_array($otherName, $dependentExtensions)) {
-                                $dependentExtensions[] = $otherName;
-                            }
+                        $otherDependencies = $otherMetadata['requires']['extensions'] ?? [];
+                        if (in_array($extensionName, $otherDependencies)) {
+                            $dependentExtensions[] = $otherName;
                         }
                     }
                 } catch (\Exception $e) {
@@ -2690,148 +2670,6 @@ class ExtensionsManager
      *
      * @return string Path to the configuration file
      */
-
-
-    private static function getTemplatesPath(): string
-    {
-        return dirname(__DIR__) . '/Console/Templates/Extensions';
-    }
-
-    /**
-     * Create a new extension
-     *
-     * Creates a new extension directory and scaffolds all necessary files using templates.
-     *
-     * @param string $extensionName Extension name
-     * @param string $extensionType Extension type (optional by default)
-     * @param string $templateType Template type to use (Basic by default)
-     * @param array $templateData Additional template data for substitutions
-     * @return array Result with success status and messages
-     */
-    public static function createExtension(
-        string $extensionName,
-        string $extensionType = 'optional',
-        string $templateType = 'Basic',
-        array $templateData = []
-    ): array {
-        // Check if extension name is valid
-        if (!self::isValidExtensionName($extensionName)) {
-            return [
-                'success' => false,
-                'message' => "Invalid extension name '$extensionName'. Use PascalCase naming (e.g. MyExtension)"
-            ];
-        }
-
-        $extensionsPath = config('app.paths.project_extensions');
-        $extensionDir = $extensionsPath . $extensionName;
-
-        if (is_dir($extensionDir)) {
-            return [
-                'success' => false,
-                'message' => "Extension directory already exists: $extensionDir"
-            ];
-        }
-
-        // Create extension directory
-        if (!mkdir($extensionDir, 0755, true)) {
-            return [
-                'success' => false,
-                'message' => "Failed to create directory: $extensionDir"
-            ];
-        }
-
-        // Get template path
-        $templatePath = self::getTemplatesPath();
-        $templateSourceDir = "$templatePath/$templateType";
-
-        // If the specified template doesn't exist, fall back to Basic
-        if (!is_dir($templateSourceDir)) {
-            $templateType = 'Basic';
-            $templateSourceDir = "$templatePath/$templateType";
-            // If even the Basic template doesn't exist, return an error
-            if (!is_dir($templateSourceDir)) {
-                // Clean up the created directory
-                self::rrmdir($extensionDir);
-                return [
-                    'success' => false,
-                    'message' => "Extension templates not found. " .
-                        "Please ensure template directories exist at: $templatePath"
-                ];
-            }
-        }
-
-        // Create directories for extension structure (matching existing extensions)
-        $directories = [
-            "$extensionDir/src",
-            "$extensionDir/assets",
-            "$extensionDir/screenshots",
-            "$extensionDir/migrations",
-        ];
-
-        // Add additional directories for Advanced template
-        if ($templateType === 'Advanced') {
-            $directories = array_merge($directories, [
-                "$extensionDir/src/Middleware",
-                "$extensionDir/src/Services",
-                "$extensionDir/src/Providers",
-                "$extensionDir/src/Listeners",
-                "$extensionDir/src/Templates",
-            ]);
-        }
-
-        foreach ($directories as $dir) {
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-        }
-
-        $filesCreated = [];
-
-        // Prepare template substitution values
-        $substitutions = array_merge([
-            'EXTENSION_NAME' => $extensionName,
-            'EXTENSION_TYPE' => $extensionType,
-            'EXTENSION_DESCRIPTION' => $templateData['description'] ?? "A Glueful API extension",
-            'AUTHOR_NAME' => $templateData['author'] ?? "Glueful User",
-            'AUTHOR_EMAIL' => $templateData['email'] ?? "",
-            'CURRENT_DATE' => date('Y-m-d')
-        ], $templateData);
-
-        // Copy template files with proper substitutions
-        self::copyTemplateFiles($templateSourceDir, $extensionDir, $substitutions);
-        // Get list of created files
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($extensionDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::LEAVES_ONLY
-        );
-
-        foreach ($iterator as $file) {
-            $filesCreated[] = substr($file->getPathname(), strlen($extensionDir) + 1);
-        }
-
-        // Add extension to extensions.json configuration
-        $setupResult = self::postInstallSetup($extensionName, $extensionDir);
-        if (!$setupResult['success']) {
-            // Clean up on failure
-            self::removeDirectory($extensionDir);
-            return [
-                'success' => false,
-                'message' => "Extension created but failed to update configuration: " . $setupResult['message']
-            ];
-        }
-
-        return [
-            'success' => true,
-            'message' => "Extension '{$extensionName}' created successfully using '{$templateType}' template",
-            'data' => [
-                'name' => $extensionName,
-                'path' => $extensionDir,
-                'template' => $templateType,
-                'files' => $filesCreated,
-                'version' => $setupResult['version'] ?? '1.0.0'
-            ]
-        ];
-    }
 
     /**
      * Recursively remove a directory (alias for removeDirectory)
@@ -4169,102 +4007,6 @@ class ExtensionsManager
 
         // No adapter found for this provider
         return null;
-    }
-
-    /**
-     * Copy template files from source to target directory
-     *
-     * @param string $sourceDir Source directory containing template files
-     * @param string $targetDir Target directory to copy files to
-     * @param array $replacements Array of replacements for template placeholders
-     */
-    private static function copyTemplateFiles(string $sourceDir, string $targetDir, array $replacements): void
-    {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($sourceDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-
-        foreach ($iterator as $item) {
-            $sourcePath = $item->getPathname();
-            $relativePath = substr($sourcePath, strlen($sourceDir) + 1);
-
-            // Handle special file renaming cases first
-            $targetRelativePath = $relativePath;
-
-            // Special case: Extension.php.tpl should become {EXTENSION_NAME}.php
-            if (basename($relativePath) === 'Extension.php.tpl') {
-                $extensionName = $replacements['EXTENSION_NAME'] ?? '';
-                if (!empty($extensionName)) {
-                    $targetRelativePath = dirname($relativePath) . '/' . $extensionName . '.php';
-                } else {
-                    $targetRelativePath = dirname($relativePath) . '/Extension.php';
-                }
-            } elseif (str_ends_with($relativePath, '.tpl')) {
-                $targetRelativePath = substr($relativePath, 0, -4); // Remove .tpl extension
-            }
-
-            // Replace template placeholders in path
-            $targetRelativePath =
-            preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
-                // Get the placeholder name (either from first or second capturing group)
-                $key = !empty($matches[1]) ? $matches[1] : $matches[2];
-
-                // Look up replacement value (case-insensitive)
-                foreach ($replacements as $placeholder => $value) {
-                    if (strtolower($placeholder) === strtolower($key)) {
-                        return is_array($value) ? json_encode($value) : (string)$value;
-                    }
-                }
-
-                return $matches[0];
-            }, $targetRelativePath);
-
-            $targetPath = $targetDir . '/' . $targetRelativePath;
-
-            if ($item->isDir()) {
-                if (!is_dir($targetPath)) {
-                    mkdir($targetPath, 0755, true);
-                }
-            } else {
-                // Read file contents using a specific encoding to avoid issues
-                $content = @file_get_contents($sourcePath);
-
-                if ($content === false) {
-                    self::debug("Failed to read template file: $sourcePath");
-                    continue;
-                }
-
-                // Detect BOM and remove if present
-                if (substr($content, 0, 3) === "\xEF\xBB\xBF") {
-                    $content = substr($content, 3);
-                }
-
-                // Process content with regex pattern replacement
-                $content = preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
-                    // Get the placeholder name (either from first or second capturing group)
-                    $key = !empty($matches[1]) ? $matches[1] : $matches[2];
-
-                    // Look up replacement value (case-insensitive)
-                    foreach ($replacements as $placeholder => $value) {
-                        if (strtolower($placeholder) === strtolower($key)) {
-                            return is_array($value) ? json_encode($value) : (string)$value;
-                        }
-                    }
-
-                    // Return original if no replacement found
-                    return $matches[0];
-                }, $content);
-
-                // Ensure proper line endings (LF)
-                $content = str_replace("\r\n", "\n", $content);
-
-                // Write content to file
-                if (file_put_contents($targetPath, $content) === false) {
-                    self::debug("Failed to write file: $targetPath");
-                }
-            }
-        }
     }
 
     /**

@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -89,7 +89,7 @@ class DeleteCommand extends BaseExtensionCommand
             }
 
             // Check for dependent extensions
-            $extensionsManager = new ExtensionsManager();
+            $extensionsManager = $this->getService(ExtensionManager::class);
             $dependents = $this->findDependentExtensions($extensionsManager, $extensionName);
             if (!empty($dependents) && !$force) {
                 $this->error("Cannot delete extension '{$extensionName}' - it has dependent extensions:");
@@ -121,25 +121,37 @@ class DeleteCommand extends BaseExtensionCommand
                 $backupPath = $this->createBackup($extensionPath, $extensionName);
             }
 
-            // Use ExtensionsManager for deletion
-            $result = ExtensionsManager::deleteExtension($extensionName, $force);
 
-            if (!empty($result['error'])) {
-                $this->error('Deletion failed: ' . $result['error']);
+            try {
+                $result = $extensionsManager->delete($extensionName, $force);
+                if (is_array($result)) {
+                    // Handle array response format like old system
+                    if (!$result['success']) {
+                        $this->error('Deletion failed: ' . ($result['message'] ?? 'Unknown error'));
+                        return self::FAILURE;
+                    }
+                    $this->success("Extension '{$extensionName}' deleted successfully!");
+                    if (!empty($result['message'])) {
+                        $this->info($result['message']);
+                    }
+                } else {
+                    // Handle boolean response format
+                    if (!$result) {
+                        $this->error('Deletion failed');
+                        return self::FAILURE;
+                    }
+                    $this->success("Extension '{$extensionName}' deleted successfully!");
+                }
+            } catch (\Exception $e) {
+                $this->error('Deletion failed: ' . $e->getMessage());
                 return self::FAILURE;
-            }
-
-            $this->success("Extension '{$extensionName}' deleted successfully!");
-
-            if (!empty($result['message'])) {
-                $this->info($result['message']);
             }
 
             if ($backupPath) {
                 $this->info("Backup created at: {$backupPath}");
             }
 
-            $this->displayDeletionSummary($extensionName, $result, $backupPath);
+            $this->displayDeletionSummary($extensionName, is_array($result) ? $result : [], $backupPath);
 
             return self::SUCCESS;
         } catch (\Exception $e) {

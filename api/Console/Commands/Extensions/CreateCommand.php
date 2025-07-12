@@ -76,7 +76,7 @@ class CreateCommand extends BaseExtensionCommand
                  'A custom extension for Glueful'
              )
              ->addOption(
-                 'version',
+                 'initial-version',
                  null,
                  InputOption::VALUE_REQUIRED,
                  'Initial version number',
@@ -114,7 +114,7 @@ class CreateCommand extends BaseExtensionCommand
         $templateType = $input->getOption('template');
         $author = $input->getOption('author');
         $description = $input->getOption('description');
-        $version = $input->getOption('version');
+        $version = $input->getOption('initial-version');
         $templateDir = $input->getOption('template-dir');
         $vars = $input->getOption('vars');
         $preview = $input->getOption('preview');
@@ -146,7 +146,7 @@ class CreateCommand extends BaseExtensionCommand
             }
 
             // Check if extension exists
-            $extensionPath = dirname(__DIR__, 6) . "/extensions/{$extensionName}";
+            $extensionPath = dirname(__DIR__, 4) . "/extensions/{$extensionName}";
             if ($this->fileManager->exists($extensionPath) && !$force) {
                 $this->error("Extension '{$extensionName}' already exists.");
                 $this->tip('Use --force to overwrite existing extension.');
@@ -227,6 +227,7 @@ class CreateCommand extends BaseExtensionCommand
     ): array {
         $templateVars = [
             'EXTENSION_NAME' => $extensionName,
+            'EXTENSION_NAME_LOWER' => strtolower($extensionName),
             'EXTENSION_NAMESPACE' => "Extensions\\{$extensionName}",
             'EXTENSION_CLASS' => "{$extensionName}Extension",
             'EXTENSION_DESCRIPTION' => $description,
@@ -257,7 +258,7 @@ class CreateCommand extends BaseExtensionCommand
         }
 
         // Built-in template path (would be in a templates directory)
-        $builtInPath = dirname(__DIR__, 6) . "/resources/templates/extensions/{$type}";
+        $builtInPath = dirname(__DIR__, 4) . "/resources/templates/extensions/{$type}";
 
         if (!$this->fileManager->exists($builtInPath)) {
             // Fallback: create template on-the-fly
@@ -288,25 +289,36 @@ class CreateCommand extends BaseExtensionCommand
         $this->fileManager->createDirectory("{$path}/screenshots");
         $this->fileManager->createDirectory("{$path}/public");
 
-        // Create extension.json template (matches production extension format)
+        // Create manifest.json template (v2.0 format)
         $configTemplate = [
+            'manifestVersion' => '2.0',
+            'id' => '{{EXTENSION_NAME_LOWER}}',
             'name' => '{{EXTENSION_NAME}}',
             'displayName' => '{{EXTENSION_NAME}}',
             'version' => '{{VERSION}}',
-            'publisher' => '{{AUTHOR}}',
             'description' => '{{EXTENSION_DESCRIPTION}}',
-            'categories' => ['utilities'],
-            'icon' => 'assets/icon.png',
-            'galleryBanner' => [
-                'color' => '#1F2937',
-                'theme' => 'dark'
-            ],
+            'author' => '{{AUTHOR}}',
+            'license' => 'MIT',
+            'main' => '{{EXTENSION_NAME}}.php',
             'engines' => [
-                'glueful' => '>=0.27.0'
-            ],
-            'main' => './{{EXTENSION_NAME}}.php',
-            'dependencies' => [
+                'glueful' => '>=0.27.0',
                 'php' => '>=8.2.0'
+            ],
+            'dependencies' => [
+                'composer' => [],
+                'extensions' => []
+            ],
+            'provides' => [
+                'services' => [],
+                'routes' => [],
+                'middleware' => [],
+                'commands' => [],
+                'migrations' => []
+            ],
+            'capabilities' => [],
+            'assets' => [
+                'icon' => 'assets/icon.png',
+                'screenshots' => []
             ],
             'repository' => [
                 'type' => 'git',
@@ -326,7 +338,7 @@ class CreateCommand extends BaseExtensionCommand
         ];
 
         $this->fileManager->writeFile(
-            "{$path}/extension.json",
+            "{$path}/manifest.json",
             json_encode($configTemplate, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
         );
 
@@ -336,23 +348,29 @@ class CreateCommand extends BaseExtensionCommand
 
 declare(strict_types=1);
 
+namespace Glueful\\Extensions\\{{EXTENSION_NAME}};
+
+use Glueful\\Extensions\\BaseExtension;
+
 /**
  * {{EXTENSION_NAME}} Extension
  * {{EXTENSION_DESCRIPTION}}
+ * 
  * @author {{AUTHOR}}
  * @version {{VERSION}}
  * @created {{DATE}}
  */
-class {{EXTENSION_NAME}}
+class {{EXTENSION_NAME}} extends BaseExtension
 {
     /**
-     * Extension initialization
+     * Initialize extension
+     * 
+     * Called when the extension is loaded by the framework.
      */
-    public function init(): void
+    public static function initialize(): void
     {
         // Initialize extension functionality
-        \$this->registerServices();
-        \$this->registerRoutes();
+        // Register services, routes, middleware, etc. here
     }
 
     /**
@@ -423,11 +441,11 @@ PHP;
 
 declare(strict_types=1);
 
-namespace Extensions\\{{EXTENSION_NAME}}\\Controllers;
+namespace Glueful\\Extensions\\{{EXTENSION_NAME}}\\Controllers;
 
-use Glueful\\Http\\Request;
 use Glueful\\Http\\Response;
 use Glueful\\Controllers\\BaseController;
+use Symfony\\Component\\HttpFoundation\\Request;
 
 /**
  * {{EXTENSION_NAME}} Controller
@@ -440,12 +458,14 @@ class {{EXTENSION_NAME}}Controller extends BaseController
      */
     public function index(Request \$request): Response
     {
-        return \$this->json([
+        \$data = [
             'name' => '{{EXTENSION_NAME}}',
             'version' => '{{VERSION}}',
             'description' => '{{EXTENSION_DESCRIPTION}}',
             'status' => 'active'
-        ]);
+        ];
+        
+        return Response::success(\$data, '{{EXTENSION_NAME}} extension information');
     }
     
     /**
@@ -453,16 +473,17 @@ class {{EXTENSION_NAME}}Controller extends BaseController
      */
     public function handle(Request \$request): Response
     {
-        \$data = \$request->json();
+        \$data = \$this->getRequestData();
         
         // Process request data
         \$result = [
             'success' => true,
             'message' => '{{EXTENSION_NAME}} operation completed',
-            'data' => \$data
+            'data' => \$data,
+            'processed_at' => date('c')
         ];
         
-        return \$this->json(\$result);
+        return Response::success(\$result, '{{EXTENSION_NAME}} operation completed successfully');
     }
 }
 PHP;
@@ -476,16 +497,27 @@ PHP;
 declare(strict_types=1);
 
 use Glueful\\Http\\Router;
-use Extensions\\{{EXTENSION_NAME}}\\Controllers\\{{EXTENSION_NAME}}Controller;
+use Glueful\\Extensions\\{{EXTENSION_NAME}}\\Controllers\\{{EXTENSION_NAME}}Controller;
+use Symfony\\Component\\HttpFoundation\\Request;
 
 /**
  * {{EXTENSION_NAME}} Extension Routes
  */
 
+// Get the container from the global app() helper
+\$container = app();
+
 // API endpoints
-Router::group('/{{EXTENSION_NAME|lower}}', function() {
-    Router::get('/', [{{EXTENSION_NAME}}Controller::class, 'index']);
-    Router::post('/handle', [{{EXTENSION_NAME}}Controller::class, 'handle']);
+Router::group('/{{EXTENSION_NAME|lower}}', function() use (\$container) {
+    Router::get('/', function(Request \$request) use (\$container) {
+        \$controller = \$container->get({{EXTENSION_NAME}}Controller::class);
+        return \$controller->index(\$request);
+    });
+    
+    Router::post('/handle', function(Request \$request) use (\$container) {
+        \$controller = \$container->get({{EXTENSION_NAME}}Controller::class);
+        return \$controller->handle(\$request);
+    });
 }, requiresAuth: true);
 PHP;
 
@@ -669,7 +701,7 @@ PHP;
 
     private function displaySampleFiles(string $templatePath, array $vars): void
     {
-        $sampleFiles = ['extension.json'];
+        $sampleFiles = ['manifest.json'];
 
         foreach ($sampleFiles as $file) {
             $filePath = "{$templatePath}/{$file}";
@@ -731,7 +763,7 @@ PHP;
     {
         foreach ($vars as $key => $value) {
             // Handle basic variable replacement
-            $content = str_replace("{{$key}}", $value, $content);
+            $content = str_replace('{{' . $key . '}}', $value, $content);
 
             // Handle |lower filter
             $lowerPattern = '{{' . $key . '|lower}}';

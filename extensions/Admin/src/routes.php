@@ -33,6 +33,7 @@ $container = app();
 // Controllers will be resolved from the DI container when routes are called
 // This ensures proper dependency injection and lazy loading
 
+
 Router::group('/admin', function () use ($container) {
 
     /**
@@ -45,10 +46,16 @@ Router::group('/admin', function () use ($container) {
      * @response 404 "Admin UI file not found"
      * @response 500 "Failed to load Admin UI"
      */
-    Router::get('/', function () use ($container) {
-        $adminController = $container->get(AdminController::class);
-        return $adminController->adminUI();
-    });
+    // Serve static assets with Router::static (but not index.html)
+
+    Router::static('/', '../public', false, [
+        'indexFile' => 'index.html',
+        'allowedExtensions' => [
+            'html', 'css', 'json', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico',
+            'woff', 'woff2', 'ttf', 'eot', 'js'
+        ]
+    ]);
+
 
     Router::group('/db', function () use ($container) {
 

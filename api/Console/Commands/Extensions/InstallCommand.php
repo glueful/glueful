@@ -3,7 +3,7 @@
 namespace Glueful\Console\Commands\Extensions;
 
 use Glueful\Console\Commands\Extensions\BaseExtensionCommand;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputArgument;
@@ -69,8 +69,13 @@ class InstallCommand extends BaseExtensionCommand
         try {
             $this->info("Installing extension from: {$source}");
 
-            // Use ExtensionsManager for installation
-            $result = ExtensionsManager::installExtension($source, $targetName);
+            // Use ExtensionManager for installation
+            $extensionManager = $this->getService(ExtensionManager::class);
+            $options = [];
+            if ($targetName) {
+                $options['name'] = $targetName;
+            }
+            $result = $extensionManager->install($source, $options);
 
             if (!empty($result['error'])) {
                 $this->error('Installation failed: ' . $result['error']);
