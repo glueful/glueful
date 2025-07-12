@@ -192,49 +192,6 @@
                     "theme": "dark"
                 }
             }
-        },
-        "TestExtension3": {
-            "version": "1.0.0",
-            "enabled": true,
-            "type": "optional",
-            "description": "A test extension with correct imports",
-            "author": "Test Author",
-            "license": "MIT",
-            "installPath": "extensions/TestExtension3",
-            "autoload": {
-                "psr-4": {
-                    "Glueful\\Extensions\\TestExtension3\\": "extensions/TestExtension3/src/"
-                }
-            },
-            "dependencies": {
-                "php": ">=8.2.0",
-                "extensions": [],
-                "packages": []
-            },
-            "provides": {
-                "main": "extensions/TestExtension3/TestExtension3.php",
-                "services": [],
-                "routes": [
-                    "extensions/TestExtension3/src/routes.php"
-                ],
-                "middleware": [],
-                "commands": [],
-                "migrations": []
-            },
-            "config": {
-                "categories": [
-                    "custom"
-                ],
-                "publisher": "test author",
-                "icon": "extensions/TestExtension3/assets/icon.png",
-                "features": [
-                    "Custom TestExtension3 functionality for Glueful"
-                ],
-                "repository": {
-                    "type": "git",
-                    "url": "https://github.com/test author/TestExtension3"
-                }
-            }
         }
     },
     "environments": {
@@ -242,8 +199,7 @@
             "enabledExtensions": [
                 "EmailNotification",
                 "Admin",
-                "RBAC",
-                "TestExtension3"
+                "RBAC"
             ],
             "autoload_dev": true,
             "debug_mode": true
@@ -252,8 +208,7 @@
             "enabledExtensions": [
                 "EmailNotification",
                 "Admin",
-                "RBAC",
-                "TestExtension3"
+                "RBAC"
             ],
             "autoload_dev": false,
             "debug_mode": false
