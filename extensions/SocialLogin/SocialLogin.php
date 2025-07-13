@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions;
 
 // Keep using statements
+use Glueful\Extensions\BaseExtension;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider;
@@ -35,7 +36,7 @@ use Glueful\Helpers\ExtensionsManager;
  *
  * @package Glueful\Extensions
  */
-class SocialLogin extends \Glueful\Extensions
+class SocialLogin extends BaseExtension
 {
     /** @var array Configuration for the extension */
     private static array $config = [];
@@ -85,37 +86,6 @@ class SocialLogin extends \Glueful\Extensions
         } else {
             self::$config = $defaultConfig;
         }
-    }
-
-
-    /**
-     * Get extension configuration
-     *
-     * @return array Current configuration
-     */
-    public static function getConfig(): array
-    {
-        return self::$config;
-    }
-
-    /**
-     * Get extension metadata
-     *
-     * @return array Extension metadata for admin interface
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            'name' => 'Social Login',
-            'description' => 'Provides social authentication through Google, Facebook and GitHub',
-            'version' => '0.18.0',
-            'author' => 'Glueful Extensions Team',
-            'requires' => [
-                'glueful' => '>=0.27.0',
-                'php' => '>=8.2.0',
-                'extensions' => []
-            ]
-        ];
     }
 
     /**

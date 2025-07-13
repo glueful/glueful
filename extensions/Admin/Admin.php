@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions;
 
+use Glueful\Extensions\BaseExtension;
 use Glueful\Extensions\Traits\ExtensionDocumentationTrait;
 
 /**
@@ -14,7 +15,7 @@ use Glueful\Extensions\Traits\ExtensionDocumentationTrait;
  * @version 1.0.0
  * @author Glueful Extensions Team
  */
-class Admin extends \Glueful\Extensions
+class Admin extends BaseExtension
 {
     use ExtensionDocumentationTrait;
 
@@ -40,62 +41,6 @@ class Admin extends \Glueful\Extensions
         // Additional initialization code here
     }
 
-    /**
-     * Get extension metadata
-     *
-     * This method follows the Glueful Extension Metadata Standard.
-     *
-     * @return array Extension metadata for admin interface and marketplace
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            // Required fields
-            'name' => 'Admin',
-            'description' => 'Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, ' .
-                             'monitor system health, and perform administrative actions through a ' .
-                             'user-friendly interface',
-            'version' => '0.18.0',
-            'author' => 'Glueful Extensions Team',
-            'requires' => [
-                'glueful' => '>=0.27.0',
-                'php' => '>=8.2.0',
-                'extensions' => [],
-                'dependencies' => []
-            ],
-
-            'features' => [
-                'Interactive API visualization dashboard with metrics and analytics',
-                'System health monitoring and performance tracking',
-                'Extension management with activation/deactivation capabilities',
-                'Database migrations and schema management',
-                'User and permission management interface',
-                'API testing and endpoint exploration tools'
-            ],
-
-            'compatibility' => [
-                'browsers' => ['Chrome', 'Firefox', 'Safari', 'Edge'],
-                'environments' => ['production', 'development'],
-                'conflicts' => []
-            ],
-
-            'settings' => [
-                'configurable' => true,
-                'has_admin_ui' => false,
-                'setup_required' => false,
-                'default_config' => [
-                    // Default configuration values
-                    'setting1' => 'default_value',
-                    'setting2' => true
-                ]
-            ],
-
-            'support' => [
-                'email' => 'your.email@example.com',
-                'issues' => 'https://github.com/yourusername/Admin/issues'
-            ]
-        ];
-    }
 
     /**
      * Check extension health
@@ -127,37 +72,5 @@ class Admin extends \Glueful\Extensions
                 'cache_usage' => 0 // Track cache usage if applicable
             ]
         ];
-    }
-
-    /**
-     * Get extension configuration
-     *
-     * @return array Current configuration
-     */
-    public static function getConfig(): array
-    {
-        return self::$config;
-    }
-
-    /**
-     * Set extension configuration
-     *
-     * @param array $config New configuration
-     * @return void
-     */
-    public static function setConfig(array $config): void
-    {
-        self::$config = $config;
-    }
-
-    /**
-     * Example extension method
-     *
-     * @param string $name Name parameter
-     * @return string Greeting message
-     */
-    public static function greet(string $name): string
-    {
-        return "Hello, {$name}! Welcome to the Admin extension.";
     }
 }

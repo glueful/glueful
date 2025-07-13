@@ -2,7 +2,7 @@
 
 namespace Glueful\Extensions\RBAC;
 
-use Glueful\Extensions;
+use Glueful\Extensions\BaseExtension;
 use Glueful\Extensions\Traits\ExtensionDocumentationTrait;
 use Glueful\Extensions\RBAC\RBACPermissionProvider;
 
@@ -20,7 +20,7 @@ use Glueful\Extensions\RBAC\RBACPermissionProvider;
  * - Multi-layer caching
  * - Scoped permissions for multi-tenancy
  */
-class RBAC extends Extensions
+class RBAC extends BaseExtension
 {
     use ExtensionDocumentationTrait;
 
@@ -49,58 +49,6 @@ class RBAC extends Extensions
         }
     }
 
-    /**
-     * Get extension metadata
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            'name' => 'RBAC',
-            'display_name' => 'Role-Based Access Control',
-            'description' => 'Modern, hierarchical role-based access control system',
-            'version' => '0.27.0',
-            'author' => 'Glueful Team',
-            'license' => 'MIT',
-            'type' => 'permission',
-            'priority' => 100,
-            'requires' => [
-                'glueful' => '>=0.27.0',
-                'php' => '>=8.2.0',
-                'extensions' => ['core_permissions']
-            ],
-            'capabilities' => [
-                'hierarchical_roles',
-                'direct_permissions',
-                'temporal_permissions',
-                'resource_filtering',
-                'permission_inheritance',
-                'scoped_permissions',
-                'audit_trail',
-                'caching'
-            ],
-            'api_endpoints' => [
-                '/rbac/check' => 'Check user permissions',
-                '/rbac/permissions' => 'Get user permissions',
-                '/rbac/roles' => 'Manage roles',
-                '/rbac/assign' => 'Assign permissions/roles'
-            ],
-            'database_tables' => [
-                'roles',
-                'permissions',
-                'user_roles',
-                'user_permissions',
-                'role_permissions',
-                'permission_audit'
-            ],
-            'configuration' => [
-                'cache_enabled' => self::$config['cache_enabled'] ?? true,
-                'cache_ttl' => self::$config['cache_ttl'] ?? 3600,
-                'enable_hierarchy' => self::$config['enable_hierarchy'] ?? true,
-                'enable_inheritance' => self::$config['enable_inheritance'] ?? true,
-                'audit_enabled' => self::$config['audit_enabled'] ?? true
-            ]
-        ];
-    }
 
     /**
      * Check extension health
@@ -140,14 +88,6 @@ class RBAC extends Extensions
                 'cache_usage' => 0
             ]
         ];
-    }
-
-    /**
-     * Get permission provider instance
-     */
-    public static function getPermissionProvider(): ?RBACPermissionProvider
-    {
-        return self::$permissionProvider;
     }
 
     // Private helper methods

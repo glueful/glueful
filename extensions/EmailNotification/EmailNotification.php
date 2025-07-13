@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions;
 
+use Glueful\Extensions\BaseExtension;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
 use Glueful\Extensions\EmailNotification\EmailNotificationServiceProvider;
 use Glueful\Notifications\Services\ChannelManager;
@@ -31,7 +32,7 @@ use Glueful\Logging\LogManager;
  *
  * @package Glueful\Extensions
  */
-class EmailNotification extends \Glueful\Extensions
+class EmailNotification extends BaseExtension
 {
     /** @var array Configuration for the extension */
     private static array $config = [];
@@ -98,38 +99,6 @@ class EmailNotification extends \Glueful\Extensions
 
         // Merge configurations with mail config taking precedence
         self::$config = array_merge($defaultConfig, $mailConfig);
-    }
-
-    /**
-     * Get extension configuration
-     *
-     * @return array Current configuration
-     */
-    public static function getConfig(): array
-    {
-        return self::$config;
-    }
-
-    /**
-     * Get extension metadata
-     *
-     * @return array Extension metadata for admin interface
-     */
-    public static function getMetadata(): array
-    {
-        return [
-            'name' => 'Email Notification',
-            'description' => 'Provides email notification capabilities using SMTP/PHPMailer',
-            'version' => '0.21.0',
-            'type' => 'core',
-            'requiredBy' => ['NotificationSystem'],
-            'author' => 'Glueful Extensions Team',
-            'requires' => [
-                'glueful' => '>=0.27.0',
-                'php' => '>=8.2.0',
-                'extensions' => []
-            ]
-        ];
     }
 
 
@@ -216,26 +185,5 @@ class EmailNotification extends \Glueful\Extensions
             'issues' => $issues,
             'metrics' => $metrics
         ];
-    }
-
-
-    /**
-     * Check if the email provider is properly configured
-     *
-     * @return bool True if email provider is properly configured
-     */
-    public static function isConfigured(): bool
-    {
-        return self::$provider ? self::$provider->isEmailProviderConfigured() : false;
-    }
-
-    /**
-     * Get the provider instance
-     *
-     * @return EmailNotificationProvider|null The provider instance
-     */
-    public static function getProvider(): ?EmailNotificationProvider
-    {
-        return self::$provider;
     }
 }
