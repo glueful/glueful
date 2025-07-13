@@ -3,6 +3,7 @@
 namespace Glueful\Helpers;
 
 use Glueful\Cache\CDN\CDNAdapterInterface;
+use Glueful\Extensions\ExtensionManager;
 
 /**
  * CDN Adapter Manager
@@ -87,13 +88,14 @@ trait CDNAdapterManager
     /**
      * Get the loaded extensions
      *
-     * This method provides access to the loadedExtensions static property
-     * from the ExtensionsManager class.
+     * This method provides access to the loaded extensions
+     * from the ExtensionManager class.
      *
      * @return array The loaded extensions
      */
     private static function getLoadedExtensions(): array
     {
-        return ExtensionsManager::getLoadedExtensions();
+        $extensionManager = container()->get(ExtensionManager::class);
+        return $extensionManager->getLoadedExtensions();
     }
 }

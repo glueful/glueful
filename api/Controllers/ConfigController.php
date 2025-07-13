@@ -12,6 +12,7 @@ use Glueful\Helpers\ValidationHelper;
 use Glueful\Http\Response;
 use Glueful\Services\FileFinder;
 use Glueful\Services\FileManager;
+use Glueful\Extensions\ExtensionManager;
 
 class ConfigController extends BaseController
 {
@@ -401,7 +402,8 @@ class ConfigController extends BaseController
 
         try {
             // Get enabled extension names directly
-            $enabledExtensionNames = \Glueful\Helpers\ExtensionsManager::getEnabledExtensions();
+            $extensionManager = container()->get(ExtensionManager::class);
+            $enabledExtensionNames = $extensionManager->listEnabled();
 
             foreach ($enabledExtensionNames as $extensionName) {
                 // Check common config file locations in extensions directory

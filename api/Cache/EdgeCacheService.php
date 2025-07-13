@@ -3,7 +3,7 @@
 namespace Glueful\Cache;
 
 use Glueful\Cache\CDN\CDNAdapterInterface;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Helpers\CacheHelper;
 
 /**
@@ -218,10 +218,37 @@ class EdgeCacheService
 
         try {
             // Get the extension manager
-            $extensionManager = new ExtensionsManager();
+            $extensionManager = container()->get(ExtensionManager::class);
 
-            // Try to resolve an adapter for the configured provider
-            return $extensionManager->resolveCDNAdapter($this->config['provider'], $this->config);
+            // Normalize provider name for consistent lookup
+            $normalizedProvider = strtolower($this->config['provider']);
+
+            // Look for extensions with CDN adapters
+            $loadedExtensions = $extensionManager->getLoadedExtensions();
+            foreach ($loadedExtensions as $extension) {
+                if (!method_exists($extension, 'registerCDNAdapters')) {
+                    continue;
+                }
+
+                // Get the adapters this extension provides
+                $adapters = $extension::registerCDNAdapters();
+
+                // Check if this extension provides the requested adapter
+                foreach ($adapters as $adapterProvider => $adapterClass) {
+                    if (strtolower($adapterProvider) === $normalizedProvider) {
+                        // Found the adapter, try to instantiate it
+                        if (
+                            class_exists($adapterClass) &&
+                            is_subclass_of($adapterClass, CDNAdapterInterface::class)
+                        ) {
+                            return new $adapterClass($this->config);
+                        }
+                    }
+                }
+            }
+
+            // No adapter found for this provider
+            return null;
         } catch (\Throwable $e) {
             // Log the error
             error_log('Failed to resolve CDN adapter: ' . $e->getMessage());

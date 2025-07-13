@@ -6,6 +6,7 @@ namespace Glueful\Security;
 
 use Glueful\Cache\CacheStore;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Http\RequestContext;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Services\NotificationService;
@@ -113,8 +114,8 @@ class EmailVerification
     {
         try {
             // Check if EmailNotification extension is enabled
-            $extensionManager = new \Glueful\Helpers\ExtensionsManager();
-            if (!$extensionManager->isExtensionEnabled('EmailNotification')) {
+            $extensionManager = container()->get(ExtensionManager::class);
+            if (!$extensionManager->isEnabled('EmailNotification')) {
                 error_log("EmailNotification extension is not enabled");
                 return [
                     'success' => false,
@@ -461,8 +462,8 @@ class EmailVerification
             $verifier = new self($requestContext, CacheHelper::createCacheInstance());
 
             // Check if EmailNotification extension is enabled
-            $extensionManager = new \Glueful\Helpers\ExtensionsManager();
-            if (!$extensionManager->isExtensionEnabled('EmailNotification')) {
+            $extensionManager = container()->get(ExtensionManager::class);
+            if (!$extensionManager->isEnabled('EmailNotification')) {
                 error_log("EmailNotification extension is not enabled for password reset");
                 return [
                     'success' => false,

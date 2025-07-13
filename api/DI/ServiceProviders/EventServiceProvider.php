@@ -10,6 +10,7 @@ use Glueful\Events\Listeners\CacheInvalidationListener;
 use Glueful\Events\Listeners\SecurityMonitoringListener;
 use Glueful\Events\Listeners\PerformanceMonitoringListener;
 use Glueful\Extensions\ExtensionEventRegistry;
+use Glueful\Extensions\ExtensionManager;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface as ContractsEventDispatcherInterface;
@@ -156,8 +157,8 @@ class EventServiceProvider implements ServiceProviderInterface
             $registry = $container->get(ExtensionEventRegistry::class);
 
             // Get loaded extensions from extension manager if available
-            if ($container->has(\Glueful\Helpers\ExtensionsManager::class)) {
-                $extensionManager = $container->get(\Glueful\Helpers\ExtensionsManager::class);
+            if ($container->has(ExtensionManager::class)) {
+                $extensionManager = $container->get(ExtensionManager::class);
                 $loadedExtensions = $extensionManager->getLoadedExtensions();
 
                 // Register all extension event subscribers

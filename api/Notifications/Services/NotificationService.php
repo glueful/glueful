@@ -6,6 +6,7 @@ namespace Glueful\Notifications\Services;
 
 use DateTime;
 use Glueful\Helpers\Utils;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Models\Notification;
 use Glueful\Notifications\Models\NotificationPreference;
@@ -661,8 +662,9 @@ class NotificationService implements ConfigurableInterface
      */
     protected function resolveNotifiableEntityThroughExtensions(string $type, string $id): ?Notifiable
     {
-        // Get all loaded extensions through ExtensionsManager
-        $extensions = \Glueful\Helpers\ExtensionsManager::getLoadedExtensions();
+        // Get all loaded extensions through ExtensionManager
+        $extensionManager = container()->get(ExtensionManager::class);
+        $extensions = $extensionManager->getLoadedExtensions();
 
         // Look for extensions that might support this type of notifiable entity
         foreach ($extensions as $extensionClass) {

@@ -9,7 +9,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Output\OutputInterface;
 use Glueful\Http\Router;
-use Glueful\Helpers\{ExtensionsManager, RoutesManager};
+use Glueful\Extensions\ExtensionManager;
+use Glueful\Helpers\RoutesManager;
 use Glueful\Services\RouteCacheService;
 
 /**
@@ -110,8 +111,9 @@ class RouteCommand extends BaseCommand
 
             // Load extensions first (they may register routes)
             $output->writeln('   • Loading extensions...');
-            ExtensionsManager::loadEnabledExtensions();
-            ExtensionsManager::loadExtensionRoutes();
+            $extensionManager = container()->get(ExtensionManager::class);
+            $extensionManager->loadEnabledExtensions();
+            $extensionManager->loadExtensionRoutes();
 
             // Load core routes
             $output->writeln('   • Loading core routes...');
@@ -209,8 +211,9 @@ class RouteCommand extends BaseCommand
         try {
             // Initialize router to load routes
             $router = Router::getInstance();
-            ExtensionsManager::loadEnabledExtensions();
-            ExtensionsManager::loadExtensionRoutes();
+            $extensionManager = container()->get(ExtensionManager::class);
+            $extensionManager->loadEnabledExtensions();
+            $extensionManager->loadExtensionRoutes();
             RoutesManager::loadRoutes();
 
             $routes = Router::getRoutes();
@@ -322,8 +325,9 @@ class RouteCommand extends BaseCommand
 
             // Load current routes to get count
             $router = Router::getInstance();
-            ExtensionsManager::loadEnabledExtensions();
-            ExtensionsManager::loadExtensionRoutes();
+            $extensionManager = container()->get(ExtensionManager::class);
+            $extensionManager->loadEnabledExtensions();
+            $extensionManager->loadExtensionRoutes();
             RoutesManager::loadRoutes();
 
             $currentRoutes = Router::getRoutes();

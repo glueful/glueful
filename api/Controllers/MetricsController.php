@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Database\Schema\SchemaManager;
 
 class MetricsController extends BaseController
@@ -315,7 +315,9 @@ class MetricsController extends BaseController
 
             // Extensions status - get from config without loading classes
             try {
-                $extensionConfigFile = ExtensionsManager::getConfigPath();
+                $extensionManager = container()->get(ExtensionManager::class);
+                $globalConfig = $extensionManager->getGlobalConfig();
+                $extensionConfigFile = $globalConfig['config_path'] ?? 'config/extensions.json';
                 $content = file_get_contents($extensionConfigFile);
                 $config = json_decode($content, true);
 
@@ -489,7 +491,8 @@ class MetricsController extends BaseController
 
         $extensionName = $extension['name'];
 
-        if (!ExtensionsManager::extensionExists($extensionName)) {
+        $extensionManager = container()->get(ExtensionManager::class);
+        if (!$extensionManager->isInstalled($extensionName)) {
             return Response::error(
                 'Extension not found',
                 Response::HTTP_NOT_FOUND,
@@ -501,7 +504,8 @@ class MetricsController extends BaseController
         $health = $this->cacheResponse(
             "extension_health_{$extensionName}",
             function () use ($extensionName) {
-                return ExtensionsManager::checkExtensionHealth($extensionName);
+                $extensionManager = container()->get(ExtensionManager::class);
+                return $extensionManager->checkHealth($extensionName);
             },
             600, // 10 minutes
             ['extensions', 'extension:' . $extensionName]

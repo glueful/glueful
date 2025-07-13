@@ -8,7 +8,7 @@ use Glueful\Database\Migrations\MigrationInterface;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Exceptions\DatabaseException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Services\FileFinder;
@@ -53,8 +53,8 @@ class MigrationManager
     /** @var string Directory containing migration files */
     private string $migrationsPath;
 
-    /** @var ExtensionsManager Extensions manager for checking enabled extensions */
-    private ExtensionsManager $extensionsManager;
+    /** @var ExtensionManager Extensions manager for checking enabled extensions */
+    private ExtensionManager $extensionsManager;
 
     /** @var FileFinder File finder service for migration discovery */
     private FileFinder $fileFinder;
@@ -68,13 +68,13 @@ class MigrationManager
      * Sets up schema manager and ensures version table exists.
      *
      * @param string|null $migrationsPath Custom path to migrations directory
-     * @param ExtensionsManager|null $extensionsManager Extensions manager instance
+     * @param ExtensionManager|null $extensionsManager Extensions manager instance
      * @param FileFinder|null $fileFinder File finder service instance
      * @throws \Glueful\Exceptions\DatabaseException If database connection fails
      */
     public function __construct(
         ?string $migrationsPath = null,
-        ?ExtensionsManager $extensionsManager = null,
+        ?ExtensionManager $extensionsManager = null,
         ?FileFinder $fileFinder = null
     ) {
         $connection = new Connection();
@@ -82,7 +82,7 @@ class MigrationManager
         $this->schema = $connection->getSchemaManager();
 
         $this->migrationsPath = $migrationsPath ?? config(('app.paths.migrations'));
-        $this->extensionsManager = $extensionsManager ?? new ExtensionsManager();
+        $this->extensionsManager = $extensionsManager ?? container()->get(ExtensionManager::class);
         $this->fileFinder = $fileFinder ?? container()->get(FileFinder::class);
         // echo $this->migrationsPath;
         // exit;
@@ -142,7 +142,7 @@ class MigrationManager
         }
 
         // Get migrations from enabled extensions only
-        $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
+        $enabledExtensions = $this->extensionsManager->listEnabled();
 
         foreach ($enabledExtensions as $extensionName) {
             $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
@@ -286,7 +286,7 @@ class MigrationManager
 
         // Determine if this is an extension migration
         $extensionName = null;
-        $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
+        $enabledExtensions = $this->extensionsManager->listEnabled();
 
         foreach ($enabledExtensions as $extension) {
             $extensionPath = $this->extensionsManager->getExtensionPath($extension);
@@ -421,7 +421,7 @@ class MigrationManager
         // If not found in main directory, check in enabled extension directories
         if (!file_exists($file)) {
             $found = false;
-            $enabledExtensions = $this->extensionsManager->getEnabledExtensions();
+            $enabledExtensions = $this->extensionsManager->listEnabled();
 
             foreach ($enabledExtensions as $extensionName) {
                 $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
