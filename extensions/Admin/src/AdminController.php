@@ -7,6 +7,7 @@ namespace Glueful\Extensions\Admin;
 use Glueful\Http\Response;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Controllers\ConfigController;
+use Glueful\Extensions\ExtensionManager;
 
 class AdminController
 {
@@ -237,15 +238,17 @@ class AdminController
 
             // Extensions
             try {
-                // Get extension configuration data using ExtensionsManager
-                $extensionConfigFile = \Glueful\Helpers\ExtensionsManager::getConfigPath();
+                // Get extension configuration data using ExtensionManager
+                $extensionManager = $this->container->get(ExtensionManager::class);
+                $globalConfig = $extensionManager->getGlobalConfig();
+                $extensionConfigFile = $globalConfig['config_path'] ?? 'config/extensions.json';
                 $content = file_get_contents($extensionConfigFile);
                 $config = json_decode($content, true);
 
                 // Get core and optional extension lists
-                $coreExtensions = \Glueful\Helpers\ExtensionsManager::getCoreExtensions();
-                $optionalExtensions = \Glueful\Helpers\ExtensionsManager::getOptionalExtensions();
-                $enabledExtensions = \Glueful\Helpers\ExtensionsManager::getEnabledExtensions();
+                $coreExtensions = $extensionManager->getCoreExtensions();
+                $optionalExtensions = $extensionManager->getOptionalExtensions();
+                $enabledExtensions = $extensionManager->listEnabled();
 
                 // Process extension data
                 $extensionsList = [];
@@ -287,7 +290,8 @@ class AdminController
             // RBAC Permissions & Roles (if available)
             try {
                 // Check if RBAC extension is enabled
-                $rbacEnabled = \Glueful\Helpers\ExtensionsManager::isExtensionEnabled('RBAC');
+                $extensionManager = $this->container->get(ExtensionManager::class);
+                $rbacEnabled = $extensionManager->isExtensionEnabled('RBAC');
                 if ($rbacEnabled) {
                     // Get RBAC repositories from the container
                     $permissionRepository = $this->container->get('rbac.repository.permission');

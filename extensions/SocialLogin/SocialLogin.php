@@ -6,13 +6,13 @@ namespace Glueful\Extensions;
 
 // Keep using statements
 use Glueful\Extensions\BaseExtension;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\AppleAuthProvider;
 use Glueful\Extensions\SocialLogin\SocialLoginServiceProvider;
-use Glueful\Helpers\ExtensionsManager;
 
 /**
  * Social Login Extension
@@ -79,7 +79,9 @@ class SocialLogin extends BaseExtension
         ];
 
         // Try to load config from file or database
-        $configPath = ExtensionsManager::getConfigPath() . '/extensions/social_login.php';
+        $extensionManager = container()->get(ExtensionManager::class);
+        $globalConfig = $extensionManager->getGlobalConfig();
+        $configPath = ($globalConfig['config_path'] ?? 'config') . '/extensions/social_login.php';
         if (file_exists($configPath)) {
             $loadedConfig = require $configPath;
             self::$config = array_merge($defaultConfig, $loadedConfig);
