@@ -1,18 +1,17 @@
 <?php
+
 namespace Tests\Fixtures;
 
-use Glueful\Extensions;
+use Glueful\Extensions\BaseExtension;
 
 /**
  * Second test extension fixture for unit testing
  */
-class AnotherTestExtension extends Extensions
+class AnotherTestExtension extends BaseExtension
 {
     /** @var bool Flag indicating if initialize was called */
     public static bool $initializeCalled = false;
 
-    /** @var bool Flag indicating if registerServices was called */
-    public static bool $registerServicesCalled = false;
 
     /** @var array Holds configuration values */
     public static array $config = [];
@@ -23,7 +22,6 @@ class AnotherTestExtension extends Extensions
     public static function reset(): void
     {
         self::$initializeCalled = false;
-        self::$registerServicesCalled = false;
         self::$config = [];
     }
 
@@ -42,22 +40,21 @@ class AnotherTestExtension extends Extensions
     }
 
     /**
-     * Register extension-provided services
+     * Check extension health
+     *
+     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
      */
-    public static function registerServices(): void
-    {
-        self::$registerServicesCalled = true;
-    }
-
-    /**
-     * Process extension request
-     */
-    public static function process(array $queryParams, array $bodyParams): array
+    public static function checkHealth(): array
     {
         return [
-            'status' => 'success',
-            'name' => 'another-test-extension',
-            'config' => self::$config
+            'healthy' => true,
+            'issues' => [],
+            'metrics' => [
+                'memory_usage' => memory_get_usage(true),
+                'execution_time' => 0,
+                'database_queries' => 0,
+                'cache_usage' => 0
+            ]
         ];
     }
 
