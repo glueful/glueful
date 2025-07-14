@@ -13,6 +13,12 @@
   "publisher": "glueful-team",
   "license": "MIT",
   "main": "./SocialLogin.php",
+  "main_class": "Glueful\\Extensions\\SocialLogin",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\SocialLogin\\": "src/"
+    }
+  },
   "categories": ["authentication", "social-integration"],
   "keywords": ["social", "oauth", "authentication", "google", "facebook", "github", "apple"],
   "engines": {

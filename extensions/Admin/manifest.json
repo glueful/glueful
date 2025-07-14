@@ -13,6 +13,12 @@
   "publisher": "glueful-team",
   "license": "MIT",
   "main": "./Admin.php",
+  "main_class": "Glueful\\Extensions\\Admin",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\Admin\\": "src/"
+    }
+  },
   "categories": ["admin", "dashboard", "management"],
   "keywords": ["admin", "dashboard", "management", "ui", "interface"],
   "engines": {

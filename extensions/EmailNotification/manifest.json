@@ -13,6 +13,12 @@
   "publisher": "glueful-team",
   "license": "MIT",
   "main": "./EmailNotification.php",
+  "main_class": "Glueful\\Extensions\\EmailNotification",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\EmailNotification\\": "src/"
+    }
+  },
   "categories": ["notifications", "communication"],
   "keywords": ["email", "smtp", "notifications", "phpmailer"],
   "engines": {

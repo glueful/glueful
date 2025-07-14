@@ -13,6 +13,12 @@
   "publisher": "glueful-team",
   "license": "MIT",
   "main": "./RBAC.php",
+  "main_class": "Glueful\\Extensions\\RBAC",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\RBAC\\": "src/"
+    }
+  },
   "categories": ["authentication", "authorization", "security"],
   "keywords": ["rbac", "roles", "permissions", "security", "access-control"],
   "engines": {
