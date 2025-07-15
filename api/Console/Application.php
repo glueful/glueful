@@ -83,6 +83,10 @@ class Application extends BaseApplication
         \Glueful\Console\Commands\Queue\SchedulerCommand::class,
         // Archive commands
         \Glueful\Console\Commands\Archive\ManageCommand::class,
+        // Configuration commands
+        \Glueful\Console\Commands\Config\ValidateConfigCommand::class,
+        \Glueful\Console\Commands\Config\GenerateDocsCommand::class,
+        \Glueful\Console\Commands\Config\GenerateIDESupportCommand::class,
     ];
 
     /**

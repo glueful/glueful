@@ -1,12 +1,12 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Event System Configuration
  *
  * Configuration for the Symfony EventDispatcher-based event system.
  */
+
+declare(strict_types=1);
 
 return [
     /*
