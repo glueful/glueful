@@ -79,7 +79,14 @@ This command generates comprehensive documentation for all registered configurat
                 return 0;
             }
 
-            $this->generateDocumentationFiles($dumper, $configInfo, $outputDir, $format, $includeTemplates, $includeMinimal);
+            $this->generateDocumentationFiles(
+                $dumper,
+                $configInfo,
+                $outputDir,
+                $format,
+                $includeTemplates,
+                $includeMinimal
+            );
             $this->generateIndexFile($configInfo, $outputDir, $format);
 
             $this->line();
@@ -138,8 +145,12 @@ This command generates comprehensive documentation for all registered configurat
     /**
      * Generate reference documentation file
      */
-    private function generateReferenceFile(ConfigurationDumper $dumper, string $configName, string $outputDir, string $format): void
-    {
+    private function generateReferenceFile(
+        ConfigurationDumper $dumper,
+        string $configName,
+        string $outputDir,
+        string $format
+    ): void {
         $filename = "{$outputDir}{$configName}.reference.{$format}";
 
         if ($format === 'yaml') {

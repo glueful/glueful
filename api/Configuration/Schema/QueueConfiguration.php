@@ -777,7 +777,8 @@ class QueueConfiguration implements ConfigurationInterface
             ->end()
             ->validate()
                 ->ifTrue(function ($v) {
-                    return $v['security']['authentication']['enabled'] && empty($v['security']['authentication']['token']);
+                    return $v['security']['authentication']['enabled'] &&
+                           empty($v['security']['authentication']['token']);
                 })
                 ->thenInvalid('Authentication token is required when authentication is enabled')
             ->end();

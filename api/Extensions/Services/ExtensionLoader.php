@@ -11,6 +11,7 @@ use Composer\Autoload\ClassLoader;
 use Glueful\Services\FileFinder;
 use Glueful\Services\FileManager;
 use Glueful\DI\ContainerBootstrap;
+use Glueful\Validation\ValidationExtensionLoader;
 use Psr\Log\LoggerInterface;
 
 class ExtensionLoader implements ExtensionLoaderInterface
@@ -97,6 +98,9 @@ class ExtensionLoader implements ExtensionLoaderInterface
 
             // Load routes
             $this->loadRoutes($name);
+
+            // Load validation constraints
+            $this->loadValidationConstraints($name, $extensionPath);
 
             // Mark as loaded (without instantiating the main class)
             $this->loadedExtensions[$name] = [
@@ -375,6 +379,36 @@ class ExtensionLoader implements ExtensionLoaderInterface
         } catch (\Exception $e) {
             // Container not available or registration failed
             $this->debugLog("Could not register service provider for {$name}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Load validation constraints from extension
+     *
+     * @param string $name Extension name
+     * @param string $extensionPath Extension path
+     */
+    private function loadValidationConstraints(string $name, string $extensionPath): void
+    {
+        try {
+            $container = ContainerBootstrap::getContainer();
+
+            // Skip if validation system is not available
+            if (!$container->has(ValidationExtensionLoader::class)) {
+                $this->debugLog("Validation system not available for extension: {$name}");
+                return;
+            }
+
+            $validationLoader = $container->get(ValidationExtensionLoader::class);
+            $result = $validationLoader->loadExtensionConstraints($name, $extensionPath);
+
+            if ($result['success']) {
+                $this->debugLog("Loaded {$result['constraints_loaded']} validation constraints for extension: {$name}");
+            } else {
+                $this->debugLog("Failed to load validation constraints for extension {$name}: " . ($result['error'] ?? 'Unknown error'));
+            }
+        } catch (\Exception $e) {
+            $this->debugLog("Could not load validation constraints for {$name}: " . $e->getMessage());
         }
     }
 

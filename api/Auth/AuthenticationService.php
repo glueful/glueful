@@ -49,7 +49,7 @@ class AuthenticationService
         $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
         $this->sessionCacheManager = $sessionCacheManager ?? container()->get(SessionCacheManager::class);
         $this->userRepository = $userRepository ?? new UserRepository();
-        $this->validator = $validator ?? new Validator();
+        $this->validator = $validator ?? container()->get(Validator::class);
         $this->passwordHasher = $passwordHasher ?? new PasswordHasher();
 
         // Ensure authentication system is initialized

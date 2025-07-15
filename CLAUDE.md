@@ -8,11 +8,11 @@ Glueful is a modern PHP 8.2+ API framework platform designed for building robust
 
 ### Framework Platform Architecture
 
-**Glueful is an API framework platform that will:**
-- Ship with 4 core extensions (Admin, EmailNotification, RBAC, SocialLogin)
-- Support a growing ecosystem of third-party extensions
-- Be used by other developers to build and distribute extensions
-- Provide comprehensive APIs for extension development
+**Glueful is an API framework platform that:**
+- Ships with 6 core extensions (Admin, EmailNotification, RBAC, SocialLogin, BeanstalkdQueue, AnalyticsTracker)
+- Supports a growing ecosystem of third-party extensions
+- Is used by developers to build and distribute extensions
+- Provides comprehensive APIs for extension development
 
 This platform approach justifies enterprise-grade extension architecture including:
 - Rich metadata and manifest systems for extension discovery
@@ -29,7 +29,7 @@ Glueful provides enterprise-grade features:
 - Dependency Injection (DI) container for service management
 - Role-based access control (RBAC) with fine-grained permissions
 - Database connection pooling and query optimization
-- Extension system v2.0 (high-performance modular architecture)
+- Extension system (high-performance modular architecture)
 - Advanced notification system with multiple channels
 - Queue system with batch processing and retry mechanisms
 - Archive system for data retention and compliance
@@ -279,6 +279,104 @@ vendor/bin/phpstan             # Static analysis (level 5)
    ) {}
    ```
 
+### Working with Extensions
+
+Glueful uses a modern extension system with facade pattern architecture. All extensions extend BaseExtension and use the ExtensionManager facade.
+
+#### Extension Architecture
+
+```
+ExtensionManager (Public Facade)
+├── ExtensionLoader (Loading & File Operations)  
+├── ExtensionConfig (JSON Configuration Management)
+├── ExtensionCatalog (Marketplace & Remote Operations)
+└── ExtensionValidator (Security & Dependency Validation)
+```
+
+#### Creating a New Extension
+
+1. **Generate extension structure**
+   ```bash
+   php glueful extensions:create MyExtension
+   ```
+
+2. **Extension class structure**
+   ```php
+   // extensions/MyExtension/MyExtension.php
+   namespace Glueful\Extensions;
+   
+   use Glueful\Extensions\BaseExtension;
+   
+   class MyExtension extends BaseExtension
+   {
+       public static function initialize(): void
+       {
+           // Extension initialization logic
+       }
+       
+       public static function checkHealth(): array
+       {
+           return [
+               'healthy' => true,
+               'issues' => [],
+               'metrics' => [
+                   'memory_usage' => memory_get_usage(true),
+                   'execution_time' => 0,
+                   'database_queries' => 0,
+                   'cache_usage' => 0
+               ]
+           ];
+       }
+   }
+   ```
+
+3. **Extension manifest.json**
+   ```json
+   {
+       "name": "MyExtension",
+       "version": "1.0.0",
+       "type": "optional",
+       "main_class": "Glueful\\Extensions\\MyExtension",
+       "autoload": {
+           "psr-4": {
+               "Glueful\\Extensions\\MyExtension\\": "src/"
+           }
+       },
+       "dependencies": {
+           "glueful": ">=0.27.0",
+           "php": ">=8.2.0"
+       }
+   }
+   ```
+
+#### Extension Management via DI
+
+```php
+// Access ExtensionManager via DI container
+$extensionManager = container()->get(ExtensionManager::class);
+
+// Core operations
+$extensions = $extensionManager->listInstalled();
+$enabledExtensions = $extensionManager->listEnabled();
+$extensionManager->enable('MyExtension');
+$extensionManager->disable('MyExtension');
+
+// Health and validation
+$health = $extensionManager->checkHealth('MyExtension');
+$validation = $extensionManager->validate('MyExtension');
+
+// Configuration
+$config = $extensionManager->getExtensionConfig('MyExtension');
+$extensionManager->updateExtensionConfig('MyExtension', $newConfig);
+```
+
+#### Extension Services Structure
+
+- **ExtensionLoader**: Handles loading, namespace registration, routes
+- **ExtensionConfig**: Manages extensions.json configuration
+- **ExtensionCatalog**: Marketplace operations, downloads, updates
+- **ExtensionValidator**: Security validation, dependency checking
+
 ### Creating a New Feature
 
 1. **Create feature branch**
@@ -445,6 +543,15 @@ glueful/
 │   ├── Database/             # Database layer with connection pooling
 │   ├── DI/                   # Dependency injection container
 │   │   └── ServiceProviders/ # Service provider classes
+│   ├── Extensions/           # Extension system (facade pattern)
+│   │   ├── Services/         # ExtensionLoader, Config, Catalog, Validator
+│   │   │   └── Interfaces/   # Service interfaces for DI
+│   │   ├── Enums/            # ExtensionStatus and related enums
+│   │   ├── Exceptions/       # Extension-specific exceptions
+│   │   ├── Traits/           # ExtensionDocumentationTrait
+│   │   ├── BaseExtension.php # Modern extension base class
+│   │   ├── ExtensionManager.php # Facade for all extension operations
+│   │   └── ExtensionInterface.php # Core extension interface
 │   ├── Http/                 # HTTP handling and middleware
 │   ├── Models/               # Data models
 │   ├── Notifications/        # Multi-channel notification system
@@ -742,6 +849,152 @@ Router::post('/auth/login', [AuthController::class, 'login']);
 **Key Annotations**: `@route`, `@summary`, `@tag`, `@requestBody`, `@response`
 
 **Generate Documentation**: `php glueful generate:json doc`
+
+### Working with Validation
+
+Glueful provides a modern validation system built on Symfony Validator with PHP 8+ attributes and comprehensive features.
+
+#### Basic Validation
+
+Define validation rules using attributes on DTOs:
+
+```php
+use Glueful\Validation\Constraints\{Required, Email, StringLength, Choice};
+
+class UserDTO {
+    #[Required]
+    #[StringLength(min: 3, max: 50)]
+    public string $username;
+    
+    #[Required]
+    #[Email]
+    public string $email;
+    
+    #[Required]
+    #[Choice(['admin', 'user', 'guest'])]
+    public string $role = 'user';
+}
+```
+
+Validate the DTO:
+
+```php
+use Glueful\Validation\Validator;
+
+$validator = container()->get(Validator::class);
+$userDTO = new UserDTO();
+$userDTO->username = 'jo';  // Too short
+$userDTO->email = 'invalid-email';
+
+if (!$validator->validate($userDTO)) {
+    $errors = $validator->getErrors();
+    // Handle validation errors
+}
+```
+
+#### Built-in Constraints
+
+- **Required**: Value cannot be null/empty
+- **StringLength**: String length validation with min/max
+- **Email**: Email format validation
+- **Choice**: Value must be in allowed choices
+- **Range**: Numeric/date range validation
+- **Unique**: Database uniqueness validation
+- **Exists**: Database existence validation
+- **ConditionalRequired**: Conditional field requirements
+- **FieldsMatch**: Two fields must match
+
+#### Database Validation
+
+```php
+use Glueful\Validation\Constraints\{Unique, Exists};
+
+class UserDTO {
+    #[Unique(table: 'users', column: 'email')]
+    public string $email;
+    
+    #[Exists(table: 'roles', column: 'id')]
+    public int $roleId;
+}
+```
+
+#### Validation Groups
+
+Context-aware validation for different scenarios:
+
+```php
+use Glueful\Validation\Groups;
+
+class UserDTO {
+    #[Required(groups: [Groups::CREATE])]
+    public ?string $password;
+    
+    #[Required(groups: [Groups::CREATE, Groups::UPDATE])]
+    public string $email;
+    
+    #[Required(groups: [Groups::UPDATE])]
+    public ?int $id;
+}
+
+// Validate for different contexts
+$validator->validate($userDTO, [Groups::CREATE]);
+$validator->validate($userDTO, [Groups::UPDATE]);
+```
+
+#### Data Sanitization
+
+Automatically clean data before validation:
+
+```php
+use Glueful\Validation\Attributes\Sanitize;
+
+class ArticleDTO {
+    #[Sanitize(['trim', 'strip_tags'])]
+    #[Required]
+    public string $title;
+    
+    #[Sanitize('email')]
+    #[Email]
+    public string $email;
+}
+```
+
+#### Advanced Features
+
+- **Conditional Validation**: Rules based on other field values
+- **Cross-field Validation**: Validate relationships between fields
+- **Custom Constraints**: Create reusable validation rules
+- **Extension Constraints**: Extensions can define custom validators
+- **Performance Optimization**: Lazy loading and caching
+
+#### Extension Validation Constraints
+
+Extensions can define custom validation constraints:
+
+```php
+// extensions/RBAC/src/Validation/Constraints/HasPermission.php
+use Glueful\Extensions\RBAC\Validation\Constraints\HasPermission;
+
+class AdminActionDTO {
+    #[HasPermission('admin.users.delete')]
+    public int $userId;
+}
+```
+
+#### Performance Commands
+
+```bash
+# Warm up validation cache
+php glueful validation:cache warmup
+
+# Clear validation cache
+php glueful validation:cache clear
+
+# View validation statistics
+php glueful validation:cache stats
+```
+
+For detailed validation documentation, see [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 ## Debugging with VarDumper
 

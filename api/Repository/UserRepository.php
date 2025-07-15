@@ -655,7 +655,11 @@ class UserRepository extends BaseRepository
             return container()->get(Validator::class);
         } catch (\Exception) {
             // Fallback to direct instantiation if container fails
-            return new Validator();
+            // This should not happen in normal operation since the ValidatorServiceProvider
+            // registers the validator, but we provide a fallback for edge cases
+            throw new \RuntimeException(
+                'Unable to create Validator instance - ValidatorServiceProvider may not be registered'
+            );
         }
     }
 
