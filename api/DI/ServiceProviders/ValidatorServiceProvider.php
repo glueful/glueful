@@ -13,8 +13,6 @@ use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidatorInterface;
 use Glueful\Validation\Validator;
 use Glueful\Validation\SanitizationProcessor;
-use Glueful\Validation\ExtensionConstraintRegistry;
-use Glueful\Validation\ValidationExtensionLoader;
 use Glueful\Validation\ConstraintCompiler;
 use Glueful\Validation\LazyValidationProvider;
 use Glueful\Validation\ConstraintValidators\UniqueValidator;
@@ -61,15 +59,6 @@ class ValidatorServiceProvider implements ServiceProviderInterface
                         return $this->container->get($className);
                     }
 
-                    // Check if this is an extension constraint
-                    $registry = $this->container->get(ExtensionConstraintRegistry::class);
-                    if ($registry->isConstraintRegistered(get_class($constraint))) {
-                        $validator = $registry->getValidator(get_class($constraint));
-                        if ($validator) {
-                            return $validator;
-                        }
-                    }
-
                     // Fall back to default factory for built-in validators
                     return parent::getInstance($constraint);
                 }
@@ -83,19 +72,6 @@ class ValidatorServiceProvider implements ServiceProviderInterface
         // Register Sanitization Processor
         $container->singleton(SanitizationProcessor::class, function () {
             return new SanitizationProcessor();
-        });
-
-        // Register Extension Constraint Registry
-        $container->singleton(ExtensionConstraintRegistry::class, function (ContainerInterface $container) {
-            return new ExtensionConstraintRegistry($container);
-        });
-
-        // Register Validation Extension Loader
-        $container->singleton(ValidationExtensionLoader::class, function (ContainerInterface $container) {
-            return new ValidationExtensionLoader(
-                $container->get(ExtensionConstraintRegistry::class),
-                $container
-            );
         });
 
         // Register Constraint Compiler
