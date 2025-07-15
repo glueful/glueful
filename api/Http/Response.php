@@ -6,6 +6,8 @@ namespace Glueful\Http;
 
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Constants\ErrorCodes;
+use Glueful\Serialization\Serializer;
+use Glueful\Serialization\Context\SerializationContext;
 
 /**
  * Modern API Response Handler using Symfony JsonResponse
@@ -15,6 +17,8 @@ use Glueful\Constants\ErrorCodes;
  */
 class Response extends JsonResponse
 {
+    private static ?Serializer $serializer = null;
+
     // HTTP status codes from ErrorCodes
     public const HTTP_OK = ErrorCodes::SUCCESS;
     public const HTTP_CREATED = ErrorCodes::CREATED;
@@ -42,27 +46,89 @@ class Response extends JsonResponse
     }
 
     /**
-     * Create successful response
+     * Set the serializer instance
      */
-    public static function success(mixed $data = null, string $message = 'Success'): self
+    public static function setSerializer(Serializer $serializer): void
     {
-        return new self([
+        self::$serializer = $serializer;
+    }
+
+    /**
+     * Create successful response with optional serialization
+     */
+    public static function success(
+        mixed $data = null,
+        string $message = 'Success',
+        ?SerializationContext $context = null
+    ): self {
+        $responseData = [
             'success' => true,
             'message' => $message,
             'data' => $data ?? []
-        ]);
+        ];
+
+        if (self::$serializer && $context && $data !== null) {
+            $responseData['data'] = self::$serializer->normalize($data, $context);
+        }
+
+        return new self($responseData);
+    }
+
+    /**
+     * Create paginated response with serialization support
+     */
+    public static function paginated(
+        array $items,
+        int $total,
+        int $page,
+        int $perPage,
+        ?SerializationContext $context = null,
+        string $message = 'Data retrieved successfully'
+    ): self {
+        // Serialize items if context is provided
+        $serializedItems = $items;
+        if (self::$serializer && $context) {
+            $serializedItems = array_map(
+                fn($item) => self::$serializer->normalize($item, $context),
+                $items
+            );
+        }
+
+        // Create flattened response structure
+        $responseData = [
+            'success' => true,
+            'message' => $message,
+            'data' => $serializedItems,
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'total_pages' => ceil($total / $perPage),
+            'has_next_page' => $page < ceil($total / $perPage),
+            'has_previous_page' => $page > 1
+        ];
+
+        return new self($responseData);
     }
 
     /**
      * Create created response (HTTP 201)
      */
-    public static function created(mixed $data = null, string $message = 'Created successfully'): self
-    {
-        return new self([
+    public static function created(
+        mixed $data = null,
+        string $message = 'Created successfully',
+        ?SerializationContext $context = null
+    ): self {
+        $responseData = [
             'success' => true,
             'message' => $message,
             'data' => $data ?? []
-        ], self::HTTP_CREATED);
+        ];
+
+        if (self::$serializer && $context && $data !== null) {
+            $responseData['data'] = self::$serializer->normalize($data, $context);
+        }
+
+        return new self($responseData, self::HTTP_CREATED);
     }
 
     /**
@@ -155,13 +221,23 @@ class Response extends JsonResponse
     public static function successWithMeta(
         array $data,
         array $meta,
-        string $message = 'Data retrieved successfully'
+        string $message = 'Data retrieved successfully',
+        ?SerializationContext $context = null
     ): self {
+        // Serialize data if context is provided
+        $serializedData = $data;
+        if (self::$serializer && $context) {
+            $serializedData = array_map(
+                fn($item) => self::$serializer->normalize($item, $context),
+                $data
+            );
+        }
+
         // Build response with metadata at root level
         $response = [
             'success' => true,
             'message' => $message,
-            'data' => $data
+            'data' => $serializedData
         ];
 
         // Merge all meta fields directly into the response (flattened)

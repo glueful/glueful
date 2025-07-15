@@ -16,6 +16,8 @@ use Glueful\Models\User;
 use Glueful\Http\RequestUserContext;
 use Glueful\Http\Response;
 use Glueful\Exceptions\ValidationException;
+use Glueful\Serialization\Serializer;
+use Glueful\Serialization\Context\SerializationContext;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -51,6 +53,10 @@ abstract class BaseController
      */
     protected RepositoryFactory $repositoryFactory;
 
+    /**
+     * @var Serializer Serializer instance for response serialization
+     */
+    protected Serializer $serializer;
 
     /**
      * @var User|null Current authenticated user
@@ -78,11 +84,13 @@ abstract class BaseController
      * @param RepositoryFactory|null $repositoryFactory Repository factory instance
      * @param AuthenticationManager|null $authManager Authentication manager
      * @param Request|null $request HTTP request
+     * @param Serializer|null $serializer Serializer instance
      */
     public function __construct(
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
-        ?Request $request = null
+        ?Request $request = null,
+        ?Serializer $serializer = null
     ) {
         // Initialize authentication system
         $this->authManager = $authManager ?? AuthBootstrap::getManager();
@@ -90,6 +98,8 @@ abstract class BaseController
         // Initialize repository factory
         $this->repositoryFactory = $repositoryFactory ?? new RepositoryFactory();
 
+        // Initialize serializer
+        $this->serializer = $serializer ?? container()->get(Serializer::class);
 
         // Set request - use provided request or get from container
         $this->request = $request ?? container()->get(Request::class);
@@ -168,9 +178,75 @@ abstract class BaseController
     protected function paginated(
         array $data,
         array $meta,
+        array $groups = [],
         string $message = 'Data retrieved successfully'
     ): Response {
-        return Response::successWithMeta($data, $meta, $message);
+        return $this->serializeWithMeta($data, $meta, $groups, $message);
+    }
+
+    /**
+     * Serialization Helper Methods
+     */
+
+    /**
+     * Create serialized response with groups
+     */
+    protected function serializeResponse(mixed $data, array $groups = [], string $message = 'Success'): Response
+    {
+        $context = SerializationContext::create();
+
+        if (!empty($groups)) {
+            $context->withGroups($groups);
+        }
+
+        return Response::success($data, $message, $context);
+    }
+
+
+    /**
+     * Create serialized created response
+     */
+    protected function serializeCreated(
+        mixed $data,
+        array $groups = [],
+        string $message = 'Created successfully'
+    ): Response {
+        $context = SerializationContext::create();
+
+        if (!empty($groups)) {
+            $context->withGroups($groups);
+        }
+
+        return Response::created($data, $message, $context);
+    }
+
+    /**
+     * Create response with custom serialization context
+     */
+    protected function serializeWithContext(
+        mixed $data,
+        SerializationContext $context,
+        string $message = 'Success'
+    ): Response {
+        return Response::success($data, $message, $context);
+    }
+
+    /**
+     * Create serialized response with metadata (flattened structure)
+     */
+    protected function serializeWithMeta(
+        array $data,
+        array $meta,
+        array $groups = [],
+        string $message = 'Data retrieved successfully'
+    ): Response {
+        $context = SerializationContext::create();
+
+        if (!empty($groups)) {
+            $context->withGroups($groups);
+        }
+
+        return Response::successWithMeta($data, $meta, $message, $context);
     }
 
     /**

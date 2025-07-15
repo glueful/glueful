@@ -18,6 +18,7 @@ use Glueful\DI\ServiceProviders\LockServiceProvider;
 use Glueful\DI\ServiceProviders\ExtensionServiceProvider;
 use Glueful\DI\ServiceProviders\ConfigServiceProvider;
 use Glueful\DI\ServiceProviders\ValidatorServiceProvider;
+use Glueful\DI\ServiceProviders\SerializerServiceProvider;
 
 /**
  * Container Bootstrap
@@ -52,6 +53,7 @@ class ContainerBootstrap
         $container->register(new ExtensionServiceProvider());
         $container->register(new ConfigServiceProvider());
         $container->register(new ValidatorServiceProvider());
+        $container->register(new SerializerServiceProvider());
 
         // Boot all providers
         $container->boot();

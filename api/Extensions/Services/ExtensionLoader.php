@@ -405,7 +405,8 @@ class ExtensionLoader implements ExtensionLoaderInterface
             if ($result['success']) {
                 $this->debugLog("Loaded {$result['constraints_loaded']} validation constraints for extension: {$name}");
             } else {
-                $this->debugLog("Failed to load validation constraints for extension {$name}: " . ($result['error'] ?? 'Unknown error'));
+                $error = $result['error'] ?? 'Unknown error';
+                $this->debugLog("Failed to load validation constraints for extension {$name}: " . $error);
             }
         } catch (\Exception $e) {
             $this->debugLog("Could not load validation constraints for {$name}: " . $e->getMessage());
