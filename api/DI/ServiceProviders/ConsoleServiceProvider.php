@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\ServiceTags;
 use Glueful\DI\Container;
 use Glueful\Console\Application;
 
@@ -20,23 +22,16 @@ use Glueful\Console\Application;
  */
 class ConsoleServiceProvider implements ServiceProviderInterface
 {
-    public function __construct(Container $container)
-    {
-        // Constructor parameter kept for compatibility with other service providers
-        unset($container);
-    }
-
     /**
-     * Register console services
-     *
-     * Registers Symfony Console Application and command classes
+     * Register console services in Symfony ContainerBuilder
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
         // Register Symfony Console Application
-        $container->singleton(Application::class, function (ContainerInterface $container) {
-            return new Application($container);
-        });
+        $container->register(Application::class)
+            ->setArguments([new Reference('service_container')])
+            ->setPublic(true)
+            ->addTag(ServiceTags::CONSOLE_COMMAND);
 
         // Register command classes
         $this->registerCommands($container);
@@ -47,7 +42,7 @@ class ConsoleServiceProvider implements ServiceProviderInterface
      *
      * Registers all command classes in the DI container
      */
-    private function registerCommands(ContainerInterface $container): void
+    private function registerCommands(ContainerBuilder $container): void
     {
         // Command classes (organized by functional groups)
         $commands = [
@@ -113,19 +108,43 @@ class ConsoleServiceProvider implements ServiceProviderInterface
             \Glueful\Console\Commands\Config\ValidateConfigCommand::class,
             \Glueful\Console\Commands\Config\GenerateDocsCommand::class,
             \Glueful\Console\Commands\Config\GenerateIDESupportCommand::class,
+            // Container management commands
+            \Glueful\Console\Commands\Container\ContainerDebugCommand::class,
+            \Glueful\Console\Commands\Container\ContainerCompileCommand::class,
+            \Glueful\Console\Commands\Container\ContainerValidateCommand::class,
         ];
 
-        // Register commands
+        // Register commands with tags for automatic discovery
         foreach ($commands as $commandClass) {
-            $container->singleton($commandClass);
+            $container->register($commandClass)
+                ->setPublic(true)
+                ->addTag(ServiceTags::CONSOLE_COMMAND);
         }
     }
 
     /**
-     * Boot console services
+     * Boot console services after container is built
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // Any post-registration initialization can go here
+    }
+
+    /**
+     * Get compiler passes for console services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [
+            // Console commands will be processed by TaggedServicePass
+        ];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'console';
     }
 }

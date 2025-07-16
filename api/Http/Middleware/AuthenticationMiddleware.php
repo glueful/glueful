@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Glueful\Auth\AuthenticationManager;
 use Glueful\Auth\AuthBootstrap;
 use Glueful\Auth\TokenManager;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 use Glueful\Exceptions\AuthenticationException;
 use Glueful\Events\Http\HttpAuthFailureEvent;
 use Glueful\Events\Http\HttpAuthSuccessEvent;
@@ -34,8 +34,8 @@ class AuthenticationMiddleware implements MiddlewareInterface
     /** @var array Optional provider names to try */
     private array $providerNames = [];
 
-    /** @var ContainerInterface|null DI Container */
-    private ?ContainerInterface $container;
+    /** @var Container|null DI Container */
+    private ?Container $container;
 
 
     /** @var LoggerInterface|null Framework logger for HTTP-level auth logging */
@@ -47,13 +47,13 @@ class AuthenticationMiddleware implements MiddlewareInterface
      * @param bool $requiresAdmin Whether to require admin privileges
      * @param AuthenticationManager|null $authManager Optional custom auth manager
      * @param array $providerNames Provider names to try in sequence
-     * @param ContainerInterface|null $container DI Container instance
+     * @param Container|null $container DI Container instance
      */
     public function __construct(
         bool $requiresAdmin = false,
         ?AuthenticationManager $authManager = null,
         array $providerNames = [],
-        ?ContainerInterface $container = null
+        ?Container $container = null
     ) {
         $this->container = $container ?? $this->getDefaultContainer();
         $this->requiresAdmin = $requiresAdmin;
@@ -278,14 +278,17 @@ class AuthenticationMiddleware implements MiddlewareInterface
     /**
      * Get default container safely
      *
-     * @return ContainerInterface|null
+     * @return Container|null
      */
-    private function getDefaultContainer(): ?ContainerInterface
+    private function getDefaultContainer(): ?Container
     {
         // Check if app() function exists (available when bootstrap is loaded)
-        if (function_exists('app')) {
-            // Let exceptions bubble up - container issues should be handled at application level
-            return app();
+        if (function_exists('container')) {
+            try {
+                return container();
+            } catch (\Exception) {
+                return null;
+            }
         }
 
         return null;

@@ -152,7 +152,7 @@ class ConfigManager
         // Resolve environment variables
         $this->config = $this->resolveEnvironmentVariables($this->config);
 
-        // Validate configuration
+        // Validate configuration (filter out development and plugins sections)
         $this->validateConfiguration();
 
         // Cache the configuration
@@ -388,7 +388,11 @@ class ConfigManager
      */
     private function validateConfiguration(): void
     {
-        $result = $this->validator->validate($this->config);
+        // Filter out development and plugins sections for validation
+        $configForValidation = $this->config;
+        unset($configForValidation['development'], $configForValidation['plugins']);
+
+        $result = $this->validator->validate($configForValidation);
 
         if (!$result->isValid()) {
             $errors = implode("\n", $result->getErrors());

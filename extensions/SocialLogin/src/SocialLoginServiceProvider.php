@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\SocialLogin;
 
-use Glueful\DI\Providers\ExtensionServiceProvider;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviders\BaseExtensionServiceProvider;
 use Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider;
 use Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider;
@@ -18,7 +17,7 @@ use Glueful\Auth\AuthBootstrap;
  * Registers all social authentication providers and related services
  * with the dependency injection container.
  */
-class SocialLoginServiceProvider extends ExtensionServiceProvider
+class SocialLoginServiceProvider extends BaseExtensionServiceProvider
 {
     /**
      * Get the extension name
@@ -53,73 +52,36 @@ class SocialLoginServiceProvider extends ExtensionServiceProvider
     /**
      * Register services in the container
      *
-     * @param ContainerInterface $container
      * @return void
      */
-    public function register(ContainerInterface $container): void
+    protected function registerExtensionServices(): void
     {
         // Register Google Auth Provider
-        $container->singleton(GoogleAuthProvider::class, function ($container) {
-            return new GoogleAuthProvider();
-        });
+        $this->singleton(GoogleAuthProvider::class);
 
         // Register Facebook Auth Provider
-        $container->singleton(FacebookAuthProvider::class, function ($container) {
-            return new FacebookAuthProvider();
-        });
+        $this->singleton(FacebookAuthProvider::class);
 
         // Register GitHub Auth Provider
-        $container->singleton(GithubAuthProvider::class, function ($container) {
-            return new GithubAuthProvider();
-        });
+        $this->singleton(GithubAuthProvider::class);
 
         // Register Apple Auth Provider
-        $container->singleton(AppleAuthProvider::class, function ($container) {
-            return new AppleAuthProvider();
-        });
+        $this->singleton(AppleAuthProvider::class);
 
         // Register a factory for creating providers based on name
-        $container->singleton('SocialLogin.ProviderFactory', function ($container) {
-            return function (string $providerName) use ($container) {
-                switch ($providerName) {
-                    case 'google':
-                        return $container->get(GoogleAuthProvider::class);
-                    case 'facebook':
-                        return $container->get(FacebookAuthProvider::class);
-                    case 'github':
-                        return $container->get(GithubAuthProvider::class);
-                    case 'apple':
-                        return $container->get(AppleAuthProvider::class);
-                    default:
-                        throw new \InvalidArgumentException("Unsupported social provider: {$providerName}");
-                }
-            };
-        });
+        $this->factory('SocialLogin.ProviderFactory', [self::class, 'createProviderFactory']);
 
         // Register social login configuration
-        $container->singleton('SocialLogin.Config', function ($container) {
-            $configPath = __DIR__ . '/config.php';
-            if (file_exists($configPath)) {
-                return require $configPath;
-            }
-
-            // Default configuration
-            return [
-                'enabled_providers' => ['google', 'facebook', 'github', 'apple'],
-                'auto_register' => true,
-                'link_accounts' => true,
-                'sync_profile' => true,
-            ];
-        });
+        $this->factory('SocialLogin.Config', [self::class, 'createConfig']);
     }
 
     /**
      * Boot services after all providers have been registered
      *
-     * @param ContainerInterface $container
+     * @param \Glueful\DI\Container $container
      * @return void
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(\Glueful\DI\Container $container): void
     {
         // Register providers with the authentication system
         $this->registerAuthProviders($container);
@@ -128,10 +90,10 @@ class SocialLoginServiceProvider extends ExtensionServiceProvider
     /**
      * Register social authentication providers with AuthBootstrap
      *
-     * @param ContainerInterface $container
+     * @param \Glueful\DI\Container $container
      * @return void
      */
-    private function registerAuthProviders(ContainerInterface $container): void
+    private function registerAuthProviders(\Glueful\DI\Container $container): void
     {
         try {
             // Get the authentication manager
@@ -156,5 +118,50 @@ class SocialLoginServiceProvider extends ExtensionServiceProvider
         } catch (\Exception $e) {
             error_log("Failed to register social auth providers: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Create provider factory
+     *
+     * @param \Glueful\DI\Container $container
+     * @return callable
+     */
+    public static function createProviderFactory(\Glueful\DI\Container $container): callable
+    {
+        return function (string $providerName) use ($container) {
+            switch ($providerName) {
+                case 'google':
+                    return $container->get(GoogleAuthProvider::class);
+                case 'facebook':
+                    return $container->get(FacebookAuthProvider::class);
+                case 'github':
+                    return $container->get(GithubAuthProvider::class);
+                case 'apple':
+                    return $container->get(AppleAuthProvider::class);
+                default:
+                    throw new \InvalidArgumentException("Unsupported social provider: {$providerName}");
+            }
+        };
+    }
+
+    /**
+     * Create configuration array
+     *
+     * @return array
+     */
+    public static function createConfig(): array
+    {
+        $configPath = __DIR__ . '/config.php';
+        if (file_exists($configPath)) {
+            return require $configPath;
+        }
+
+        // Default configuration
+        return [
+            'enabled_providers' => ['google', 'facebook', 'github', 'apple'],
+            'auto_register' => true,
+            'link_accounts' => true,
+            'sync_profile' => true,
+        ];
     }
 }

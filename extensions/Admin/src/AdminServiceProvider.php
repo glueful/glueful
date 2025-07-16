@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\Admin;
 
-use Glueful\DI\Providers\ExtensionServiceProvider;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviders\BaseExtensionServiceProvider;
 use Glueful\Extensions\Admin\AdminController;
 
 /**
@@ -13,7 +12,7 @@ use Glueful\Extensions\Admin\AdminController;
  *
  * Registers all services and controllers for the Admin extension
  */
-class AdminServiceProvider extends ExtensionServiceProvider
+class AdminServiceProvider extends BaseExtensionServiceProvider
 {
     /**
      * Get the extension name
@@ -42,11 +41,12 @@ class AdminServiceProvider extends ExtensionServiceProvider
     /**
      * Register services with the container
      */
-    public function register(ContainerInterface $container): void
+    protected function registerExtensionServices(): void
     {
         // Register Admin-specific controllers
         // AdminController is specific to the Admin extension
-        $this->bindController($container, AdminController::class);
+        $this->singleton(AdminController::class);
+
         // Note: The following controllers are already registered by ControllerServiceProvider:
         // - AuthController
         // - PermissionsController
@@ -57,17 +57,13 @@ class AdminServiceProvider extends ExtensionServiceProvider
 
         // Register any Admin-specific services here
         // Example:
-        // $this->bindService($container, AdminService::class, function($container) {
-        //     return new AdminService(
-        //         $container->get(Connection::class)
-        //     );
-        // }, true); // true for singleton
+        // $this->service(AdminService::class, AdminService::class, [$this->ref(Connection::class)]);
     }
 
     /**
      * Boot the extension
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(\Glueful\DI\Container $container): void
     {
         // Any boot logic that needs to run after all services are registered
         // For example, registering event listeners, etc.

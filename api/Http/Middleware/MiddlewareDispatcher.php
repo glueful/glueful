@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Exceptions\ExceptionHandler;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 use Glueful\Events\Http\RequestEvent;
 use Glueful\Events\Http\ResponseEvent;
 use Glueful\Events\Http\ExceptionEvent;
@@ -29,17 +29,17 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /** @var callable The final request handler to use if no middleware produces a response */
     private $fallbackHandler;
 
-    /** @var ContainerInterface|null DI Container */
-    private ?ContainerInterface $container;
+    /** @var Container|null DI Container */
+    private ?Container $container;
 
 
     /**
      * Create a new middleware dispatcher
      *
      * @param callable|null $fallbackHandler The fallback handler to use at the end of the middleware stack
-     * @param ContainerInterface|null $container DI Container instance
+     * @param Container|null $container DI Container instance
      */
-    public function __construct(?callable $fallbackHandler = null, ?ContainerInterface $container = null)
+    public function __construct(?callable $fallbackHandler = null, ?Container $container = null)
     {
         $this->container = $container ?? $this->getDefaultContainer();
 
@@ -241,15 +241,15 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /**
      * Get default container safely
      *
-     * @return ContainerInterface|null
+     * @return Container|null
      */
-    private function getDefaultContainer(): ?ContainerInterface
+    private function getDefaultContainer(): ?Container
     {
         // Check if app() function exists (available when bootstrap is loaded)
-        if (function_exists('app')) {
+        if (function_exists('container')) {
             try {
-                return app();
-            } catch (\Exception $e) {
+                return container();
+            } catch (\Exception) {
                 // Fall back to null if container is not available
                 return null;
             }

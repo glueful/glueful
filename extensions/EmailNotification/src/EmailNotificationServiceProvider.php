@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\EmailNotification;
 
-use Glueful\DI\Providers\ExtensionServiceProvider;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviders\BaseExtensionServiceProvider;
 use Glueful\Logging\LogManager;
 
 /**
@@ -13,7 +12,7 @@ use Glueful\Logging\LogManager;
  *
  * Registers all services for the EmailNotification extension
  */
-class EmailNotificationServiceProvider extends ExtensionServiceProvider
+class EmailNotificationServiceProvider extends BaseExtensionServiceProvider
 {
     /**
      * Get the extension name
@@ -42,33 +41,22 @@ class EmailNotificationServiceProvider extends ExtensionServiceProvider
     /**
      * Register services with the container
      */
-    public function register(ContainerInterface $container): void
+    protected function registerExtensionServices(): void
     {
         // Register the email notification provider
-        $container->singleton(EmailNotificationProvider::class, function ($container) {
-            $config = require __DIR__ . '/config.php';
-            return new EmailNotificationProvider($config);
-        });
+        $this->factory(EmailNotificationProvider::class, [self::class, 'createEmailNotificationProvider']);
 
         // Register the email channel
-        $container->bind(EmailChannel::class, function ($container) {
-            $config = require __DIR__ . '/config.php';
-            $formatter = $container->has(EmailFormatter::class)
-                ? $container->get(EmailFormatter::class)
-                : new EmailFormatter();
-            return new EmailChannel($config, $formatter);
-        });
+        $this->factory(EmailChannel::class, [self::class, 'createEmailChannel']);
 
         // Register the email formatter
-        $container->bind(EmailFormatter::class, function ($container) {
-            return new EmailFormatter();
-        });
+        $this->singleton(EmailFormatter::class);
     }
 
     /**
      * Boot the extension
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(\Glueful\DI\Container $container): void
     {
         // Register the email channel with the notification system if available
         if (class_exists(\Glueful\Notifications\Services\ChannelManager::class)) {
@@ -95,5 +83,28 @@ class EmailNotificationServiceProvider extends ExtensionServiceProvider
     {
         // No dependencies on other extensions
         return [];
+    }
+
+    /**
+     * Create email notification provider
+     *
+     * @return EmailNotificationProvider
+     */
+    public static function createEmailNotificationProvider(): EmailNotificationProvider
+    {
+        $config = require __DIR__ . '/config.php';
+        return new EmailNotificationProvider($config);
+    }
+
+    /**
+     * Create email channel
+     *
+     * @return EmailChannel
+     */
+    public static function createEmailChannel(): EmailChannel
+    {
+        $config = require __DIR__ . '/config.php';
+        $formatter = new EmailFormatter(); // Simple creation without container dependency
+        return new EmailChannel($config, $formatter);
     }
 }

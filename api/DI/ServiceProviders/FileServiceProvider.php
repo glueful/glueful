@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\Container;
 use Glueful\Services\FileManager;
 use Glueful\Services\FileFinder;
-use Psr\Log\LoggerInterface;
 
 /**
  * File Service Provider
@@ -21,61 +22,66 @@ class FileServiceProvider implements ServiceProviderInterface
     /**
      * Register file services with the container
      *
-     * @param ContainerInterface $container DI container
+     * @param ContainerBuilder $container DI container
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
         // Register FileManager service
-        $container->singleton(FileManager::class, function ($container) {
-            $logger = null;
-
-            // Try to get logger if available
-            try {
-                $logger = $container->get(LoggerInterface::class);
-            } catch (\Exception) {
-                // Logger not available, continue without it
-            }
-
-            // Get file manager configuration
-            $config = config('filesystem.file_manager', []);
-
-            return new FileManager($logger, $config);
-        });
+        $container->register(FileManager::class)
+            ->setFactory([$this, 'createFileManager'])
+            ->setArguments([new Reference('logger'), '%filesystem.file_manager%'])
+            ->setPublic(true);
 
         // Register FileFinder service
-        $container->singleton(FileFinder::class, function ($container) {
-            $logger = null;
+        $container->register(FileFinder::class)
+            ->setFactory([$this, 'createFileFinder'])
+            ->setArguments([new Reference('logger'), '%filesystem.file_finder%'])
+            ->setPublic(true);
 
-            // Try to get logger if available
-            try {
-                $logger = $container->get(LoggerInterface::class);
-            } catch (\Exception) {
-                // Logger not available, continue without it
-            }
-
-            // Get file finder configuration
-            $config = config('filesystem.file_finder', []);
-
-            return new FileFinder($logger, $config);
-        });
-
-        // Register aliases for easier access (following QueueServiceProvider pattern)
-        $container->singleton('file.manager', function ($container) {
-            return $container->get(FileManager::class);
-        });
-
-        $container->singleton('file.finder', function ($container) {
-            return $container->get(FileFinder::class);
-        });
+        // Register aliases for easier access
+        $container->setAlias('file.manager', FileManager::class);
+        $container->setAlias('file.finder', FileFinder::class);
     }
 
     /**
      * Boot method called after all services are registered
      *
-     * @param ContainerInterface $container DI container
+     * @param Container $container DI container
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // No additional boot logic needed for file services
+    }
+
+    /**
+     * Get compiler passes for file services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'file';
+    }
+
+    /**
+     * Factory method for creating FileManager
+     */
+    public static function createFileManager($logger, $config): FileManager
+    {
+        return new FileManager($logger, $config);
+    }
+
+    /**
+     * Factory method for creating FileFinder
+     */
+    public static function createFileFinder($logger, $config): FileFinder
+    {
+        return new FileFinder($logger, $config);
     }
 }

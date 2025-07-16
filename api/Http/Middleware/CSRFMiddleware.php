@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Glueful\Security\RandomStringGenerator;
 use Glueful\Cache\CacheStore;
 use Glueful\Exceptions\SecurityException;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 use Glueful\Events\Security\CSRFViolationEvent;
 use Glueful\Events\Event;
 
@@ -65,8 +65,8 @@ class CSRFMiddleware implements MiddlewareInterface
     /** @var bool Whether to use double-submit cookie pattern */
     private bool $useDoubleSubmit;
 
-    /** @var ContainerInterface|null DI Container */
-    private ?ContainerInterface $container;
+    /** @var Container|null DI Container */
+    private ?Container $container;
 
     /** @var bool Whether to enforce CSRF protection */
     private bool $enabled;
@@ -82,14 +82,14 @@ class CSRFMiddleware implements MiddlewareInterface
      * @param int $tokenLifetime Token lifetime in seconds
      * @param bool $useDoubleSubmit Whether to use double-submit cookie pattern
      * @param bool $enabled Whether CSRF protection is enabled
-     * @param ContainerInterface|null $container DI Container instance
+     * @param Container|null $container DI Container instance
      */
     public function __construct(
         array $exemptRoutes = [],
         int $tokenLifetime = self::DEFAULT_TOKEN_LIFETIME,
         bool $useDoubleSubmit = false,
         bool $enabled = true,
-        ?ContainerInterface $container = null,
+        ?Container $container = null,
         ?CacheStore $cache = null
     ) {
         $this->exemptRoutes = $this->normalizeRoutes($exemptRoutes);
@@ -435,12 +435,16 @@ class CSRFMiddleware implements MiddlewareInterface
     /**
      * Get default container safely
      *
-     * @return ContainerInterface|null
+     * @return Container|null
      */
-    private function getDefaultContainer(): ?ContainerInterface
+    private function getDefaultContainer(): ?Container
     {
-        if (function_exists('app')) {
-            return app();
+        if (function_exists('container')) {
+            try {
+                return container();
+            } catch (\Exception) {
+                return null;
+            }
         }
 
         return null;

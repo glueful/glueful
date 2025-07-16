@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Validation;
 
 use Glueful\Validation\ConstraintCompiler;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Psr\Container\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
 use ReflectionClass;
 use ReflectionProperty;

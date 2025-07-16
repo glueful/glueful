@@ -881,6 +881,45 @@ class ExtensionManager
     }
 
     // ============================================================================
+    // EXTENSION SERVICE REGISTRATION (FOR COMPILER PASSES)
+    // ============================================================================
+
+    /**
+     * Register an extension service (called by compiler passes)
+     *
+     * @param string $extensionName Extension name
+     * @param string $serviceId Service ID
+     * @param object $service Service instance
+     * @return void
+     */
+    public function registerExtensionService(string $extensionName, string $serviceId, object $service): void
+    {
+        $this->debugLog("Registering extension service '{$serviceId}' for extension '{$extensionName}'");
+
+        // This method is called by the ExtensionServicePass compiler pass
+        // to register services that are tagged with 'extension.service'
+        // The actual service registration is handled by the DI container
+        // This method is mainly for logging and tracking purposes
+    }
+
+    /**
+     * Register an extension provider (called by compiler passes)
+     *
+     * @param string $extensionName Extension name
+     * @param object $provider Provider instance
+     * @return void
+     */
+    public function registerExtensionProvider(string $extensionName, object $provider): void
+    {
+        $this->debugLog("Registering extension provider for extension '{$extensionName}'");
+
+        // This method is called by the ExtensionServicePass compiler pass
+        // to register providers that are tagged with 'extension.provider'
+        // The actual provider registration is handled by the DI container
+        // This method is mainly for logging and tracking purposes
+    }
+
+    // ============================================================================
     // PRIVATE HELPER METHODS
     // ============================================================================
 

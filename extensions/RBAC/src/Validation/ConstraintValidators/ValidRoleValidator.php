@@ -75,7 +75,7 @@ class ValidRoleValidator extends ConstraintValidator
             return is_numeric($value) && (int) $value > 0 && (int) $value <= 3;
         } else {
             // Name-based validation
-            return isset($simulatedRoles[$value]) && 
+            return isset($simulatedRoles[$value]) &&
                    ($simulatedRoles[$value] || !$constraint->activeOnly);
         }
     }

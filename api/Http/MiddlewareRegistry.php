@@ -11,7 +11,7 @@ use Glueful\Http\Middleware\RateLimiterMiddleware;
 use Glueful\Http\Middleware\SecurityHeadersMiddleware;
 use Glueful\Http\Middleware\MemoryTrackingMiddleware;
 use Glueful\Http\Middleware\EdgeCacheMiddleware;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 
 /**
  * Improved Middleware Registry
@@ -23,18 +23,18 @@ use Glueful\DI\Interfaces\ContainerInterface;
 class MiddlewareRegistry
 {
     private static bool $registered = false;
-    private static ?ContainerInterface $container = null;
+    private static ?Container $container = null;
     private static array $registeredClasses = [];
 
     /**
      * Register middleware from configuration with duplication prevention
      *
-     * @param ContainerInterface|null $container DI container
+     * @param Container|null $container DI container
      * @param bool $replaceManualRegistration Whether to replace manual registrations
      * @return void
      */
     public static function registerFromConfig(
-        ?ContainerInterface $container = null,
+        ?Container $container = null,
         bool $replaceManualRegistration = true
     ): void {
         if (self::$registered) {
@@ -274,13 +274,13 @@ class MiddlewareRegistry
     /**
      * Get default DI container
      *
-     * @return ContainerInterface|null
+     * @return Container|null
      */
-    private static function getDefaultContainer(): ?ContainerInterface
+    private static function getDefaultContainer(): ?Container
     {
-        if (function_exists('app')) {
+        if (function_exists('container')) {
             try {
-                return app();
+                return container();
             } catch (\Exception) {
                 return null;
             }

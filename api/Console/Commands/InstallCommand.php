@@ -5,7 +5,7 @@ namespace Glueful\Console\Commands;
 use Glueful\Console\BaseCommand;
 use Glueful\Security\RandomStringGenerator;
 use Glueful\Services\HealthService;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -29,7 +29,7 @@ use Symfony\Component\Console\Question\ConfirmationQuestion;
 )]
 class InstallCommand extends BaseCommand
 {
-    protected ContainerInterface $installContainer;
+    protected Container $installContainer;
 
     public function __construct()
     {

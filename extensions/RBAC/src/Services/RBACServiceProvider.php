@@ -2,8 +2,8 @@
 
 namespace Glueful\Extensions\RBAC\Services;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviders\BaseExtensionServiceProvider;
+use Glueful\DI\Container;
 use Glueful\Extensions\RBAC\RBACPermissionProvider;
 use Glueful\Extensions\RBAC\Repositories\RoleRepository;
 use Glueful\Extensions\RBAC\Repositories\PermissionRepository;
@@ -25,90 +25,74 @@ use Glueful\Extensions\RBAC\Services\AuditService;
  * - RBAC services
  * - Middleware components
  */
-class RBACServiceProvider implements ServiceProviderInterface
+class RBACServiceProvider extends BaseExtensionServiceProvider
 {
     /**
-     * Register services with the container
+     * Register extension services using abstraction methods
      */
-    public function register(ContainerInterface $container): void
+    protected function registerExtensionServices(): void
     {
         // Register repositories
-        $container->bind('rbac.repository.role', function () {
-            return new RoleRepository();
-        });
-
-        $container->bind('rbac.repository.permission', function () {
-            return new PermissionRepository();
-        });
-
-        $container->bind('rbac.repository.user_role', function () {
-            return new UserRoleRepository();
-        });
-
-        $container->bind('rbac.repository.user_permission', function () {
-            return new UserPermissionRepository();
-        });
-
-        $container->bind('rbac.repository.role_permission', function () {
-            return new RolePermissionRepository();
-        });
+        $this->singleton('rbac.repository.role', RoleRepository::class);
+        $this->singleton('rbac.repository.permission', PermissionRepository::class);
+        $this->singleton('rbac.repository.user_role', UserRoleRepository::class);
+        $this->singleton('rbac.repository.user_permission', UserPermissionRepository::class);
+        $this->singleton('rbac.repository.role_permission', RolePermissionRepository::class);
 
         // Register permission provider
-        $container->bind('rbac.permission_provider', function () {
-            return new RBACPermissionProvider();
-        });
+        $this->singleton('rbac.permission_provider', RBACPermissionProvider::class);
 
         // Register RBAC services
-        $container->bind('rbac.role_service', function ($container) {
-            return new RoleService(
-                $container->get('rbac.repository.role'),
-                $container->get('rbac.repository.user_role')
-            );
-        });
+        $this->service('rbac.role_service', RoleService::class, [
+            $this->ref('rbac.repository.role'),
+            $this->ref('rbac.repository.user_role')
+        ]);
 
-        $container->bind('rbac.permission_service', function ($container) {
-            return new PermissionAssignmentService(
-                $container->get('rbac.repository.permission'),
-                $container->get('rbac.repository.user_permission'),
-                $container->get('rbac.repository.role'),
-                $container->get('rbac.repository.user_role'),
-                $container->get('rbac.repository.role_permission')
-            );
-        });
+        $this->service('rbac.permission_service', PermissionAssignmentService::class, [
+            $this->ref('rbac.repository.permission'),
+            $this->ref('rbac.repository.user_permission'),
+            $this->ref('rbac.repository.role'),
+            $this->ref('rbac.repository.user_role'),
+            $this->ref('rbac.repository.role_permission')
+        ]);
 
         // Register utility services
-        $container->bind('rbac.audit_service', function () {
-            return new AuditService();
-        });
+        $this->singleton('rbac.audit_service', AuditService::class);
 
         // Register controllers
-        $container->bind('Glueful\\Extensions\\RBAC\\Controllers\\PermissionController', function ($container) {
-            return new \Glueful\Extensions\RBAC\Controllers\PermissionController(
-                $container->get('rbac.permission_service'),
-                $container->get('rbac.repository.permission')
-            );
-        });
+        $this->service(
+            'Glueful\\Extensions\\RBAC\\Controllers\\PermissionController',
+            \Glueful\Extensions\RBAC\Controllers\PermissionController::class,
+            [
+                $this->ref('rbac.permission_service'),
+                $this->ref('rbac.repository.permission')
+            ]
+        );
 
-        $container->bind('Glueful\\Extensions\\RBAC\\Controllers\\RoleController', function ($container) {
-            return new \Glueful\Extensions\RBAC\Controllers\RoleController(
-                $container->get('rbac.role_service'),
-                $container->get('rbac.repository.role')
-            );
-        });
+        $this->service(
+            'Glueful\\Extensions\\RBAC\\Controllers\\RoleController',
+            \Glueful\Extensions\RBAC\Controllers\RoleController::class,
+            [
+                $this->ref('rbac.role_service'),
+                $this->ref('rbac.repository.role')
+            ]
+        );
 
-        $container->bind('Glueful\\Extensions\\RBAC\\Controllers\\UserRoleController', function ($container) {
-            return new \Glueful\Extensions\RBAC\Controllers\UserRoleController(
-                $container->get('rbac.role_service'),
-                $container->get('rbac.permission_service'),
-                $container->get('rbac.repository.user_role')
-            );
-        });
+        $this->service(
+            'Glueful\\Extensions\\RBAC\\Controllers\\UserRoleController',
+            \Glueful\Extensions\RBAC\Controllers\UserRoleController::class,
+            [
+                $this->ref('rbac.role_service'),
+                $this->ref('rbac.permission_service'),
+                $this->ref('rbac.repository.user_role')
+            ]
+        );
     }
 
     /**
      * Boot services after registration
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         try {
             // Get permission provider

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Glueful\DI\Container;
 use Glueful\Security\SecureSerializer;
 
@@ -19,35 +19,47 @@ use Glueful\Security\SecureSerializer;
  */
 class SecurityServiceProvider implements ServiceProviderInterface
 {
-    public function __construct(Container $container)
-    {
-        unset($container); // Container reference not needed for this provider
-    }
-
     /**
-     * Register security services
+     * Register security services in Symfony ContainerBuilder
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
         // Register SecureSerializer instances for different use cases
-        $container->singleton('serializer.cache', function () {
-            return SecureSerializer::forCache();
-        });
+        $container->register('serializer.cache', SecureSerializer::class)
+            ->setFactory([SecureSerializer::class, 'forCache'])
+            ->setPublic(true);
 
-        $container->singleton('serializer.queue', function () {
-            return SecureSerializer::forQueue();
-        });
+        $container->register('serializer.queue', SecureSerializer::class)
+            ->setFactory([SecureSerializer::class, 'forQueue'])
+            ->setPublic(true);
 
-        $container->singleton(SecureSerializer::class, function () {
-            return new SecureSerializer();
-        });
+        $container->register(SecureSerializer::class)
+            ->setPublic(true);
     }
 
     /**
-     * Boot the service provider
+     * Boot security services after container is built
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // Nothing to boot
+    }
+
+    /**
+     * Get compiler passes for security services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [
+            // Security services don't need custom compiler passes
+        ];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'security';
     }
 }

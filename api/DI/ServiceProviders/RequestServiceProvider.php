@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
 use Glueful\DI\Container;
 use Glueful\Http\RequestContext;
 use Glueful\Http\SessionContext;
@@ -23,45 +24,51 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 class RequestServiceProvider implements ServiceProviderInterface
 {
-    private Container $container;
-
-    public function __construct(Container $container)
-    {
-        $this->container = $container;
-    }
-
     /**
      * Register request services
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
         // Register PSR-7 ServerRequest
-        $container->singleton(ServerRequestInterface::class, function () {
-            return ServerRequestFactory::fromGlobals();
-        });
+        $container->register(ServerRequestInterface::class)
+            ->setFactory([ServerRequestFactory::class, 'fromGlobals'])
+            ->setPublic(true);
 
         // Register RequestContext
-        $container->singleton(RequestContext::class, function ($container) {
-            $request = $container->get(ServerRequestInterface::class);
-            return new RequestContext($request);
-        });
+        $container->register(RequestContext::class)
+            ->setArguments([new Reference(ServerRequestInterface::class)])
+            ->setPublic(true);
 
         // Register SessionContext
-        $container->singleton(SessionContext::class, function () {
-            return new SessionContext();
-        });
+        $container->register(SessionContext::class)
+            ->setPublic(true);
 
         // Register EnvironmentContext
-        $container->singleton(EnvironmentContext::class, function () {
-            return new EnvironmentContext();
-        });
+        $container->register(EnvironmentContext::class)
+            ->setPublic(true);
     }
 
     /**
      * Boot the service provider
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // Nothing to boot
+    }
+
+    /**
+     * Get compiler passes for request services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'request';
     }
 }

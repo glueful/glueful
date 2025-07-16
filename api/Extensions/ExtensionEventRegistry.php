@@ -6,7 +6,7 @@ namespace Glueful\Extensions;
 
 use Glueful\Extensions\Contracts\EventSubscriberInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
-use Glueful\Logging\LogManager;
+use Psr\Log\LoggerInterface;
 
 /**
  * Extension Event Registry
@@ -20,12 +20,12 @@ use Glueful\Logging\LogManager;
 class ExtensionEventRegistry
 {
     private EventDispatcherInterface $eventDispatcher;
-    private ?LogManager $logger;
+    private ?LoggerInterface $logger;
     private array $registeredExtensions = [];
 
     public function __construct(
         EventDispatcherInterface $eventDispatcher,
-        ?LogManager $logger = null
+        ?LoggerInterface $logger = null
     ) {
         $this->eventDispatcher = $eventDispatcher;
         $this->logger = $logger;

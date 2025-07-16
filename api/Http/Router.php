@@ -671,11 +671,6 @@ class Router
             $dispatcher->pipe($middleware);
         }
 
-        // Update request in container for middleware to share state
-        if ($container) {
-            $container->instance(Request::class, $request);
-        }
-
         // Process the request through the middleware pipeline
         $response = $dispatcher->handle($request);
 

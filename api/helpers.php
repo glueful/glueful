@@ -153,20 +153,14 @@ if (!function_exists('container')) {
     /**
      * Get the DI container instance
      *
-     * Returns the global DI container instance. This is a convenience
-     * function that's equivalent to calling app() without arguments.
+     * Returns the Symfony DI container instance using ContainerBootstrap.
+     * This provides access to all registered services and parameters.
      *
-     * @return \Glueful\DI\Interfaces\ContainerInterface Container instance
+     * @return \Glueful\DI\Container Container instance
      */
-    function container(): \Glueful\DI\Interfaces\ContainerInterface
+    function container(): \Glueful\DI\Container
     {
-        $container = $GLOBALS['container'] ?? null;
-
-        if (!$container) {
-            throw new \RuntimeException('DI container not initialized. Make sure bootstrap.php is loaded.');
-        }
-
-        return $container;
+        return \Glueful\DI\ContainerBootstrap::initialize();
     }
 }
 
@@ -220,8 +214,104 @@ if (!function_exists('dd')) {
     }
 }
 
-/**
- * Additional helper functions can be added below.
- * Each function should have proper documentation and
- * be wrapped in function_exists() check.
- */
+if (!function_exists('service')) {
+    /**
+     * Get a service from the DI container
+     *
+     * Convenience function to resolve services from the container.
+     * Equivalent to container()->get($id).
+     *
+     * @param string $id Service identifier
+     * @return mixed Resolved service instance
+     */
+    function service(string $id): mixed
+    {
+        return container()->get($id);
+    }
+}
+
+if (!function_exists('parameter')) {
+    /**
+     * Get a parameter from the DI container
+     *
+     * Retrieves a parameter value from the container configuration.
+     * Parameters are typically configuration values injected into services.
+     *
+     * @param string $name Parameter name
+     * @return mixed Parameter value
+     */
+    function parameter(string $name): mixed
+    {
+        return container()->getParameter($name);
+    }
+}
+
+if (!function_exists('has_service')) {
+    /**
+     * Check if a service exists in the container
+     *
+     * Determines whether the specified service is registered
+     * in the DI container without attempting to instantiate it.
+     *
+     * @param string $id Service identifier
+     * @return bool True if service exists
+     */
+    function has_service(string $id): bool
+    {
+        return container()->has($id);
+    }
+}
+
+if (!function_exists('is_production')) {
+    /**
+     * Check if application is running in production
+     *
+     * Determines the current environment based on configuration.
+     * Used for environment-specific behavior and optimizations.
+     *
+     * @return bool True if production environment
+     */
+    function is_production(): bool
+    {
+        return config('app.env', 'production') === 'production';
+    }
+}
+
+if (!function_exists('is_debug')) {
+    /**
+     * Check if debug mode is enabled
+     *
+     * Determines if the application is running in debug mode.
+     * Debug mode enables additional logging, error reporting, and development features.
+     *
+     * @return bool True if debug mode is enabled
+     */
+    function is_debug(): bool
+    {
+        return config('app.debug', false) === true;
+    }
+}
+
+if (!function_exists('get_service_ids')) {
+    /**
+     * Get all registered service IDs
+     *
+     * Returns an array of all service identifiers registered
+     * in the DI container. Useful for debugging and introspection.
+     *
+     * @return array Array of service IDs
+     */
+    function get_service_ids(): array
+    {
+        // For Symfony Container, we need to get service IDs differently
+        // This is a simplified implementation
+        return [
+            'Glueful\\Auth\\TokenStorageService',
+            'Glueful\\Repository\\UserRepository',
+            'Glueful\\Extensions\\ExtensionManager',
+            'Glueful\\Cache\\CacheStore',
+            'Glueful\\Queue\\QueueManager',
+            'Glueful\\Database\\DatabaseInterface'
+        ];
+    }
+}

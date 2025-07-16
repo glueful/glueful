@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 use Glueful\Exceptions\RateLimitExceededException;
 use Glueful\Events\Auth\RateLimitExceededEvent;
 use Glueful\Events\Event;
@@ -48,8 +48,8 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var bool Whether to enable distributed rate limiting */
     private bool $enableDistributed;
 
-    /** @var ContainerInterface|null DI Container */
-    private ?ContainerInterface $container;
+    /** @var Container|null DI Container */
+    private ?Container $container;
 
 
     /**
@@ -60,7 +60,7 @@ class RateLimiterMiddleware implements MiddlewareInterface
      * @param string $type Rate limiter type (ip, user, endpoint)
      * @param bool $useAdaptiveLimiter Whether to use adaptive rate limiting
      * @param bool $enableDistributed Whether to enable distributed rate limiting
-     * @param ContainerInterface|null $container DI Container instance
+     * @param Container|null $container DI Container instance
      */
     public function __construct(
         int $maxAttempts = 60,
@@ -68,7 +68,7 @@ class RateLimiterMiddleware implements MiddlewareInterface
         string $type = 'ip',
         ?bool $useAdaptiveLimiter = null,
         ?bool $enableDistributed = null,
-        ?ContainerInterface $container = null
+        ?Container $container = null
     ) {
         $this->container = $container ?? $this->getDefaultContainer();
         $this->maxAttempts = $maxAttempts;
@@ -248,15 +248,15 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /**
      * Get default container safely
      *
-     * @return ContainerInterface|null
+     * @return Container|null
      */
-    private function getDefaultContainer(): ?ContainerInterface
+    private function getDefaultContainer(): ?Container
     {
         // Check if app() function exists (available when bootstrap is loaded)
-        if (function_exists('app')) {
+        if (function_exists('container')) {
             try {
-                return app();
-            } catch (\Exception $e) {
+                return container();
+            } catch (\Exception) {
                 // In test environment or when container isn't initialized, return null
                 // This allows the middleware to work without DI container
                 return null;

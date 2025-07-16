@@ -7,7 +7,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Console\Helper\ProgressBar;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 
 /**
  * Glueful Console Command Base Class
@@ -22,8 +22,8 @@ use Glueful\DI\Interfaces\ContainerInterface;
  */
 abstract class BaseCommand extends Command
 {
-    /** @var ContainerInterface DI Container */
-    protected ContainerInterface $container;
+    /** @var Container DI Container */
+    protected Container $container;
 
     /** @var SymfonyStyle Enhanced output formatter */
     protected SymfonyStyle $io;
@@ -38,15 +38,15 @@ abstract class BaseCommand extends Command
      * Initialize Command
      *
      * Sets up command with DI container:
-     * - Resolves container from global app
+     * - Resolves container from global container function
      * - Configures command properties
      * - Calls parent constructor
      *
-     * @param ContainerInterface|null $container DI Container instance
+     * @param Container|null $container DI Container instance
      */
-    public function __construct(?ContainerInterface $container = null)
+    public function __construct(?Container $container = null)
     {
-        $this->container = $container ?? app();
+        $this->container = $container ?? container();
         parent::__construct();
     }
 
@@ -77,9 +77,9 @@ abstract class BaseCommand extends Command
      * - Allows access to application services
      * - Maintains container lifecycle
      *
-     * @return ContainerInterface
+     * @return Container
      */
-    protected function getContainer(): ContainerInterface
+    protected function getContainer(): Container
     {
         return $this->container;
     }

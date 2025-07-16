@@ -4,82 +4,88 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
-use Glueful\Extensions\ExtensionManager;
-use Glueful\Extensions\Services\ExtensionLoader;
-use Glueful\Extensions\Services\ExtensionConfig;
-use Glueful\Extensions\Services\ExtensionCatalog;
-use Glueful\Extensions\Services\ExtensionValidator;
-use Glueful\Extensions\Services\Interfaces\ExtensionLoaderInterface;
-use Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface;
-use Glueful\Extensions\Services\Interfaces\ExtensionCatalogInterface;
-use Glueful\Extensions\Services\Interfaces\ExtensionValidatorInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\ServiceTags;
+use Glueful\DI\Container;
 
 /**
  * Extension Service Provider
- *
- * Registers all extension-related services in the DI container
+ * Uses Symfony DI and tagged services
  */
 class ExtensionServiceProvider implements ServiceProviderInterface
 {
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
-        // Register helper service implementations
-        $container->singleton(ExtensionLoaderInterface::class, function (ContainerInterface $container) {
-            $loader = new ExtensionLoader(
-                $container->get(\Glueful\Services\FileFinder::class),
-                $container->get(\Glueful\Services\FileManager::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
+        // Register ExtensionLoader
+        $container->register(\Glueful\Extensions\Services\ExtensionLoader::class)
+            ->setArguments([
+                new Reference(\Glueful\Services\FileFinder::class),
+                new Reference(\Glueful\Services\FileManager::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true)
+            ->addTag(ServiceTags::EXTENSION_SERVICE, ['extension' => 'core']);
 
-            // Set the Composer ClassLoader like current system
-            $classLoader = null;
-            if (class_exists('\Composer\Autoload\ClassLoader')) {
-                // Try to get from vendor/autoload.php global
-                foreach (get_included_files() as $file) {
-                    if (str_ends_with($file, 'vendor/autoload.php')) {
-                        $classLoader = require $file;
-                        break;
-                    }
-                }
-            }
+        // Register ExtensionConfig
+        $container->register(\Glueful\Extensions\Services\ExtensionConfig::class)
+            ->setPublic(true)
+            ->addTag(ServiceTags::EXTENSION_SERVICE, ['extension' => 'core']);
 
-            if ($classLoader) {
-                $loader->setClassLoader($classLoader);
-            }
+        // Register ExtensionCatalog
+        $container->register(\Glueful\Extensions\Services\ExtensionCatalog::class)
+            ->setPublic(true)
+            ->addTag(ServiceTags::EXTENSION_SERVICE, ['extension' => 'core']);
 
-            return $loader;
-        });
-        $container->singleton(ExtensionConfigInterface::class, ExtensionConfig::class);
-        $container->singleton(ExtensionCatalogInterface::class, ExtensionCatalog::class);
-        $container->singleton(ExtensionValidatorInterface::class, ExtensionValidator::class);
+        // Register ExtensionValidator
+        $container->register(\Glueful\Extensions\Services\ExtensionValidator::class)
+            ->setPublic(true)
+            ->addTag(ServiceTags::EXTENSION_SERVICE, ['extension' => 'core']);
 
-        // Register concrete implementations as well for direct injection
-        $container->singleton(ExtensionLoader::class);
-        $container->singleton(ExtensionConfig::class);
-        $container->singleton(ExtensionCatalog::class);
-        $container->singleton(ExtensionValidator::class);
+        // Register interface bindings
+        $container->setAlias(
+            \Glueful\Extensions\Services\Interfaces\ExtensionLoaderInterface::class,
+            \Glueful\Extensions\Services\ExtensionLoader::class
+        );
+        $container->setAlias(
+            \Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface::class,
+            \Glueful\Extensions\Services\ExtensionConfig::class
+        );
+        $container->setAlias(
+            \Glueful\Extensions\Services\Interfaces\ExtensionCatalogInterface::class,
+            \Glueful\Extensions\Services\ExtensionCatalog::class
+        );
+        $container->setAlias(
+            \Glueful\Extensions\Services\Interfaces\ExtensionValidatorInterface::class,
+            \Glueful\Extensions\Services\ExtensionValidator::class
+        );
 
         // Register the main ExtensionManager facade
-        $container->singleton(ExtensionManager::class, function (ContainerInterface $container) {
-            return new ExtensionManager(
-                $container->get(ExtensionLoaderInterface::class),
-                $container->get(ExtensionConfigInterface::class),
-                $container->get(ExtensionCatalogInterface::class),
-                $container->get(ExtensionValidatorInterface::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
-        });
+        $container->register('extension.manager', \Glueful\Extensions\ExtensionManager::class)
+            ->setArguments([
+                new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionLoaderInterface::class),
+                new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface::class),
+                new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionCatalogInterface::class),
+                new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionValidatorInterface::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
 
-        // Register global alias for easy access
-        $container->alias('extensions', ExtensionManager::class);
+        // Register class alias
+        $container->setAlias(\Glueful\Extensions\ExtensionManager::class, 'extension.manager')
+            ->setPublic(true);
+
+        // Register alias for easy access
+        $container->setAlias('extensions', 'extension.manager')
+            ->setPublic(true);
     }
 
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // Initialize the extension system after all services are registered
-        $extensionManager = $container->get(ExtensionManager::class);
+        $extensionManager = $container->get('extension.manager');
 
         // Set up composer class loader if available
         $classLoaders = \Composer\Autoload\ClassLoader::getRegisteredLoaders();
@@ -94,10 +100,22 @@ class ExtensionServiceProvider implements ServiceProviderInterface
             $extensionManager->loadEnabledExtensions();
         } catch (\Exception $e) {
             // Log error but don't fail the boot process
-            if ($container->has(\Psr\Log\LoggerInterface::class)) {
-                $logger = $container->get(\Psr\Log\LoggerInterface::class);
+            if ($container->has('logger')) {
+                $logger = $container->get('logger');
                 $logger->error('Failed to load enabled extensions: ' . $e->getMessage());
             }
         }
+    }
+
+    public function getCompilerPasses(): array
+    {
+        return [
+            // Extension services will be processed by ExtensionServicePass
+        ];
+    }
+
+    public function getName(): string
+    {
+        return 'extensions';
     }
 }

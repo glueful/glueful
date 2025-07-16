@@ -4,44 +4,31 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\Container;
 use Glueful\Lock\LockManager;
 use Glueful\Lock\LockManagerInterface;
 use Glueful\Lock\Store\RedisLockStore;
 use Glueful\Lock\Store\DatabaseLockStore;
 use Glueful\Lock\Store\FileLockStore;
 use Glueful\Database\DatabaseInterface;
-use Psr\Log\LoggerInterface;
 
 class LockServiceProvider implements ServiceProviderInterface
 {
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
-        $container->singleton(LockManagerInterface::class, function ($container) {
-            $config = config('lock', []);
-            $logger = $container->has(LoggerInterface::class) ? $container->get(LoggerInterface::class) : null;
-
-            $storeType = $config['default'] ?? 'file';
-            $storeConfig = $config['stores'][$storeType] ?? [];
-
-            $store = match ($storeType) {
-                'redis' => $this->createRedisStore($container, $storeConfig),
-                'database' => $this->createDatabaseStore($container, $storeConfig),
-                'file' => $this->createFileStore($storeConfig),
-                default => throw new \InvalidArgumentException("Unknown lock store type: {$storeType}")
-            };
-
-            $prefix = $config['prefix'] ?? 'glueful_lock_';
-
-            return new LockManager($store, $logger, $prefix);
-        });
+        $container->register(LockManagerInterface::class)
+            ->setFactory([$this, 'createLockManager'])
+            ->setArguments([new Reference('service_container')])
+            ->setPublic(true);
 
         // Alias for convenience
-        $container->alias('lock', LockManagerInterface::class);
+        $container->setAlias('lock', LockManagerInterface::class);
     }
 
-    private function createRedisStore($container, array $config): RedisLockStore
+    protected static function createRedisStore($container, array $config): RedisLockStore
     {
         if (!$container->has(\Redis::class)) {
             throw new \RuntimeException('Redis service not found in container. Please ensure Redis is configured.');
@@ -55,7 +42,7 @@ class LockServiceProvider implements ServiceProviderInterface
         ]);
     }
 
-    private function createDatabaseStore($container, array $config): DatabaseLockStore
+    protected static function createDatabaseStore($container, array $config): DatabaseLockStore
     {
         if (!$container->has(DatabaseInterface::class)) {
             throw new \RuntimeException('Database service not found in container.');
@@ -71,7 +58,7 @@ class LockServiceProvider implements ServiceProviderInterface
         ]);
     }
 
-    private function createFileStore(array $config): FileLockStore
+    protected static function createFileStore(array $config): FileLockStore
     {
         $path = $config['path'] ?? null;
 
@@ -87,7 +74,7 @@ class LockServiceProvider implements ServiceProviderInterface
         ]);
     }
 
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // Create locks directory if using file store
         $config = config('lock', []);
@@ -105,5 +92,44 @@ class LockServiceProvider implements ServiceProviderInterface
                 }
             }
         }
+    }
+
+    /**
+     * Get compiler passes for lock services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'lock';
+    }
+
+    /**
+     * Factory method for creating LockManager
+     */
+    public static function createLockManager($container): LockManagerInterface
+    {
+        $config = config('lock', []);
+        $logger = $container->has('logger') ? $container->get('logger') : null;
+
+        $storeType = $config['default'] ?? 'file';
+        $storeConfig = $config['stores'][$storeType] ?? [];
+
+        $store = match ($storeType) {
+            'redis' => static::createRedisStore($container, $storeConfig),
+            'database' => static::createDatabaseStore($container, $storeConfig),
+            'file' => static::createFileStore($storeConfig),
+            default => throw new \InvalidArgumentException("Unknown lock store type: {$storeType}")
+        };
+
+        $prefix = $config['prefix'] ?? 'glueful_lock_';
+
+        return new LockManager($store, $logger, $prefix);
     }
 }

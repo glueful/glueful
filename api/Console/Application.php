@@ -4,7 +4,7 @@ namespace Glueful\Console;
 
 use Symfony\Component\Console\Application as BaseApplication;
 use Symfony\Component\Console\Command\Command;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 
 /**
  * Glueful Symfony Console Application
@@ -20,8 +20,8 @@ use Glueful\DI\Interfaces\ContainerInterface;
  */
 class Application extends BaseApplication
 {
-    /** @var ContainerInterface DI Container */
-    protected ContainerInterface $container;
+    /** @var Container DI Container */
+    protected Container $container;
 
     /** @var array<string> List of command classes */
     protected array $commands = [
@@ -87,6 +87,10 @@ class Application extends BaseApplication
         \Glueful\Console\Commands\Config\ValidateConfigCommand::class,
         \Glueful\Console\Commands\Config\GenerateDocsCommand::class,
         \Glueful\Console\Commands\Config\GenerateIDESupportCommand::class,
+        // Container management commands
+        \Glueful\Console\Commands\Container\ContainerDebugCommand::class,
+        \Glueful\Console\Commands\Container\ContainerCompileCommand::class,
+        \Glueful\Console\Commands\Container\ContainerValidateCommand::class,
     ];
 
     /**
@@ -98,10 +102,10 @@ class Application extends BaseApplication
      * - Registers available commands
      * - Sets up enhanced help system
      *
-     * @param ContainerInterface $container DI Container instance
+     * @param Container $container DI Container instance
      * @param string $version Application version
      */
-    public function __construct(ContainerInterface $container, string $version = '1.0.0')
+    public function __construct(Container $container, string $version = '1.0.0')
     {
         parent::__construct('Glueful CLI', $version);
 
@@ -165,9 +169,9 @@ class Application extends BaseApplication
      * - Enables dependency injection
      * - Maintains container lifecycle
      *
-     * @return ContainerInterface
+     * @return Container
      */
-    public function getContainer(): ContainerInterface
+    public function getContainer(): Container
     {
         return $this->container;
     }

@@ -4,7 +4,7 @@ namespace Glueful\Console\Commands\Security;
 
 use Glueful\Console\BaseCommand;
 use Glueful\Security\SecurityManager;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\Container;
 
 /**
  * Base Security Command
@@ -14,9 +14,9 @@ use Glueful\DI\Interfaces\ContainerInterface;
  */
 abstract class BaseSecurityCommand extends BaseCommand
 {
-    protected ContainerInterface $container;
+    protected Container $container;
 
-    public function __construct(?ContainerInterface $container = null)
+    public function __construct(?Container $container = null)
     {
         parent::__construct();
         $this->container = $container ?? container();

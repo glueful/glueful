@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ServiceProviderInterface;
-use Glueful\DI\Interfaces\ContainerInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\ServiceTags;
+use Glueful\DI\Container;
 use Glueful\Events\Listeners\CacheInvalidationListener;
 use Glueful\Events\Listeners\SecurityMonitoringListener;
 use Glueful\Events\Listeners\PerformanceMonitoringListener;
@@ -28,18 +32,18 @@ class EventServiceProvider implements ServiceProviderInterface
     /**
      * Register services in the container
      *
-     * @param ContainerInterface $container
+     * @param ContainerBuilder $container
      * @return void
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
-        // Register Symfony EventDispatcher as singleton
-        $container->singleton(EventDispatcherInterface::class, function () {
-            return new EventDispatcher();
-        });
+        // Register Symfony EventDispatcher
+        $container->register(EventDispatcherInterface::class, EventDispatcher::class)
+            ->setPublic(true)
+            ->addTag(ServiceTags::EVENT_SUBSCRIBER);
 
         // Register alias for contracts interface
-        $container->alias(ContractsEventDispatcherInterface::class, EventDispatcherInterface::class);
+        $container->setAlias(ContractsEventDispatcherInterface::class, EventDispatcherInterface::class);
 
         // Register core event listeners
         $this->registerCoreEventListeners($container);
@@ -48,10 +52,10 @@ class EventServiceProvider implements ServiceProviderInterface
     /**
      * Bootstrap services after all providers are registered
      *
-     * @param ContainerInterface $container
+     * @param Container $container
      * @return void
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         $eventDispatcher = $container->get(EventDispatcherInterface::class);
 
@@ -68,51 +72,48 @@ class EventServiceProvider implements ServiceProviderInterface
     /**
      * Register core framework event listeners
      *
-     * @param ContainerInterface $container
+     * @param ContainerBuilder $container
      * @return void
      */
-    protected function registerCoreEventListeners(ContainerInterface $container): void
+    protected function registerCoreEventListeners(ContainerBuilder $container): void
     {
         // Cache invalidation listener
-        $container->singleton(CacheInvalidationListener::class, function ($container) {
-            return new CacheInvalidationListener(
-                $container->get(\Glueful\Cache\CacheStore::class)
-            );
-        });
+        $container->register(CacheInvalidationListener::class)
+            ->setArguments([new Reference('cache.store')])
+            ->setPublic(true)
+            ->addTag(ServiceTags::EVENT_LISTENER);
 
         // Security monitoring listener
-        $container->singleton(SecurityMonitoringListener::class, function ($container) {
-            return new SecurityMonitoringListener(
-                $container->get(\Glueful\Logging\LogManager::class)
-            );
-        });
+        $container->register(SecurityMonitoringListener::class)
+            ->setArguments([new Reference('logger')])
+            ->setPublic(true)
+            ->addTag(ServiceTags::EVENT_LISTENER);
 
         // Performance monitoring listener
-        $container->singleton(PerformanceMonitoringListener::class, function ($container) {
-            return new PerformanceMonitoringListener(
-                $container->get(\Glueful\Logging\LogManager::class)
-            );
-        });
+        $container->register(PerformanceMonitoringListener::class)
+            ->setArguments([new Reference('logger')])
+            ->setPublic(true)
+            ->addTag(ServiceTags::EVENT_LISTENER);
 
         // Extension event registry
-        $container->singleton(ExtensionEventRegistry::class, function ($container) {
-            return new ExtensionEventRegistry(
-                $container->get(EventDispatcherInterface::class),
-                $container->get(\Glueful\Logging\LogManager::class)
-            );
-        });
+        $container->register(ExtensionEventRegistry::class)
+            ->setArguments([
+                new Reference(EventDispatcherInterface::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
     }
 
     /**
      * Register core event subscribers
      *
      * @param EventDispatcherInterface $eventDispatcher
-     * @param ContainerInterface $container
+     * @param Container $container
      * @return void
      */
     protected function registerCoreEventSubscribers(
         EventDispatcherInterface $eventDispatcher,
-        ContainerInterface $container
+        Container $container
     ): void {
         // Core event subscribers with configuration-based registration
         $subscribers = [
@@ -145,12 +146,12 @@ class EventServiceProvider implements ServiceProviderInterface
      * Register extension event subscribers
      *
      * @param EventDispatcherInterface $eventDispatcher Event dispatcher
-     * @param ContainerInterface $container
+     * @param Container $container
      * @return void
      */
     protected function registerExtensionEventSubscribers(
         EventDispatcherInterface $eventDispatcher,
-        ContainerInterface $container
+        Container $container
     ): void {
         // Use the ExtensionEventRegistry for proper subscriber registration
         if ($container->has(ExtensionEventRegistry::class)) {
@@ -196,5 +197,23 @@ class EventServiceProvider implements ServiceProviderInterface
         }
 
         return true;
+    }
+
+    /**
+     * Get compiler passes for event services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [
+            // Event listeners will be processed by TaggedServicePass
+        ];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'events';
     }
 }

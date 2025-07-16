@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Glueful\DI\ServiceProviders;
 
-use Glueful\DI\Interfaces\ContainerInterface;
-use Glueful\DI\Interfaces\ServiceProviderInterface;
+use Glueful\DI\ServiceProviderInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
+use Glueful\DI\ServiceTags;
+use Glueful\DI\Container;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpClient\Psr18Client;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -30,93 +34,109 @@ use Glueful\Http\Builders\NotificationClientBuilder;
 class HttpClientServiceProvider implements ServiceProviderInterface
 {
     /**
-     * Register HTTP client services with the container
+     * Register HTTP client services in Symfony ContainerBuilder
      */
-    public function register(ContainerInterface $container): void
+    public function register(ContainerBuilder $container): void
     {
         // Register Symfony HTTP client
-        $container->singleton(HttpClientInterface::class, function () {
-            return HttpClient::create([
-                'timeout' => config('http.default.timeout', 30),
-                'max_duration' => config('http.default.max_duration', 60),
-                'max_redirects' => config('http.default.max_redirects', 3),
-                'http_version' => config('http.default.http_version', '2.0'),
-                'verify_peer' => config('http.default.verify_ssl', true),
-                'verify_host' => config('http.default.verify_ssl', true),
-                'headers' => config('http.default.default_headers', []),
-            ]);
-        });
+        $container->register(HttpClientInterface::class)
+            ->setFactory([$this, 'createHttpClient'])
+            ->setPublic(true);
 
         // Register PSR-18 compliant client
-        $container->singleton(ClientInterface::class, function (ContainerInterface $container) {
-            return new Psr18Client(
-                $container->get(HttpClientInterface::class)
-            );
-        });
+        $container->register(ClientInterface::class, Psr18Client::class)
+            ->setArguments([new Reference(HttpClientInterface::class)])
+            ->setPublic(true);
 
         // Register Glueful HTTP client facade
-        $container->singleton(Client::class, function (ContainerInterface $container) {
-            return new Client(
-                $container->get(HttpClientInterface::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
-        });
+        $container->register(Client::class)
+            ->setArguments([
+                new Reference(HttpClientInterface::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
 
         // Register scoped client factory
-        $container->singleton(ScopedClientFactory::class, function (ContainerInterface $container) {
-            return new ScopedClientFactory(
-                $container->get(Client::class)
-            );
-        });
+        $container->register(ScopedClientFactory::class)
+            ->setArguments([new Reference(Client::class)])
+            ->setPublic(true);
 
         // Register webhook delivery service
-        $container->singleton(WebhookDeliveryService::class, function (ContainerInterface $container) {
-            return new WebhookDeliveryService(
-                $container->get(Client::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
-        });
+        $container->register(WebhookDeliveryService::class)
+            ->setArguments([
+                new Reference(Client::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
 
         // Register specialized client builders
-        $container->singleton(OAuthClientBuilder::class, function (ContainerInterface $container) {
-            return new OAuthClientBuilder(
-                $container->get(Client::class)
-            );
-        });
+        $container->register(OAuthClientBuilder::class)
+            ->setArguments([new Reference(Client::class)])
+            ->setPublic(true);
 
-        $container->singleton(PaymentClientBuilder::class, function (ContainerInterface $container) {
-            return new PaymentClientBuilder(
-                $container->get(Client::class)
-            );
-        });
+        $container->register(PaymentClientBuilder::class)
+            ->setArguments([new Reference(Client::class)])
+            ->setPublic(true);
 
-        $container->singleton(NotificationClientBuilder::class, function (ContainerInterface $container) {
-            return new NotificationClientBuilder(
-                $container->get(Client::class)
-            );
-        });
+        $container->register(NotificationClientBuilder::class)
+            ->setArguments([new Reference(Client::class)])
+            ->setPublic(true);
 
         // Register helper services
-        $container->singleton(ExternalApiService::class, function (ContainerInterface $container) {
-            return new ExternalApiService(
-                $container->get(Client::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
-        });
+        $container->register(ExternalApiService::class)
+            ->setArguments([
+                new Reference(Client::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
 
-        $container->singleton(HealthCheckService::class, function (ContainerInterface $container) {
-            return new HealthCheckService(
-                $container->get(Client::class),
-                $container->get(\Psr\Log\LoggerInterface::class)
-            );
-        });
+        $container->register(HealthCheckService::class)
+            ->setArguments([
+                new Reference(Client::class),
+                new Reference('logger')
+            ])
+            ->setPublic(true);
     }
 
     /**
-     * Boot HTTP client services
+     * Boot HTTP client services after container is built
      */
-    public function boot(ContainerInterface $container): void
+    public function boot(Container $container): void
     {
         // No additional boot logic required for HTTP client
+    }
+
+    /**
+     * Get compiler passes for HTTP client services
+     */
+    public function getCompilerPasses(): array
+    {
+        return [
+            // HTTP client services don't need custom compiler passes
+        ];
+    }
+
+    /**
+     * Get the provider name for debugging
+     */
+    public function getName(): string
+    {
+        return 'http_client';
+    }
+
+    /**
+     * Factory method for creating HTTP client
+     */
+    public static function createHttpClient(): HttpClientInterface
+    {
+        return HttpClient::create([
+            'timeout' => config('http.default.timeout', 30),
+            'max_duration' => config('http.default.max_duration', 60),
+            'max_redirects' => config('http.default.max_redirects', 3),
+            'http_version' => config('http.default.http_version', '2.0'),
+            'verify_peer' => config('http.default.verify_ssl', true),
+            'verify_host' => config('http.default.verify_ssl', true),
+            'headers' => config('http.default.default_headers', []),
+        ]);
     }
 }
