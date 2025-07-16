@@ -11,6 +11,7 @@ use Glueful\Auth\JWTService;
 use Glueful\Extensions\SocialLogin\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
+use Glueful\DI\ContainerBootstrap;
 
 /**
  * Apple Authentication Provider
@@ -42,12 +43,19 @@ class AppleAuthProvider extends AbstractSocialProvider
         'email'
     ];
 
+    /** @var Client HTTP client instance */
+    private Client $httpClient;
+
     /**
      * Constructor
      */
     public function __construct()
     {
         parent::__construct();
+
+        // Initialize HTTP client
+        $container = ContainerBootstrap::getContainer();
+        $this->httpClient = $container->get(Client::class);
 
         // Set provider name
         $this->providerName = 'apple';
@@ -265,12 +273,8 @@ class AppleAuthProvider extends AbstractSocialProvider
 
         // Make POST request to token endpoint
         try {
-            $client = new Client([
+            $response = $this->httpClient->post($tokenUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10
-            ]);
-
-            $response = $client->post($tokenUrl, [
                 'form_params' => $params
             ]);
 
@@ -544,12 +548,9 @@ class AppleAuthProvider extends AbstractSocialProvider
         $jwksUrl = 'https://appleid.apple.com/auth/keys';
 
         try {
-            $client = new Client([
-                'timeout' => 10,
-                'connect_timeout' => 5
+            $response = $this->httpClient->get($jwksUrl, [
+                'timeout' => 10
             ]);
-
-            $response = $client->get($jwksUrl);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(

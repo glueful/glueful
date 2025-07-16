@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
+use Glueful\DI\ContainerBootstrap;
 
 /**
  * Google Authentication Provider
@@ -34,6 +35,9 @@ class GoogleAuthProvider extends AbstractSocialProvider
         'https://www.googleapis.com/auth/userinfo.email'
     ];
 
+    /** @var Client HTTP client instance */
+    private Client $httpClient;
+
     /**
      * Constructor
      */
@@ -43,6 +47,10 @@ class GoogleAuthProvider extends AbstractSocialProvider
 
         // Set provider name
         $this->providerName = 'google';
+
+        // Initialize HTTP client
+        $container = ContainerBootstrap::getContainer();
+        $this->httpClient = $container->get(Client::class);
 
         // Load configuration
         $this->loadConfig();
@@ -240,12 +248,8 @@ class GoogleAuthProvider extends AbstractSocialProvider
 
         // Make POST request to token endpoint
         try {
-            $client = new Client([
+            $response = $this->httpClient->post($tokenUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10
-            ]);
-
-            $response = $client->post($tokenUrl, [
                 'form_params' => $params
             ]);
 
@@ -284,15 +288,12 @@ class GoogleAuthProvider extends AbstractSocialProvider
 
         // Make GET request with access token
         try {
-            $client = new Client([
+            $response = $this->httpClient->get($userInfoUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10,
                 'headers' => [
                     'Authorization' => 'Bearer ' . $accessToken
                 ]
             ]);
-
-            $response = $client->get($userInfoUrl);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(
@@ -375,12 +376,9 @@ class GoogleAuthProvider extends AbstractSocialProvider
 
         // Make GET request to verify token
         try {
-            $client = new Client([
-                'timeout' => 10,
-                'connect_timeout' => 5
+            $response = $this->httpClient->get($url, [
+                'timeout' => 10
             ]);
-
-            $response = $client->get($url);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(

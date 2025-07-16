@@ -6,13 +6,6 @@ namespace Glueful\Extensions;
 
 // Keep using statements
 use Glueful\Extensions\BaseExtension;
-use Glueful\Extensions\ExtensionManager;
-use Glueful\Auth\AuthBootstrap;
-use Glueful\Extensions\SocialLogin\Providers\GoogleAuthProvider;
-use Glueful\Extensions\SocialLogin\Providers\FacebookAuthProvider;
-use Glueful\Extensions\SocialLogin\Providers\GithubAuthProvider;
-use Glueful\Extensions\SocialLogin\Providers\AppleAuthProvider;
-use Glueful\Extensions\SocialLogin\SocialLoginServiceProvider;
 
 /**
  * Social Login Extension
@@ -76,18 +69,41 @@ class SocialLogin extends BaseExtension
             'auto_register' => true,
             'link_accounts' => true,
             'sync_profile' => true,
+            'google' => [],
+            'facebook' => [],
+            'github' => [],
+            'apple' => [],
         ];
 
-        // Try to load config from file or database
-        $extensionManager = container()->get(ExtensionManager::class);
-        $globalConfig = $extensionManager->getGlobalConfig();
-        $configPath = ($globalConfig['config_path'] ?? 'config') . '/extensions/social_login.php';
+        // Load config from the extension's src/config.php file
+        $configPath = __DIR__ . '/src/config.php';
         if (file_exists($configPath)) {
             $loadedConfig = require $configPath;
             self::$config = array_merge($defaultConfig, $loadedConfig);
         } else {
             self::$config = $defaultConfig;
         }
+
+        // Also check for custom config override in the main config directory
+        $customConfigPath = 'config/extensions/social_login.php';
+        if (file_exists($customConfigPath)) {
+            $customConfig = require $customConfigPath;
+            self::$config = array_merge(self::$config, $customConfig);
+        }
+    }
+
+    /**
+     * Get configuration for the extension
+     *
+     * @return array
+     */
+    public static function getConfig(): array
+    {
+        // Ensure config is loaded
+        if (empty(self::$config)) {
+            self::loadConfig();
+        }
+        return self::$config;
     }
 
     /**

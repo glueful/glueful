@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
+use Glueful\DI\ContainerBootstrap;
 
 /**
  * Facebook Authentication Provider
@@ -31,6 +32,9 @@ class FacebookAuthProvider extends AbstractSocialProvider
     /** @var array OAuth scopes requested */
     private array $scopes = ['email', 'public_profile'];
 
+    /** @var Client HTTP client instance */
+    private Client $httpClient;
+
     /**
      * Constructor
      */
@@ -40,6 +44,10 @@ class FacebookAuthProvider extends AbstractSocialProvider
 
         // Set provider name
         $this->providerName = 'facebook';
+
+        // Initialize HTTP client
+        $container = ContainerBootstrap::getContainer();
+        $this->httpClient = $container->get(Client::class);
 
         // Load configuration
         $this->loadConfig();
@@ -235,15 +243,11 @@ class FacebookAuthProvider extends AbstractSocialProvider
 
         // Make request to token endpoint
         try {
-            $client = new Client([
+            $response = $this->httpClient->get($tokenUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10,
                 'headers' => [
                     'Accept' => 'application/json'
-                ]
-            ]);
-
-            $response = $client->get($tokenUrl, [
+                ],
                 'query' => $params
             ]);
 
@@ -283,12 +287,9 @@ class FacebookAuthProvider extends AbstractSocialProvider
 
         // Make GET request
         try {
-            $client = new Client([
-                'timeout' => 30,
-                'connect_timeout' => 10
+            $response = $this->httpClient->get($userInfoUrl, [
+                'timeout' => 30
             ]);
-
-            $response = $client->get($userInfoUrl);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(
@@ -434,12 +435,8 @@ class FacebookAuthProvider extends AbstractSocialProvider
 
         // Make the request to Facebook
         try {
-            $client = new Client([
+            $response = $this->httpClient->get($debugTokenUrl, [
                 'timeout' => 10,
-                'connect_timeout' => 5
-            ]);
-
-            $response = $client->get($debugTokenUrl, [
                 'query' => $params
             ]);
 

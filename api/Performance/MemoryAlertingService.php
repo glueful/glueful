@@ -6,6 +6,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
+use Glueful\DI\ContainerBootstrap;
 
 /**
  * Service for monitoring memory usage and triggering alerts
@@ -277,12 +278,11 @@ class MemoryAlertingService
 
         // Send the notification - in a production system, this would be queued
         try {
-            $client = new Client([
-                'timeout' => 10,
-                'connect_timeout' => 5
-            ]);
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
 
             $response = $client->post($slackConfig['webhook_url'], [
+                'timeout' => 10,
                 'json' => json_decode($payload, true)
             ]);
 
@@ -347,15 +347,14 @@ class MemoryAlertingService
 
         // Send the notification
         try {
-            $client = new Client([
-                'timeout' => 10,
-                'connect_timeout' => 5,
-                'headers' => [
-                    'X-Alert-Type' => 'memory'
-                ]
-            ]);
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
 
             $response = $client->post($webhookConfig['url'], [
+                'timeout' => 10,
+                'headers' => [
+                    'X-Alert-Type' => 'memory'
+                ],
                 'json' => json_decode($payload, true)
             ]);
 

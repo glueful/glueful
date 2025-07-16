@@ -14,6 +14,7 @@ use Glueful\Configuration\Schema\CacheConfiguration;
 use Glueful\Configuration\Schema\QueueConfiguration;
 use Glueful\Configuration\Schema\SessionConfiguration;
 use Glueful\Configuration\Schema\SecurityConfiguration;
+use Glueful\Configuration\Schema\HttpConfiguration;
 use Glueful\Configuration\Extension\ExtensionManifestSchema;
 use Glueful\Configuration\Tools\ConfigurationDumper;
 use Glueful\Configuration\Tools\IDESupport;
@@ -85,6 +86,7 @@ class ConfigServiceProvider implements ServiceProviderInterface
         $processor->registerSchema(new QueueConfiguration());
         $processor->registerSchema(new SessionConfiguration());
         $processor->registerSchema(new SecurityConfiguration());
+        $processor->registerSchema(new HttpConfiguration());
 
         // Register extension schemas
         $processor->registerSchema(new ExtensionManifestSchema());

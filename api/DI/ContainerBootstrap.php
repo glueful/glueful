@@ -19,6 +19,7 @@ use Glueful\DI\ServiceProviders\ExtensionServiceProvider;
 use Glueful\DI\ServiceProviders\ConfigServiceProvider;
 use Glueful\DI\ServiceProviders\ValidatorServiceProvider;
 use Glueful\DI\ServiceProviders\SerializerServiceProvider;
+use Glueful\DI\ServiceProviders\HttpClientServiceProvider;
 
 /**
  * Container Bootstrap
@@ -54,6 +55,7 @@ class ContainerBootstrap
         $container->register(new ConfigServiceProvider());
         $container->register(new ValidatorServiceProvider());
         $container->register(new SerializerServiceProvider());
+        $container->register(new HttpClientServiceProvider());
 
         // Boot all providers
         $container->boot();

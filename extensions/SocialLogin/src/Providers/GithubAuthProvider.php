@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
+use Glueful\DI\ContainerBootstrap;
 
 /**
  * GitHub Authentication Provider
@@ -31,6 +32,9 @@ class GithubAuthProvider extends AbstractSocialProvider
     /** @var array OAuth scopes requested */
     private array $scopes = ['user:email', 'read:user'];
 
+    /** @var Client HTTP client instance */
+    private Client $httpClient;
+
     /**
      * Constructor
      */
@@ -40,6 +44,10 @@ class GithubAuthProvider extends AbstractSocialProvider
 
         // Set provider name
         $this->providerName = 'github';
+
+        // Initialize HTTP client
+        $container = ContainerBootstrap::getContainer();
+        $this->httpClient = $container->get(Client::class);
 
         // Load configuration
         $this->loadConfig();
@@ -259,15 +267,11 @@ class GithubAuthProvider extends AbstractSocialProvider
 
         // Make POST request to token endpoint
         try {
-            $client = new Client([
+            $response = $this->httpClient->post($tokenUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10,
                 'headers' => [
                     'Accept' => 'application/json'
-                ]
-            ]);
-
-            $response = $client->post($tokenUrl, [
+                ],
                 'form_params' => $params
             ]);
 
@@ -306,17 +310,14 @@ class GithubAuthProvider extends AbstractSocialProvider
 
         // Make GET request with access token
         try {
-            $client = new Client([
+            $response = $this->httpClient->get($userInfoUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10,
                 'headers' => [
                     'Authorization' => 'token ' . $accessToken,
                     'User-Agent' => 'Glueful/SocialLogin',
                     'Accept' => 'application/json'
                 ]
             ]);
-
-            $response = $client->get($userInfoUrl);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(
@@ -371,17 +372,14 @@ class GithubAuthProvider extends AbstractSocialProvider
 
         // Make GET request with access token
         try {
-            $client = new Client([
+            $response = $this->httpClient->get($emailsUrl, [
                 'timeout' => 30,
-                'connect_timeout' => 10,
                 'headers' => [
                     'Authorization' => 'token ' . $accessToken,
                     'User-Agent' => 'Glueful/SocialLogin',
                     'Accept' => 'application/json'
                 ]
             ]);
-
-            $response = $client->get($emailsUrl);
 
             if (!$response->isSuccessful()) {
                 throw new \Exception(

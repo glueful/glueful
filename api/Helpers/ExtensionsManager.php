@@ -2031,19 +2031,21 @@ class ExtensionsManager
         if (filter_var($source, FILTER_VALIDATE_URL)) {
             // It's a URL, download it using HTTP Client
             try {
-                $client = new Client([
-                    'timeout' => 60,
-                    'connect_timeout' => 10
-                ]);
+                $container = ContainerBootstrap::getContainer();
+                $client = $container->get(Client::class);
 
                 $response = $client->get($source, [
-                    'sink' => $tempFile
+                    'timeout' => 60,
+                    'stream' => true
                 ]);
 
                 if (!$response->isSuccessful()) {
                     self::debug("Download failed with HTTP status code: " . $response->getStatusCode());
                     return false;
                 }
+
+                // Write response content to temp file
+                file_put_contents($tempFile, $response->getContent());
             } catch (HttpException $e) {
                 self::debug("Download failed: " . $e->getMessage());
                 return false;
@@ -3381,20 +3383,19 @@ class ExtensionsManager
 
         // Set up HTTP Client request
         try {
-            $client = new Client([
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
+
+            $options = [
                 'timeout' => 10,
                 'headers' => [
                     'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
                 ]
-            ]);
-
-            $options = [];
+            ];
 
             // Set authorization header if provided
             if (isset($source['auth_token'])) {
-                $options['headers'] = [
-                    'Authorization' => 'Bearer ' . $source['auth_token']
-                ];
+                $options['headers']['Authorization'] = 'Bearer ' . $source['auth_token'];
             }
 
             $response = $client->get($url, $options);
@@ -3445,20 +3446,19 @@ class ExtensionsManager
 
         // Set up HTTP Client request
         try {
-            $client = new Client([
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
+
+            $options = [
                 'timeout' => 10,
                 'headers' => [
                     'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
                 ]
-            ]);
-
-            $options = [];
+            ];
 
             // Set GitHub token if provided
             if (isset($source['github_token'])) {
-                $options['headers'] = [
-                    'Authorization' => 'token ' . $source['github_token']
-                ];
+                $options['headers']['Authorization'] = 'token ' . $source['github_token'];
             }
 
             $response = $client->get($apiUrl, $options);
@@ -4562,18 +4562,18 @@ class ExtensionsManager
 
         try {
             // Configure HTTP Client
-            $client = new Client([
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
+
+            // Execute request
+            $response = $client->get($catalogUrl, [
                 'timeout' => $timeout,
-                'connect_timeout' => 10,
                 'headers' => [
                     'User-Agent' => 'Glueful-Framework/' . (config('app.version_full') ?? '1.0.0'),
                     'Accept' => 'application/json',
                     'Cache-Control' => 'no-cache'
                 ]
             ]);
-
-            // Execute request
-            $response = $client->get($catalogUrl);
 
             if (!$response->isSuccessful()) {
                 self::debug("HTTP error: " . $response->getStatusCode());

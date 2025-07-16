@@ -38,8 +38,15 @@ class ExtensionCatalog implements ExtensionCatalogInterface
                 $this->fileManager ??= $container->get(FileManager::class);
                 $this->logger ??= $container->get(LoggerInterface::class);
             } catch (\Exception $e) {
-                // Fallback to creating directly if container not available
-                $this->httpClient ??= new Client();
+                // Fallback: Create services directly if container not available
+                // Note: This should rarely happen in normal operation
+                if ($this->httpClient === null) {
+                    // For fallback, we'll need to create the HTTP client with dependencies
+                    // In practice, this should be avoided and the container should be available
+                    throw new ExtensionException(
+                        'HTTP Client not available and container initialization failed: ' . $e->getMessage()
+                    );
+                }
                 $this->fileManager ??= new FileManager();
             }
         }
