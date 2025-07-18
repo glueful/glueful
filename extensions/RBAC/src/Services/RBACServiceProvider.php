@@ -113,14 +113,9 @@ class RBACServiceProvider extends BaseExtensionServiceProvider
 
                 // Set as active provider
                 $permissionManager->setProvider($permissionProvider, $config);
-
-                error_log("RBAC: Successfully registered and activated permission provider");
-            } else {
-                error_log("RBAC: Permission manager not found in container");
             }
         } catch (\Exception $e) {
             error_log("RBAC: Failed to initialize permission provider: " . $e->getMessage());
-            error_log("RBAC: Stack trace: " . $e->getTraceAsString());
         }
     }
 

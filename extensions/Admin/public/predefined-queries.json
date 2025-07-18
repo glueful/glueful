@@ -1,0 +1,38 @@
+[
+  {
+    "name": "All Active Users",
+    "description": "Retrieves all active users from the system",
+    "query": "SELECT id, uuid, username, email, status, last_login_date FROM users WHERE status = 'active' ORDER BY last_login_date DESC",
+    "allow_write": false
+  },
+  {
+    "name": "Recent Logins",
+    "description": "Shows login activity from the past 7 days",
+    "query": "SELECT u.username, a.created_at, a.ip_address FROM auth_sessions a JOIN users u ON a.user_uuid = u.uuid WHERE a.created_at > DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY a.created_at DESC",
+    "allow_write": false
+  },
+  {
+    "name": "Audit Log Summary",
+    "description": "Summary of recent audit log activities by table",
+    "query": "SELECT table_name, action, COUNT(*) as count FROM audit_logs GROUP BY table_name, action ORDER BY count DESC",
+    "allow_write": false
+  },
+  {
+    "name": "User Permissions",
+    "description": "List all permissions for a specific user",
+    "query": "SELECT p.name, p.description FROM permissions p JOIN roles_permissions rp ON p.uuid = rp.permission_uuid JOIN user_roles_lookup url ON rp.role_uuid = url.role_uuid JOIN users u ON url.user_uuid = u.uuid WHERE u.username = 'admin'",
+    "allow_write": false
+  },
+  {
+    "name": "Database Table Stats",
+    "description": "Shows row count and size for all tables",
+    "query": "SELECT table_name, table_rows, data_length, index_length, ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY size_mb DESC",
+    "allow_write": false
+  },
+  {
+    "name": "List Indexes",
+    "description": "Shows all indexes for a specific table",
+    "query": "SELECT index_name, column_name, seq_in_index, non_unique FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'users' ORDER BY index_name, seq_in_index",
+    "allow_write": false
+  }
+]

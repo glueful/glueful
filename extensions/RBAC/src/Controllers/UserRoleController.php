@@ -434,30 +434,41 @@ class UserRoleController
         try {
             $stats = [];
 
-            $totalAssignments = $this->getQueryBuilder()->select('user_roles', ['COUNT(*) as total'])
-                ->where(['deleted_at' => null])
-                ->get();
-            $stats['total_assignments'] = $totalAssignments[0]['total'] ?? 0;
+            // Use count() method for total assignments
+            $stats['total_assignments'] = $this->getQueryBuilder()->count('user_roles');
 
             $currentTime = date('Y-m-d H:i:s');
-            $activeAssignments = $this->getQueryBuilder()->select('user_roles', ['COUNT(*) as total'])
-                ->where(['deleted_at' => null])
-                ->whereNull('expires_at')
-                ->orWhereGreaterThan('expires_at', $currentTime)
+            
+            // For active assignments, we need to count records where expires_at is null OR expires_at > current time
+            // Since we can't use complex OR conditions with count() directly, we'll fetch and count manually
+            $activeAssignments = $this->getQueryBuilder()
+                ->select('user_roles', ['user_uuid', 'expires_at'])
                 ->get();
-            $stats['active_assignments'] = $activeAssignments[0]['total'] ?? 0;
+            
+            $activeCount = 0;
+            foreach ($activeAssignments as $assignment) {
+                // Check if assignment is active (no expiry or expiry is in the future)
+                if (empty($assignment['expires_at']) || $assignment['expires_at'] > $currentTime) {
+                    $activeCount++;
+                }
+            }
+            $stats['active_assignments'] = $activeCount;
 
-            $expiredAssignments = $this->getQueryBuilder()->select('user_roles', ['COUNT(*) as total'])
-                ->where(['deleted_at' => null])
-                ->whereNotNull('expires_at')
-                ->whereLessThanOrEqual('expires_at', $currentTime)
-                ->get();
-            $stats['expired_assignments'] = $expiredAssignments[0]['total'] ?? 0;
+            // For expired assignments - count those with expires_at in the past
+            $expiredCount = 0;
+            foreach ($activeAssignments as $assignment) {
+                if (!empty($assignment['expires_at']) && $assignment['expires_at'] <= $currentTime) {
+                    $expiredCount++;
+                }
+            }
+            $stats['expired_assignments'] = $expiredCount;
 
-            $usersWithRoles = $this->getQueryBuilder()->select('user_roles', ['COUNT(DISTINCT user_uuid) as total'])
-                ->where(['deleted_at' => null])
+            // For users with roles - count distinct user_uuid
+            $usersWithRoles = $this->getQueryBuilder()
+                ->select('user_roles', ['user_uuid'])
                 ->get();
-            $stats['users_with_roles'] = $usersWithRoles[0]['total'] ?? 0;
+            $uniqueUsers = array_unique(array_column($usersWithRoles, 'user_uuid'));
+            $stats['users_with_roles'] = count($uniqueUsers);
 
             return Response::success($stats, 'User role statistics retrieved successfully');
         } catch (\Exception $e) {

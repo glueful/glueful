@@ -136,6 +136,7 @@ class ContainerFactory
             \Glueful\DI\ServiceProviders\QueueServiceProvider::class,
             \Glueful\DI\ServiceProviders\LockServiceProvider::class,
             \Glueful\DI\ServiceProviders\ArchiveServiceProvider::class,
+            \Glueful\DI\ServiceProviders\SpaServiceProvider::class,
         ];
 
         foreach ($providerClasses as $providerClass) {
@@ -162,17 +163,84 @@ class ContainerFactory
     private static function loadExtensionServices(ContainerBuilder $builder): void
     {
         // Load extension services from extensions.json
-        $extensionsConfig = 'extensions/extensions.json';
-        if (file_exists($extensionsConfig)) {
-            $extensions = json_decode(file_get_contents($extensionsConfig), true);
+        $projectRoot = dirname(__DIR__, 2);
+        $extensionsConfig = $projectRoot . '/extensions/extensions.json';
+        if (!file_exists($extensionsConfig)) {
+            return;
+        }
 
-            foreach ($extensions as $extension => $config) {
-                if ($config['enabled'] ?? false) {
-                    $servicesFile = "extensions/{$extension}/config/services.php";
-                    if (file_exists($servicesFile)) {
-                        $loader = new PhpFileLoader($builder, new FileLocator("extensions/{$extension}/config/"));
-                        $loader->load('services.php');
+        $extensionsData = json_decode(file_get_contents($extensionsConfig), true);
+        if (!isset($extensionsData['extensions'])) {
+            return;
+        }
+
+        foreach ($extensionsData['extensions'] as $extensionName => $config) {
+            if (!($config['enabled'] ?? false)) {
+                continue;
+            }
+
+            // Load service providers defined in the extension config
+            $serviceProviders = $config['provides']['services'] ?? [];
+
+            foreach ($serviceProviders as $serviceProviderPath) {
+                $absolutePath = dirname(__DIR__, 2) . '/' . $serviceProviderPath;
+
+                if (!file_exists($absolutePath)) {
+                    continue;
+                }
+
+                // Include the file
+                require_once $absolutePath;
+
+                // Build the class name from the path
+                $pathInfo = pathinfo($serviceProviderPath);
+                $className = $pathInfo['filename'];
+
+                // Build full class name based on path structure
+                $pathParts = explode('/', $serviceProviderPath);
+                $fullClassName = null;
+
+                // Pattern: extensions/ExtensionName/src/Services/ServiceProvider.php
+                if (count($pathParts) >= 5 && $pathParts[2] === 'src') {
+                    $subNamespace = $pathParts[3]; // e.g., "Services"
+                    $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$subNamespace}\\{$className}";
+                } else {
+                    $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$className}";
+                }
+
+                if (!class_exists($fullClassName)) {
+                    continue;
+                }
+
+                // Instantiate and register the service provider
+                $serviceProvider = new $fullClassName();
+
+                // Set extension properties if it's a BaseExtensionServiceProvider
+                if ($serviceProvider instanceof \Glueful\DI\ServiceProviders\BaseExtensionServiceProvider) {
+                    $extensionPath = "extensions/{$extensionName}";
+
+                    // Use reflection to set protected properties
+                    $reflection = new \ReflectionClass($serviceProvider);
+
+                    $nameProperty = $reflection->getProperty('extensionName');
+                    $nameProperty->setAccessible(true);
+                    $nameProperty->setValue($serviceProvider, $extensionName);
+
+                    $pathProperty = $reflection->getProperty('extensionPath');
+                    $pathProperty->setAccessible(true);
+                    $pathProperty->setValue($serviceProvider, $extensionPath);
+
+                    // Set the container builder if property exists
+                    if ($reflection->hasProperty('containerBuilder')) {
+                        $builderProperty = $reflection->getProperty('containerBuilder');
+                        $builderProperty->setAccessible(true);
+                        $builderProperty->setValue($serviceProvider, $builder);
                     }
+                }
+
+                // Register the service provider
+                if ($serviceProvider instanceof ServiceProviderInterface) {
+                    $serviceProvider->register($builder);
                 }
             }
         }

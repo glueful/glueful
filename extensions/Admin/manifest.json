@@ -33,7 +33,7 @@
     "services": ["AdminServiceProvider"],
     "commands": [],
     "middleware": [],
-    "routes": ["admin"],
+    "routes": ["extensions/Admin/src/routes.php"],
     "channels": []
   },
   "capabilities": [
@@ -67,5 +67,20 @@
     "environments": ["production", "development"],
     "platforms": ["linux", "macos", "windows"],
     "browsers": ["Chrome", "Firefox", "Safari", "Edge"]
+  },
+  "spa": {
+    "enabled": true,
+    "configurations": [
+      {
+        "path_prefix": "/ui/api/admin",
+        "build_path": "public/index.html",
+        "name": "Admin Panel",
+        "description": "Administrative interface for managing the API framework",
+        "framework": "vue",
+        "auth_required": false,
+        "permissions": [],
+        "assets_path": "public/assets"
+      }
+    ]
   }
 }

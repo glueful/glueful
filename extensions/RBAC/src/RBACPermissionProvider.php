@@ -62,7 +62,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         // Initialize cache store if enabled
         if ($this->cacheEnabled) {
             try {
-                $this->cache = app(CacheStore::class);
+                $this->cache = container()->get(CacheStore::class);
             } catch (\Exception $e) {
                 // Graceful degradation - disable cache if initialization fails
                 $this->cacheEnabled = false;

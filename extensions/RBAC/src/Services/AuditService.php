@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\RBAC\Services;
 
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
+use Glueful\Logging\LogManager;
+use Psr\Log\LoggerInterface;
 
 /**
  * RBAC Audit Service
@@ -21,11 +21,11 @@ use Glueful\Logging\AuditEvent;
  */
 class AuditService
 {
-    private AuditLogger $auditLogger;
+    private LoggerInterface $logger;
 
-    public function __construct(?AuditLogger $auditLogger = null)
+    public function __construct(?LoggerInterface $logger = null)
     {
-        $this->auditLogger = $auditLogger ?? AuditLogger::getInstance();
+        $this->logger = $logger ?? LogManager::getInstance()->channel('rbac_audit');
     }
     /**
      * Log role created event
@@ -46,12 +46,10 @@ class AuditService
             'role_data' => $this->sanitizeRoleData($roleData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'role_created',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Role created', array_merge($context, [
+            'event_type' => 'role_created',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -77,12 +75,10 @@ class AuditService
             'new_data' => $this->sanitizeRoleData($newData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'role_updated',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Role updated', array_merge($context, [
+            'event_type' => 'role_updated',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -105,12 +101,10 @@ class AuditService
             'deleted_data' => $this->sanitizeRoleData($roleData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'role_deleted',
-            AuditEvent::SEVERITY_WARNING,
-            $context
-        );
+        $this->logger->warning('Role deleted', array_merge($context, [
+            'event_type' => 'role_deleted',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -139,12 +133,10 @@ class AuditService
             'assignment_data' => $assignmentData
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'role_assigned',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Role assigned', array_merge($context, [
+            'event_type' => 'role_assigned',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -165,12 +157,10 @@ class AuditService
             'revoked_by' => $revokedBy
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'role_revoked',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Role revoked', array_merge($context, [
+            'event_type' => 'role_revoked',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -194,12 +184,10 @@ class AuditService
             'permission_data' => $this->sanitizePermissionData($permissionData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'permission_created',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Permission created', array_merge($context, [
+            'event_type' => 'permission_created',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -230,12 +218,10 @@ class AuditService
             'new_data' => $this->sanitizePermissionData($newData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'permission_updated',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Permission updated', array_merge($context, [
+            'event_type' => 'permission_updated',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -259,12 +245,10 @@ class AuditService
             'deleted_data' => $this->sanitizePermissionData($permissionData)
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'permission_deleted',
-            AuditEvent::SEVERITY_WARNING,
-            $context
-        );
+        $this->logger->warning('Permission deleted', array_merge($context, [
+            'event_type' => 'permission_deleted',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -294,12 +278,10 @@ class AuditService
             'assignment_data' => $assignmentData
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'permission_assigned',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Permission assigned', array_merge($context, [
+            'event_type' => 'permission_assigned',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -320,12 +302,10 @@ class AuditService
             'revoked_by' => $revokedBy
         ];
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            'permission_revoked',
-            AuditEvent::SEVERITY_INFO,
-            $context
-        );
+        $this->logger->info('Permission revoked', array_merge($context, [
+            'event_type' => 'permission_revoked',
+            'category' => 'rbac_data'
+        ]));
     }
 
     /**
@@ -364,15 +344,15 @@ class AuditService
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
         ];
 
-        $severity = $allowed ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING;
-        $event = $allowed ? 'permission_check_granted' : 'permission_check_denied';
+        $message = $allowed ? 'Permission check granted' : 'Permission check denied';
+        $auditContext['event_type'] = $allowed ? 'permission_check_granted' : 'permission_check_denied';
+        $auditContext['category'] = 'rbac_security';
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_DATA,
-            $event,
-            $severity,
-            $auditContext
-        );
+        if ($allowed) {
+            $this->logger->info($message, $auditContext);
+        } else {
+            $this->logger->warning($message, $auditContext);
+        }
     }
 
     /**
@@ -397,19 +377,25 @@ class AuditService
             'session_id' => session_id() ?: null
         ];
 
-        // Determine severity based on event type
-        $severity = match ($event) {
-            'unauthorized_access', 'suspicious_activity', 'security_violation' => AuditEvent::SEVERITY_ERROR,
-            'failed_permission_check', 'access_denied' => AuditEvent::SEVERITY_WARNING,
-            default => AuditEvent::SEVERITY_INFO
-        };
+        // Add event metadata
+        $context['event_type'] = 'rbac_security_event';
+        $context['category'] = 'rbac_security';
 
-        $this->auditLogger->audit(
-            AuditEvent::CATEGORY_SECURITY,
-            'rbac_security_event',
-            $severity,
-            $context
-        );
+        // Log based on event type severity
+        switch ($event) {
+            case 'unauthorized_access':
+            case 'suspicious_activity':
+            case 'security_violation':
+                $this->logger->error("RBAC Security Event: $event", $context);
+                break;
+            case 'failed_permission_check':
+            case 'access_denied':
+                $this->logger->warning("RBAC Security Event: $event", $context);
+                break;
+            default:
+                $this->logger->info("RBAC Security Event: $event", $context);
+                break;
+        }
     }
 
     /**

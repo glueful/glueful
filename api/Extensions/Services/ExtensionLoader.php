@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\Services;
 
 use Glueful\Extensions\Services\Interfaces\ExtensionLoaderInterface;
+use Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface;
 use Glueful\Extensions\Enums\ExtensionStatus;
 use Glueful\Extensions\ExtensionEventRegistry;
 use Composer\Autoload\ClassLoader;
@@ -23,23 +24,28 @@ class ExtensionLoader implements ExtensionLoaderInterface
     public function __construct(
         private ?FileFinder $fileFinder = null,
         private ?FileManager $fileManager = null,
-        private ?LoggerInterface $logger = null
+        private ?LoggerInterface $logger = null,
+        private ?ExtensionConfigInterface $extensionConfig = null
     ) {
         $this->initializeServices();
     }
 
     private function initializeServices(): void
     {
-        if ($this->fileFinder === null || $this->fileManager === null) {
+        if ($this->fileFinder === null || $this->fileManager === null || $this->extensionConfig === null) {
             try {
                 $container = ContainerBootstrap::getContainer();
                 $this->fileFinder ??= $container->get(FileFinder::class);
                 $this->fileManager ??= $container->get(FileManager::class);
                 $this->logger ??= $container->get(LoggerInterface::class);
+                $this->extensionConfig ??= $container->get(ExtensionConfigInterface::class);
             } catch (\Exception $e) {
                 // Fallback to creating directly if container not available
                 $this->fileFinder ??= new FileFinder();
                 $this->fileManager ??= new FileManager();
+                if ($this->extensionConfig === null) {
+                    $this->extensionConfig = new ExtensionConfig();
+                }
             }
         }
     }
@@ -92,16 +98,19 @@ class ExtensionLoader implements ExtensionLoaderInterface
             // Register namespace with autoloader (like current system)
             $this->registerNamespace($name, $extensionPath);
 
-            // Load service providers
-            $this->loadServiceProviders($name);
+            // Load service providers (skip during bootstrap to avoid DI container issues)
+            // $this->loadServiceProviders($name);
 
-            // Load routes
-            $this->loadRoutes($name);
+            // Load routes (skip during bootstrap to avoid DI container issues)
+            // $this->loadRoutes($name);
 
+            // Load the extension class
+            $extensionClass = $this->loadExtensionClass($name, $extensionPath);
 
-            // Mark as loaded (without instantiating the main class)
+            // Mark as loaded
             $this->loadedExtensions[$name] = [
                 'path' => $extensionPath,
+                'class' => $extensionClass,
                 'loaded_at' => time()
             ];
 
@@ -182,24 +191,23 @@ class ExtensionLoader implements ExtensionLoaderInterface
             return;
         }
 
-        // Get autoload config from extensions.json (like old system)
-        $projectRoot = dirname($path, 2); // Go up 2 levels from extension path to get project root
-        $configPath = $projectRoot . '/extensions/extensions.json';
-        if (file_exists($configPath)) {
-            $config = json_decode(file_get_contents($configPath), true);
-            if (isset($config['extensions'][$name]['autoload']['psr-4'])) {
-                $autoloadConfig = $config['extensions'][$name]['autoload']['psr-4'];
+        // Get autoload config from ExtensionConfig service (reduces duplication)
+        $extensionConfig = $this->extensionConfig->getExtensionConfig($name);
+        if (!empty($extensionConfig) && isset($extensionConfig['autoload']['psr-4'])) {
+            $autoloadConfig = $extensionConfig['autoload']['psr-4'];
 
-                foreach ($autoloadConfig as $namespace => $namespacePath) {
-                    $fullPath = $projectRoot . '/' . trim($namespacePath, '/');
-                    if (is_dir($fullPath)) {
-                        $classLoader->addPsr4($namespace, $fullPath);
-                        $this->registeredNamespaces[$namespace] = $fullPath;
-                        $this->debugLog("Registered namespace {$namespace} => {$fullPath}");
-                    }
+            // Use same approach as old ExtensionsManager: dirname(__DIR__, 2) but adjusted for our location
+            $projectRoot = dirname(__DIR__, 3);
+
+            foreach ($autoloadConfig as $namespace => $namespacePath) {
+                $fullPath = $projectRoot . '/' . trim($namespacePath, '/');
+                if (is_dir($fullPath)) {
+                    $classLoader->addPsr4($namespace, $fullPath);
+                    $this->registeredNamespaces[$namespace] = $fullPath;
+                    $this->debugLog("Registered namespace {$namespace} => {$fullPath}");
                 }
-                return;
             }
+            return;
         }
 
         // Fallback to default namespace registration
@@ -215,47 +223,88 @@ class ExtensionLoader implements ExtensionLoaderInterface
 
     public function loadRoutes(string $name): void
     {
-        $extensionPath = $this->getExtensionPath($name);
-        if (!$extensionPath) {
+        $this->debugLog("Loading routes for extension: {$name}");
+
+        $extensionConfig = $this->extensionConfig->getExtensionConfig($name);
+        if (empty($extensionConfig)) {
+            $this->debugLog("Extension '{$name}' not found in config");
             return;
         }
 
-        $routesFiles = [
-            $extensionPath . '/routes.php',
-            $extensionPath . '/src/routes.php'
-        ];
+        // Use same approach as old ExtensionsManager: dirname(__DIR__, 2) but adjusted for our location
+        $projectRoot = dirname(__DIR__, 3);
 
-        foreach ($routesFiles as $routesFile) {
-            if (file_exists($routesFile)) {
-                $this->debugLog("Loading routes from: {$routesFile}");
-                require_once $routesFile;
-                break;
+        // Load routes from the "provides.routes" section
+        if (isset($extensionConfig['provides']['routes']) && is_array($extensionConfig['provides']['routes'])) {
+            $this->debugLog("Found " . count($extensionConfig['provides']['routes']) . " route files for {$name}");
+            foreach ($extensionConfig['provides']['routes'] as $routeFile) {
+                $fullRoutePath = $projectRoot . '/' . $routeFile;
+                if (file_exists($fullRoutePath)) {
+                    $this->debugLog("Loading extension routes from: {$routeFile}");
+                    require_once $fullRoutePath;
+                    $this->debugLog("Successfully included route file: {$routeFile}");
+                } else {
+                    $this->debugLog("Extension route file not found: {$fullRoutePath}");
+                }
+            }
+        } else {
+            $this->debugLog("No 'provides.routes' section found for {$name}, trying fallback");
+            // Fallback to old hardcoded approach if no routes in manifest
+            $extensionPath = $this->getExtensionPath($name);
+            if (!$extensionPath) {
+                $this->debugLog("No extension path found for {$name}");
+                return;
+            }
+            $routesFiles = [
+                $extensionPath . '/routes.php',
+                $extensionPath . '/src/routes.php'
+            ];
+            foreach ($routesFiles as $routesFile) {
+                if (file_exists($routesFile)) {
+                    $this->debugLog("Loading routes from fallback location: {$routesFile}");
+                    require_once $routesFile;
+                    $this->debugLog("Successfully included fallback route file: {$routesFile}");
+                    break;
+                } else {
+                    $this->debugLog("Fallback route file not found: {$routesFile}");
+                }
             }
         }
     }
 
     public function loadServiceProviders(string $name): void
     {
-        $extensionPath = $this->getExtensionPath($name);
-        if (!$extensionPath) {
+        $this->debugLog("Loading service providers for extension: {$name}");
+
+        $extensionConfig = $this->extensionConfig->getExtensionConfig($name);
+        if (empty($extensionConfig)) {
+            $this->debugLog("Extension '{$name}' not found in config");
             return;
         }
 
-        // Look for service provider files
-        $serviceProviderPaths = [
-            $extensionPath . '/src/' . $name . 'ServiceProvider.php',
-            $extensionPath . '/src/ServiceProvider.php',
-            $extensionPath . '/' . $name . 'ServiceProvider.php'
-        ];
+        $serviceProviders = $extensionConfig['provides']['services'] ?? [];
 
-        foreach ($serviceProviderPaths as $providerPath) {
-            if (file_exists($providerPath)) {
-                $this->debugLog("Loading service provider from: {$providerPath}");
-                require_once $providerPath;
+        if (empty($serviceProviders)) {
+            $this->debugLog("No service providers defined for extension '{$name}'");
+            return;
+        }
 
-                // Try to register with container if available
-                $this->registerServiceProvider($name, $providerPath);
-                break;
+        $this->debugLog("Found " . count($serviceProviders) . " service providers for {$name}");
+
+        // Use same approach as old ExtensionsManager: dirname(__DIR__, 2) but adjusted for our location
+        $projectRoot = dirname(__DIR__, 3);
+
+        foreach ($serviceProviders as $serviceProviderPath) {
+            $absolutePath = $projectRoot . '/' . $serviceProviderPath;
+
+            if (file_exists($absolutePath)) {
+                $this->debugLog("Loading service provider: {$absolutePath}");
+                require_once $absolutePath;
+
+                // Register with container using the same logic as old system
+                $this->registerServiceProviderFromPath($name, $serviceProviderPath);
+            } else {
+                $this->debugLog("Service provider file not found: {$absolutePath}");
             }
         }
     }
@@ -325,8 +374,8 @@ class ExtensionLoader implements ExtensionLoaderInterface
 
         require_once $extensionFile;
 
-        // Assume class name matches extension name
-        $extensionClass = $name;
+        // Get class name from manifest (preferred) or assume it matches extension name
+        $extensionClass = $manifest['main_class'] ?? "Glueful\\Extensions\\{$name}";
 
         if (!class_exists($extensionClass)) {
             $this->debugLog("Extension class {$extensionClass} not found after loading {$extensionFile}");
@@ -367,10 +416,79 @@ class ExtensionLoader implements ExtensionLoaderInterface
         return json_last_error() === JSON_ERROR_NONE ? $manifest : null;
     }
 
+    private function registerServiceProviderFromPath(string $extensionName, string $serviceProviderPath): void
+    {
+        try {
+            // Use app() helper like the old system
+            if (!function_exists('app')) {
+                throw new \RuntimeException("DI container not initialized. Cannot load extension service providers.");
+            }
+            $container = app();
+
+            // Extract class name from path (like old system)
+            $pathInfo = pathinfo($serviceProviderPath);
+            $className = $pathInfo['filename'];
+
+            // Build full class name based on path structure (like old system)
+            $pathParts = explode('/', $serviceProviderPath);
+            $fullClassName = null;
+
+            // Pattern: extensions/ExtensionName/src/Services/ServiceProvider.php
+            if (count($pathParts) >= 5 && $pathParts[2] === 'src') {
+                $subNamespace = $pathParts[3]; // e.g., "Services"
+                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$subNamespace}\\{$className}";
+            } else {
+                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$className}";
+            }
+
+            $this->debugLog("Attempting to register service provider class: {$fullClassName}");
+
+            if (class_exists($fullClassName)) {
+                $serviceProvider = new $fullClassName();
+
+                // Set extension properties if this is a BaseExtensionServiceProvider
+                if ($serviceProvider instanceof \Glueful\DI\ServiceProviders\BaseExtensionServiceProvider) {
+                    $extensionPath = $this->getExtensionPath($extensionName);
+                    if ($extensionPath) {
+                        // Use reflection to set the protected properties
+                        $reflection = new \ReflectionClass($serviceProvider);
+
+                        $nameProperty = $reflection->getProperty('extensionName');
+                        $nameProperty->setAccessible(true);
+                        $nameProperty->setValue($serviceProvider, $extensionName);
+
+                        $pathProperty = $reflection->getProperty('extensionPath');
+                        $pathProperty->setAccessible(true);
+                        $pathProperty->setValue($serviceProvider, $extensionPath);
+
+                        $this->debugLog("Set extension properties for service provider: {$fullClassName}");
+                    }
+                }
+
+                $container->register($serviceProvider);
+
+                // Boot the service provider immediately since container is already booted (like old system)
+                if (method_exists($serviceProvider, 'boot')) {
+                    $serviceProvider->boot($container);
+                    $this->debugLog("Booted service provider: {$fullClassName}");
+                }
+
+                $this->debugLog("Successfully registered service provider: {$fullClassName}");
+            } else {
+                $this->debugLog("Service provider class not found: {$fullClassName}");
+            }
+        } catch (\Exception $e) {
+            $this->debugLog("Failed to register service provider: " . $e->getMessage());
+        }
+    }
+
     private function registerServiceProvider(string $name, string $providerPath): void
     {
         try {
             $container = ContainerBootstrap::getContainer();
+            if (!$container) {
+                return;
+            }
             // Service provider registration logic would go here
             // This is framework-specific implementation
         } catch (\Exception $e) {

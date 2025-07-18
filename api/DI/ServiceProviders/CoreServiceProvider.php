@@ -33,6 +33,10 @@ class CoreServiceProvider implements ServiceProviderInterface
             ->setPublic(true)
             ->addTag(ServiceTags::CACHE_POOL);
 
+        // Alias for CacheStore class name resolution
+        $container->setAlias(\Glueful\Cache\CacheStore::class, 'cache.store')
+            ->setPublic(true);
+
         // Logger service
         $container->register('logger', \Psr\Log\LoggerInterface::class)
             ->setFactory([$this, 'createLogger'])
@@ -63,6 +67,7 @@ class CoreServiceProvider implements ServiceProviderInterface
         // Permission services
         $container->register('permission.manager', \Glueful\Permissions\PermissionManager::class)
             ->setFactory([\Glueful\Permissions\PermissionManager::class, 'getInstance'])
+            ->setArguments([new Reference(\Glueful\Auth\SessionCacheManager::class)])
             ->setPublic(true);
 
         $container->register(\Glueful\Permissions\PermissionCache::class)
@@ -129,6 +134,10 @@ class CoreServiceProvider implements ServiceProviderInterface
 
         $container->register(\Glueful\Database\QueryCacheService::class)
             ->setArguments([new Reference('cache.store')])
+            ->setPublic(true);
+
+        // Migration services
+        $container->register(\Glueful\Database\Migrations\MigrationManager::class)
             ->setPublic(true);
     }
 

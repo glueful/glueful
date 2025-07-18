@@ -11,6 +11,7 @@ use Glueful\Extensions\Services\Interfaces\ExtensionValidatorInterface;
 use Glueful\Extensions\Exceptions\ExtensionException;
 use Composer\Autoload\ClassLoader;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * ExtensionManager Facade
@@ -31,7 +32,8 @@ class ExtensionManager
         private ExtensionConfigInterface $config,
         private ExtensionCatalogInterface $catalog,
         private ExtensionValidatorInterface $validator,
-        private ?LoggerInterface $logger = null
+        private ?LoggerInterface $logger = null,
+        private ?ContainerInterface $container = null
     ) {
     }
 
@@ -330,6 +332,60 @@ class ExtensionManager
     public function fetch(): array
     {
         return $this->catalog->getAvailableExtensions();
+    }
+
+    /**
+     * Get synchronized catalog with local extension status
+     *
+     * @return array Synchronized catalog data
+     */
+    public function getSynchronizedCatalog(): array
+    {
+        // Get remote catalog
+        $remoteCatalog = $this->catalog->getAvailableExtensions();
+
+        // Get local extension status
+        $installedExtensions = $this->listInstalled();
+        $enabledExtensions = $this->listEnabled();
+
+        // Synchronize with local status
+        $synchronizedExtensions = [];
+        foreach ($remoteCatalog as $extension) {
+            $extensionName = $extension['name'] ?? '';
+
+            // Add local status information
+            $extension['installed'] = in_array($extensionName, $installedExtensions);
+            $extension['enabled'] = in_array($extensionName, $enabledExtensions);
+            $extension['status'] = $extension['enabled'] ? 'active' :
+                                 ($extension['installed'] ? 'inactive' : 'available');
+
+            // Add actions available for this extension
+            $extension['actions_available'] = $this->getAvailableActions($extensionName, $extension);
+
+            // Add local metadata if installed
+            if ($extension['installed']) {
+                $extension['local_metadata'] = $this->getExtensionMetadata($extensionName);
+            }
+
+            $synchronizedExtensions[] = $extension;
+        }
+
+        return [
+            'extensions' => $synchronizedExtensions,
+            'metadata' => [
+                'source' => 'github_catalog',
+                'catalog_url' => $this->catalog->getRegistryUrl(),
+                'synchronized_at' => date('c'),
+                'total_available' => count($remoteCatalog),
+                'total_after_filters' => count($synchronizedExtensions),
+                'summary' => [
+                    'installed' => count($installedExtensions),
+                    'enabled' => count($enabledExtensions),
+                    'available_for_install' => count($synchronizedExtensions) - count($installedExtensions),
+                    'disabled' => count($installedExtensions) - count($enabledExtensions)
+                ]
+            ]
+        ];
     }
 
     /**
@@ -729,7 +785,7 @@ class ExtensionManager
     }
 
     /**
-     * Load all enabled extensions (for framework boot)
+     * Load all enabled extensions (for framework boot) with SPA registration
      *
      * @return void
      */
@@ -740,6 +796,48 @@ class ExtensionManager
         foreach ($enabledExtensions as $extensionName) {
             if (!$this->loader->isLoaded($extensionName)) {
                 $this->loader->loadExtension($extensionName);
+
+                // Register SPA configurations after loading
+                $this->registerSpaConfigurations("Glueful\\Extensions\\{$extensionName}");
+            }
+        }
+
+        // Service providers are now loaded during container compilation
+        // $this->loadExtensionServiceProviders();
+    }
+
+    /**
+     * Load service providers for all enabled extensions
+     *
+     * @return void
+     */
+    public function loadExtensionServiceProviders(): void
+    {
+        $enabledExtensions = $this->config->getEnabledExtensions();
+
+        foreach ($enabledExtensions as $extensionName) {
+            $this->loader->loadServiceProviders($extensionName);
+        }
+    }
+
+    /**
+     * Register SPA configurations from extension
+     *
+     * @param string $extensionClass Extension class name
+     * @return void
+     */
+    protected function registerSpaConfigurations(string $extensionClass): void
+    {
+        try {
+            if ($this->container && $this->container->has(\Glueful\SpaManager::class)) {
+                $spaManager = $this->container->get(\Glueful\SpaManager::class);
+                $spaManager->registerFromExtension($extensionClass);
+            }
+        } catch (\Throwable $e) {
+            if ($this->logger) {
+                $this->logger->error(
+                    "Failed to register SPA configurations for {$extensionClass}: " . $e->getMessage()
+                );
             }
         }
     }
@@ -754,9 +852,8 @@ class ExtensionManager
         $enabledExtensions = $this->config->getEnabledExtensions();
 
         foreach ($enabledExtensions as $extensionName) {
-            if ($this->loader->isLoaded($extensionName)) {
-                $this->loader->loadRoutes($extensionName);
-            }
+            // Load routes regardless of isLoaded() status, since routes are skipped during bootstrap
+            $this->loader->loadRoutes($extensionName);
         }
     }
 
@@ -894,7 +991,6 @@ class ExtensionManager
      */
     public function registerExtensionService(string $extensionName, string $serviceId, object $service): void
     {
-        $this->debugLog("Registering extension service '{$serviceId}' for extension '{$extensionName}'");
 
         // This method is called by the ExtensionServicePass compiler pass
         // to register services that are tagged with 'extension.service'
@@ -911,7 +1007,6 @@ class ExtensionManager
      */
     public function registerExtensionProvider(string $extensionName, object $provider): void
     {
-        $this->debugLog("Registering extension provider for extension '{$extensionName}'");
 
         // This method is called by the ExtensionServicePass compiler pass
         // to register providers that are tagged with 'extension.provider'
@@ -944,6 +1039,42 @@ class ExtensionManager
         }
 
         return rmdir($dir);
+    }
+
+    /**
+     * Get available actions for an extension
+     *
+     * @param string $extensionName Extension name
+     * @param array $extension Extension data
+     * @return array Available actions
+     */
+    private function getAvailableActions(string $extensionName, array $extension): array
+    {
+        $actions = [];
+
+        if ($extension['installed'] ?? false) {
+            if ($extension['enabled'] ?? false) {
+                $actions[] = 'disable';
+            } else {
+                $actions[] = 'enable';
+            }
+            $actions[] = 'uninstall';
+            $actions[] = 'configure';
+        } else {
+            $actions[] = 'install';
+        }
+
+        return $actions;
+    }
+
+    /**
+     * Get registry URL from catalog
+     *
+     * @return string Registry URL
+     */
+    public function getRegistryUrl(): string
+    {
+        return $this->catalog->getRegistryUrl();
     }
 
     private function debugLog(string $message): void

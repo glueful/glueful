@@ -112,9 +112,7 @@ class NotificationsController extends BaseController
         $onlyUnread = isset($queryParams['unread']) && $queryParams['unread'] === 'true';
 
         // Build filters for type, date range and priority
-        $filters = [
-            'created_at' => [] // Initialize created_at filter as an empty array
-        ];
+        $filters = [];
 
         // Filter by type
         if (isset($queryParams['type']) && !empty($queryParams['type'])) {
@@ -193,7 +191,7 @@ class NotificationsController extends BaseController
             'filters' => [
                 'applied' => !empty($filters['type'])
                     || !empty($filters['priority'])
-                    || !empty($filters['created_at']),
+                    || !empty($filters['created_at'] ?? []),
                 'parameters' => $filters
             ]
         ], 'Notifications retrieved successfully');

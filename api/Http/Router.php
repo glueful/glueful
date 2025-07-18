@@ -66,8 +66,6 @@ class Router
     private static array $currentGroupAuth = [];
     private static array $adminProtectedRoutes = []; // Routes that require admin authentication
 
-    /** @var array Route name cache to avoid redundant MD5 calculations */
-    private static array $routeNameCache = [];
 
     /** @var string API version prefix for all routes */
     private static string $versionPrefix = '';
@@ -437,10 +435,21 @@ class Router
         $requiresAuth = $requiresAuth || ($groupAuth['auth'] ?? false);
         $requiresAdminAuth = $requiresAdminAuth || ($groupAuth['admin'] ?? false);
 
+        // Generate a unique route name using path, methods, and a counter
         $routeKey = $fullPath . '|' . implode('|', $methods);
-        $routeName = self::$routeNameCache[$routeKey] ??= md5($routeKey);
+        $baseRouteName = md5($routeKey);
+
+        // Check if this base name already exists
+        $counter = 0;
+        $routeName = $baseRouteName;
+        while (self::$routes->get($routeName) !== null) {
+            $counter++;
+            $routeName = $baseRouteName . '_' . $counter;
+        }
+
         $route = new Route($fullPath, ['_controller' => $handler], $requirements, [], '', [], $methods);
         self::$routes->add($routeName, $route);
+
 
         if ($requiresAdminAuth) {
             self::$adminProtectedRoutes[] = $routeName; // Admin-only routes
@@ -588,8 +597,10 @@ class Router
             foreach ($parameters as $key => $value) {
                 $request->attributes->set($key, $value);
             }
-        } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException) {
+        } catch (\Symfony\Component\Routing\Exception\ResourceNotFoundException $e) {
             throw new \Glueful\Exceptions\NotFoundException('Route not found: ' . $pathInfo);
+        } catch (\Symfony\Component\Routing\Exception\MethodNotAllowedException $e) {
+            throw new \Glueful\Exceptions\NotFoundException('Method not allowed for: ' . $pathInfo);
         }
 
         // Use the route name from Symfony's routing system instead of generating our own
@@ -683,6 +694,7 @@ class Router
     {
         if (self::$instance === null) {
             self::$instance = new self();
+        } else {
         }
         return self::$instance;
     }
@@ -775,7 +787,6 @@ class Router
         self::$routes = new RouteCollection();
         self::$protectedRoutes = [];
         self::$adminProtectedRoutes = [];
-        self::$routeNameCache = [];
         self::$routesLoadedFromCache = false;
 
         // Reload routes from source files

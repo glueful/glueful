@@ -13,6 +13,7 @@ use Glueful\Http\SessionContext;
 use Glueful\Http\EnvironmentContext;
 use Glueful\Http\ServerRequestFactory;
 use Psr\Http\Message\ServerRequestInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Request Service Provider
@@ -29,6 +30,11 @@ class RequestServiceProvider implements ServiceProviderInterface
      */
     public function register(ContainerBuilder $container): void
     {
+        // Register Symfony Request (for route handlers)
+        $container->register(Request::class)
+            ->setFactory([Request::class, 'createFromGlobals'])
+            ->setPublic(true);
+
         // Register PSR-7 ServerRequest
         $container->register(ServerRequestInterface::class)
             ->setFactory([ServerRequestFactory::class, 'fromGlobals'])

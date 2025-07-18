@@ -197,7 +197,8 @@ class NotificationRepository extends BaseRepository
 
         $notifications = [];
         foreach ($results as $row) {
-            $notifications[] = Notification::fromArray($row);
+            $notification = Notification::fromArray($row);
+            $notifications[] = $notification->toArray();
         }
 
         return $notifications;
@@ -472,16 +473,27 @@ class NotificationRepository extends BaseRepository
         bool $onlyUnread = false,
         array $filters = []
     ): int {
-        $query = $this->db->select($this->table, ['COUNT(*) as count']);
+        // Build basic conditions
+        $conditions = [
+            'notifiable_type' => $notifiableType,
+            'notifiable_id' => $notifiableId
+        ];
 
-        // Apply notifiable filters using trait method
-        $this->applyNotifiableFilters($query, $notifiableType, $notifiableId, $onlyUnread);
+        if ($onlyUnread) {
+            $conditions['read_at'] = null;
+        }
 
-        // Apply additional filters using trait method
+        // For simple cases, use the count method directly
+        if (empty($filters)) {
+            return $this->db->count($this->table, $conditions);
+        }
+
+        // For complex filters, count the results of a select query
+        $query = $this->db->select($this->table, ['id']);
+        $query->where($conditions);
         $this->applyFilters($query, $filters);
 
-        $result = $query->get();
-        return $result ? (int)$result[0]['count'] : 0;
+        return count($query->get());
     }
 
     /**

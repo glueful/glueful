@@ -230,10 +230,8 @@ class RoleRepository extends BaseRepository
         // Build conditions array for the base paginate method
         $conditions = [];
 
-        // Apply filters
-        if (isset($filters['exclude_deleted']) && $filters['exclude_deleted']) {
-            $conditions['deleted_at'] = null;
-        }
+        // Apply filters  
+        $excludeDeleted = isset($filters['exclude_deleted']) && $filters['exclude_deleted'];
 
         if (isset($filters['status']) && !empty($filters['status'])) {
             $conditions['status'] = $filters['status'];
@@ -251,37 +249,46 @@ class RoleRepository extends BaseRepository
             $conditions['parent_uuid'] = $filters['parent_uuid'];
         }
 
+        // Build query using QueryBuilder to handle NULL conditions properly
+        $query = $this->db->select($this->table, $this->defaultFields);
+
+        // Apply deleted_at filter using whereNull
+        if ($excludeDeleted) {
+            $query->whereNull('deleted_at');
+        }
+
+        // Add other conditions
+        if (!empty($conditions)) {
+            $query->where($conditions);
+        }
+
         // Handle search separately since it needs LIKE queries
         if (isset($filters['search']) && !empty($filters['search'])) {
             $searchTerm = $filters['search'];
-
-            // Use the query method for more complex search
-            $query = $this->query()
-                ->where([
-                    'name' => ['LIKE', '%' . $searchTerm . '%'],
-                    'OR' => [
-                        'description' => ['LIKE', '%' . $searchTerm . '%'],
-                        'slug' => ['LIKE', '%' . $searchTerm . '%']
-                    ]
-                ]);
-
-            // Add other conditions to the search query
-            if (!empty($conditions)) {
-                $query->where($conditions);
-            }
-
-            $query->orderBy(['level' => 'DESC', 'name' => 'ASC']);
-
-            return $query->paginate($page, $perPage);
+            $query->where([
+                'name' => ['LIKE', '%' . $searchTerm . '%'],
+                'OR' => [
+                    'description' => ['LIKE', '%' . $searchTerm . '%'],
+                    'slug' => ['LIKE', '%' . $searchTerm . '%']
+                ]
+            ]);
         }
 
-        // Use the base repository's paginate method for simple filters
-        return $this->paginate(
-            $page,
-            $perPage,
-            $conditions,
-            ['level' => 'DESC', 'name' => 'ASC']
-        );
+        $query->orderBy(['level' => 'DESC', 'name' => 'ASC']);
+
+        $result = $query->paginate($page, $perPage);
+        
+        // Convert Role objects to arrays
+        if (!empty($result['data'])) {
+            $roles = [];
+            foreach ($result['data'] as $row) {
+                $role = new Role($row);
+                $roles[] = $role->toArray();
+            }
+            $result['data'] = $roles;
+        }
+        
+        return $result;
     }
 
     public function getUsersWithRolePaginated(string $roleUuid, int $page = 1, int $perPage = 25): array

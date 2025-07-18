@@ -62,7 +62,13 @@ class API
 
         // Load extension routes from enabled extensions
         self::getLogger()->debug("Loading extension routes...");
-        $extensionManager->loadExtensionRoutes();
+        try {
+            $extensionManager->loadExtensionRoutes();
+        } catch (\Exception $e) {
+            throw $e;
+        } catch (\Error $e) {
+            throw $e;
+        }
 
         // Now load all core route definitions
         self::getLogger()->debug("Loading core routes...");

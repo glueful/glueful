@@ -19,7 +19,7 @@ class ExtensionCatalog implements ExtensionCatalogInterface
     private bool $debug = false;
 
     public function __construct(
-        private string $registryUrl = 'https://registry.glueful.com',
+        private string $registryUrl = 'https://raw.githubusercontent.com/glueful/catalog/main/catalog.json',
         private int $timeout = 30,
         private ?Client $httpClient = null,
         private ?FileManager $fileManager = null,
@@ -265,6 +265,16 @@ class ExtensionCatalog implements ExtensionCatalogInterface
         $this->cacheTimeout = $timeout;
     }
 
+    /**
+     * Get registry URL
+     *
+     * @return string Registry URL
+     */
+    public function getRegistryUrl(): string
+    {
+        return $this->registryUrl;
+    }
+
     private function fetchCatalog(bool $useCache = true): array
     {
         // Check cache first
@@ -283,7 +293,7 @@ class ExtensionCatalog implements ExtensionCatalogInterface
         try {
             $this->debugLog("Fetching catalog from: {$this->registryUrl}");
 
-            $url = $this->registryUrl . '/api/extensions';
+            $url = $this->registryUrl;
             $response = $this->httpClient->get($url, [
                 'timeout' => $this->timeout,
                 'headers' => [
@@ -292,15 +302,18 @@ class ExtensionCatalog implements ExtensionCatalogInterface
                 ]
             ]);
 
-            if ($response['status'] !== 200) {
-                throw new ExtensionException("HTTP {$response['status']}: Failed to fetch catalog");
+            if ($response->getStatusCode() !== 200) {
+                throw new ExtensionException("HTTP {$response->getStatusCode()}: Failed to fetch catalog");
             }
 
-            $catalog = json_decode($response['body'], true);
+            $catalogData = json_decode($response->getContent(), true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new ExtensionException("Invalid JSON response from catalog");
             }
+
+            // Extract extensions array from GitHub catalog format
+            $catalog = $catalogData['extensions'] ?? [];
 
             // Cache the result
             $this->catalogCache = $catalog;
@@ -340,11 +353,11 @@ class ExtensionCatalog implements ExtensionCatalogInterface
             ]
         ]);
 
-        if ($response['status'] !== 200) {
-            throw new ExtensionException("HTTP {$response['status']}: Failed to download extension");
+        if ($response->getStatusCode() !== 200) {
+            throw new ExtensionException("HTTP {$response->getStatusCode()}: Failed to download extension");
         }
 
-        if (file_put_contents($tempFile, $response['body']) === false) {
+        if (file_put_contents($tempFile, $response->getContent()) === false) {
             throw new ExtensionException("Failed to save downloaded file");
         }
 

@@ -572,8 +572,8 @@ class ExtensionsController extends BaseController
      */
     public function getCatalog(): mixed
     {
-        // Check permission
-        $this->requirePermission('extensions.catalog.view');
+        // Check permission (use same permission as extensions list)
+        $this->requirePermission('extensions.list');
 
         // Apply rate limiting for catalog endpoint
         $this->rateLimitMethod(null, [
@@ -593,8 +593,7 @@ class ExtensionsController extends BaseController
             // Cache catalog data with permission-aware TTL
             $cacheKey = 'extensions_catalog_' . md5(serialize($filters)) . '_' . ($useCache ? '1' : '0');
             $catalogData = $this->cacheByPermission($cacheKey, function () {
-                // TODO: Implement getSynchronizedCatalog in new ExtensionManager
-                return ['extensions' => []]; // Placeholder
+                return $this->extensionManager->getSynchronizedCatalog();
             }, 300); // 5 minutes TTL
 
             // Log catalog access

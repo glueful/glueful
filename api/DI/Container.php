@@ -62,4 +62,19 @@ class Container implements ContainerInterface
         // Fallback for basic containers - return empty array
         return [];
     }
+
+    /**
+     * Register a service provider
+     *
+     * @param object $serviceProvider Service provider instance
+     * @return void
+     */
+    public function register(object $serviceProvider): void
+    {
+        // Check if the service provider has a register method
+        if (method_exists($serviceProvider, 'register')) {
+            // Pass the underlying Symfony container, not the wrapper
+            $serviceProvider->register($this->container);
+        }
+    }
 }

@@ -26,6 +26,7 @@ class ExtensionServiceProvider implements ServiceProviderInterface
                 new Reference(\Glueful\Services\FileManager::class),
                 new Reference('logger')
             ])
+            ->addMethodCall('setDebugMode', [true])
             ->setPublic(true)
             ->addTag(ServiceTags::EXTENSION_SERVICE, ['extension' => 'core']);
 
@@ -69,7 +70,8 @@ class ExtensionServiceProvider implements ServiceProviderInterface
                 new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface::class),
                 new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionCatalogInterface::class),
                 new Reference(\Glueful\Extensions\Services\Interfaces\ExtensionValidatorInterface::class),
-                new Reference('logger')
+                new Reference('logger'),
+                new Reference('service_container')
             ])
             ->setPublic(true);
 

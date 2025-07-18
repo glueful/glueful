@@ -75,6 +75,7 @@ class ControllerServiceProvider implements ServiceProviderInterface
 
         // Extensions Controller
         $container->register(ExtensionsController::class)
+            ->setArguments([new Reference(\Glueful\Extensions\ExtensionManager::class)])
             ->setPublic(true);
     }
 

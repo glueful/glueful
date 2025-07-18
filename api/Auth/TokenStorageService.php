@@ -61,7 +61,12 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Calculate expiration times
-            $accessExpiresAt = date('Y-m-d H:i:s', time() + $tokens['expires_in']);
+            // For remember_me tokens, use the JWT token's actual expiration time
+            if (!empty($sessionData['remember_me'])) {
+                $accessExpiresAt = $this->getJwtTokenExpiration($tokens['access_token']);
+            } else {
+                $accessExpiresAt = date('Y-m-d H:i:s', time() + $tokens['expires_in']);
+            }
             $refreshExpiresAt = date('Y-m-d H:i:s', time() + (int)config('session.refresh_token_lifetime', 604800));
 
             // Prepare session data for database
@@ -134,7 +139,12 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Calculate new expiration times
-            $accessExpiresAt = date('Y-m-d H:i:s', time() + $newTokens['expires_in']);
+            // For remember_me tokens, use the JWT token's actual expiration time
+            if (!empty($existingSession['remember_me'])) {
+                $accessExpiresAt = $this->getJwtTokenExpiration($newTokens['access_token']);
+            } else {
+                $accessExpiresAt = date('Y-m-d H:i:s', time() + $newTokens['expires_in']);
+            }
             $refreshExpiresAt = date('Y-m-d H:i:s', time() + (int)config('session.refresh_token_lifetime', 604800));
 
             // Update database
@@ -649,5 +659,34 @@ class TokenStorageService implements TokenStorageInterface
             ->get();
 
         return !empty($result) ? $result[0] : null;
+    }
+
+    /**
+     * Extract expiration time from JWT token
+     *
+     * @param string $jwtToken JWT token
+     * @return string Expiration time in Y-m-d H:i:s format
+     */
+    private function getJwtTokenExpiration(string $jwtToken): string
+    {
+        try {
+            // Decode JWT token to extract expiration time
+            $parts = explode('.', $jwtToken);
+            if (count($parts) !== 3) {
+                throw new \Exception('Invalid JWT token format');
+            }
+
+            // Decode the payload (second part)
+            $payload = json_decode(base64_decode($parts[1]), true);
+            if (!$payload || !isset($payload['exp'])) {
+                throw new \Exception('JWT token missing expiration claim');
+            }
+
+            // Convert Unix timestamp to MySQL datetime format
+            return date('Y-m-d H:i:s', $payload['exp']);
+        } catch (\Exception $e) {
+            // Fallback to standard access token lifetime if JWT parsing fails
+            return date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600));
+        }
     }
 }

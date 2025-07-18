@@ -65,4 +65,9 @@ interface ExtensionCatalogInterface
      * Set debug mode
      */
     public function setDebugMode(bool $enable = true): void;
+
+    /**
+     * Get registry URL
+     */
+    public function getRegistryUrl(): string;
 }
