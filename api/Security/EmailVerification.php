@@ -258,7 +258,7 @@ class EmailVerification
     private function storeOTP(string $email, string $hashedOTP): bool
     {
         try {
-            $key = self::OTP_PREFIX . $email;
+            $key = self::OTP_PREFIX . $this->sanitizeEmailForCacheKey($email);
             $data = [
                 'otp' => $hashedOTP,
                 'timestamp' => time()
@@ -334,7 +334,7 @@ class EmailVerification
      */
     public function verifyOTP(string $email, string $providedOTP): bool
     {
-        $key = self::OTP_PREFIX . $email;
+        $key = self::OTP_PREFIX . $this->sanitizeEmailForCacheKey($email);
         $stored = $this->cache->get($key);
 
         if (!$stored || empty($stored['otp']) || empty($stored['timestamp'])) {
@@ -385,7 +385,7 @@ class EmailVerification
      */
     private function isRateLimited(string $email): bool
     {
-        $attempts = $this->cache->get(self::ATTEMPTS_PREFIX . $email) ?? 0;
+        $attempts = $this->cache->get(self::ATTEMPTS_PREFIX . $this->sanitizeEmailForCacheKey($email)) ?? 0;
         return $attempts >= self::MAX_ATTEMPTS;
     }
 
@@ -396,7 +396,7 @@ class EmailVerification
      */
     private function incrementAttempts(string $email): void
     {
-        $key = self::ATTEMPTS_PREFIX . $email;
+        $key = self::ATTEMPTS_PREFIX . $this->sanitizeEmailForCacheKey($email);
         $attempts = (int)($this->cache->get($key) ?? 0) + 1;
         $this->cache->set($key, $attempts, self::COOLDOWN_MINUTES * 60);
 
@@ -412,7 +412,7 @@ class EmailVerification
      */
     private function clearAttempts(string $email): void
     {
-        $this->cache->delete(self::ATTEMPTS_PREFIX . $email);
+        $this->cache->delete(self::ATTEMPTS_PREFIX . $this->sanitizeEmailForCacheKey($email));
     }
 
     /**
@@ -423,7 +423,7 @@ class EmailVerification
      */
     private function incrementDailyRequests(string $email): bool
     {
-        $key = self::REQUESTS_PREFIX . $email . ':' . date('Y-m-d');
+        $key = self::REQUESTS_PREFIX . $this->sanitizeEmailForCacheKey($email) . ':' . date('Y-m-d');
         $requests = (int)($this->cache->get($key) ?? 0) + 1;
 
         if ($requests > self::MAX_DAILY_REQUESTS) {
@@ -548,24 +548,31 @@ class EmailVerification
             };
 
             // Send via notification system using the password-reset template
+            $userProfile = $userRepository->getProfile($userData['uuid'] ?? null);
             $result = $verifier->notificationService->send(
                 'password_reset',
                 $notifiable,
                 'Password Reset Code',
                 [
-                    'name' => $userData['first_name'] ?? 'User',
+                    'name' => $userProfile['first_name'] ?? '',
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                     'app_name' => config('app.name', 'Glueful'),
                     'current_year' => date('Y'),
                     'message' => 'Your password reset code is: ' . $otp,
+                    'subject' => 'Password reset requested', // Update subject to match recent edits
+                    'title' => 'Password reset requested for', // Fixed title explicitly for header
                     'template_data' => [  // Explicitly provide template data in the correct format
-                        'name' => $userData['first_name'] ?? 'User',
+                        'name' => $userProfile['first_name'] ?? '',
                         'otp' => $otp,
                         'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
                         'app_name' => config('app.name', 'Glueful'),
                         'current_year' => date('Y'),
-                    ]
+                        'subject' => 'Password reset requested', // Update subject to match recent edits
+                        'title' => 'Password reset requested for', // Fixed title explicitly for header
+                    ],
+                    'type' => 'password_reset', // Explicitly set the notification type
+                    'template_name' => 'password-reset' // Set template name directly in data as well
                 ],
                 [
                     'channels' => ['email'],
@@ -611,5 +618,22 @@ class EmailVerification
             error_log("Error checking email provider configuration: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Sanitize email address for use in cache keys
+     *
+     * PSR-16 cache implementations reject certain characters in cache keys,
+     * including '@' which is present in all email addresses. This method
+     * converts email addresses to a cache-safe format using base64 encoding.
+     *
+     * @param string $email Email address to sanitize
+     * @return string Sanitized cache-safe string
+     */
+    private function sanitizeEmailForCacheKey(string $email): string
+    {
+        // Use base64 encoding and replace characters that might still cause issues
+        // The resulting string will be URL-safe and cache-key compliant
+        return str_replace(['/', '+', '='], ['_', '-', ''], base64_encode($email));
     }
 }
