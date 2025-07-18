@@ -158,15 +158,15 @@ class NotificationRepositoryTest extends TestCase
         // Call the method
         $result = $this->notificationRepository->findForNotifiable('user', 'user-uuid');
 
-        // Assert we got notification objects
+        // Assert we got notification arrays
         $this->assertCount(2, $result);
-        $this->assertInstanceOf(Notification::class, $result[0]);
-        $this->assertInstanceOf(Notification::class, $result[1]);
+        $this->assertIsArray($result[0]);
+        $this->assertIsArray($result[1]);
 
         // Check first notification values
-        $this->assertEquals('12345678-1234-1234-1234-123456789012', $result[0]->getUuid());
-        $this->assertEquals('account_created', $result[0]->getType());
-        $this->assertEquals('Welcome to Glueful', $result[0]->getSubject());
+        $this->assertEquals('12345678-1234-1234-1234-123456789012', $result[0]['uuid']);
+        $this->assertEquals('account_created', $result[0]['type']);
+        $this->assertEquals('Welcome to Glueful', $result[0]['subject']);
     }
 
     /**
@@ -508,19 +508,16 @@ class NotificationRepositoryTest extends TestCase
      */
     public function testCountForNotifiable(): void
     {
-        // Configure mock to return count
+        // Configure mock to return count using the count method
         $this->mockQueryBuilder
-            ->method('select')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('where')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('whereNull')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('get')
-            ->willReturn([['count' => 5]]);
+            ->expects($this->once())
+            ->method('count')
+            ->with('notifications', [
+                'notifiable_type' => 'user',
+                'notifiable_id' => 'user-123',
+                'read_at' => null
+            ])
+            ->willReturn(5);
 
         // Call method
         $result = $this->notificationRepository->countForNotifiable('user', 'user-123', true);
