@@ -111,48 +111,6 @@ class AdminController
         }
     }
 
-    /**
-     * Load and render the Admin UI
-     *
-     * @return mixed HTML response with admin interface
-     */
-    public function adminUI(): mixed
-    {
-        try {
-            // Get the path to the admin HTML file
-            $htmlPath = __DIR__ . '/../public/index.html';
-
-            // Check if the file exists
-            if (!file_exists($htmlPath)) {
-                return Response::notFound('Admin UI file not found');
-            }
-
-            // Read the HTML content
-            $htmlContent = file_get_contents($htmlPath);
-
-            if ($htmlContent === false) {
-                return Response::serverError('Failed to load Admin UI');
-            }
-
-            // Return HTML response with proper headers
-            $response = new \Symfony\Component\HttpFoundation\Response(
-                $htmlContent,
-                200,
-                [
-                    'Content-Type' => 'text/html; charset=UTF-8',
-                    'Cache-Control' => 'no-cache, no-store, must-revalidate',
-                    'Pragma' => 'no-cache',
-                    'Expires' => '0'
-                ]
-            );
-
-            // Send the response directly to bypass any middleware that adds debug info
-            $response->send();
-            exit;
-        } catch (\Exception $e) {
-            return Response::serverError('Failed to render Admin UI: ' . $e->getMessage());
-        }
-    }
 
     /**
      * Get comprehensive dashboard data in a single request
@@ -238,12 +196,10 @@ class AdminController
 
             // Extensions
             try {
+                error_log("Fetching enabled extensions data for dashboard");
                 // Get extension configuration data using ExtensionManager
                 $extensionManager = $this->container->get(ExtensionManager::class);
                 $globalConfig = $extensionManager->getGlobalConfig();
-                $extensionConfigFile = $globalConfig['config_path'] ?? 'config/extensions.json';
-                $content = file_get_contents($extensionConfigFile);
-                $config = json_decode($content, true);
 
                 // Get core and optional extension lists
                 $coreExtensions = $extensionManager->getCoreExtensions();
@@ -255,8 +211,8 @@ class AdminController
                 $enabledCount = 0;
                 $disabledCount = 0;
 
-                if (isset($config['extensions']) && is_array($config['extensions'])) {
-                    foreach ($config['extensions'] as $name => $ext) {
+                if (isset($globalConfig['extensions']) && is_array($globalConfig['extensions'])) {
+                    foreach ($globalConfig['extensions'] as $name => $ext) {
                         $isEnabled = in_array($name, $enabledExtensions);
                         $isCoreExtension = in_array($name, $coreExtensions);
 
