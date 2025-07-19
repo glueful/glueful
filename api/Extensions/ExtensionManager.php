@@ -348,13 +348,18 @@ class ExtensionManager
         $installedExtensions = $this->listInstalled();
         $enabledExtensions = $this->listEnabled();
 
+        // Extract just the extension names from installed list for comparison
+        $installedExtensionNames = array_map(function ($ext) {
+            return $ext['name'];
+        }, $installedExtensions);
+
         // Synchronize with local status
         $synchronizedExtensions = [];
         foreach ($remoteCatalog as $extension) {
             $extensionName = $extension['name'] ?? '';
 
             // Add local status information
-            $extension['installed'] = in_array($extensionName, $installedExtensions);
+            $extension['installed'] = in_array($extensionName, $installedExtensionNames);
             $extension['enabled'] = in_array($extensionName, $enabledExtensions);
             $extension['status'] = $extension['enabled'] ? 'active' :
                                  ($extension['installed'] ? 'inactive' : 'available');
