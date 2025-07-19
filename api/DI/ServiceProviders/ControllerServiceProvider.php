@@ -20,6 +20,7 @@ use Glueful\Controllers\FilesController;
 use Glueful\Controllers\HealthController;
 use Glueful\Controllers\NotificationsController;
 use Glueful\Controllers\ExtensionsController;
+use Glueful\Controllers\UsersController;
 
 /**
  * Controller Service Provider
@@ -76,6 +77,17 @@ class ControllerServiceProvider implements ServiceProviderInterface
         // Extensions Controller
         $container->register(ExtensionsController::class)
             ->setArguments([new Reference(\Glueful\Extensions\ExtensionManager::class)])
+            ->setPublic(true);
+
+        // Users Controller
+        $container->register(UsersController::class)
+            ->setArguments([
+                new Reference(\Glueful\Repository\RepositoryFactory::class),
+                new Reference(\Glueful\Auth\AuthenticationManager::class),
+                null, // Request is injected per-request
+                new Reference(\Glueful\Repository\UserRepository::class),
+                new Reference(\Glueful\Auth\TokenStorageService::class)
+            ])
             ->setPublic(true);
     }
 

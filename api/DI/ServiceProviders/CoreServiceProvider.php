@@ -93,6 +93,16 @@ class CoreServiceProvider implements ServiceProviderInterface
             ])
             ->setPublic(true);
 
+        // Token Storage Service
+        $container->register(\Glueful\Auth\TokenStorageService::class)
+            ->setArguments([
+                new Reference('cache.store'),
+                new Reference('database'),
+                null, // RequestContext - will use default
+                true  // useTransactions
+            ])
+            ->setPublic(true);
+
         // Performance services
         $container->register(\Glueful\Performance\MemoryManager::class)
             ->setPublic(true);
