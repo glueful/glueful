@@ -10,7 +10,14 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Generate API Definitions Command
+ * Generate API Documentation Command
+ * Generates comprehensive OpenAPI/Swagger documentation including:
+ * - Database-driven CRUD API definitions from schema analysis
+ * - Route-based API definitions from OpenAPI annotations
+ * - Complete swagger.json specification file
+ * - Individual JSON definition files for each endpoint
+ *
+ * Features:
  * - Interactive prompts for database and table selection
  * - Progress indicators for generation process
  * - Detailed validation with helpful error messages
@@ -20,16 +27,23 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 #[AsCommand(
     name: 'generate:api-definitions',
-    description: 'Generate JSON API definitions from database schema'
+    description: 'Generate complete OpenAPI/Swagger documentation from database schema and route annotations'
 )]
 class ApiDefinitionsCommand extends BaseCommand
 {
     protected function configure(): void
     {
-        $this->setDescription('Generate JSON API definitions from database schema')
+        $this->setDescription(
+            'Generate complete OpenAPI/Swagger documentation from database schema and route annotations'
+        )
              ->setHelp(
-                 'This command generates API endpoint definitions by analyzing database schema and ' .
-                 'creating JSON definitions.'
+                 'This command generates comprehensive API documentation including:\n' .
+                 '• Database-driven CRUD endpoints from schema analysis\n' .
+                 '• Route-based endpoints from OpenAPI annotations in route files\n' .
+                 '• Complete swagger.json specification for API documentation\n' .
+                 '• Individual JSON definition files for each endpoint\n\n' .
+                 'The generated documentation can be used with API documentation tools like ' .
+                 'RapiDoc, Swagger UI, or Redoc.'
              )
              ->addOption(
                  'database',
@@ -73,19 +87,19 @@ class ApiDefinitionsCommand extends BaseCommand
 
             // Confirm if not forced and potentially destructive
             if (!$force && !$this->confirmGeneration($database, $table)) {
-                $this->info('API definition generation cancelled.');
+                $this->info('API documentation generation cancelled.');
                 return self::SUCCESS;
             }
 
             // Perform generation with progress indication
             $this->generateDefinitions($generator, $database, $table, $force);
 
-            $this->success('API definitions generated successfully!');
+            $this->success('API documentation generated successfully!');
             $this->displayGenerationResults($database, $table);
 
             return self::SUCCESS;
         } catch (\Exception $e) {
-            $this->error('Failed to generate API definitions: ' . $e->getMessage());
+            $this->error('Failed to generate API documentation: ' . $e->getMessage());
             return self::FAILURE;
         }
     }
@@ -125,7 +139,7 @@ class ApiDefinitionsCommand extends BaseCommand
         ?string $table,
         bool $force
     ): void {
-        $this->info('Generating API definitions...');
+        $this->info('Generating API documentation...');
 
         if ($database && $table) {
             $this->line("Processing table: {$table}");
@@ -145,17 +159,21 @@ class ApiDefinitionsCommand extends BaseCommand
         $this->info('Generation completed successfully!');
 
         if ($database && $table) {
-            $this->line("✓ Generated JSON definitions for table: {$table}");
+            $this->line("✓ Generated API documentation for table: {$table}");
         } elseif ($database) {
-            $this->line("✓ Generated JSON definitions for database: {$database}");
+            $this->line("✓ Generated API documentation for database: {$database}");
         } else {
-            $this->line('✓ Generated JSON definitions for all databases');
+            $this->line('✓ Generated API documentation for all databases');
         }
+
+        $this->line('✓ Processed route-based API annotations');
+        $this->line('✓ Created individual endpoint definitions');
+        $this->line('✓ Generated swagger.json specification');
 
         $this->line('');
         $this->info('Next steps:');
-        $this->line('1. Review generated API definition files');
-        $this->line('2. Customize definitions as needed for your API');
+        $this->line('1. Review generated swagger.json and API definition files');
+        $this->line('2. Customize route annotations as needed for your API');
 
         // Build documentation URL dynamically from configuration
         $apiBaseUrl = rtrim(config('app.paths.api_base_url'), '/');

@@ -24,7 +24,7 @@ $container = app();
 Router::group('/extensions', function () use ($container) {
     /**
      * @route GET /extensions
-     * @tag Extensions
+     * @tag Extensions - Management
      * @summary List extensions
      * @description Retrieves a list of all available extensions with their status
      * @requiresAuth true
@@ -42,7 +42,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route GET /extensions/catalog
-     * @tag Extensions Management
+     * @tag Extensions - Management
      * @summary Get synchronized extensions catalog
      * @description Retrieves the GitHub extensions catalog synchronized with local extension status,
      * including installation and enablement status for each extension
@@ -105,7 +105,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route POST /extensions/enable
-     * @tag Extensions
+     * @tag Extensions - Management
      * @summary Enable extension
      * @description Enables a specific extension
      * @requiresAuth true
@@ -123,7 +123,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route POST /extensions/disable
-     * @tag Extensions
+     * @tag Extensions - Management
      * @summary Disable extension
      * @description Disables a specific extension
      * @requiresAuth true
@@ -141,7 +141,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route POST /extensions/{name}/health
-     * @tag Extensions
+     * @tag Extensions - Monitoring
      * @summary Get extension health
      * @description Checks the health status of a specific extension
      * @requiresAuth true
@@ -159,7 +159,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route GET /extensions/dependencies
-     * @tag Extensions
+     * @tag Extensions - Monitoring
      * @summary Get extension dependencies
      * @description Retrieves the dependency graph for all extensions
      * @requiresAuth true
@@ -174,7 +174,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route GET /extensions/metrics
-     * @tag Extensions
+     * @tag Extensions - Monitoring
      * @summary Get extension metrics
      * @description Retrieves resource usage metrics for enabled extensions
      * @requiresAuth true
@@ -189,7 +189,7 @@ Router::group('/extensions', function () use ($container) {
 
     /**
      * @route POST /extensions/delete
-     * @tag Extensions
+     * @tag Extensions - Maintenance
      * @summary Delete extension
      * @description Completely removes an extension from the filesystem
      * @requiresAuth true

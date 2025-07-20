@@ -295,7 +295,8 @@ class DocGenerator
         // For views (starting with vw_), only add GET method
         if (str_starts_with($tableName, 'vw_')) {
             $this->paths[$basePath]['get'] = [
-                'tags' => [$resource],
+                // 'tags' => [$resource],
+                'tags' => ["Table - {$resource}"],
                 'summary' => "List {$tableName}",
                 'description' => "View-only endpoint for {$tableName}",
                 'parameters' => [
@@ -310,7 +311,8 @@ class DocGenerator
         // Rest of the CRUD operations remain the same
         if (str_contains($access, 'r')) {
             $this->paths[$basePath]['get'] = [
-                'tags' => [$resource],
+                // 'tags' => [$resource],
+                'tags' => ["Table - {$resource}"],
                 'summary' => "List {$tableName}",
                 'description' => "Retrieve a list of {$tableName} records",
                 'security' => [['BearerAuth' => []]],
@@ -325,7 +327,8 @@ class DocGenerator
         if (str_contains($access, 'w')) {
             // POST uses schema without ID
             $this->paths[$basePath]['post'] = [
-                'tags' => [$resource],
+                // 'tags' => [$resource],
+                'tags' => ["Table - {$resource}"],
                 'summary' => "Create new {$tableName}",
                 'description' => "Create a new {$tableName} record",
                 'security' => [['BearerAuth' => []]],
@@ -352,7 +355,8 @@ class DocGenerator
 
             // PUT uses schema with ID
             $this->paths[$basePath . '/{id}']['put'] = [
-                'tags' => [$resource],
+                // 'tags' => [$resource],
+                'tags' => ["Table - {$resource}"],
                 'summary' => "Update {$tableName}",
                 'description' => "Update an existing {$tableName} record",
                 'security' => [['BearerAuth' => []]],
@@ -387,7 +391,8 @@ class DocGenerator
             ];
 
             $this->paths[$basePath . '/{id}']['delete'] = [
-                'tags' => [$resource],
+                // 'tags' => [$resource],
+                'tags' => ["Table - {$resource}"],
                 'summary' => "Delete {$tableName}",
                 'description' => "Delete a {$tableName} record",
                 'security' => [['BearerAuth' => []]],

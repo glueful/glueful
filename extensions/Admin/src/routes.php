@@ -22,7 +22,8 @@ use Glueful\Controllers\{
     MigrationsController,
     JobsController,
     MetricsController,
-    ConfigController
+    ConfigController,
+    UsersController
 };
 use Glueful\Helpers\RequestHelper;
 use Symfony\Component\HttpFoundation\Request;
@@ -44,7 +45,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/stats
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get comprehensive database statistics
          * @description Retrieves detailed statistics for all tables in the database including size, schema,
          * row counts, and other metrics
@@ -69,7 +70,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/tables
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get all database tables
          * @description Retrieves a list of all tables in the database
          * @requiresAuth true
@@ -85,7 +86,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/create
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Create new database table
          * @description Creates a new table in the database with specified columns
          * @requiresAuth true
@@ -108,7 +109,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/drop
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop database table
          * @description Deletes a table from the database
          * @requiresAuth true
@@ -126,7 +127,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/table/size
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get database table size
          * @description Retrieves the size of the specified table in the database
          * @requiresAuth true
@@ -151,7 +152,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/table/{name}/metadata
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get comprehensive table metadata
          * @description Retrieves detailed metadata about a database table including size, row count, columns,
          *              indexes, engine, and timestamps
@@ -187,7 +188,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/table/{name}
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get table data
          * @description Retrieves data from the specified table with pagination
          * @requiresAuth true
@@ -208,7 +209,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/column/add
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add column to table
          * @description Adds a new column to an existing database table
          * @requiresAuth true
@@ -228,7 +229,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/column/drop
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop column from table
          * @description Removes a column from an existing database table
          * @requiresAuth true
@@ -248,7 +249,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/index/drop
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop index from table
          * @description Removes an index from an existing database table
          * @requiresAuth true
@@ -265,7 +266,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/foreign-key/drop
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop foreign key from table
          * @description Removes a foreign key constraint from an existing database table
          * @requiresAuth true
@@ -284,7 +285,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/table/{name}/columns
-         * @tag Database
+         * @tag Admin - Database Management
          * @summary Get table columns
          * @description Retrieves column metadata for a specific table
          * @requiresAuth true
@@ -302,7 +303,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/index/add
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add index to table
          * @description Adds a new index to an existing database table
          * @requiresAuth true
@@ -325,7 +326,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/foreign-key/add
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add foreign key to table
          * @description Adds a new foreign key constraint to an existing database table
          * @requiresAuth true
@@ -347,7 +348,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/column/add-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add multiple columns to table
          * @description Adds multiple columns to an existing database table in a single operation
          * @requiresAuth true
@@ -376,7 +377,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/column/drop-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop multiple columns from table
          * @description Removes multiple columns from an existing database table in a single operation
          * @requiresAuth true
@@ -395,7 +396,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/index/drop-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop multiple indexes from table
          * @description Removes multiple indexes from an existing database table in a single operation
          * @requiresAuth true
@@ -414,7 +415,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/foreign-key/drop-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Drop multiple foreign keys from table
          * @description Removes multiple foreign key constraints from an existing database table in a single operation
          * @requiresAuth true
@@ -433,7 +434,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/index/add-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add multiple indexes to table
          * @description Adds multiple indexes to an existing database table in a single operation
          * @requiresAuth true
@@ -452,7 +453,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/foreign-key/add-batch
-         * @tag Database
+         * @tag Admin - Table Operations
          * @summary Add multiple foreign keys to table
          * @description Adds multiple foreign key constraints to an existing database table in a single operation
          * @requiresAuth true
@@ -479,7 +480,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/table/schema/update
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Update table schema
          * @description Updates table schema with multiple operations including adding/removing columns,
          *              indexes, and foreign keys
@@ -505,7 +506,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/tables/{name}/import
-         * @tag Database
+         * @tag Admin - Data Operations
          * @summary Import data into table
          * @description Imports data from CSV into the specified table with column mapping and options
          * @requiresAuth true
@@ -533,7 +534,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route DELETE /admin/db/tables/{name}/bulk-delete
-         * @tag Database
+         * @tag Admin - Data Operations
          * @summary Bulk delete records from table
          * @description Deletes multiple records from the specified table by their IDs
          * @requiresAuth true
@@ -554,7 +555,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route PUT /admin/db/tables/{name}/bulk-update
-         * @tag Database
+         * @tag Admin - Data Operations
          * @summary Bulk update records in table
          * @description Updates multiple records in the specified table by their IDs
          * @requiresAuth true
@@ -578,7 +579,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/preview-schema-changes
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Preview schema changes before applying
          * @description Generates a preview of schema changes including SQL statements, warnings, and
          *              estimated execution time
@@ -616,7 +617,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET/POST /admin/db/export-schema
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Export table schema in specified format
          * @description Exports a table's schema in various formats (JSON, SQL, YAML, PHP) for backup or
          *              migration purposes
@@ -652,7 +653,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/import-schema
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Import table schema from provided definition
          * @description Imports a table schema from various formats (JSON, SQL, YAML, PHP) with validation and options
          * @requiresAuth true
@@ -684,7 +685,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/db/schema-history
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Get schema change history for a table
          * @description Retrieves the history of schema changes for a specific table from audit logs and migrations
          * @requiresAuth true
@@ -723,7 +724,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/db/revert-schema-change
-         * @tag Database
+         * @tag Admin - Schema Management
          * @summary Revert a schema change
          * @description Reverts a previous schema change by executing the reverse operations
          * @requiresAuth true
@@ -754,7 +755,7 @@ Router::group('/admin', function () use ($container) {
     Router::group('/migrations', function () use ($container) {
         /**
          * @route GET /admin/migrations
-         * @tag Migrations
+         * @tag Admin - Migrations
          * @summary List all migrations
          * @description Retrieves a list of all database migrations and their status
          * @requiresAuth true
@@ -775,7 +776,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/migrations/pending
-         * @tag Migrations
+         * @tag Admin - Migrations
          * @summary List pending migrations
          * @description Retrieves a list of all pending database migrations
          * @requiresAuth true
@@ -796,7 +797,7 @@ Router::group('/admin', function () use ($container) {
     Router::group('/jobs', function () use ($container) {
         /**
          * @route GET /admin/jobs
-         * @tag Jobs
+         * @tag Admin - Jobs
          * @summary List all scheduled jobs
          * @description Retrieves a list of all scheduled jobs and their status
          * @requiresAuth true
@@ -813,7 +814,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/jobs/run-due
-         * @tag Jobs
+         * @tag Admin - Jobs
          * @summary Run due jobs
          * @description Runs all jobs that are due to be executed
          * @requiresAuth true
@@ -833,7 +834,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/jobs/run-all
-         * @tag Jobs
+         * @tag Admin - Jobs
          * @summary Run all jobs
          * @description Runs all scheduled jobs regardless of their schedule
          * @requiresAuth true
@@ -853,7 +854,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/jobs/run
-         * @tag Jobs
+         * @tag Admin - Jobs
          * @summary Run specific job
          * @description Runs a specific job regardless of its schedule
          * @requiresAuth true
@@ -875,7 +876,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/jobs/create-job
-         * @tag Jobs
+         * @tag Admin - Jobs
          * @summary Create new job
          * @description Creates a new scheduled job
          * @requiresAuth true
@@ -897,7 +898,7 @@ Router::group('/admin', function () use ($container) {
     Router::group('/configs', function () use ($container) {
         /**
          * @route GET /admin/configs
-         * @tag Configuration
+         * @tag Admin - Configuration
          * @summary List all configuration files
          * @description Retrieves a list of all available configuration files
          * @requiresAuth true
@@ -913,7 +914,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/configs/{filename}
-         * @tag Configuration
+         * @tag Admin - Configuration
          * @summary Get configuration file
          * @description Retrieves the contents of a specific configuration file
          * @requiresAuth true
@@ -932,7 +933,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route PUT /admin/configs/{filename}
-         * @tag Configuration
+         * @tag Admin - Configuration
          * @summary Update configuration file
          * @description Updates the contents of a specific configuration file
          * @requiresAuth true
@@ -950,7 +951,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/configs/create
-         * @tag Configuration
+         * @tag Admin - Configuration
          * @summary Create configuration file
          * @description Creates a new configuration file
          * @requiresAuth true
@@ -969,7 +970,7 @@ Router::group('/admin', function () use ($container) {
     Router::group('/system', function () use ($container) {
         /**
          * @route GET /admin/system/api-metrics
-         * @tag API Monitoring
+         * @tag Admin - System Monitoring
          * @summary Get API metrics
          * @description Retrieves comprehensive metrics about API usage including endpoint performance,
          * request volumes, error rates, and rate limiting information
@@ -990,7 +991,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route POST /admin/system/api-metrics/reset
-         * @tag API Monitoring
+         * @tag Admin - System Monitoring
          * @summary Reset API metrics
          * @description Resets all collected API metrics data
          * @requiresAuth true
@@ -1005,7 +1006,7 @@ Router::group('/admin', function () use ($container) {
 
         /**
          * @route GET /admin/system/health
-         * @tag System Monitoring
+         * @tag Admin - System Monitoring
          * @summary Get system health metrics
          * @description Retrieves comprehensive metrics about the system's health including PHP information,
          * database status, file system metrics, memory usage, cache status, extension status, and more
@@ -1030,7 +1031,7 @@ Router::group('/admin', function () use ($container) {
 
     /**
      * @route GET /admin/dashboard
-     * @tag Dashboard
+     * @tag Admin - Dashboard
      * @summary Get comprehensive dashboard data
      * @description Retrieves all dashboard data in a single request including database stats,
      * system health, migrations, extensions, permissions, roles, jobs, and API metrics
@@ -1052,5 +1053,258 @@ Router::group('/admin', function () use ($container) {
     Router::get('/dashboard', function (Request $request) use ($container) {
         $adminController = $container->get(AdminController::class);
         return $adminController->getDashboardData($request);
+    }, requiresAdminAuth: true);
+
+    // User Management Routes (moved from routes/users.php)
+    Router::group('/users', function () use ($container) {
+        /**
+         * @route GET /admin/users
+         * @tag Admin - User Management
+         * @summary List all users
+         * @description Retrieves a paginated list of users (role functionality moved to RBAC extension)
+         * @requiresAuth true
+         * @query page integer "Page number (default: 1)"
+         * @query per_page integer "Items per page (default: 25)"
+         * @query search string "Search term for username/email"
+         * @query status string "Filter by status (active/inactive/suspended)"
+         * @query role_id string "Filter by role UUID"
+         * @query sort string "Sort field (default: created_at)"
+         * @query order string "Sort order ASC/DESC (default: DESC)"
+         * @query include_deleted boolean "Include soft-deleted users"
+         * @response 200 application/json "List of users with roles" {
+         *   success:boolean,
+         *   data:array=[{
+         *     uuid:string,
+         *     username:string,
+         *     email:string,
+         *     status:string,
+         *     created_at:string,
+         *     last_login_date:string,
+         *     roles:array=[{uuid:string,name:string}]
+         *   }],
+         *   pagination:object
+         * }
+         */
+        Router::get('/', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->index($request);
+        });
+
+        /**
+         * @route GET /admin/users/stats
+         * @tag Admin - User Monitoring
+         * @summary Get user statistics
+         * @description Retrieves user statistics for dashboard
+         * @requiresAuth true
+         * @query period string "Time period (7days/30days/90days/year)"
+         * @response 200 application/json "User statistics"
+         */
+        Router::get('/stats', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->stats($request);
+        });
+
+        /**
+         * @route GET /admin/users/search
+         * @tag Admin - User Monitoring
+         * @summary Advanced user search
+         * @description Search users with advanced filters
+         * @requiresAuth true
+         * @query q string "Search query"
+         * @query status string "Filter by status"
+         * @query role string "Filter by role name"
+         * @query created_after string "Filter by creation date"
+         * @query created_before string "Filter by creation date"
+         * @query last_login_after string "Filter by last login"
+         * @query last_login_before string "Filter by last login"
+         * @query has_permission string "Filter by permission"
+         * @response 200 application/json "Search results"
+         */
+        Router::get('/search', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->search($request);
+        });
+
+        /**
+         * @route GET /admin/users/export
+         * @tag Admin - User Operations
+         * @summary Export users
+         * @description Export users to CSV or JSON format
+         * @requiresAuth true
+         * @query format string "Export format (csv/json)"
+         * @query status string "Filter by status"
+         * @query role string "Filter by role"
+         * @query include_deleted boolean "Include deleted users"
+         * @response 200 "Export file"
+         */
+        Router::get('/export', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->export($request);
+        });
+
+        /**
+         * @route POST /admin/users/import
+         * @tag Admin - User Operations
+         * @summary Import users
+         * @description Import users from CSV or JSON file
+         * @requiresAuth true
+         * @requestBody file:file="Import file" format:string="File format (csv/json)"
+         *              update_existing:boolean="Update existing users"
+         *              send_welcome_email:boolean="Send welcome emails"
+         *              default_password:string="Default password for new users"
+         *              {required=file}
+         * @response 200 application/json "Import results"
+         */
+        Router::post('/import', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->import($request);
+        });
+
+        /**
+         * @route POST /admin/users/bulk
+         * @tag Admin - User Operations
+         * @summary Bulk operations
+         * @description Perform bulk operations on multiple users
+         * @requiresAuth true
+         * @requestBody action:string="Action (delete/restore/activate/deactivate/suspend)"
+         *              user_ids:array="Array of user UUIDs"
+         *              note:string="Role operations moved to RBAC extension"
+         *              {required=action,user_ids}
+         * @response 200 application/json "Operation results"
+         */
+        Router::post('/bulk', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->bulk($request);
+        });
+
+        /**
+         * @route GET /admin/users/{uuid}
+         * @tag Admin - User Management
+         * @summary Get user details
+         * @description Retrieves detailed information about a specific user
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @response 200 application/json "User details with roles and permissions"
+         * @response 404 application/json "User not found"
+         */
+        Router::get('/{uuid}', function (array $params, Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->show($params);
+        });
+
+        /**
+         * @route POST /admin/users
+         * @tag Admin - User Management
+         * @summary Create new user
+         * @description Creates a new user (role assignment via RBAC extension)
+         * @requiresAuth true
+         * @requestBody username:string="Username" email:string="Email address"
+         *              password:string="Password" status:string="Status (active/inactive)"
+         *              roles:array="Role UUIDs" profile:object="Profile data"
+         *              {required=username,email,password}
+         * @response 201 application/json "Created user"
+         * @response 422 application/json "Validation errors"
+         */
+        Router::post('/', function (Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->create($request);
+        });
+
+        /**
+         * @route PUT /admin/users/{uuid}
+         * @tag Admin - User Management
+         * @summary Update user
+         * @description Updates user information (roles managed by RBAC extension)
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @requestBody username:string="Username" email:string="Email address"
+         *              status:string="Status" password:string="New password"
+         *              roles:array="Role UUIDs" profile:object="Profile data"
+         * @response 200 application/json "Updated user"
+         * @response 404 application/json "User not found"
+         * @response 422 application/json "Validation errors"
+         */
+        Router::put('/{uuid}', function (array $params, Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->update($params, $request);
+        });
+
+        /**
+         * @route DELETE /admin/users/{uuid}
+         * @tag Admin - User Management
+         * @summary Delete user
+         * @description Soft deletes a user
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @response 200 application/json "User deleted"
+         * @response 404 application/json "User not found"
+         */
+        Router::delete('/{uuid}', function (array $params) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->delete($params);
+        });
+
+        /**
+         * @route POST /admin/users/{uuid}/restore
+         * @tag Admin - User Operations
+         * @summary Restore user
+         * @description Restores a soft-deleted user
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @response 200 application/json "User restored"
+         * @response 404 application/json "User not found"
+         */
+        Router::post('/{uuid}/restore', function (array $params) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->restore($params);
+        });
+
+        /**
+         * @route GET /admin/users/{uuid}/activity
+         * @tag Admin - User Monitoring
+         * @summary Get user activity
+         * @description Retrieves user activity log
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @query page integer "Page number"
+         * @query per_page integer "Items per page"
+         * @response 200 application/json "Activity log"
+         * @response 404 application/json "User not found"
+         */
+        Router::get('/{uuid}/activity', function (array $params, Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->activity($params, $request);
+        });
+
+        /**
+         * @route GET /admin/users/{uuid}/sessions
+         * @tag Admin - User Sessions
+         * @summary Get user sessions
+         * @description Retrieves all active sessions for a user
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @response 200 application/json "User sessions"
+         * @response 404 application/json "User not found"
+         */
+        Router::get('/{uuid}/sessions', function (array $params) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->sessions($params);
+        });
+
+        /**
+         * @route DELETE /admin/users/{uuid}/sessions
+         * @tag Admin - User Sessions
+         * @summary Terminate user sessions
+         * @description Terminates all or specific user sessions
+         * @requiresAuth true
+         * @param uuid path string true "User UUID"
+         * @requestBody session_id:string="Specific session ID to terminate"
+         * @response 200 application/json "Sessions terminated"
+         * @response 404 application/json "User not found"
+         */
+        Router::delete('/{uuid}/sessions', function (array $params, Request $request) use ($container) {
+            $usersController = $container->get(UsersController::class);
+            return $usersController->terminateSessions($params, $request);
+        });
     }, requiresAdminAuth: true);
 });

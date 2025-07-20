@@ -50,7 +50,6 @@ class Application extends BaseApplication
         // Generate commands
         \Glueful\Console\Commands\Generate\ControllerCommand::class,
         \Glueful\Console\Commands\Generate\ApiDefinitionsCommand::class,
-        \Glueful\Console\Commands\Generate\ApiDocsCommand::class,
         \Glueful\Console\Commands\Generate\KeyCommand::class,
         // Extensions commands
         \Glueful\Console\Commands\Extensions\InfoCommand::class,

@@ -73,10 +73,8 @@ class CommentsDocGenerator
 
         // Generate docs only for enabled extensions
         $enabledExtensions = $this->extensionsManager->listEnabled();
-        error_log('Enabled extensions: ' . implode(', ', $enabledExtensions));
         foreach ($enabledExtensions as $extensionName) {
             $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
-            error_log('Extension path for ' . $extensionName . ': ' . $extensionPath);
             if ($extensionPath) {
                 $routeFile = $extensionPath . '/src/routes.php';
 
@@ -392,12 +390,18 @@ class CommentsDocGenerator
      */
     private function extractSimplifiedRequestBody(string $docComment): ?array
     {
-        if (!preg_match('/@requestBody\s+([^\n]+)/', $docComment, $matches)) {
+        // Updated regex to capture multiline @requestBody content
+        if (!preg_match('/@requestBody\s+([\s\S]*?)(?=@\w+|\*\/|$)/', $docComment, $matches)) {
             return null;
         }
 
         $requestBodyStr = $matches[1];
         $required = [];
+
+        // Clean up the multiline content by removing comment markers and extra whitespace
+        $requestBodyStr = preg_replace('/\*\s*/', ' ', $requestBodyStr);
+        $requestBodyStr = preg_replace('/\s+/', ' ', $requestBodyStr);
+        $requestBodyStr = trim($requestBodyStr);
 
         // Extract required fields if specified
         if (preg_match('/\{required=([^}]+)\}/', $requestBodyStr, $reqMatches)) {
@@ -406,9 +410,9 @@ class CommentsDocGenerator
             $requestBodyStr = str_replace($reqMatches[0], '', $requestBodyStr);
         }
 
-        // Parse fields
+        // Parse fields - updated pattern to handle the actual format from files.php
         $properties = [];
-        $pattern = '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/';
+        $pattern = '/(\w+):(file|string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/';
 
         preg_match_all($pattern, $requestBodyStr, $fieldMatches, PREG_SET_ORDER);
 
@@ -453,19 +457,42 @@ class CommentsDocGenerator
     private function extractSimplifiedResponses(string $docComment): array
     {
         $responses = [];
-        $pattern = '/@response\s+(\d+)\s+([\w\/\-+]+)?\s+"([^"]*)"\s*(\{[^}]*\})?/';
 
-        preg_match_all($pattern, $docComment, $matches, PREG_SET_ORDER);
+        // First, find all @response positions
+        preg_match_all(
+            '/@response\s+(\d+)\s+([\w\/\-+]+)?\s+"([^"]*)"/',
+            $docComment,
+            $responseMatches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        );
 
-        foreach ($matches as $match) {
-            $statusCode = $match[1];
-            $contentType = !empty($match[2]) ? $match[2] : 'application/json';
-            $description = $match[3];
-            $schemaStr = isset($match[4]) ? $match[4] : null;
+        foreach ($responseMatches as $i => $match) {
+            $statusCode = $match[1][0];
+            $contentType = !empty($match[2][0]) ? $match[2][0] : 'application/json';
+            $description = $match[3][0];
 
-            if ($schemaStr) {
-                // Parse schema from the simplified format
-                $schema = $this->parseSimplifiedSchema($schemaStr);
+            // Find the position after the quoted description
+            $startPos = $match[0][1] + strlen($match[0][0]);
+
+            // Find the end position (next @response or end of comment)
+            $endPos = strlen($docComment);
+            if (isset($responseMatches[$i + 1])) {
+                $endPos = $responseMatches[$i + 1][0][1];
+            } else {
+                // Look for end of comment or next @ tag that's not @response
+                $pattern = '/\*\/|\*\s*@(?!response)[a-zA-Z]/';
+                if (preg_match($pattern, $docComment, $endMatch, PREG_OFFSET_CAPTURE, $startPos)) {
+                    $endPos = $endMatch[0][1];
+                }
+            }
+
+            // Extract the content between start and end
+            $content = substr($docComment, $startPos, $endPos - $startPos);
+
+            // Check if there's a schema (starts with {)
+            if (preg_match('/\s*\{([\s\S]*)\}\s*$/m', $content, $schemaMatch)) {
+                $schemaContent = '{' . $schemaMatch[1] . '}';
+                $schema = $this->parseSimplifiedSchema($schemaContent);
 
                 $responses[$statusCode] = [
                     'description' => $description ?: $this->getDefaultResponseDescription($statusCode),
@@ -481,6 +508,7 @@ class CommentsDocGenerator
                 ];
             }
         }
+
 
         // Add default responses if none specified
         if (empty($responses)) {
@@ -509,7 +537,9 @@ class CommentsDocGenerator
      */
     private function parseSimplifiedSchema(string $schemaStr): array
     {
-        // Clean up the schema string
+        // Clean up the schema string - remove comment markers and normalize whitespace
+        $schemaStr = preg_replace('/\*\s*/', ' ', $schemaStr);
+        $schemaStr = preg_replace('/\s+/', ' ', $schemaStr);
         $schemaStr = trim($schemaStr, '{} ');
         $parts = [];
         $start = 0;
@@ -554,8 +584,12 @@ class CommentsDocGenerator
         foreach ($parts as $part) {
             $part = trim($part);
 
-            // Match field with type and optional description
-            if (
+            // Check for nested object first (field:{...})
+            if (preg_match('/(\w+):(\{[\s\S]*\})/', $part, $match)) {
+                $name = $match[1];
+                $nestedSchema = $this->parseSimplifiedSchema($match[2]);
+                $properties[$name] = $nestedSchema;
+            } elseif (
                 preg_match(
                     '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/',
                     $part,
@@ -578,10 +612,6 @@ class CommentsDocGenerator
                 }
 
                 $properties[$name] = $property;
-            } elseif (preg_match('/(\w+):(\{[^}]+\})/', $part, $match)) {
-                $name = $match[1];
-                $nestedSchema = $this->parseSimplifiedSchema($match[2]);
-                $properties[$name] = $nestedSchema;
             } elseif (preg_match('/(\w+):(\[[^\]]+\])/', $part, $match)) {
                 $name = $match[1];
                 $itemsSchema = $this->parseSimplifiedSchema(substr($match[2], 1, -1));
