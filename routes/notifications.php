@@ -28,9 +28,9 @@ Router::group('/notifications', function () use ($container) {
      * @tag Notifications
      * @requiresAuth true
      * @response 200 application/json "Notifications retrieved successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
-     *   data:[{
+     *   data:array=[{
      *     uuid:string="Notification unique identifier",
      *     title:string="Notification title",
      *     body:string="Notification content",
@@ -55,7 +55,7 @@ Router::group('/notifications', function () use ($container) {
      * @requiresAuth true
      * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification retrieved successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="Notification unique identifier",
@@ -83,11 +83,11 @@ Router::group('/notifications', function () use ($container) {
      * @requiresAuth true
      * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification marked as read" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="Notification unique identifier",
-     *     read:boolean="Read status (true)",
+     *     read:boolean="true",
      *     updated_at:string="Update timestamp"
      *   },
      *   code:integer="HTTP status code"
@@ -108,11 +108,11 @@ Router::group('/notifications', function () use ($container) {
      * @requiresAuth true
      * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification marked as unread" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="Notification unique identifier",
-     *     read:boolean="Read status (false)",
+     *     read:boolean="false",
      *     updated_at:string="Update timestamp"
      *   },
      *   code:integer="HTTP status code"
@@ -132,7 +132,7 @@ Router::group('/notifications', function () use ($container) {
      * @tag Notifications
      * @requiresAuth true
      * @response 200 application/json "All notifications marked as read" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     count:integer="Number of notifications marked as read",
@@ -154,7 +154,7 @@ Router::group('/notifications', function () use ($container) {
      * @tag Notification Preferences
      * @requiresAuth true
      * @response 200 application/json "Notification preferences retrieved" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:boolean="Email notification setting",
@@ -188,7 +188,7 @@ Router::group('/notifications', function () use ($container) {
      *                    security:boolean="Enable security notifications",
      *                    account:boolean="Enable account notifications"}
      * @response 200 application/json "Notification preferences updated" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:boolean="Updated email notification setting",
@@ -219,7 +219,7 @@ Router::group('/notifications', function () use ($container) {
      * @requiresAuth true
      * @param id path string true "Notification UUID"
      * @response 200 application/json "Notification deleted successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="Deleted notification unique identifier"

@@ -51,14 +51,18 @@ Router::group('/admin', function () use ($container) {
          * row counts, and other metrics
          * @requiresAuth true
          * @response 200 application/json "Database statistics retrieved successfully" {
-         *   tables:array=[{
-         *     table_name:string="Table name",
-         *     schema:string="Database schema",
-         *     size:integer="Size in bytes",
-         *     rows:integer="Row count",
-         *     avg_row_size:integer="Average row size in bytes"
-         *   }],
-         *   total_tables:integer="Total number of tables"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     tables:array=[{
+         *       table_name:string="Table name",
+         *       schema:string="Database schema",
+         *       size:integer="Size in bytes",
+         *       rows:integer="Row count",
+         *       avg_row_size:integer="Average row size in bytes"
+         *     }],
+         *     total_tables:integer="Total number of tables"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 500 application/json "Server error"
@@ -75,7 +79,11 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves a list of all tables in the database
          * @requiresAuth true
          * @response 200 application/json "List of tables" {
-         *   tables:array=[{name:string="Table name", rows:integer="Row count", created:string="Creation date"}]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     tables:array=[{name:string="Table name", rows:integer="Row count", created:string="Creation date"}]
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -133,10 +141,14 @@ Router::group('/admin', function () use ($container) {
          * @requiresAuth true
          * @requestBody name:string="Table name" {required=name}
          * @response 200 application/json "Table size information" {
-         *   name:string="Table name",
-         *   size:string="Size (formatted)",
-         *   bytes:integer="Size in bytes",
-         *   rows:integer="Row count"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     name:string="Table name",
+         *     size:string="Size (formatted)",
+         *     bytes:integer="Size in bytes",
+         *     rows:integer="Row count"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -159,21 +171,25 @@ Router::group('/admin', function () use ($container) {
          * @requiresAuth true
          * @param name path string true "Table name"
          * @response 200 application/json "Table metadata" {
-         *   name:string="Table name",
-         *   rows:integer="Number of rows",
-         *   size:integer="Table size in bytes",
-         *   columns:integer="Number of columns",
-         *   indexes:integer="Number of indexes",
-         *   engine:string="Storage engine",
-         *   created:string="Creation timestamp",
-         *   updated:string="Last update timestamp",
-         *   collation:string="Table collation",
-         *   comment:string="Table comment",
-         *   auto_increment:integer="Auto increment value",
-         *   avg_row_length:integer="Average row length",
-         *   data_length:integer="Data length",
-         *   index_length:integer="Index length",
-         *   data_free:integer="Free space"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     name:string="Table name",
+         *     rows:integer="Number of rows",
+         *     size:integer="Table size in bytes",
+         *     columns:integer="Number of columns",
+         *     indexes:integer="Number of indexes",
+         *     engine:string="Storage engine",
+         *     created:string="Creation timestamp",
+         *     updated:string="Last update timestamp",
+         *     collation:string="Table collation",
+         *     comment:string="Table comment",
+         *     auto_increment:integer="Auto increment value",
+         *     avg_row_length:integer="Average row length",
+         *     data_length:integer="Data length",
+         *     index_length:integer="Index length",
+         *     data_free:integer="Free space"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
@@ -193,11 +209,22 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves data from the specified table with pagination
          * @requiresAuth true
          * @param name path string true "Table name"
-         * @response 200 application/json "Table data" {
-         *   data:array=[{id:integer="Row ID"}],
-         *   total:integer="Total number of rows",
-         *   page:integer="Current page",
-         *   limit:integer="Items per page"
+         * @param page query integer false "Page number for pagination (default: 1)"
+         * @param per_page query integer false "Number of items per page (default: 25)"
+         * @param search query string false "Search term to filter table data"
+         * @param sort_by query string false "Column to sort by"
+         * @param sort_order query string false "Sort order (asc or desc, default: asc)"
+         * @response 200 application/json "Table data retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{}],
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of rows in table",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
          * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
@@ -519,9 +546,13 @@ Router::group('/admin', function () use ($container) {
          *              }
          *              {required=data}
          * @response 200 application/json "Data imported successfully" {
-         *   imported:integer="Number of records imported",
-         *   failed:integer="Number of failed records",
-         *   errors:array=[string="Error messages for failed records"]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     imported:integer="Number of records imported",
+         *     failed:integer="Number of failed records",
+         *     errors:array=[string="Error messages for failed records"]
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -541,8 +572,12 @@ Router::group('/admin', function () use ($container) {
          * @param name path string true "Table name"
          * @requestBody ids:array=[string|number] "Array of record IDs to delete" {required=ids}
          * @response 200 application/json "Records deleted successfully" {
-         *   deleted:integer="Number of records deleted",
-         *   ids:array=[string|number]="Array of deleted record IDs"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     deleted:integer="Number of records deleted",
+         *     ids:array=[string|number]="Array of deleted record IDs"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -564,9 +599,13 @@ Router::group('/admin', function () use ($container) {
          *              data:object="Data to update for each record"
          *              {required=ids,data}
          * @response 200 application/json "Records updated successfully" {
-         *   updated:integer="Number of records updated",
-         *   ids:array=[string|number]="Array of updated record IDs",
-         *   data:object="Data that was updated"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     updated:integer="Number of records updated",
+         *     ids:array=[string|number]="Array of updated record IDs",
+         *     updated_data:object="Data that was updated"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -595,16 +634,20 @@ Router::group('/admin', function () use ($container) {
          *              }]
          *              {required=table_name,changes}
          * @response 200 application/json "Schema preview generated successfully" {
-         *   table_name:string="Table name",
-         *   current_schema:object="Current table schema",
-         *   proposed_changes:array="Array of proposed changes",
-         *   preview:object={
-         *     sql:array="SQL statements to be executed",
-         *     warnings:array="Potential warnings and risks",
-         *     estimated_duration:integer="Estimated execution time in seconds",
-         *     safe_to_execute:boolean="Whether changes are safe to execute",
-         *     generated_at:string="Preview generation timestamp"
-         *   }
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     table_name:string="Table name",
+         *     current_schema:object="Current table schema",
+         *     proposed_changes:array="Array of proposed changes",
+         *     preview:{
+         *       sql:array="SQL statements to be executed",
+         *       warnings:array="Potential warnings and risks",
+         *       estimated_duration:integer="Estimated execution time in seconds",
+         *       safe_to_execute:boolean="Whether changes are safe to execute",
+         *       generated_at:string="Preview generation timestamp"
+         *     }
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -628,14 +671,18 @@ Router::group('/admin', function () use ($container) {
          *              format:string="Export format: json, sql, yaml, php (default: json)"
          *              {required=table}
          * @response 200 application/json "Schema exported successfully" {
-         *   table_name:string="Table name",
-         *   format:string="Export format used",
-         *   schema:object="Exported schema definition",
-         *   exported_at:string="Export timestamp",
-         *   metadata:object={
-         *     export_size:integer="Size of exported data in bytes",
-         *     format_version:string="Schema format version"
-         *   }
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     table_name:string="Table name",
+         *     format:string="Export format used",
+         *     schema:object="Exported schema definition",
+         *     exported_at:string="Export timestamp",
+         *     metadata:{
+         *       export_size:integer="Size of exported data in bytes",
+         *       format_version:string="Schema format version"
+         *     }
+         *   },
          * }
          * @response 400 application/json "Invalid request format or unsupported format"
          * @response 403 application/json "Permission denied"
@@ -666,13 +713,17 @@ Router::group('/admin', function () use ($container) {
          *              }
          *              {required=table_name,schema}
          * @response 200 application/json "Schema imported successfully" {
-         *   table_name:string="Table name",
-         *   format:string="Import format used",
-         *   result:object={
-         *     success:boolean="Import success status",
-         *     changes:array="List of changes made",
-         *     imported_at:string="Import timestamp"
-         *   }
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     table_name:string="Table name",
+         *     format:string="Import format used",
+         *     result:{
+         *       import_success:boolean="true",
+         *       changes:array="List of changes made",
+         *       imported_at:string="Import timestamp"
+         *     }
+         *   },
          * }
          * @response 400 application/json "Invalid schema format or validation errors"
          * @response 403 application/json "Permission denied"
@@ -693,24 +744,31 @@ Router::group('/admin', function () use ($container) {
          * @param limit query integer false "Number of records to return (default: 50)"
          * @param offset query integer false "Number of records to skip (default: 0)"
          * @response 200 application/json "Schema history retrieved successfully" {
-         *   table_name:string="Table name",
-         *   schema_changes:array=[{
-         *     id:string="Change ID",
-         *     action:string="Action performed",
-         *     context:object="Change context and details",
-         *     created_at:string="Change timestamp",
-         *     user_agent:string="User agent that made the change",
-         *     ip_address:string="IP address of the requester"
-         *   }],
-         *   migrations:array=[{
-         *     migration:string="Migration name",
-         *     executed_at:string="Execution timestamp"
-         *   }],
-         *   pagination:object={
-         *     limit:integer="Records limit",
-         *     offset:integer="Records offset",
-         *     total:integer="Total available records"
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:{
+         *     table_name:string="Table name",
+         *     schema_changes:array=[{
+         *       id:string="Change ID",
+         *       action:string="Action performed",
+         *       context:object="Change context and details",
+         *       created_at:string="Change timestamp",
+         *       user_agent:string="User agent that made the change",
+         *       ip_address:string="IP address of the requester",
+         *       executed_at:string="Execution timestamp"
+         *     }],
+         *     migrations:array=[{
+         *       migration:string="Migration name",
+         *       executed_at:string="Execution timestamp"
+         *     }]
          *   },
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of records",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number",
          *   retrieved_at:string="History retrieval timestamp"
          * }
          * @response 400 application/json "Invalid request parameters"
@@ -759,14 +817,15 @@ Router::group('/admin', function () use ($container) {
          * @summary List all migrations
          * @description Retrieves a list of all database migrations and their status
          * @requiresAuth true
-         * @response 200 application/json
-         *          "List of migrations"
-         *          {migrations:array=[{
-         *              id:integer="Migration ID",
-         *              name:string="Migration name",
-         *              batch:integer="Migration batch",
-         *              executed_at:string="Execution timestamp"
-         *          }]}
+         * @response 200 application/json "List of migrations" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     migrations:array=[{id:integer="Migration ID",
+         *     name:string="Migration name", batch:integer="Migration batch",
+         *     executed_at:string="Execution timestamp"}]
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/', function (Request $request) use ($container) {
@@ -781,10 +840,14 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves a list of all pending database migrations
          * @requiresAuth true
          * @response 200 application/json "List of pending migrations" {
-         *   migrations:array=[{
-         *     name:string="Migration name",
-         *     path:string="Migration file path"
-         *   }]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     migrations:array=[{
+         *       name:string="Migration name",
+         *       path:string="Migration file path"
+         *     }]
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -801,10 +864,16 @@ Router::group('/admin', function () use ($container) {
          * @summary List all scheduled jobs
          * @description Retrieves a list of all scheduled jobs and their status
          * @requiresAuth true
-         * @response 200 application/json "List of scheduled jobs" {jobs:array=[{id:integer="Job ID",
-         * name:string="Job name", command:string="Job command", schedule:string="Job schedule",
-         * next_run:string="Next scheduled run", last_run:string="Last run timestamp",
-         * status:string="Job status"}]}
+         * @response 200 application/json "List of scheduled jobs" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     jobs:array=[{id:integer="Job ID",
+         *     name:string="Job name", command:string="Job command", schedule:string="Job schedule",
+         *     next_run:string="Next scheduled run", last_run:string="Last run timestamp",
+         *     status:string="Job status"}]
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/', function (Request $request) use ($container) {
@@ -819,11 +888,15 @@ Router::group('/admin', function () use ($container) {
          * @description Runs all jobs that are due to be executed
          * @requiresAuth true
          * @response 200 application/json "Jobs executed" {
-         *   executed:array=[{
-         *     id:integer="Job ID",
-         *     name:string="Job name",
-         *     status:string="Execution status"
-         *   }]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     executed:array=[{
+         *       id:integer="Job ID",
+         *       name:string="Job name",
+         *       status:string="Execution status"
+         *     }]
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -839,11 +912,15 @@ Router::group('/admin', function () use ($container) {
          * @description Runs all scheduled jobs regardless of their schedule
          * @requiresAuth true
          * @response 200 application/json "Jobs executed" {
-         *   executed:array=[{
-         *     id:integer="Job ID",
-         *     name:string="Job name",
-         *     status:string="Execution status"
-         *   }]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     executed:array=[{
+         *       id:integer="Job ID",
+         *       name:string="Job name",
+         *       status:string="Execution status"
+         *     }]
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -860,9 +937,13 @@ Router::group('/admin', function () use ($container) {
          * @requiresAuth true
          * @requestBody id:integer="Job ID" {required=id}
          * @response 200 application/json "Job executed" {
-         *   id:integer="Job ID",
-         *   name:string="Job name",
-         *   status:string="Execution status"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     id:integer="Job ID",
+         *     name:string="Job name",
+         *     status:string="Execution status"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -885,7 +966,13 @@ Router::group('/admin', function () use ($container) {
          *              schedule:string="Cron schedule expression"
          *              enabled:boolean="Whether job is enabled initially"
          * {required=name,command,schedule}
-         * @response 201 application/json "Job created" {id:integer="Job ID", name:string="Job name"}
+         * @response 201 application/json "Job created" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     id:integer="Job ID", name:string="Job name"
+         *   },
+         * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
          */
@@ -903,7 +990,11 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves a list of all available configuration files
          * @requiresAuth true
          * @response 200 application/json "List of configuration files" {
-         *   configs:array=[{name:string="Config filename", path:string="Config file path"}]
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     configs:array=[{name:string="Config filename", path:string="Config file path"}]
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -920,8 +1011,12 @@ Router::group('/admin', function () use ($container) {
          * @requiresAuth true
          * @param filename path string true "Configuration filename"
          * @response 200 application/json "Configuration file content" {
-         *   name:string="Config filename",
-         *   content:object="Configuration data"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     name:string="Config filename",
+         *     content:object="Configuration data"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Configuration file not found"
@@ -976,10 +1071,21 @@ Router::group('/admin', function () use ($container) {
          * request volumes, error rates, and rate limiting information
          * @requiresAuth true
          * @response 200 application/json "API metrics retrieved successfully" {
-         *   endpoints:array,
-         *   total_requests:integer,
-         *   avg_response_time:number,
-         *   error_rate:number
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:{
+         *     endpoints:array=[{
+         *       path:string="API endpoint path",
+         *       method:string="HTTP method",
+         *       total_requests:integer="Total number of requests",
+         *       avg_response_time:number="Average response time in ms",
+         *       error_count:integer="Number of errors",
+         *       last_accessed:string="Last access timestamp"
+         *     }],
+         *     total_requests:integer="Total requests across all endpoints",
+         *     avg_response_time:number="Overall average response time",
+         *     error_rate:number="Overall error rate percentage"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 500 application/json "Server error"
@@ -1012,13 +1118,17 @@ Router::group('/admin', function () use ($container) {
          * database status, file system metrics, memory usage, cache status, extension status, and more
          * @requiresAuth true
          * @response 200 application/json "System health metrics retrieved successfully" {
-         *   php:object,
-         *   memory:object,
-         *   database:object,
-         *   file_system:object,
-         *   cache:object,
-         *   extensions:object,
-         *   server_load:object
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     php:object,
+         *     memory:object,
+         *     database:object,
+         *     file_system:object,
+         *     cache:object,
+         *     extensions:object,
+         *     server_load:object
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 500 application/json "Server error"
@@ -1037,15 +1147,19 @@ Router::group('/admin', function () use ($container) {
      * system health, migrations, extensions, permissions, roles, jobs, and API metrics
      * @requiresAuth true
      * @response 200 application/json "Dashboard data retrieved successfully" {
-     *   database:object="Database statistics and table information",
-     *   system_health:object="System health metrics and status",
-     *   migrations:object="Migration status and pending count",
-     *   extensions:object="Extension statistics and status",
-     *   permissions:object="RBAC permissions data and statistics",
-     *   roles:object="RBAC roles data and statistics",
-     *   jobs:object="Scheduled jobs information",
-     *   api_metrics:object="API performance and usage metrics",
-     *   timestamp:string="Data collection timestamp"
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:{
+     *     database:object="Database statistics and table information",
+     *     system_health:object="System health metrics and status",
+     *     migrations:object="Migration status and pending count",
+     *     extensions:object="Extension statistics and status",
+     *     permissions:object="RBAC permissions data and statistics",
+     *     roles:object="RBAC roles data and statistics",
+     *     jobs:object="Scheduled jobs information",
+     *     api_metrics:object="API performance and usage metrics",
+     *     timestamp:string="Data collection timestamp"
+     *   },
      * }
      * @response 403 application/json "Permission denied"
      * @response 500 application/json "Server error"
@@ -1072,7 +1186,7 @@ Router::group('/admin', function () use ($container) {
          * @query order string "Sort order ASC/DESC (default: DESC)"
          * @query include_deleted boolean "Include soft-deleted users"
          * @response 200 application/json "List of users with roles" {
-         *   success:boolean,
+         *   success:boolean="true",
          *   data:array=[{
          *     uuid:string,
          *     username:string,
@@ -1082,7 +1196,13 @@ Router::group('/admin', function () use ($container) {
          *     last_login_date:string,
          *     roles:array=[{uuid:string,name:string}]
          *   }],
-         *   pagination:object
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of users",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
          * }
          */
         Router::get('/', function (Request $request) use ($container) {
@@ -1096,8 +1216,27 @@ Router::group('/admin', function () use ($container) {
          * @summary Get user statistics
          * @description Retrieves user statistics for dashboard
          * @requiresAuth true
-         * @query period string "Time period (7days/30days/90days/year)"
-         * @response 200 application/json "User statistics"
+         * @query period string "Time period (7days/30days/90days/year, default: 30days)"
+         * @response 200 application/json "User statistics retrieved successfully" {
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:{
+         *     total_users:integer="Total number of users (excluding deleted)",
+         *     active_users:integer="Number of active users",
+         *     by_status:{
+         *       active:integer="Number of active users",
+         *       inactive:integer="Number of inactive users",
+         *       suspended:integer="Number of suspended users",
+         *       pending:integer="Number of pending users"
+         *     },
+         *     new_users_7days:integer="New users in last 7 days (when period=7days)",
+         *     new_users_30days:integer="New users in last 30 days (when period=30days)",
+         *     new_users_90days:integer="New users in last 90 days (when period=90days)",
+         *     new_users_year:integer="New users in last year (when period=year)"
+         *   },
+         * }
+         * @response 401 "Unauthorized"
+         * @response 403 "Forbidden - insufficient permissions"
          */
         Router::get('/stats', function (Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
@@ -1118,7 +1257,37 @@ Router::group('/admin', function () use ($container) {
          * @query last_login_after string "Filter by last login"
          * @query last_login_before string "Filter by last login"
          * @query has_permission string "Filter by permission"
-         * @response 200 application/json "Search results"
+         * @query page integer "Page number (default: 1)"
+         * @query per_page integer "Items per page (default: 25)"
+         * @response 200 application/json "User search results with pagination" {
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *     data:array=[{
+         *       uuid:string="User unique identifier",
+         *       username:string="Username",
+         *       email:string="User email address",
+         *       status:string="User status (active, inactive, suspended, pending)",
+         *       created_at:string="User creation timestamp",
+         *       last_login_date:string="Last login timestamp",
+         *       roles:array=[{
+         *         uuid:string="Role unique identifier",
+         *         name:string="Role name",
+         *         slug:string="Role slug",
+         *         level:integer="Role level",
+         *         is_system:boolean="System role flag",
+         *         assigned_at:string="Role assignment timestamp"
+         *       }]
+         *     }],
+         *     current_page:integer="Current page number",
+         *     per_page:integer="Items per page",
+         *     total:integer="Total number of matching users",
+         *     last_page:integer="Last page number",
+         *     from:integer="First item number on current page",
+         *     to:integer="Last item number on current page"
+         * }
+         * @response 400 "Bad request - invalid search parameters"
+         * @response 401 "Unauthorized"
+         * @response 403 "Forbidden - insufficient permissions"
          */
         Router::get('/search', function (Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
@@ -1131,11 +1300,41 @@ Router::group('/admin', function () use ($container) {
          * @summary Export users
          * @description Export users to CSV or JSON format
          * @requiresAuth true
-         * @query format string "Export format (csv/json)"
-         * @query status string "Filter by status"
-         * @query role string "Filter by role"
-         * @query include_deleted boolean "Include deleted users"
-         * @response 200 "Export file"
+         * @query format string "Export format (csv/json, default: csv)"
+         * @query status string "Filter by status (active/inactive/suspended/pending)"
+         * @query role string "Filter by role name"
+         * @query include_deleted boolean "Include soft-deleted users (default: false)"
+         * @response 200 application/json "User export data (JSON format)" {
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="User unique identifier",
+         *     username:string="Username",
+         *     email:string="User email address",
+         *     status:string="User status (active, inactive, suspended, pending)",
+         *     created_at:string="User creation timestamp",
+         *     last_login_date:string="Last login timestamp",
+         *     roles:array=[{
+         *       uuid:string="Role unique identifier",
+         *       name:string="Role name",
+         *       slug:string="Role slug",
+         *       level:integer="Role level",
+         *       is_system:boolean="System role flag",
+         *       assigned_at:string="Role assignment timestamp"
+         *     }],
+         *     profile:{
+         *       first_name:string="User first name",
+         *       last_name:string="User last name",
+         *       phone:string="User phone number",
+         *       address:string="User address",
+         *       bio:string="User biography"
+         *     },
+         *   }]
+         * }
+         * @response 200 text/csv "User export file (CSV format)"
+         * @response 400 "Bad request - role filtering requires RBAC extension"
+         * @response 401 "Unauthorized"
+         * @response 403 "Forbidden - insufficient permissions"
          */
         Router::get('/export', function (Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
@@ -1181,11 +1380,41 @@ Router::group('/admin', function () use ($container) {
          * @route GET /admin/users/{uuid}
          * @tag Admin - User Management
          * @summary Get user details
-         * @description Retrieves detailed information about a specific user
+         * @description Retrieves detailed information about a specific user including roles and profile data
          * @requiresAuth true
          * @param uuid path string true "User UUID"
-         * @response 200 application/json "User details with roles and permissions"
+         * @response 200 application/json "User details retrieved successfully" {
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:{
+         *     uuid:string="User UUID",
+         *     username:string="Username",
+         *     email:string="Email address",
+         *     status:string="User status (active/inactive/suspended/pending)",
+         *     created_at:string="Account creation timestamp",
+         *     last_login_date:string="Last login timestamp",
+         *     roles:array=[{
+         *       uuid:string="Role UUID",
+         *       name:string="Role name",
+         *       slug:string="Role slug",
+         *       level:integer="Role level",
+         *       is_system:boolean="Whether role is system-defined",
+         *       assigned_at:string="Role assignment timestamp"
+         *     }],
+         *     profile:{
+         *       first_name:string="First name",
+         *       last_name:string="Last name",
+         *       bio:string="User biography",
+         *       avatar_url:string="Profile avatar URL",
+         *       phone:string="Phone number",
+         *       timezone:string="User timezone",
+         *       language:string="Preferred language",
+         *       updated_at:string="Profile last updated timestamp"
+         *     },
+         *   },
+         * }
          * @response 404 application/json "User not found"
+         * @response 403 application/json "Permission denied"
          */
         Router::get('/{uuid}', function (array $params, Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
@@ -1263,13 +1492,36 @@ Router::group('/admin', function () use ($container) {
          * @route GET /admin/users/{uuid}/activity
          * @tag Admin - User Monitoring
          * @summary Get user activity
-         * @description Retrieves user activity log
+         * @description Retrieves user activity log with pagination and filtering options
          * @requiresAuth true
          * @param uuid path string true "User UUID"
-         * @query page integer "Page number"
-         * @query per_page integer "Items per page"
-         * @response 200 application/json "Activity log"
+         * @param page query integer false "Page number for pagination (default: 1)"
+         * @param per_page query integer false "Number of items per page (default: 25)"
+         * @param type query string false "Filter by activity type (login, logout, action, etc.)"
+         * @param date_from query string false "Filter activities from this date (YYYY-MM-DD)"
+         * @param date_to query string false "Filter activities to this date (YYYY-MM-DD)"
+         * @response 200 application/json "User activity log retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     action:string="Action performed",
+         *     entity_type:string="Type of entity affected",
+         *     entity_id:string="ID of entity affected",
+         *     old_values:object="Previous values before change",
+         *     new_values:object="New values after change",
+         *     created_at:string="Activity timestamp",
+         *     user_id:string="User UUID who performed the action"
+         *   }],
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of activities",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
+         * }
          * @response 404 application/json "User not found"
+         * @response 403 application/json "Permission denied"
          */
         Router::get('/{uuid}/activity', function (array $params, Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
@@ -1283,8 +1535,26 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves all active sessions for a user
          * @requiresAuth true
          * @param uuid path string true "User UUID"
-         * @response 200 application/json "User sessions"
-         * @response 404 application/json "User not found"
+         * @response 200 application/json "User sessions retrieved successfully" {
+         *   success:boolean="Success status",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     session_id:string="Session unique identifier",
+         *     access_token:string="Masked access token (first 8 chars + ...)",
+         *     status:string="Session status (active)",
+         *     provider:string="Authentication provider",
+         *     ip_address:string="Client IP address",
+         *     user_agent:string="Client user agent string",
+         *     created_at:string="Session creation timestamp",
+         *     last_activity:string="Last activity timestamp",
+         *     last_token_refresh:string="Last token refresh timestamp",
+         *     access_expires_at:string="Access token expiration timestamp",
+         *     refresh_expires_at:string="Refresh token expiration timestamp"
+         *   }]
+         * }
+         * @response 401 "Unauthorized"
+         * @response 403 "Forbidden - insufficient permissions"
+         * @response 404 "User not found"
          */
         Router::get('/{uuid}/sessions', function (array $params) use ($container) {
             $usersController = $container->get(UsersController::class);

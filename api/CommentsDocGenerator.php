@@ -541,24 +541,32 @@ class CommentsDocGenerator
         $schemaStr = preg_replace('/\*\s*/', ' ', $schemaStr);
         $schemaStr = preg_replace('/\s+/', ' ', $schemaStr);
         $schemaStr = trim($schemaStr, '{} ');
+
         $parts = [];
         $start = 0;
         $braceCount = 0;
+        $bracketCount = 0;
         $inQuotes = false;
 
-        // Split on commas, but respect nested objects and quoted strings
+        // Split on commas, but respect nested objects, arrays, and quoted strings
         for ($i = 0; $i < strlen($schemaStr); $i++) {
             $char = $schemaStr[$i];
 
             if ($char === '"' && ($i === 0 || $schemaStr[$i - 1] !== '\\')) {
                 $inQuotes = !$inQuotes;
-            } elseif (!$inQuotes && $char === '{') {
-                $braceCount++;
-            } elseif (!$inQuotes && $char === '}') {
-                $braceCount--;
-            } elseif (!$inQuotes && $char === ',' && $braceCount === 0) {
-                $parts[] = substr($schemaStr, $start, $i - $start);
-                $start = $i + 1;
+            } elseif (!$inQuotes) {
+                if ($char === '{') {
+                    $braceCount++;
+                } elseif ($char === '}') {
+                    $braceCount--;
+                } elseif ($char === '[') {
+                    $bracketCount++;
+                } elseif ($char === ']') {
+                    $bracketCount--;
+                } elseif ($char === ',' && $braceCount === 0 && $bracketCount === 0) {
+                    $parts[] = substr($schemaStr, $start, $i - $start);
+                    $start = $i + 1;
+                }
             }
         }
 
@@ -584,8 +592,57 @@ class CommentsDocGenerator
         foreach ($parts as $part) {
             $part = trim($part);
 
-            // Check for nested object first (field:{...})
-            if (preg_match('/(\w+):(\{[\s\S]*\})/', $part, $match)) {
+            // Check for array with object definition first (field:array=[{...}])
+            if (preg_match('/^(\w+):array=\[/', $part, $arrayMatch)) {
+                $name = $arrayMatch[1];
+                $arrayStartPos = strpos($part, '[') + 1;
+
+                // Find the matching closing bracket using proper bracket counting
+                $bracketCount = 0;
+                $braceCount = 0;
+                $inQuotes = false;
+                $arrayEndPos = -1;
+
+                for ($i = $arrayStartPos; $i < strlen($part); $i++) {
+                    $char = $part[$i];
+
+                    if ($char === '"' && ($i === $arrayStartPos || $part[$i - 1] !== '\\')) {
+                        $inQuotes = !$inQuotes;
+                    } elseif (!$inQuotes) {
+                        if ($char === '[') {
+                            $bracketCount++;
+                        } elseif ($char === ']') {
+                            if ($bracketCount === 0) {
+                                $arrayEndPos = $i;
+                                break;
+                            }
+                            $bracketCount--;
+                        } elseif ($char === '{') {
+                            $braceCount++;
+                        } elseif ($char === '}') {
+                            $braceCount--;
+                        }
+                    }
+                }
+
+                if ($arrayEndPos > $arrayStartPos) {
+                    $arrayContent = substr($part, $arrayStartPos, $arrayEndPos - $arrayStartPos);
+
+                    // Remove outer braces if present and parse the object content
+                    if (preg_match('/^\s*\{([\s\S]*)\}\s*$/', $arrayContent, $objectMatch)) {
+                        $itemsSchema = $this->parseSimplifiedSchema('{' . $objectMatch[1] . '}');
+                    } else {
+                        // Fallback for non-object array items
+                        $itemsSchema = ['type' => 'object'];
+                    }
+
+                    $properties[$name] = [
+                        'type' => 'array',
+                        'items' => $itemsSchema
+                    ];
+                }
+            } elseif (preg_match('/(\w+):(\{[\s\S]*\})/', $part, $match)) {
+                // Check for nested object (field:{...})
                 $name = $match[1];
                 $nestedSchema = $this->parseSimplifiedSchema($match[2]);
                 $properties[$name] = $nestedSchema;

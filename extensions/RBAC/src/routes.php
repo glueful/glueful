@@ -56,7 +56,13 @@ Router::group('/rbac', function () use ($container) {
          *     parent_uuid:string="Parent role UUID",
          *     created_at:string="Creation timestamp"
          *   }],
-         *   pagination:object="Pagination metadata"
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of roles",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -72,10 +78,14 @@ Router::group('/rbac', function () use ($container) {
          * @description Retrieves comprehensive statistics about roles
          * @requiresAuth true
          * @response 200 application/json "Role statistics retrieved successfully" {
-         *   total_roles:integer="Total number of roles",
-         *   active_roles:integer="Number of active roles",
-         *   system_roles:integer="Number of system roles",
-         *   by_level:object="Roles grouped by hierarchy level"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     total_roles:integer="Total number of roles",
+         *     active_roles:integer="Number of active roles",
+         *     system_roles:integer="Number of system roles",
+         *     by_level:object="Roles grouped by hierarchy level"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          */
@@ -95,9 +105,13 @@ Router::group('/rbac', function () use ($container) {
          *              force:boolean="Force operation even with dependencies"
          *              {required=action,role_ids}
          * @response 200 application/json "Bulk operation completed" {
-         *   success:integer="Number of successful operations",
-         *   failed:integer="Number of failed operations",
-         *   errors:array="Error messages for failed operations"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     successful:integer="Number of successful operations",
+         *     failed:integer="Number of failed operations",
+         *     errors:array="Error messages for failed operations"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -115,19 +129,23 @@ Router::group('/rbac', function () use ($container) {
          * @requiresAuth true
          * @param uuid path string true "Role UUID"
          * @response 200 application/json "Role details retrieved successfully" {
-         *   uuid:string="Role unique identifier",
-         *   name:string="Role name",
-         *   slug:string="Role slug",
-         *   description:string="Role description",
-         *   level:integer="Hierarchy level",
-         *   status:string="Role status",
-         *   parent_uuid:string="Parent role UUID",
-         *   hierarchy:array="Role hierarchy chain",
-         *   children:array="Child roles",
-         *   user_count:integer="Number of users with this role",
-         *   metadata:object="Role metadata",
-         *   created_at:string="Creation timestamp",
-         *   updated_at:string="Last update timestamp"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     uuid:string="Role unique identifier",
+         *     name:string="Role name",
+         *     slug:string="Role slug",
+         *     description:string="Role description",
+         *     level:integer="Hierarchy level",
+         *     status:string="Role status",
+         *     parent_uuid:string="Parent role UUID",
+         *     hierarchy:array="Role hierarchy chain",
+         *     children:array="Child roles",
+         *     user_count:integer="Number of users with this role",
+         *     metadata:object="Role metadata",
+         *     created_at:string="Creation timestamp",
+         *     updated_at:string="Last update timestamp"
+         *   },
          * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Role not found"
@@ -262,7 +280,13 @@ Router::group('/rbac', function () use ($container) {
          *     expires_at:string="Expiration timestamp",
          *     scope:array="Assignment scope"
          *   }],
-         *   pagination:object="Pagination metadata"
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of users with this role",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
          * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Role not found"
@@ -283,9 +307,13 @@ Router::group('/rbac', function () use ($container) {
          *              force:boolean="Force operation even with dependencies"
          *              {required=action,role_ids}
          * @response 200 application/json "Bulk operation completed" {
-         *   success:integer="Number of successful operations",
-         *   failed:integer="Number of failed operations",
-         *   errors:array="Error messages for failed operations"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     successful:integer="Number of successful operations",
+         *     failed:integer="Number of failed operations",
+         *     errors:array="Error messages for failed operations"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"
@@ -342,14 +370,35 @@ Router::group('/rbac', function () use ($container) {
          * @route GET /rbac/permissions
          * @tag RBAC Permissions
          * @summary List all permissions
-         * @description Retrieves a list of all permissions with optional filtering
+         * @description Retrieves a list of all permissions with optional filtering and pagination
          * @requiresAuth true
-         * @param page query integer false "Page number for pagination"
-         * @param per_page query integer false "Number of items per page"
+         * @param page query integer false "Page number for pagination (default: 1)"
+         * @param per_page query integer false "Number of items per page (default: 25)"
          * @param search query string false "Search term for permission name or slug"
          * @param category query string false "Filter by permission category"
          * @param resource_type query string false "Filter by resource type"
-         * @response 200 application/json "Permissions retrieved successfully"
+         * @response 200 application/json "Permissions retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="Permission unique identifier",
+         *     name:string="Permission name",
+         *     slug:string="Permission slug",
+         *     description:string="Permission description",
+         *     category:string="Permission category",
+         *     resource_type:string="Resource type this permission applies to",
+         *     is_system:boolean="Whether this is a system-protected permission",
+         *     metadata:object="Additional permission metadata",
+         *     created_at:string="Creation timestamp"
+         *   }],
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of permissions",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/', function (Request $request) use ($container) {
@@ -363,7 +412,17 @@ Router::group('/rbac', function () use ($container) {
          * @summary Get permission statistics
          * @description Retrieves comprehensive statistics about permissions
          * @requiresAuth true
-         * @response 200 application/json "Permission statistics retrieved successfully"
+         * @response 200 application/json "Permission statistics retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     total_permissions:integer="Total number of permissions",
+         *     system_permissions:integer="Number of system-protected permissions",
+         *     by_category:object="Permission count by category",
+         *     by_resource_type:object="Permission count by resource type",
+         *     direct_assignments:integer="Number of direct user permission assignments"
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/stats', function (Request $request) use ($container) {
@@ -391,7 +450,11 @@ Router::group('/rbac', function () use ($container) {
          * @summary Get permission categories
          * @description Retrieves all available permission categories
          * @requiresAuth true
-         * @response 200 application/json "Permission categories retrieved successfully"
+         * @response 200 application/json "Permission categories retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[string]="Array of permission category names"
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/categories', function (Request $request) use ($container) {
@@ -405,7 +468,11 @@ Router::group('/rbac', function () use ($container) {
          * @summary Get resource types
          * @description Retrieves all available resource types
          * @requiresAuth true
-         * @response 200 application/json "Resource types retrieved successfully"
+         * @response 200 application/json "Resource types retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[string]="Array of resource type names"
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/resource-types', function (Request $request) use ($container) {
@@ -417,10 +484,25 @@ Router::group('/rbac', function () use ($container) {
          * @route GET /rbac/permissions/{uuid}
          * @tag RBAC Permissions
          * @summary Get permission details
-         * @description Retrieves detailed information about a specific permission
+         * @description Retrieves detailed information about a specific permission including user count
          * @requiresAuth true
          * @param uuid path string true "Permission UUID"
-         * @response 200 application/json "Permission details retrieved successfully"
+         * @response 200 application/json "Permission details retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     uuid:string="Permission unique identifier",
+         *     name:string="Permission name",
+         *     slug:string="Permission slug",
+         *     description:string="Permission description",
+         *     category:string="Permission category",
+         *     resource_type:string="Resource type this permission applies to",
+         *     is_system:boolean="Whether this is a system-protected permission",
+         *     metadata:object="Additional permission metadata",
+         *     created_at:string="Creation timestamp",
+         *     user_count:integer="Number of users with this permission"
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Permission not found"
          */
@@ -580,7 +662,21 @@ Router::group('/rbac', function () use ($container) {
          * @requiresAuth true
          * @param user_uuid path string true "User UUID"
          * @param scope query string false "JSON-encoded scope filter"
-         * @response 200 application/json "User roles retrieved successfully"
+         * @response 200 application/json "User roles retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="Role UUID",
+         *     name:string="Role name",
+         *     slug:string="Role slug",
+         *     description:string="Role description",
+         *     level:integer="Role hierarchy level",
+         *     status:string="Role status",
+         *     assigned_at:string="Assignment timestamp",
+         *     expires_at:string="Expiration timestamp",
+         *     scope:array="Assignment scope"
+         *   }]
+         * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "User not found"
          */
@@ -652,11 +748,27 @@ Router::group('/rbac', function () use ($container) {
          * @route GET /rbac/users/{user_uuid}/permissions
          * @tag RBAC Users
          * @summary Get user direct permissions
-         * @description Retrieves all permissions directly assigned to a user
+         * @description Retrieves all permissions directly assigned to a user (not from roles)
          * @requiresAuth true
          * @param user_uuid path string true "User UUID"
-         * @param active_only query boolean false "Return only active permissions"
-         * @response 200 application/json "User permissions retrieved successfully"
+         * @param active_only query boolean false "Return only active permissions (default: true)"
+         * @response 200 application/json "User permissions retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="Permission UUID",
+         *     name:string="Permission name",
+         *     slug:string="Permission slug",
+         *     description:string="Permission description",
+         *     category:string="Permission category",
+         *     resource_type:string="Resource type",
+         *     resource_filter:string="Resource filter",
+         *     constraints:object="Permission constraints",
+         *     granted_by:string="UUID of user who granted permission",
+         *     expires_at:string="Expiration timestamp",
+         *     created_at:string="Assignment timestamp"
+         *   }]
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/{user_uuid}/permissions', function (array $params, Request $request) use ($container) {
@@ -672,7 +784,23 @@ Router::group('/rbac', function () use ($container) {
          * @requiresAuth true
          * @param user_uuid path string true "User UUID"
          * @param scope query string false "JSON-encoded scope filter"
-         * @response 200 application/json "User effective permissions retrieved successfully"
+         * @response 200 application/json "User effective permissions retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="Permission UUID",
+         *     name:string="Permission name",
+         *     slug:string="Permission slug",
+         *     description:string="Permission description",
+         *     category:string="Permission category",
+         *     resource_type:string="Resource type",
+         *     source:string="Permission source (direct or role-based)",
+         *     source_uuid:string="UUID of source (role UUID if role-based)",
+         *     resource_filter:string="Resource filter",
+         *     constraints:object="Permission constraints",
+         *     expires_at:string="Expiration timestamp"
+         *   }]
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/{user_uuid}/effective-permissions', function (array $params, Request $request) use ($container) {
@@ -688,7 +816,33 @@ Router::group('/rbac', function () use ($container) {
          * @requiresAuth true
          * @param user_uuid path string true "User UUID"
          * @param scope query string false "JSON-encoded scope filter"
-         * @response 200 application/json "User access overview retrieved successfully"
+         * @response 200 application/json "User access overview retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     user_uuid:string="User UUID",
+         *     roles:array=[{
+         *       uuid:string="Role UUID",
+         *       name:string="Role name",
+         *       slug:string="Role slug",
+         *       level:integer="Role hierarchy level",
+         *       assigned_at:string="Assignment timestamp",
+         *       expires_at:string="Expiration timestamp"
+         *     }],
+         *     direct_permissions:array=[{
+         *       uuid:string="Permission UUID",
+         *       name:string="Permission name",
+         *       slug:string="Permission slug",
+         *       category:string="Permission category"
+         *     }],
+         *     effective_permissions:array=[{
+         *       uuid:string="Permission UUID",
+         *       name:string="Permission name",
+         *       slug:string="Permission slug",
+         *       source:string="Permission source (direct or role-based)"
+         *     }]
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/{user_uuid}/access-overview', function (array $params, Request $request) use ($container) {
@@ -700,13 +854,34 @@ Router::group('/rbac', function () use ($container) {
          * @route GET /rbac/users/{user_uuid}/role-history
          * @tag RBAC Users
          * @summary Get user role history
-         * @description Retrieves role assignment history for a user
+         * @description Retrieves role assignment history for a user with pagination
          * @requiresAuth true
          * @param user_uuid path string true "User UUID"
-         * @param page query integer false "Page number for pagination"
-         * @param per_page query integer false "Number of items per page"
-         * @param include_deleted query boolean false "Include deleted role assignments"
-         * @response 200 application/json "User role history retrieved successfully"
+         * @param page query integer false "Page number for pagination (default: 1)"
+         * @param per_page query integer false "Number of items per page (default: 25)"
+         * @param include_deleted query boolean false "Include deleted role assignments (default: true)"
+         * @response 200 application/json "User role history retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:array=[{
+         *     uuid:string="Assignment UUID",
+         *     role_uuid:string="Role UUID",
+         *     role_name:string="Role name",
+         *     role_slug:string="Role slug",
+         *     assigned_at:string="Assignment timestamp",
+         *     expires_at:string="Expiration timestamp",
+         *     revoked_at:string="Revocation timestamp",
+         *     assigned_by:string="UUID of user who assigned the role",
+         *     status:string="Assignment status (active, expired, revoked)"
+         *   }],
+         *   current_page:integer="Current page number",
+         *   per_page:integer="Items per page",
+         *   total:integer="Total number of role history records",
+         *   last_page:integer="Last page number",
+         *   has_more:boolean="Whether there are more pages",
+         *   from:integer="Starting record number",
+         *   to:integer="Ending record number"
+         * }
          * @response 403 application/json "Permission denied"
          */
         Router::get('/{user_uuid}/role-history', function (array $params, Request $request) use ($container) {
@@ -751,9 +926,13 @@ Router::group('/rbac', function () use ($container) {
      *              context:object="Permission context"
      *              {required=user_uuid,permission}
      * @response 200 application/json "Permission check completed" {
-     *   has_permission:boolean="Whether user has the permission",
-     *   user_uuid:string="User UUID",
-     *   permission:string="Permission checked"
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:{
+     *     has_permission:boolean="Whether user has the permission",
+     *     user_uuid:string="User UUID",
+     *     permission:string="Permission checked"
+     *   },
      * }
      * @response 400 application/json "Invalid request format"
      * @response 403 application/json "Permission denied"
@@ -770,7 +949,16 @@ Router::group('/rbac', function () use ($container) {
      * @summary Get user-role statistics
      * @description Retrieves statistics about user-role assignments
      * @requiresAuth true
-     * @response 200 application/json "User-role statistics retrieved successfully"
+     * @response 200 application/json "User-role statistics retrieved successfully" {
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:{
+     *     total_assignments:integer="Total number of role assignments",
+     *     active_assignments:integer="Number of active role assignments",
+     *     expired_assignments:integer="Number of expired role assignments",
+     *     users_with_roles:integer="Number of users with at least one role"
+     *   },
+     * }
      * @response 403 application/json "Permission denied"
      */
     Router::get('/user-roles/stats', function (Request $request) use ($container) {

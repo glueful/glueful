@@ -19,7 +19,7 @@ Router::group('/auth', function () use ($container) {
      * @requestBody username:string="Username or email address" password:string="User password"
      * {required=username,password}
      * @response 200 application/json "Login successful" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     access_token:string="JWT access token",
@@ -39,7 +39,6 @@ Router::group('/auth', function () use ($container) {
      *       updated_at:integer="Last update timestamp (Unix epoch)"
      *     }
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Invalid credentials"
      * @response 400 "Missing required fields"
@@ -56,7 +55,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requestBody email:string="Email address to verify" {required=email}
      * @response 200 application/json "Verification code has been sent to your email" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:string="Email address",
@@ -79,11 +78,11 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requestBody email:string="Email address" otp:string="One-time password code" {required=email,otp}
      * @response 200 application/json "OTP verified successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:string="Email address",
-     *     verified:boolean="Verification status",
+     *     verified:boolean="true",
      *     verified_at:string="Verification timestamp"
      *   },
      *   code:integer="HTTP status code"
@@ -103,7 +102,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requestBody email:string="Email address associated with account" {required=email}
      * @response 200 application/json "Password reset instructions sent to email" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:string="Email address",
@@ -126,7 +125,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requestBody email:string="Email address" password:string="New password" {required=email,password}
      * @response 200 application/json "Password has been reset successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     email:string="Email address",
@@ -149,7 +148,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requiresAuth true
      * @response 200 application/json "Token is valid" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     access_token:string="JWT access token",
@@ -171,7 +170,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requestBody refresh_token:string="JWT refresh token" {required=refresh_token}
      * @response 200 application/json "Token refreshed successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     access_token:string="New JWT access token",
@@ -196,7 +195,7 @@ Router::group('/auth', function () use ($container) {
      * @tag Authentication
      * @requiresAuth true
      * @response 200 application/json "Logout successful" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   code:integer="HTTP status code"
      * }
@@ -214,7 +213,7 @@ Router::group('/auth', function () use ($container) {
  * @description Retrieves a CSRF token for form and AJAX request protection
  * @tag Security
  * @response 200 application/json "CSRF token retrieved successfully" {
- *   success:boolean="Success status",
+ *   success:boolean="true",
  *   message:string="Success message",
  *   data:{
  *     token:string="CSRF token value",

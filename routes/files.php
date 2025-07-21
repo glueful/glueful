@@ -20,7 +20,7 @@ Router::group('/files', function () use ($container) {
      * @param h query integer false "Image height in pixels (1-1500)"
      * @param q query integer false "Image quality (1-100)"
      * @response 200 application/json "File retrieved successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="File unique identifier",
@@ -58,7 +58,7 @@ Router::group('/files', function () use ($container) {
      *             name:string="Custom filename (optional)"
      *             mime_type:string="MIME type of the file (optional)" {required=file|base64}
      * @response 201 application/json "File uploaded successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="File unique identifier",
@@ -88,7 +88,7 @@ Router::group('/files', function () use ($container) {
      * @requiresAuth true
      * @param uuid path string true "UUID of the file to delete"
      * @response 200 application/json "File deleted successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="File deleted successfully",
      *   code:integer="HTTP status code"
      * }

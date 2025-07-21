@@ -758,24 +758,17 @@ class UsersController extends BaseController
             return Response::error('Role filtering requires RBAC extension', Response::HTTP_BAD_REQUEST);
         }
 
-        // Apply pagination
-        $searchQuery->limit($perPage)->offset(($page - 1) * $perPage);
-
-        $users = $searchQuery->get();
+        // Use pagination method for consistent format
+        $results = $searchQuery->paginate($page, $perPage);
 
         // Note: Roles managed by RBAC extension
+        $users = $results['data'] ?? [];
         foreach ($users as &$user) {
             $user['roles'] = [];
         }
 
-        $results = [
-            'data' => $users,
-            'pagination' => [
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'total' => count($users) // Simplified for now
-            ]
-        ];
+        // Update the data in the pagination result
+        $results['data'] = $users;
 
         $res = $this->cacheResponse(
             'users_search_' . md5(serialize([$query, $filters, $page, $perPage])),
@@ -936,7 +929,7 @@ class UsersController extends BaseController
             throw new NotFoundException('User not found');
         }
 
-        // Get user activity from audit logs using QueryBuilder
+        // Get user activity from audit logs using QueryBuilder with proper pagination
         $activities = $this->getQueryBuilder()->select('audit_logs', [
             'action',
             'entity_type',
@@ -948,19 +941,21 @@ class UsersController extends BaseController
         ])
         ->where(['user_id' => $user['uuid']])
         ->orderBy(['created_at' => 'DESC'])
-        ->limit($perPage)
-        ->offset(($page - 1) * $perPage)
-        ->get();
+        ->paginate($page, $perPage);
 
         $activityRes = $this->cacheResponse(
             'user_activity_' . $uuid . '_' . $page . '_' . $perPage,
             function () use ($activities) {
-                return Response::success($activities, 'Activity log retrieved successfully');
+                return $activities;
             },
             600, // 10 minutes cache for activity logs
             ['users', 'user_' . $uuid, 'activity']
         );
-        return Response::success($activityRes, 'Activity log retrieved successfully');
+
+        $data = $activityRes['data'] ?? [];
+        $meta = $activityRes;
+        unset($meta['data']); // Remove data from meta to avoid duplication
+        return Response::successWithMeta($data, $meta, 'Activity log retrieved successfully');
     }
 
 

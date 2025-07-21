@@ -13,39 +13,47 @@ Router::group('/health', function () use ($container) {
      * @summary System Health Check
      * @description Get overall system health status including database, cache, extensions, and configuration
      * @tag Health
-     * @response 200 application/json "System is healthy" {
-     *   status:string="Overall health status (ok|warning|error)",
-     *   timestamp:string="ISO timestamp of check",
-     *   version:string="Application version",
-     *   environment:string="Application environment",
-     *   checks:{
-     *     database:{
-     *       status:string="Database status",
-     *       message:string="Database status message",
-     *       driver:string="Database driver name",
-     *       migrations_applied:integer="Number of applied migrations"
-     *     },
-     *     cache:{
-     *       status:string="Cache status",
-     *       message:string="Cache status message",
-     *       driver:string="Cache driver name"
-     *     },
-     *     extensions:{
-     *       status:string="Extensions status",
-     *       message:string="Extensions status message",
-     *       loaded:array="List of loaded extensions"
-     *     },
-     *     config:{
-     *       status:string="Configuration status",
-     *       message:string="Configuration status message",
-     *       environment:string="Application environment"
+     * @response 200 application/json "System health check completed" {
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:{
+     *     status:string="Overall health status (ok|warning|error)",
+     *     timestamp:string="ISO timestamp of check",
+     *     version:string="Application version",
+     *     environment:string="Application environment",
+     *     checks:{
+     *       database:{
+     *         status:string="Database status",
+     *         message:string="Database status message",
+     *         driver:string="Database driver name",
+     *         migrations_applied:integer="Number of applied migrations"
+     *       },
+     *       cache:{
+     *         status:string="Cache status",
+     *         message:string="Cache status message",
+     *         driver:string="Cache driver name"
+     *       },
+     *       extensions:{
+     *         status:string="Extensions status",
+     *         message:string="Extensions status message",
+     *         loaded:array="List of loaded extensions"
+     *       },
+     *       config:{
+     *         status:string="Configuration status",
+     *         message:string="Configuration status message",
+     *         environment:string="Application environment"
+     *       }
      *     }
-     *   }
+     *   },
      * }
-     * @response 503 application/json "System is unhealthy" {
-     *   status:string="error",
-     *   timestamp:string="ISO timestamp of check",
-     *   checks:object="Individual check results"
+     * @response 503 application/json "System health check failed" {
+     *   success:boolean="false",
+     *   message:string="Error message",
+     *   data:{
+     *     status:string="error",
+     *     timestamp:string="ISO timestamp of check",
+     *     checks:object="Individual check results with error details"
+     *   }
      * }
      */
     Router::get('/', function () use ($container) {

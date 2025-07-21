@@ -56,41 +56,29 @@ Router::group('/extensions', function () use ($container) {
      * @param publisher query string false "Filter by publisher"
      * @param useCache query boolean false "Whether to use cached catalog data (default: true)"
      * @response 200 application/json "Extensions catalog retrieved successfully" {
-     *   data:object={
-     *     extensions:array=[{
-     *       name:string="Extension name",
-     *       displayName:string="Extension display name",
-     *       version:string="Extension version",
-     *       publisher:string="Extension publisher",
-     *       description:string="Extension description",
-     *       repository:string="Repository URL",
-     *       downloadUrl:string="Download URL",
-     *       icon:string="Icon URL",
-     *       readme:string="README URL",
-     *       tags:array=[string]="Extension tags",
-     *       rating:number="Extension rating",
-     *       downloads:integer="Download count",
-     *       lastUpdated:string="Last update timestamp",
-     *       installed:boolean="Whether extension is installed locally",
-     *       enabled:boolean="Whether extension is enabled",
-     *       status:string="Extension status (available, active, inactive)",
-     *       local_metadata:object="Local extension metadata if installed",
-     *       actions_available:array=[string]="Available actions for this extension"
-     *     }],
-     *     metadata:object={
-     *       source:string="Data source (github_catalog)",
-     *       catalog_url:string="Catalog URL",
-     *       synchronized_at:string="Synchronization timestamp",
-     *       total_available:integer="Total extensions in catalog",
-     *       total_after_filters:integer="Extensions after applying filters",
-     *       summary:object={
-     *         installed:integer="Number of installed extensions",
-     *         enabled:integer="Number of enabled extensions",
-     *         available_for_install:integer="Extensions available for installation",
-     *         disabled:integer="Installed but disabled extensions"
-     *       }
-     *     }
-     *   },
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:array=[{
+     *     name:string="Extension name",
+     *     displayName:string="Extension display name",
+     *     version:string="Extension version",
+     *     publisher:string="Extension publisher",
+     *     description:string="Extension description",
+     *     repository:string="Repository URL",
+     *     downloadUrl:string="Download URL",
+     *     icon:string="Icon URL",
+     *     readme:string="README URL",
+     *     tags:array=[string]="Extension tags",
+     *     rating:number="Extension rating",
+     *     downloads:integer="Download count",
+     *     lastUpdated:string="Last update timestamp",
+     *     installed:boolean="Whether extension is installed locally",
+     *     enabled:boolean="Whether extension is enabled",
+     *     status:string="Extension status (available, active, inactive)",
+     *     local_metadata:object="Local extension metadata if installed",
+     *     actions_available:array=[string]="Available actions for this extension"
+     *   }],
+     *   metadata:object="Catalog metadata and statistics",
      *   request_filters:object="Applied filters",
      *   cache_used:boolean="Whether cache was used"
      * }
@@ -161,11 +149,52 @@ Router::group('/extensions', function () use ($container) {
      * @route GET /extensions/dependencies
      * @tag Extensions - Monitoring
      * @summary Get extension dependencies
-     * @description Retrieves the dependency graph for all extensions
+     * @description Retrieves the dependency graph for all extensions showing inter-extension relationships
      * @requiresAuth true
-     * @response 200 application/json "Extension dependencies retrieved successfully"
-     * @response 403 application/json "Permission denied"
-     * @response 500 application/json "Failed to get extension dependencies"
+     * @response 200 application/json "Extension dependencies retrieved successfully" {
+     *   success:boolean="Success status",
+     *   message:string="Success message",
+     *   data:{
+     *     graph:{
+     *       nodes:array=[{
+     *         id:string="Extension name/identifier",
+     *         name:string="Extension display name",
+     *         tier:string="Extension tier (core/optional)",
+     *         enabled:boolean="Whether extension is enabled",
+     *         version:string="Extension version"
+     *       }],
+     *       edges:array=[{
+     *         from:string="Source extension name",
+     *         to:string="Target extension name",
+     *         type:string="Dependency type",
+     *         required:boolean="Whether dependency is required"
+     *       }]
+     *     },
+     *     summary:{
+     *       nodes:{
+     *         total:integer="Total number of extensions",
+     *         core:integer="Number of core extensions",
+     *         optional:integer="Number of optional extensions"
+     *       },
+     *       edges:{
+     *         total:integer="Total number of dependencies",
+     *         coreToCore:integer="Core to core dependencies",
+     *         coreToOptional:integer="Core to optional dependencies",
+     *         optionalToCore:integer="Optional to core dependencies",
+     *         optionalToOptional:integer="Optional to optional dependencies"
+     *       },
+     *     },
+     *     tieredEdges:{
+     *       coreToCore:array="Array of core to core dependency edges",
+     *       coreToOptional:array="Array of core to optional dependency edges",
+     *       optionalToCore:array="Array of optional to core dependency edges",
+     *       optionalToOptional:array="Array of optional to optional dependency edges"
+     *     },
+     *   },
+     * }
+     * @response 401 "Unauthorized"
+     * @response 403 "Permission denied - insufficient permissions"
+     * @response 500 "Failed to get extension dependencies"
      */
     Router::get('/dependencies', function (Request $request) use ($container) {
         $controller = $container->get(ExtensionsController::class);
@@ -176,11 +205,56 @@ Router::group('/extensions', function () use ($container) {
      * @route GET /extensions/metrics
      * @tag Extensions - Monitoring
      * @summary Get extension metrics
-     * @description Retrieves resource usage metrics for enabled extensions
+     * @description Retrieves resource usage metrics for enabled extensions including memory usage and execution time
      * @requiresAuth true
-     * @response 200 application/json "Extension metrics retrieved successfully"
-     * @response 403 application/json "Permission denied"
-     * @response 500 application/json "Failed to get extension metrics"
+     * @response 200 application/json "Extension metrics retrieved successfully" {
+     *   success:boolean="Success status",
+     *   message:string="Success message",
+     *   data:{
+     *     overall:{
+     *       total_memory_usage:number="Total memory usage across all extensions (bytes)",
+     *       total_execution_time:number="Total execution time across all extensions (milliseconds)"
+     *     },
+     *     by_tier:{
+     *       core:{
+     *         total_memory_usage:number="Total memory usage by core extensions",
+     *         total_execution_time:number="Total execution time by core extensions",
+     *         extensions_count:integer="Number of core extensions",
+     *         extensions:array=[{
+     *           name:string="Extension name",
+     *           memory_usage:number="Memory usage in bytes",
+     *           execution_time:number="Execution time in milliseconds",
+     *           enabled:boolean="Whether extension is enabled",
+     *           version:string="Extension version"
+     *         }]
+     *       },
+     *       optional:{
+     *         total_memory_usage:number="Total memory usage by optional extensions",
+     *         total_execution_time:number="Total execution time by optional extensions",
+     *         extensions_count:integer="Number of optional extensions",
+     *         extensions:array=[{
+     *           name:string="Extension name",
+     *           memory_usage:number="Memory usage in bytes",
+     *           execution_time:number="Execution time in milliseconds",
+     *           enabled:boolean="Whether extension is enabled",
+     *           version:string="Extension version"
+     *         }]
+     *       },
+     *     },
+     *     all_extensions:array=[{
+     *       name:string="Extension name",
+     *       tier:string="Extension tier (core/optional)",
+     *       memory_usage:number="Memory usage in bytes",
+     *       execution_time:number="Execution time in milliseconds",
+     *       enabled:boolean="Whether extension is enabled",
+     *       version:string="Extension version",
+     *       performance_score:number="Performance score (0-100)"
+     *     }]
+     *   },
+     * }
+     * @response 401 "Unauthorized"
+     * @response 403 "Permission denied - insufficient permissions"
+     * @response 500 "Failed to get extension metrics"
      */
     Router::get('/metrics', function (Request $request) use ($container) {
         $controller = $container->get(ExtensionsController::class);
