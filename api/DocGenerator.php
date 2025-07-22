@@ -787,18 +787,12 @@ class DocGenerator
                                 'data' => [
                                     'type' => 'array',
                                     'items' => ['$ref' => "#/components/schemas/{$tableName}"]
-                                ],
-                                'code' => [
-                                    'type' => 'integer',
-                                    'format' => 'int32',
-                                    'enum' => [200, 201],
-                                    'example' => 200,
-                                ],
-                                'required' => ['success', 'message', 'data', 'code']
+                                ]
                                 // 'meta' => [
                                 //     '$ref' => '#/components/schemas/PaginationMeta'
                                 // ]
-                            ]
+                            ],
+                            'required' => ['success', 'message', 'data']
                         ]
                     ]
                 ]
@@ -883,15 +877,9 @@ class DocGenerator
                     'data' => [
                         'type' => 'object',
                         'additionalProperties' => true
-                    ],
-                    'code' => [
-                        'type' => 'integer',
-                        'format' => 'int32',
-                        'enum' => [400, 401, 403, 404, 500],
-                        'example' => 400,
-                    ],
+                    ]
                 ],
-                'required' => ['success', 'message', 'data', 'code']
+                'required' => ['success', 'message', 'data']
             ],
             // 'PaginationMeta' => [
             //     'type' => 'object',

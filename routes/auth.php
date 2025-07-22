@@ -61,7 +61,6 @@ Router::group('/auth', function () use ($container) {
      *     email:string="Email address",
      *     expires_in:integer="OTP expiration time in seconds"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid email address"
      * @response 404 "Email not found"
@@ -85,7 +84,6 @@ Router::group('/auth', function () use ($container) {
      *     verified:boolean="true",
      *     verified_at:string="Verification timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid OTP"
      * @response 401 "OTP expired"
@@ -108,7 +106,6 @@ Router::group('/auth', function () use ($container) {
      *     email:string="Email address",
      *     expires_in:integer="Reset code expiration time in seconds"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "Email not found"
      * @response 400 "Invalid email format"
@@ -131,7 +128,6 @@ Router::group('/auth', function () use ($container) {
      *     email:string="Email address",
      *     updated_at:string="Password reset timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid password format"
      * @response 404 "Email not found"
@@ -154,7 +150,6 @@ Router::group('/auth', function () use ($container) {
      *     access_token:string="JWT access token",
      *     refresh_token:string="JWT refresh token"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Invalid or expired token"
      */
@@ -178,7 +173,6 @@ Router::group('/auth', function () use ($container) {
      *     expires_in:integer="Token expiration in seconds",
      *     refresh_token:string="New JWT refresh token"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Invalid refresh token"
      * @response 400 "Missing refresh token"
@@ -197,7 +191,6 @@ Router::group('/auth', function () use ($container) {
      * @response 200 application/json "Logout successful" {
      *   success:boolean="true",
      *   message:string="Success message",
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Unauthorized - not logged in"
      */

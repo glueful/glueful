@@ -38,7 +38,6 @@ Router::group('/notifications', function () use ($container) {
      *     read:boolean="Whether notification has been read",
      *     created_at:string="Creation timestamp"
      *   }],
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Unauthorized access"
      */
@@ -65,7 +64,6 @@ Router::group('/notifications', function () use ($container) {
      *     read:boolean="Whether notification has been read",
      *     created_at:string="Creation timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
@@ -90,7 +88,6 @@ Router::group('/notifications', function () use ($container) {
      *     read:boolean="true",
      *     updated_at:string="Update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
@@ -115,7 +112,6 @@ Router::group('/notifications', function () use ($container) {
      *     read:boolean="false",
      *     updated_at:string="Update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
@@ -138,7 +134,6 @@ Router::group('/notifications', function () use ($container) {
      *     count:integer="Number of notifications marked as read",
      *     updated_at:string="Update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Unauthorized access"
      */
@@ -166,7 +161,6 @@ Router::group('/notifications', function () use ($container) {
      *       account:boolean="Account notifications setting"
      *     }
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 401 "Unauthorized access"
      */
@@ -201,7 +195,6 @@ Router::group('/notifications', function () use ($container) {
      *     },
      *     updated_at:string="Update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid preferences format"
      * @response 401 "Unauthorized access"
@@ -224,7 +217,6 @@ Router::group('/notifications', function () use ($container) {
      *   data:{
      *     uuid:string="Deleted notification unique identifier"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"

@@ -540,7 +540,12 @@ class CommentsDocGenerator
         // Clean up the schema string - remove comment markers and normalize whitespace
         $schemaStr = preg_replace('/\*\s*/', ' ', $schemaStr);
         $schemaStr = preg_replace('/\s+/', ' ', $schemaStr);
-        $schemaStr = trim($schemaStr, '{} ');
+
+        // Only trim outer braces if this is the root level
+        if (substr($schemaStr, 0, 1) === '{' && substr($schemaStr, -1) === '}') {
+            $schemaStr = substr($schemaStr, 1, -1);
+        }
+        $schemaStr = trim($schemaStr);
 
         $parts = [];
         $start = 0;
@@ -641,11 +646,47 @@ class CommentsDocGenerator
                         'items' => $itemsSchema
                     ];
                 }
-            } elseif (preg_match('/(\w+):(\{[\s\S]*\})/', $part, $match)) {
+            } elseif (preg_match('/(\w+):\{/', $part)) {
                 // Check for nested object (field:{...})
-                $name = $match[1];
-                $nestedSchema = $this->parseSimplifiedSchema($match[2]);
-                $properties[$name] = $nestedSchema;
+                // Need to find the matching closing brace
+                $colonPos = strpos($part, ':');
+                $name = substr($part, 0, $colonPos);
+                $openBracePos = strpos($part, '{', $colonPos);
+
+                // Count braces to find the matching closing brace
+                $braceCount = 0;
+                $inQuotes = false;
+                $closeBracePos = -1;
+
+                for ($i = $openBracePos; $i < strlen($part); $i++) {
+                    $char = $part[$i];
+
+                    if ($char === '"' && ($i === 0 || $part[$i - 1] !== '\\')) {
+                        $inQuotes = !$inQuotes;
+                    } elseif (!$inQuotes) {
+                        if ($char === '{') {
+                            $braceCount++;
+                        } elseif ($char === '}') {
+                            $braceCount--;
+                            if ($braceCount === 0) {
+                                $closeBracePos = $i;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if ($closeBracePos > $openBracePos) {
+                    // Extract just the content between the braces
+                    $nestedContent = substr($part, $openBracePos + 1, $closeBracePos - $openBracePos - 1);
+                    $nestedSchema = $this->parseSimplifiedSchema('{' . $nestedContent . '}');
+                    $properties[$name] = $nestedSchema;
+                } else {
+                    // If we can't find a closing brace, use the rest of the string
+                    $nestedContent = substr($part, $openBracePos);
+                    $nestedSchema = $this->parseSimplifiedSchema($nestedContent);
+                    $properties[$name] = $nestedSchema;
+                }
             } elseif (
                 preg_match(
                     '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/',

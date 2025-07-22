@@ -37,7 +37,6 @@ Router::group('/files', function () use ($container) {
      *     created_at:string="Creation timestamp",
      *     updated_at:string="Last update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"
@@ -68,7 +67,6 @@ Router::group('/files', function () use ($container) {
      *     size:integer="File size in bytes",
      *     created_at:string="Creation timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid file data"
      * @response 401 "Unauthorized access"
@@ -90,7 +88,6 @@ Router::group('/files', function () use ($container) {
      * @response 200 application/json "File deleted successfully" {
      *   success:boolean="true",
      *   message:string="File deleted successfully",
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"

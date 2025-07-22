@@ -28,11 +28,19 @@ Router::group('/extensions', function () use ($container) {
      * @summary List extensions
      * @description Retrieves a list of all available extensions with their status
      * @requiresAuth true
-     * @response 200 application/json "List of extensions" {extensions:array=[{name:string="Extension name",
-     *                                                      description:string="Extension description",
-     *                                                      version:string="Extension version",
-     *                                                      author:string="Extension author",
-     *                                                      enabled:boolean="Whether extension is enabled"}]}
+     * @response 200 application/json "List of extensions" {
+     *   success:boolean="true",
+     *   message:string="Success message",
+     *   data:{
+     *     extensions:array=[{
+     *       name:string="Extension name",
+     *       description:string="Extension description",
+     *       version:string="Extension version",
+     *       author:string="Extension author",
+     *       enabled:boolean="Whether extension is enabled"
+     *     }]
+     *   },
+     * }
      * @response 403 application/json "Permission denied"
      */
     Router::get('/', function (Request $request) use ($container) {

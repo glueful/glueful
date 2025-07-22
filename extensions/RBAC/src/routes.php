@@ -46,6 +46,8 @@ Router::group('/rbac', function () use ($container) {
          * @param level query integer false "Filter by role hierarchy level"
          * @param tree query boolean false "Return roles as hierarchical tree structure"
          * @response 200 application/json "Roles retrieved successfully" {
+         *   success:boolean="true",
+         *   message:string="Success message",
          *   data:array=[{
          *     uuid:string="Role unique identifier",
          *     name:string="Role name",
@@ -900,9 +902,13 @@ Router::group('/rbac', function () use ($container) {
          *              scope:array="Scope filter"
          *              {required=role_slug}
          * @response 200 application/json "Role check completed" {
-         *   has_role:boolean="Whether user has the role",
-         *   user_uuid:string="User UUID",
-         *   role_slug:string="Role slug checked"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     has_role:boolean="Whether user has the role",
+         *     user_uuid:string="User UUID",
+         *     role_slug:string="Role slug checked"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"

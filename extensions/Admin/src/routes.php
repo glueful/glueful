@@ -317,9 +317,19 @@ Router::group('/admin', function () use ($container) {
          * @description Retrieves column metadata for a specific table
          * @requiresAuth true
          * @param name path string true "Table name"
-         * @response 200 application/json "Table columns" {table:string="Table name",
-         * columns:array=[{name:string="Column name",
-         * type:string="Column type", nullable:boolean="Whether column can be null", default:string="Default value"}]}
+         * @response 200 application/json "Table columns" {
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     table:string="Table name",
+         *     columns:array=[{
+         *       name:string="Column name",
+         *       type:string="Column type",
+         *       nullable:boolean="Whether column can be null",
+         *       default:string="Default value"
+         *     }]
+         *   },
+         * }
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Table not found"
          */
@@ -790,12 +800,16 @@ Router::group('/admin', function () use ($container) {
          *              confirm:boolean="Confirmation flag to execute revert (default: false for preview)"
          *              {required=change_id}
          * @response 200 application/json "Schema change reverted or preview generated" {
-         *   change_id:string="Original change ID",
-         *   original_change:object="Details of the original change",
-         *   revert_operations:array="Operations to be performed for revert",
-         *   preview_only:boolean="Whether this is a preview or actual execution",
-         *   result:object="Revert execution results (when confirmed)",
-         *   reverted_at:string="Revert timestamp (when confirmed)"
+         *   success:boolean="true",
+         *   message:string="Success message",
+         *   data:{
+         *     change_id:string="Original change ID",
+         *     original_change:object="Details of the original change",
+         *     revert_operations:array="Operations to be performed for revert",
+         *     preview_only:boolean="Whether this is a preview or actual execution",
+         *     result:object="Revert execution results (when confirmed)",
+         *     reverted_at:string="Revert timestamp (when confirmed)"
+         *   },
          * }
          * @response 400 application/json "Invalid request format"
          * @response 403 application/json "Permission denied"

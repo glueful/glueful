@@ -43,8 +43,8 @@ Router::group('/health', function () use ($container) {
      *         message:string="Configuration status message",
      *         environment:string="Application environment"
      *       }
-     *     }
-     *   },
+     *     },
+     *   }
      * }
      * @response 503 application/json "System health check failed" {
      *   success:boolean="false",
@@ -67,16 +67,24 @@ Router::group('/health', function () use ($container) {
      * @description Check database connectivity and functionality using QueryBuilder abstraction
      * @tag Health
      * @response 200 application/json "Database is healthy" {
-     *   status:string="Database status (ok|warning|error)",
-     *   message:string="Database status message",
-     *   driver:string="Database driver name",
-     *   migrations_applied:integer="Number of applied migrations",
-     *   connectivity_test:boolean="Connectivity test result"
+     *   success:boolean="true",
+     *   message:string="Database health check completed",
+     *   data:{
+     *     status:string="Database status (ok|warning|error)",
+     *     message:string="Database status message",
+     *     driver:string="Database driver name",
+     *     migrations_applied:integer="Number of applied migrations",
+     *     connectivity_test:boolean="Connectivity test result"
+     *   }
      * }
      * @response 503 application/json "Database is unhealthy" {
-     *   status:string="error",
-     *   message:string="Error message",
-     *   type:string="Error type"
+     *   success:boolean="false",
+     *   message:string="Database health check failed",
+     *   data:{
+     *     status:string="error",
+     *     message:string="Error message",
+     *     type:string="Error type"
+     *   }
      * }
      */
     Router::get('/database', function () use ($container) {
@@ -90,14 +98,22 @@ Router::group('/health', function () use ($container) {
      * @description Check cache connectivity and functionality
      * @tag Health
      * @response 200 application/json "Cache is healthy" {
-     *   status:string="Cache status (ok|disabled|error)",
-     *   message:string="Cache status message",
-     *   driver:string="Cache driver name",
-     *   operations:string="Operations status"
+     *   success:boolean="true",
+     *   message:string="Cache health check completed",
+     *   data:{
+     *     status:string="Cache status (ok|disabled|error)",
+     *     message:string="Cache status message",
+     *     driver:string="Cache driver name",
+     *     operations:string="Operations status"
+     *   }
      * }
      * @response 503 application/json "Cache is unhealthy" {
-     *   status:string="error",
-     *   message:string="Error message"
+     *   success:boolean="false",
+     *   message:string="Cache health check failed",
+     *   data:{
+     *     status:string="error",
+     *     message:string="Error message"
+     *   }
      * }
      */
     Router::get('/cache', function () use ($container) {
