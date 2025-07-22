@@ -67,6 +67,9 @@ class AdminServiceProvider extends BaseExtensionServiceProvider
     {
         // Any boot logic that needs to run after all services are registered
         // For example, registering event listeners, etc.
+
+        // Generate env.json for the SPA
+        $this->generateEnvConfig();
     }
 
     /**
@@ -90,5 +93,35 @@ class AdminServiceProvider extends BaseExtensionServiceProvider
     {
         // Admin extension has no dependencies on other extensions
         return [];
+    }
+
+    /**
+     * Generate env.json configuration file for the SPA
+     */
+    private function generateEnvConfig(): void
+    {
+        $baseUrl = config('app.paths.api_base_url');
+        $appName = config('app.name');
+        $domain = config('app.paths.domain');
+        $dbEngine = config('database.engine');
+        $db = config('database.' . $dbEngine . '.db');
+        $docsUrl = config('app.paths.api_docs_url');
+
+        $data = [
+            'appName' => $appName,
+            'domain' => $domain,
+            'apiBaseUrl' => $baseUrl,
+            'dbEngine' => $dbEngine,
+            'db' => $db,
+            'apiDocsUrl' => $docsUrl,
+        ];
+
+        $jsonData = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        // Set the filename to always be "env.json" in the extension's public directory
+        $filename = dirname(__DIR__) . "/public/env.json";
+
+        // Write JSON data to a file (this will overwrite any existing file)
+        file_put_contents($filename, $jsonData);
     }
 }
