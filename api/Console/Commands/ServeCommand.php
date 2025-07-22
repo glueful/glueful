@@ -74,10 +74,10 @@ class ServeCommand extends BaseCommand
             return self::FAILURE;
         }
 
-        // Get API directory
-        $apiDir = dirname(__DIR__, 3);
-        if (!is_dir($apiDir)) {
-            $this->error('API directory not found. Expected: ' . $apiDir);
+        // Get public directory
+        $publicDir = dirname(__DIR__, 3) . '/public';
+        if (!is_dir($publicDir)) {
+            $this->error('Public directory not found. Expected: ' . $publicDir);
             return self::FAILURE;
         }
 
@@ -85,7 +85,7 @@ class ServeCommand extends BaseCommand
         putenv('APP_ENV=development');
 
         // Display server information
-        $this->displayServerInfo($host, $port, $apiDir);
+        $this->displayServerInfo($host, $port, $publicDir);
 
         // Open browser if requested
         if ($openBrowser) {
@@ -93,7 +93,7 @@ class ServeCommand extends BaseCommand
         }
 
         // Start the server
-        return $this->startServer($host, $port, $apiDir);
+        return $this->startServer($host, $port, $publicDir);
     }
 
     private function isValidPort(string $port): bool
@@ -111,14 +111,14 @@ class ServeCommand extends BaseCommand
         return true;
     }
 
-    private function displayServerInfo(string $host, string $port, string $apiDir): void
+    private function displayServerInfo(string $host, string $port, string $publicDir): void
     {
         $this->info('🚀 Starting Glueful development server...');
         $this->line('');
 
         $url = "http://$host:$port";
         $this->line('  Server URL:    <info>' . $url . '</info>');
-        $this->line('  Document root: <comment>' . $apiDir . '</comment>');
+        $this->line('  Document root: <comment>' . $publicDir . '</comment>');
         $this->line('  Environment:   <comment>development</comment>');
         $this->line('');
 
@@ -148,7 +148,7 @@ class ServeCommand extends BaseCommand
         }
     }
 
-    private function startServer(string $host, string $port, string $apiDir): int
+    private function startServer(string $host, string $port, string $publicDir): int
     {
         // Build the PHP server command
         $command = [
@@ -156,7 +156,7 @@ class ServeCommand extends BaseCommand
             '-S',
             "$host:$port",
             '-t',
-            $apiDir
+            $publicDir
         ];
 
         // Create and start the process

@@ -239,24 +239,11 @@ class DocGenerator
                 'title' => config('app.name'),
                 'version' => config('app.version_full'),
                 'description' => 'Auto-generated API documentation',
-                'contact' => [
-                    'name' => 'API Support',
-                    'email' => 'support@example.com'
-                ],
-                'license' => [
-                    'name' => 'MIT',
-                    'url' => 'https://opensource.org/licenses/MIT'
-                ]
             ],
             'servers' => [
                 [
                     'url' => rtrim(config('app.paths.api_base_url'), '/') . '/' . config('app.api_version'),
-                    'description' => 'Production API Server ' . config('app.api_version')
-                ],
-                [
-                    'url' => rtrim(str_replace('api', 'staging-api', config('app.paths.api_base_url')), '/')
-                           . '/' . config('app.api_version'),
-                    'description' => 'Staging API Server ' . config('app.api_version')
+                    'description' => 'API Server ' . config('app.api_version')
                 ]
             ],
             'components' => [
