@@ -850,6 +850,26 @@ class DocGenerator
     private function getDefaultSchemas(): array
     {
         return [
+            // Common Response Schemas
+            'SuccessResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean',
+                        'example' => true
+                    ],
+                    'message' => [
+                        'type' => 'string',
+                        'example' => 'Operation completed successfully'
+                    ],
+                    'data' => [
+                        'type' => 'object',
+                        'additionalProperties' => true
+                    ]
+                ],
+                'required' => ['success', 'message']
+            ],
+
             'Error' => [
                 'type' => 'object',
                 'properties' => [
@@ -868,15 +888,470 @@ class DocGenerator
                 ],
                 'required' => ['success', 'message', 'data']
             ],
-            // 'PaginationMeta' => [
-            //     'type' => 'object',
-            //     'properties' => [
-            //         'total' => ['type' => 'integer'],
-            //         'limit' => ['type' => 'integer'],
-            //         'offset' => ['type' => 'integer'],
-            //         'pages' => ['type' => 'integer']
-            //     ]
-            // ]
+
+            'ErrorResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean',
+                        'example' => false
+                    ],
+                    'message' => [
+                        'type' => 'string',
+                        'example' => 'An error occurred'
+                    ],
+                    'errors' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'string'
+                        ]
+                    ]
+                ],
+                'required' => ['success', 'message']
+            ],
+
+            'ValidationErrorResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean',
+                        'example' => false
+                    ],
+                    'message' => [
+                        'type' => 'string',
+                        'example' => 'Validation failed'
+                    ],
+                    'errors' => [
+                        'type' => 'object',
+                        'additionalProperties' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'string'
+                            ]
+                        ]
+                    ]
+                ],
+                'required' => ['success', 'message', 'errors']
+            ],
+
+            'PaginationMeta' => [
+                'type' => 'object',
+                'properties' => [
+                    'current_page' => [
+                        'type' => 'integer',
+                        'description' => 'Current page number'
+                    ],
+                    'per_page' => [
+                        'type' => 'integer',
+                        'description' => 'Number of items per page'
+                    ],
+                    'total' => [
+                        'type' => 'integer',
+                        'description' => 'Total number of items'
+                    ],
+                    'last_page' => [
+                        'type' => 'integer',
+                        'description' => 'Last page number'
+                    ],
+                    'has_more' => [
+                        'type' => 'boolean',
+                        'description' => 'Whether more pages exist'
+                    ],
+                    'from' => [
+                        'type' => 'integer',
+                        'description' => 'Starting item number on current page'
+                    ],
+                    'to' => [
+                        'type' => 'integer',
+                        'description' => 'Ending item number on current page'
+                    ]
+                ]
+            ],
+
+            // Authentication Schemas
+            'LoginRequest' => [
+                'type' => 'object',
+                'required' => ['username', 'password'],
+                'properties' => [
+                    'username' => [
+                        'type' => 'string',
+                        'description' => 'Username or email'
+                    ],
+                    'password' => [
+                        'type' => 'string',
+                        'format' => 'password',
+                        'description' => 'User password'
+                    ],
+                    'remember_me' => [
+                        'type' => 'boolean',
+                        'description' => 'Keep user logged in',
+                        'default' => false
+                    ]
+                ]
+            ],
+
+            'LoginResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean'
+                    ],
+                    'message' => [
+                        'type' => 'string'
+                    ],
+                    'data' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'access_token' => [
+                                'type' => 'string',
+                                'description' => 'JWT access token'
+                            ],
+                            'refresh_token' => [
+                                'type' => 'string',
+                                'description' => 'JWT refresh token'
+                            ],
+                            'token_type' => [
+                                'type' => 'string',
+                                'example' => 'Bearer'
+                            ],
+                            'expires_in' => [
+                                'type' => 'integer',
+                                'description' => 'Token expiration time in seconds'
+                            ],
+                            'user' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'id' => [
+                                        'type' => 'string',
+                                        'description' => 'User unique identifier'
+                                    ],
+                                    'email' => [
+                                        'type' => 'string',
+                                        'format' => 'email',
+                                        'description' => 'Email address'
+                                    ],
+                                    'email_verified' => [
+                                        'type' => 'boolean',
+                                        'description' => 'Email verification status'
+                                    ],
+                                    'username' => [
+                                        'type' => 'string',
+                                        'description' => 'Username'
+                                    ],
+                                    'name' => [
+                                        'type' => 'string',
+                                        'description' => 'Full name'
+                                    ],
+                                    'given_name' => [
+                                        'type' => 'string',
+                                        'description' => 'First name'
+                                    ],
+                                    'family_name' => [
+                                        'type' => 'string',
+                                        'description' => 'Last name'
+                                    ],
+                                    'picture' => [
+                                        'type' => 'string',
+                                        'description' => 'Profile image URL'
+                                    ],
+                                    'locale' => [
+                                        'type' => 'string',
+                                        'description' => 'User locale (e.g., en-US)'
+                                    ],
+                                    'updated_at' => [
+                                        'type' => 'integer',
+                                        'description' => 'Last update timestamp (Unix epoch)'
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+
+            'RefreshTokenRequest' => [
+                'type' => 'object',
+                'required' => ['refresh_token'],
+                'properties' => [
+                    'refresh_token' => [
+                        'type' => 'string',
+                        'description' => 'The refresh token to exchange for new tokens'
+                    ]
+                ]
+            ],
+
+            // User Management Schemas
+            'User' => [
+                'type' => 'object',
+                'properties' => [
+                    'uuid' => [
+                        'type' => 'string',
+                        'format' => 'uuid',
+                        'description' => 'Unique user identifier'
+                    ],
+                    'username' => [
+                        'type' => 'string',
+                        'description' => 'User username'
+                    ],
+                    'email' => [
+                        'type' => 'string',
+                        'format' => 'email',
+                        'description' => 'User email address'
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['active', 'inactive', 'suspended'],
+                        'description' => 'User account status'
+                    ],
+                    'created_at' => [
+                        'type' => 'string',
+                        'format' => 'date-time',
+                        'description' => 'Account creation timestamp'
+                    ],
+                    'updated_at' => [
+                        'type' => 'string',
+                        'format' => 'date-time',
+                        'description' => 'Last update timestamp'
+                    ]
+                ]
+            ],
+
+            'CreateUserRequest' => [
+                'type' => 'object',
+                'required' => ['username', 'email', 'password'],
+                'properties' => [
+                    'username' => [
+                        'type' => 'string',
+                        'description' => 'Unique username'
+                    ],
+                    'email' => [
+                        'type' => 'string',
+                        'format' => 'email',
+                        'description' => 'User email address'
+                    ],
+                    'password' => [
+                        'type' => 'string',
+                        'format' => 'password',
+                        'description' => 'User password'
+                    ]
+                ]
+            ],
+
+            'UpdateUserRequest' => [
+                'type' => 'object',
+                'properties' => [
+                    'email' => [
+                        'type' => 'string',
+                        'format' => 'email',
+                        'description' => 'New email address'
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['active', 'inactive', 'suspended'],
+                        'description' => 'New account status'
+                    ]
+                ]
+            ],
+
+            // Health Check Schemas
+            'HealthCheckResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['healthy', 'unhealthy'],
+                        'description' => 'Overall system health status'
+                    ],
+                    'timestamp' => [
+                        'type' => 'string',
+                        'format' => 'date-time',
+                        'description' => 'Health check timestamp'
+                    ],
+                    'services' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'database' => [
+                                '$ref' => '#/components/schemas/ServiceHealth'
+                            ],
+                            'cache' => [
+                                '$ref' => '#/components/schemas/ServiceHealth'
+                            ],
+                            'queue' => [
+                                '$ref' => '#/components/schemas/ServiceHealth'
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+
+            'ServiceHealth' => [
+                'type' => 'object',
+                'properties' => [
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['up', 'down'],
+                        'description' => 'Service availability status'
+                    ],
+                    'latency' => [
+                        'type' => 'number',
+                        'description' => 'Response time in milliseconds'
+                    ],
+                    'message' => [
+                        'type' => 'string',
+                        'description' => 'Additional status information'
+                    ]
+                ]
+            ],
+
+            // Extension Schemas
+            'Extension' => [
+                'type' => 'object',
+                'properties' => [
+                    'name' => [
+                        'type' => 'string',
+                        'description' => 'Extension name'
+                    ],
+                    'version' => [
+                        'type' => 'string',
+                        'description' => 'Extension version'
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['enabled', 'disabled'],
+                        'description' => 'Extension status'
+                    ],
+                    'type' => [
+                        'type' => 'string',
+                        'enum' => ['core', 'optional'],
+                        'description' => 'Extension type'
+                    ],
+                    'description' => [
+                        'type' => 'string',
+                        'description' => 'Extension description'
+                    ],
+                    'dependencies' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'string'
+                        ],
+                        'description' => 'Required dependencies'
+                    ]
+                ]
+            ],
+
+            'ExtensionListResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean'
+                    ],
+                    'data' => [
+                        'type' => 'array',
+                        'items' => [
+                            '$ref' => '#/components/schemas/Extension'
+                        ]
+                    ]
+                ]
+            ],
+
+            // Notification Schemas
+            'Notification' => [
+                'type' => 'object',
+                'properties' => [
+                    'id' => [
+                        'type' => 'integer',
+                        'description' => 'Notification ID'
+                    ],
+                    'type' => [
+                        'type' => 'string',
+                        'description' => 'Notification type'
+                    ],
+                    'notifiable_type' => [
+                        'type' => 'string',
+                        'description' => 'Type of entity being notified'
+                    ],
+                    'notifiable_id' => [
+                        'type' => 'string',
+                        'description' => 'ID of entity being notified'
+                    ],
+                    'data' => [
+                        'type' => 'object',
+                        'description' => 'Notification payload'
+                    ],
+                    'read_at' => [
+                        'type' => 'string',
+                        'format' => 'date-time',
+                        'nullable' => true,
+                        'description' => 'When notification was read'
+                    ],
+                    'created_at' => [
+                        'type' => 'string',
+                        'format' => 'date-time',
+                        'description' => 'When notification was created'
+                    ]
+                ]
+            ],
+
+            'NotificationListResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean'
+                    ],
+                    'data' => [
+                        'type' => 'array',
+                        'items' => [
+                            '$ref' => '#/components/schemas/Notification'
+                        ]
+                    ],
+                    'meta' => [
+                        '$ref' => '#/components/schemas/PaginationMeta'
+                    ]
+                ]
+            ],
+
+            // File Upload Schemas
+            'FileUploadRequest' => [
+                'type' => 'object',
+                'required' => ['file'],
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'format' => 'binary',
+                        'description' => 'The file to upload'
+                    ]
+                ]
+            ],
+
+            'FileUploadResponse' => [
+                'type' => 'object',
+                'properties' => [
+                    'success' => [
+                        'type' => 'boolean'
+                    ],
+                    'data' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'filename' => [
+                                'type' => 'string',
+                                'description' => 'Uploaded file name'
+                            ],
+                            'size' => [
+                                'type' => 'integer',
+                                'description' => 'File size in bytes'
+                            ],
+                            'mime_type' => [
+                                'type' => 'string',
+                                'description' => 'File MIME type'
+                            ],
+                            'url' => [
+                                'type' => 'string',
+                                'description' => 'File access URL'
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         ];
     }
 
