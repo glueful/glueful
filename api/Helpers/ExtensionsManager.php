@@ -6,6 +6,11 @@ namespace Glueful\Helpers;
 
 use Composer\Autoload\ClassLoader;
 use Glueful\Helpers\CDNAdapterManager;
+use Glueful\Services\FileFinder;
+use Glueful\Services\FileManager;
+use Glueful\DI\ContainerBootstrap;
+use Glueful\Http\Client;
+use Glueful\Exceptions\HttpException;
 
 /**
  * Extensions Manager
@@ -25,16 +30,14 @@ class ExtensionsManager
     /** @var array Loaded extension instances */
     private static array $loadedExtensions = [];
 
-    /** @var array All registered extensions */
-    private static array $allExtensions = [];
-
-    /** @var array Extension namespaces and their directories */
-    private static array $extensionNamespaces = [
-        'Glueful\\Extensions\\' => ['extensions']
-    ];
-
     /** @var ClassLoader|null Composer's class loader instance */
     private static ?ClassLoader $classLoader = null;
+
+    /** @var FileFinder|null File finder service instance */
+    private static ?FileFinder $fileFinder = null;
+
+    /** @var FileManager|null File manager service instance */
+    private static ?FileManager $fileManager = null;
 
     /**
      * Enable debug mode for extension loading
@@ -55,6 +58,44 @@ class ExtensionsManager
     }
 
     /**
+     * Get FileFinder service instance
+     *
+     * @return FileFinder
+     */
+    private static function getFileFinder(): FileFinder
+    {
+        if (self::$fileFinder === null) {
+            try {
+                $container = ContainerBootstrap::getContainer();
+                self::$fileFinder = $container->get(FileFinder::class);
+            } catch (\Exception $e) {
+                // Fallback to creating directly if container not available
+                self::$fileFinder = new FileFinder();
+            }
+        }
+        return self::$fileFinder;
+    }
+
+    /**
+     * Get FileManager service instance
+     *
+     * @return FileManager
+     */
+    private static function getFileManager(): FileManager
+    {
+        if (self::$fileManager === null) {
+            try {
+                $container = ContainerBootstrap::getContainer();
+                self::$fileManager = $container->get(FileManager::class);
+            } catch (\Exception $e) {
+                // Fallback to creating directly if container not available
+                self::$fileManager = new FileManager();
+            }
+        }
+        return self::$fileManager;
+    }
+
+    /**
      * Log debug message if debug mode is enabled
      *
      * @param string $message Message to log
@@ -64,6 +105,115 @@ class ExtensionsManager
     {
         if (self::$debug) {
             error_log("[ExtensionsManager Debug] " . $message);
+        }
+    }
+
+    /**
+     * Count PHP files in a directory using FileFinder
+     *
+     * @param string $directory Directory to count files in
+     * @return int Number of PHP files
+     */
+    private static function countPhpFiles(string $directory): int
+    {
+        try {
+            $finder = self::getFileFinder();
+            $files = $finder->findPhpFiles($directory, 0); // depth 0 for current directory only
+            return iterator_count($files);
+        } catch (\Exception $e) {
+            self::debug("Error counting PHP files in {$directory}: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Find PHP files in a directory and return their paths
+     *
+     * @param string $directory Directory to search in
+     * @return array Array of PHP file paths
+     */
+    private static function findPhpFilesInDirectory(string $directory): array
+    {
+        try {
+            $finder = self::getFileFinder();
+            $files = $finder->findPhpFiles($directory, 0); // depth 0 for current directory only
+
+            $phpFiles = [];
+            foreach ($files as $file) {
+                $phpFiles[] = $file->getPathname();
+            }
+
+            return $phpFiles;
+        } catch (\Exception $e) {
+            self::debug("Error finding PHP files in {$directory}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Count screenshot files in a directory
+     *
+     * @param string $directory Directory to search in
+     * @return int Number of screenshot files
+     */
+    private static function countScreenshots(string $directory): int
+    {
+        try {
+            $finder = self::getFileFinder()->createFinder();
+            $files = $finder
+                ->files()
+                ->in($directory)
+                ->depth('== 0')
+                ->name(['*.png', '*.jpg', '*.jpeg', '*.gif']);
+
+            return iterator_count($files);
+        } catch (\Exception $e) {
+            self::debug("Error counting screenshots in {$directory}: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Discover all extensions in the extensions directory using FileFinder
+     *
+     * @param string|null $extensionsPath Path to extensions directory (null = use default)
+     * @return array Array of discovered extensions with metadata
+     */
+    public static function discoverExtensions(?string $extensionsPath = null): array
+    {
+        $extensionsPath = $extensionsPath ?? config('app.paths.project_extensions', 'extensions/');
+
+        if (!is_dir($extensionsPath)) {
+            self::debug("Extensions directory does not exist: {$extensionsPath}");
+            return [];
+        }
+
+        try {
+            $finder = self::getFileFinder();
+            $extensions = $finder->findExtensions($extensionsPath);
+
+            $discovered = [];
+            foreach ($extensions as $extensionDir) {
+                $extensionName = $extensionDir->getBasename();
+                $extensionPath = $extensionDir->getPathname();
+
+                // Get extension metadata
+                $discovered[$extensionName] = [
+                    'name' => $extensionName,
+                    'path' => $extensionPath,
+                    'hasConfig' => file_exists("{$extensionPath}/config.php"),
+                    'hasRoutes' => file_exists("{$extensionPath}/routes.php"),
+                    'hasMigrations' => is_dir("{$extensionPath}/migrations") ||
+                                     is_dir("{$extensionPath}/database/migrations"),
+                    'hasAssets' => is_dir("{$extensionPath}/assets"),
+                    'lastModified' => $extensionDir->getMTime(),
+                ];
+            }
+
+            return $discovered;
+        } catch (\Exception $e) {
+            self::debug("Error discovering extensions: " . $e->getMessage());
+            return [];
         }
     }
 
@@ -141,15 +291,9 @@ class ExtensionsManager
         // Register extension namespaces with Composer if available
         self::registerExtensionNamespaces();
 
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                self::scanAndLoadExtensions($dir, $namespace, self::$allExtensions);
-            }
-        }
-
-        // Initialize all loaded extensions
-        self::initializeExtensions();
+        // Note: loadExtensions() is deprecated in favor of loadEnabledExtensions()
+        // This method now simply delegates to the enabled extensions loader
+        self::loadEnabledExtensions();
     }
 
     /**
@@ -176,24 +320,189 @@ class ExtensionsManager
         // Register extension namespaces with Composer if available
         self::registerExtensionNamespaces();
 
-        // Use base namespace and path to directly access enabled extensions
-        $baseNamespace = 'Glueful\\Extensions\\';
-        $baseDir = dirname(__DIR__, 2) . '/extensions';
+        // Extensions are loaded automatically via namespace registration
+        // We only need to ensure service providers and routes are loaded
+        self::debug("Extension namespaces registered, service providers will be loaded next");
 
+        // Load service providers from extensions.json manifest
+        self::loadExtensionServiceProviders();
+    }
+
+    /**
+     * Load service providers from enabled extensions
+     *
+     * Loads service provider files specified in the "provides.services" section
+     * of extension manifests for all currently enabled extensions.
+     *
+     * @return void
+     */
+    public static function loadExtensionServiceProviders(): void
+    {
+        $config = self::loadExtensionsConfig();
+
+        // Check if this is the new schema version
+        if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+            self::debug("Extensions config is not schema v2.0, skipping service provider loading");
+            return;
+        }
+
+        // Get enabled extensions for current environment
+        $environment = env('APP_ENV', 'production');
+        $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+        if (empty($enabledExtensions)) {
+            self::debug("No extensions enabled for environment: {$environment}");
+            return;
+        }
+
+        // Get DI container
+        if (!function_exists('app')) {
+            throw new \RuntimeException("DI container not initialized. Cannot load extension service providers.");
+        }
+
+        $container = app();
+        $projectRoot = dirname(__DIR__, 2);
+        $loadedProviderCount = 0;
+
+        // Load service providers for each enabled extension
         foreach ($enabledExtensions as $extensionName) {
-            $extensionDir = $baseDir . '/' . $extensionName;
-            $extensionNamespace = $baseNamespace . $extensionName . '\\';
+            if (!isset($config['extensions'][$extensionName])) {
+                self::debug("Extension '{$extensionName}' not found in config");
+                continue;
+            }
 
-            if (is_dir($extensionDir)) {
-                self::debug("Loading enabled extension: {$extensionName}");
-                self::scanAndLoadExtensions($extensionDir, $extensionNamespace, self::$loadedExtensions);
+            $extension = $config['extensions'][$extensionName];
+
+            // Skip if extension is disabled
+            if (!($extension['enabled'] ?? true)) {
+                self::debug("Extension '{$extensionName}' is disabled");
+                continue;
+            }
+
+            // Load service providers
+            $serviceProviders = $extension['provides']['services'] ?? [];
+            if (!empty($serviceProviders)) {
+                foreach ($serviceProviders as $serviceProviderPath) {
+                    $absolutePath = $projectRoot . '/' . $serviceProviderPath;
+
+                    if (file_exists($absolutePath)) {
+                        try {
+                            // Load the service provider file
+                            require_once $absolutePath;
+
+                            // Extract class name from path
+                            $pathInfo = pathinfo($serviceProviderPath);
+                            $className = $pathInfo['filename'];
+
+                            // Try to determine the namespace from the path structure
+                            $pathParts = explode('/', $serviceProviderPath);
+
+                            // Build full class name based on path structure
+                            $fullClassName = null;
+
+                            // Pattern: extensions/ExtensionName/src/Services/ServiceProvider.php
+                            if (count($pathParts) >= 5 && $pathParts[2] === 'src') {
+                                $subNamespace = $pathParts[3]; // e.g., "Services"
+                                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$subNamespace}\\{$className}";
+                            } else {
+                                $fullClassName = "Glueful\\Extensions\\{$extensionName}\\{$className}";
+                            }
+
+                            if (class_exists($fullClassName)) {
+                                $serviceProvider = new $fullClassName();
+                                $container->register($serviceProvider);
+
+                                // Boot the service provider immediately since container is already booted
+                                if (method_exists($serviceProvider, 'boot')) {
+                                    $serviceProvider->boot($container);
+                                    self::debug("Booted service provider: {$fullClassName}");
+                                }
+
+                                $loadedProviderCount++;
+                                self::debug("Loaded service provider: {$fullClassName}");
+                            } else {
+                                self::debug("Service provider class not found: {$fullClassName}");
+                            }
+                        } catch (\Exception $e) {
+                            error_log("Error loading service provider {$serviceProviderPath}: " . $e->getMessage());
+                        }
+                    } else {
+                        self::debug("Service provider file not found: {$absolutePath}");
+                    }
+                }
             } else {
-                self::debug("Enabled extension directory not found: {$extensionDir}");
+                self::debug("No service providers defined for extension: {$extensionName}");
             }
         }
 
-        // Initialize all loaded extensions
-        self::initializeExtensions();
+        self::debug("Loaded {$loadedProviderCount} service provider(s) from extensions");
+    }
+
+    /**
+     * Load extension routes from enabled extensions
+     *
+     * Loads route files specified in the "provides.routes" section of extension manifests
+     * for all currently enabled extensions. Skips loading if routes are already cached.
+     *
+     * @return void
+     */
+    public static function loadExtensionRoutes(): void
+    {
+        // Skip loading if routes are already loaded from cache
+        if (\Glueful\Http\Router::isUsingCachedRoutes()) {
+            return;
+        }
+        $config = self::loadExtensionsConfig();
+
+        // Check if this is the new schema version
+        if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+            self::debug("Extensions config is not schema v2.0, skipping extension route loading");
+            return;
+        }
+
+        // Get enabled extensions for current environment
+        $environment = env('APP_ENV', 'production');
+        $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+        if (empty($enabledExtensions)) {
+            self::debug("No extensions enabled for environment: {$environment}");
+            return;
+        }
+
+        $projectRoot = dirname(__DIR__, 2);
+        $loadedRouteCount = 0;
+
+        // Load routes for each enabled extension
+        foreach ($enabledExtensions as $extensionName) {
+            if (!isset($config['extensions'][$extensionName])) {
+                self::debug("Extension '{$extensionName}' not found in config");
+                continue;
+            }
+
+            $extension = $config['extensions'][$extensionName];
+
+            // Skip if extension is disabled
+            if (!($extension['enabled'] ?? false)) {
+                continue;
+            }
+
+            // Load routes from the "provides.routes" section
+            if (isset($extension['provides']['routes']) && is_array($extension['provides']['routes'])) {
+                foreach ($extension['provides']['routes'] as $routeFile) {
+                    $fullRoutePath = $projectRoot . '/' . $routeFile;
+
+                    if (file_exists($fullRoutePath)) {
+                        self::debug("Loading extension routes from: {$routeFile}");
+                        require_once $fullRoutePath;
+                        $loadedRouteCount++;
+                    } else {
+                        self::debug("Extension route file not found: {$fullRoutePath}");
+                    }
+                }
+            }
+        }
+
+        self::debug("Loaded {$loadedRouteCount} extension route files");
     }
 
     /**
@@ -209,234 +518,122 @@ class ExtensionsManager
             return;
         }
 
-        // First, register the base Extensions namespace
-        // This is now required since we've removed it from composer.json
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                if (!is_dir($dir)) {
+        // Use new fast loading method
+        if (!self::registerExtensionNamespacesFromConfig($classLoader)) {
+            error_log("Failed to register extension namespaces from config");
+        }
+    }
+
+    /**
+     * Fast extension namespace registration using pre-computed mappings from extensions.json
+     *
+     * @param \Composer\Autoload\ClassLoader $classLoader
+     * @return bool Success status
+     */
+    private static function registerExtensionNamespacesFromConfig(\Composer\Autoload\ClassLoader $classLoader): bool
+    {
+        try {
+            $config = self::loadExtensionsConfig();
+
+            // Check if this is the new schema version
+            if (!isset($config['schema_version']) || $config['schema_version'] !== '2.0') {
+                self::debug("Extensions config is not schema v2.0, falling back to legacy method");
+                return false;
+            }
+
+            // Get enabled extensions for current environment
+            $environment = env('APP_ENV', 'production');
+            $enabledExtensions = $config['environments'][$environment]['enabledExtensions'] ?? [];
+
+            if (empty($enabledExtensions)) {
+                self::debug("No extensions enabled for environment: {$environment}");
+                return true;
+            }
+
+            $projectRoot = dirname(__DIR__, 2);
+            $registeredCount = 0;
+
+            // Register autoload mappings for enabled extensions only
+            foreach ($enabledExtensions as $extensionName) {
+                if (!isset($config['extensions'][$extensionName])) {
+                    self::debug("Extension '{$extensionName}' not found in config");
                     continue;
                 }
 
-                // Register main namespace
-                $classLoader->addPsr4($namespace, $dir);
-                self::debug("Registered base namespace {$namespace} to {$dir}");
-            }
-        }
+                $extension = $config['extensions'][$extensionName];
 
-        // Then register each extension's specific namespace
-        foreach (self::$extensionNamespaces as $namespace => $directories) {
-            foreach ($directories as $directory) {
-                $dir = dirname(__DIR__, 2) . '/' . $directory;
-                if (!is_dir($dir)) {
+                // Skip if extension is disabled
+                if (!($extension['enabled'] ?? false)) {
                     continue;
                 }
 
-                // Register specific extensions with their full namespaces
-                foreach (glob($dir . '/*', GLOB_ONLYDIR) as $extensionDir) {
-                    $extensionName = basename($extensionDir);
-                    $fullNamespace = $namespace . $extensionName . '\\';
-                    $classLoader->addPsr4($fullNamespace, $extensionDir . '/');
-                    self::debug("Registered extension namespace {$fullNamespace} to {$extensionDir}/");
+                // Register PSR-4 mappings
+                if (isset($extension['autoload']['psr-4'])) {
+                    foreach ($extension['autoload']['psr-4'] as $namespace => $path) {
+                        $absolutePath = $projectRoot . '/' . ltrim($path, '/');
 
-                    // Register all subdirectories with their matching namespaces
-                    self::registerSubdirectoryNamespaces($classLoader, $extensionDir, $fullNamespace);
-
-                    // Also register alias for common subdirectories to help with misreferenced classes
-                    self::registerLegacyAliases($classLoader, $extensionDir, $namespace, $extensionName);
-                }
-            }
-        }
-    }
-
-    /**
-     * Register all subdirectories within an extension with their proper namespaces
-     *
-     * @param ClassLoader $classLoader Composer's class loader
-     * @param string $extensionPath Path to the extension
-     * @param string $baseNamespace Base namespace for the extension
-     * @return void
-     */
-    private static function registerSubdirectoryNamespaces(
-        ClassLoader $classLoader,
-        string $extensionPath,
-        string $baseNamespace
-    ): void {
-        // Use RecursiveDirectoryIterator to find all subdirectories
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($extensionPath, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                $subdir = $item->getPathname();
-                $relativePath = substr($subdir, strlen($extensionPath) + 1);
-
-                if (empty($relativePath)) {
-                    continue; // Skip the root extension directory
-                }
-
-                // Convert directory path to namespace format
-                $namespaceSegment = str_replace('/', '\\', $relativePath);
-                $subdirNamespace = $baseNamespace . $namespaceSegment . '\\';
-
-                // Register this subdirectory with its corresponding namespace
-                $classLoader->addPsr4($subdirNamespace, $subdir . '/');
-            }
-        }
-    }
-
-    /**
-     * Register legacy namespace aliases for backwards compatibility
-     *
-     * @param ClassLoader $classLoader Composer's class loader
-     * @param string $extensionPath Path to the extension
-     * @param string $namespace Base namespace for extensions
-     * @param string $extensionName Name of the extension
-     * @return void
-     */
-    private static function registerLegacyAliases(
-        ClassLoader $classLoader,
-        string $extensionPath,
-        string $namespace,
-        string $extensionName
-    ): void {
-        // Common directories within extensions that might contain classes
-        $commonDirs = ['Providers', 'migrations', 'Models', 'Controllers', 'Services'];
-
-        foreach ($commonDirs as $dir) {
-            $subdirPath = $extensionPath . '/' . $dir;
-            if (is_dir($subdirPath)) {
-                // Register a fallback namespace to catch misreferenced classes
-                // For example: Glueful\Extensions\GithubAuthProvider ->
-                // extensions/SocialLogin/Providers/GithubAuthProvider
-                $aliasNamespace = "Glueful\\Extensions\\";
-                $classLoader->addPsr4(
-                    $aliasNamespace,
-                    $extensionPath . '/' . $dir . '/'
-                );
-            }
-        }
-    }
-
-    /**
-     * Register a new extension namespace
-     *
-     * Allows plugins to register additional extension namespaces
-     *
-     * @param string $namespace Base namespace for extensions
-     * @param array $directories Directories to scan for extensions
-     * @return void
-     */
-    public static function registerExtensionNamespace(string $namespace, array $directories): void
-    {
-        self::$extensionNamespaces[$namespace] = $directories;
-    }
-
-    /**
-     * Scan directory and load extension classes
-     *
-     * Recursively scans directory for PHP files and loads any
-     * classes that extend the Extensions base class.
-     *
-     * @param string $dir Directory to scan
-     * @param string $namespace Base namespace for discovered classes
-     * @return void
-     */
-    private static function scanAndLoadExtensions(string $dir, string $namespace, array &$loadedExtensions): void
-    {
-        if (!is_dir($dir)) {
-            error_log("Directory does not exist: $dir");
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $relativePath = substr($file->getPathname(), strlen($dir));
-                $filename = basename($relativePath);
-                $className = str_replace('.php', '', $filename);
-                $fullClassName = $namespace . $className;
-
-                // Only attempt to load the class if we haven't already loaded it
-                if (!class_exists($fullClassName, false)) {
-                    try {
-                        include_once $file->getPathname();
-                    } catch (\Throwable $e) {
-                        error_log("Error including file: " . $e->getMessage());
+                        if (is_dir($absolutePath)) {
+                            $classLoader->addPsr4($namespace, $absolutePath);
+                            self::debug("Registered namespace {$namespace} -> {$absolutePath}");
+                            $registeredCount++;
+                        } else {
+                            self::debug("Warning: Autoload path does not exist: {$absolutePath}");
+                        }
                     }
                 }
 
-                // Check if the class exists and extends the base Extensions class
-                if (class_exists($fullClassName, false)) {
-                    $reflection = new \ReflectionClass($fullClassName);
-
-                    // Only register classes that extend the Extensions base class
-                    if ($reflection->isSubclassOf(\Glueful\Extensions::class)) {
-                        if (!in_array($fullClassName, $loadedExtensions, true)) {
-                            $loadedExtensions[] = $fullClassName;
-                            self::debug("Loaded extension: {$fullClassName}");
-                        } else {
-                            self::debug("Skipping duplicate extension: {$fullClassName}");
+                // Register files if specified
+                if (isset($extension['autoload']['files'])) {
+                    foreach ($extension['autoload']['files'] as $file) {
+                        $absoluteFile = $projectRoot . '/' . ltrim($file, '/');
+                        if (file_exists($absoluteFile)) {
+                            require_once $absoluteFile;
+                            self::debug("Included autoload file: {$absoluteFile}");
                         }
                     }
                 }
             }
+
+            self::debug(
+                "Fast loading: Registered {$registeredCount} namespace mappings for " .
+                count($enabledExtensions) . " extensions"
+            );
+            return true;
+        } catch (\Exception $e) {
+            self::debug("Fast loading failed: " . $e->getMessage());
+            return false;
         }
     }
 
-    /**
-     * Initialize all loaded extensions
-     *
-     * Calls appropriate lifecycle methods on extensions based on
-     * what interfaces they implement:
-     * - For service providers: registerServices()
-     * - For middleware providers: registerMiddleware()
-     * - For all extensions: initialize()
-     *
-     * @return void
-     */
-    private static function initializeExtensions(): void
-    {
-        foreach (self::$loadedExtensions as $extensionClass) {
-            try {
-                $reflection = new \ReflectionClass($extensionClass);
 
-                // Call general initialize method if it exists
-                if ($reflection->hasMethod('initialize')) {
-                    $extensionClass::initialize();
-                }
 
-                // Register services if method exists
-                if ($reflection->hasMethod('registerServices')) {
-                    $extensionClass::registerServices();
-                }
 
-                // Register middleware if method exists
-                if ($reflection->hasMethod('registerMiddleware')) {
-                    $extensionClass::registerMiddleware();
-                }
-            } catch (\Exception $e) {
-                error_log("Error initializing extension {$extensionClass}: " . $e->getMessage());
-            }
-        }
-    }
+
+
 
     /**
-     * Get all loaded extensions
+     * Get all available extensions from extensions.json
      *
-     * @return array The loaded extensions
+     * @return array The available extensions with their metadata
      */
     public static function getLoadedExtensions(): array
     {
-        if (empty(self::$allExtensions)) {
-            self::loadExtensions();
+        $config = self::loadExtensionsConfig();
+
+        if (!isset($config['extensions'])) {
+            return [];
         }
-        return self::$allExtensions;
+
+        $extensions = [];
+        foreach ($config['extensions'] as $name => $extensionData) {
+            $extensions[] = [
+                'name' => $name,
+                'class' => "Glueful\\Extensions\\{$name}\\{$name}Extension", // Expected class pattern
+                'metadata' => $extensionData
+            ];
+        }
+
+        return $extensions;
     }
 
     /**
@@ -478,24 +675,14 @@ class ExtensionsManager
             ];
         }
 
-        // Get config file
-        $configFile = self::getConfigPath();
-        $config = file_exists($configFile) ? include $configFile : ['enabled' => [], 'core' => [], 'optional' => []];
-
-        // Ensure config has the required arrays for tiered structure
-        if (!isset($config['core'])) {
-            $config['core'] = [];
-        }
-        if (!isset($config['optional'])) {
-            $config['optional'] = [];
-        }
-        if (!isset($config['enabled'])) {
-            $config['enabled'] = [];
-        }
+        // Load JSON config
+        $config = self::loadExtensionsConfig();
 
         // Check if already enabled
-        if (in_array($extensionName, $config['enabled'] ?? [])) {
-            error_log("Extension '$extensionName' is already enabled");
+        if (
+            isset($config['extensions'][$extensionName]['enabled']) &&
+            $config['extensions'][$extensionName]['enabled']
+        ) {
             return [
                 'success' => true,
                 'message' => "Extension '$extensionName' is already enabled"
@@ -508,41 +695,37 @@ class ExtensionsManager
             return $dependencyResults;
         }
 
-        // Determine if the extension is core or optional if not already categorized
-        if (!in_array($extensionName, $config['core']) && !in_array($extensionName, $config['optional'])) {
-            // Get metadata to see if extension type is specified
-            $isCore = false;
-            try {
-                if (method_exists($extensionClass, 'getMetadata')) {
-                    $metadata = $extensionClass::getMetadata();
-                    $isCore = isset($metadata['type']) && strtolower($metadata['type']) === 'core';
-
-                    // If the type isn't explicitly specified, check if other core APIs depend on it
-                    if (
-                        !isset($metadata['type'])
-                        && isset($metadata['requiredBy'])
-                        && !empty($metadata['requiredBy'])
-                    ) {
-                        $isCore = true;
-                    }
-                }
-            } catch (\Throwable $e) {
-                self::debug("Error getting metadata for $extensionName: " . $e->getMessage());
-            }
-
-            // Add to appropriate category
-            if ($isCore) {
-                $config['core'][] = $extensionName;
-                self::debug("Adding $extensionName to core extensions");
-            } else {
-                $config['optional'][] = $extensionName;
-                self::debug("Adding $extensionName to optional extensions");
-            }
+        // Get extension metadata with caching
+        $version = '1.0.0';
+        $installPath = "extensions/$extensionName";
+        $metadata = self::getExtensionMetadataWithCaching($extensionName, $extensionClass);
+        if ($metadata) {
+            $version = $metadata['version'] ?? $version;
+            $installPath = $metadata['installPath'] ?? $installPath;
         }
 
-        // All checks passed, enable the extension
-        $config['enabled'][] = $extensionName;
-        $saveSuccess = self::saveConfig($configFile, $config);
+        // Add/update extension in config
+        $config['extensions'][$extensionName] = [
+            'version' => $version,
+            'enabled' => true,
+            'installPath' => $installPath
+        ];
+
+        // Add to current environment's enabled extensions
+        $env = config('app.environment', 'production');
+        $envMapping = config('services.extensions.environments', []);
+        $mappedEnv = $envMapping[$env] ?? $env;
+
+        if (!isset($config['environments'][$mappedEnv])) {
+            $config['environments'][$mappedEnv] = ['enabledExtensions' => []];
+        }
+
+        if (!in_array($extensionName, $config['environments'][$mappedEnv]['enabledExtensions'])) {
+            $config['environments'][$mappedEnv]['enabledExtensions'][] = $extensionName;
+        }
+
+        // Save JSON config
+        $saveSuccess = self::saveExtensionsJson($config);
 
         if (!$saveSuccess) {
             return [
@@ -569,42 +752,21 @@ class ExtensionsManager
      */
     public static function disableExtension(string $extensionName, bool $force = false): array
     {
-        // Get config file
-        $configFile = self::getConfigPath();
+        // Load JSON config
+        $config = self::loadExtensionsConfig();
 
-        if (!file_exists($configFile)) {
+        // Check if extension exists and is enabled
+        if (!isset($config['extensions'][$extensionName])) {
             return [
                 'success' => true,
-                'message' => "No extensions are currently enabled"
+                'message' => "Extension '$extensionName' not found in configuration"
             ];
         }
 
-        $config = include $configFile;
-        $enabledExtensions = $config['enabled'] ?? [];
-
-        // Check if already disabled
-        if (!in_array($extensionName, $enabledExtensions)) {
+        if (!$config['extensions'][$extensionName]['enabled']) {
             return [
                 'success' => true,
                 'message' => "Extension '$extensionName' is already disabled"
-            ];
-        }
-
-        // Check if this is a core extension
-        $isCoreExtension = in_array($extensionName, $config['core'] ?? []);
-
-        if ($isCoreExtension && !$force) {
-            // This is a core extension and we're not forcing disable
-            return [
-                'success' => false,
-                'message' => "Cannot disable core extension '$extensionName'. "
-                    . "This extension is required for core functionality.",
-                'details' => [
-                    'is_core' => true,
-                    'can_force' => true,
-                    'warning' => "Disabling this extension may break core system functionality. " .
-                        "Use force=true parameter to override."
-                ]
             ];
         }
 
@@ -614,9 +776,22 @@ class ExtensionsManager
             return $dependencyResults;
         }
 
-        // All checks passed, disable the extension
-        $config['enabled'] = array_diff($enabledExtensions, [$extensionName]);
-        $saveSuccess = self::saveConfig($configFile, $config);
+        // Disable the extension in base config
+        $config['extensions'][$extensionName]['enabled'] = false;
+
+        // Remove from all environment enabled lists
+        if (isset($config['environments'])) {
+            foreach ($config['environments'] as $env => $envConfig) {
+                if (isset($envConfig['enabledExtensions'])) {
+                    $config['environments'][$env]['enabledExtensions'] = array_values(
+                        array_diff($envConfig['enabledExtensions'], [$extensionName])
+                    );
+                }
+            }
+        }
+
+        // Save JSON config
+        $saveSuccess = self::saveExtensionsJson($config);
 
         if (!$saveSuccess) {
             return [
@@ -625,17 +800,9 @@ class ExtensionsManager
             ];
         }
 
-        $message = "Extension '$extensionName' has been disabled successfully";
-
-        // Add warning for core extensions that were force-disabled
-        if ($isCoreExtension) {
-            $message .= " (WARNING: This is a core extension and some system functionality may not work properly)";
-        }
-
         return [
             'success' => true,
-            'message' => $message,
-            'is_core' => $isCoreExtension
+            'message' => "Extension '$extensionName' has been disabled successfully"
         ];
     }
 
@@ -762,6 +929,12 @@ class ExtensionsManager
             return null;
         }
 
+        // Check cache first
+        $cacheKey = $extensionName . ($checkFilesOnly ? ':files' : ':full');
+        if (isset(self::$extensionExistsCache[$cacheKey])) {
+            return self::$extensionExistsCache[$cacheKey];
+        }
+
         // Get extensions path
         $extensionsPath = config('services.extensions.extensions_dir');
         if (empty($extensionsPath)) {
@@ -777,18 +950,22 @@ class ExtensionsManager
             // Extension files exist
             $expectedClass = 'Glueful\\Extensions\\' . $extensionName . '\\' . $extensionName;
 
-            // If we're only checking files, return the expected class name
+            // If we're only checking files, cache and return the expected class name
             if ($checkFilesOnly) {
+                self::$extensionExistsCache[$cacheKey] = $expectedClass;
                 return $expectedClass;
             }
 
             // If we need to check if the class is loaded/loadable,
             // we can try to load it or verify it exists
             if (class_exists($expectedClass)) {
+                self::$extensionExistsCache[$cacheKey] = $expectedClass;
                 return $expectedClass;
             }
         }
 
+        // Cache null result and return
+        self::$extensionExistsCache[$cacheKey] = null;
         return null;
     }
 
@@ -818,16 +995,162 @@ class ExtensionsManager
         return $default;
     }
 
+    /**
+     * Get the path to the extensions configuration file
+     *
+     * @return string Path to extensions.json
+     */
+    public static function getExtensionsConfigPath(): string
+    {
+        return config('services.extensions.config_file');
+    }
+
+    /** @var array|null Static cache for extensions config */
+    private static ?array $configCache = null;
+
+    /** @var string|null Cached config file path */
+    private static ?string $configFilePath = null;
+
+    /** @var int|null Cached config file modification time */
+    private static ?int $configFileMtime = null;
+
+    /** @var array Cache for extension metadata */
+    private static array $metadataCache = [];
+
+    /** @var array Cache for extension existence checks */
+    private static array $extensionExistsCache = [];
+
     public static function loadExtensionsConfig(): array
     {
         $configFile = config('services.extensions.config_file');
 
-        if (!file_exists($configFile)) {
-            // Create default config if it doesn't exist
-            // return self::createDefaultConfig();
+        // Check if we have cached config and if file hasn't changed
+        if (self::$configCache !== null && self::$configFilePath === $configFile) {
+            // Verify file hasn't been modified (lightweight check)
+            if (file_exists($configFile)) {
+                $currentMtime = filemtime($configFile);
+                if ($currentMtime === self::$configFileMtime) {
+                    return self::$configCache;
+                }
+            }
         }
 
-        return json_decode(file_get_contents($configFile), true) ?: [];
+        // File doesn't exist, return default
+        if (!file_exists($configFile)) {
+            $defaultConfig = self::createDefaultExtensionsJson();
+            self::cacheConfig($configFile, $defaultConfig, 0);
+            return $defaultConfig;
+        }
+
+        // Load and parse config file
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \RuntimeException('Invalid JSON in extensions config: ' . json_last_error_msg());
+        }
+
+        $config = $config ?: [];
+
+        // Cache the result
+        self::cacheConfig($configFile, $config, filemtime($configFile));
+        return $config;
+    }
+
+    /**
+     * Cache configuration data in memory
+     */
+    private static function cacheConfig(string $configFile, array $config, int $mtime): void
+    {
+        self::$configCache = $config;
+        self::$configFilePath = $configFile;
+        self::$configFileMtime = $mtime;
+    }
+
+    /**
+     * Clear the configuration cache
+     */
+    public static function clearConfigCache(): void
+    {
+        self::$configCache = null;
+        self::$configFilePath = null;
+        self::$configFileMtime = null;
+    }
+
+    /**
+     * Get cached extension metadata
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @return array|null Cached metadata or null if not cached
+     */
+    private static function getCachedMetadata(string $extensionName, string $extensionClass): ?array
+    {
+        $cacheKey = $extensionName . '::' . $extensionClass;
+        return self::$metadataCache[$cacheKey] ?? null;
+    }
+
+    /**
+     * Cache extension metadata
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @param array $metadata Metadata to cache
+     */
+    private static function cacheMetadata(string $extensionName, string $extensionClass, array $metadata): void
+    {
+        $cacheKey = $extensionName . '::' . $extensionClass;
+        self::$metadataCache[$cacheKey] = $metadata;
+    }
+
+    /**
+     * Get extension metadata with caching
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionClass Extension class name
+     * @return array|null Extension metadata
+     */
+    private static function getExtensionMetadataWithCaching(string $extensionName, string $extensionClass): ?array
+    {
+        // Check cache first
+        $cached = self::getCachedMetadata($extensionName, $extensionClass);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        // Load metadata from extension class
+        if (method_exists($extensionClass, 'getMetadata')) {
+            try {
+                $metadata = $extensionClass::getMetadata();
+                if (is_array($metadata)) {
+                    self::cacheMetadata($extensionName, $extensionClass, $metadata);
+                    return $metadata;
+                }
+            } catch (\Exception $e) {
+                // Log error but continue
+                error_log("Failed to load metadata for extension {$extensionName}: " . $e->getMessage());
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Clear all extension caches
+     */
+    public static function clearMetadataCache(): void
+    {
+        self::$metadataCache = [];
+        self::$extensionExistsCache = [];
+    }
+
+    /**
+     * Clear all caches
+     */
+    public static function clearAllCaches(): void
+    {
+        self::clearConfigCache();
+        self::clearMetadataCache();
     }
 
     /**
@@ -843,40 +1166,55 @@ class ExtensionsManager
 
     public static function getConfigPath(): string
     {
-        $configDir = dirname(__DIR__, 2) . '/config';
-
-        // Ensure config directory exists
-        if (!is_dir($configDir)) {
-            // Only attempt to create if it doesn't exist
-            if (!mkdir($configDir, 0755, true) && !is_dir($configDir)) {
-                // This is a more robust check: try to create it, and if that fails, check again if it exists
-                throw new \RuntimeException("Failed to create config directory: $configDir");
-            }
-        }
-
-        $configFile = $configDir . '/extensions.php';
-
-        // Create the extensions.php file if it doesn't exist
-        if (!file_exists($configFile)) {
-            self::createConfigFile($configFile);
-        }
-
-        return $configFile;
+        return config('services.extensions.config_file');
     }
 
-    private static function createConfigFile(string $configFile): bool
+    /**
+     * Create default extensions.json configuration
+     *
+     * @return array Default configuration structure
+     */
+    private static function createDefaultExtensionsJson(): array
     {
         $defaultConfig = [
-            'core' => [],
-            'optional' => [],
-            'enabled' => [],
-            'paths' => [
-                'extensions' => config('app.paths.project_extensions'),
+            'extensions' => [],
+            'environments' => [
+                'development' => [
+                    'enabledExtensions' => []
+                ],
+                'production' => [
+                    'enabledExtensions' => []
+                ]
             ]
         ];
-        // Create the config file with default values
-        return self::saveConfig($configFile, $defaultConfig);
+
+        $configFile = config('services.extensions.config_file');
+        self::saveExtensionsJson($defaultConfig, $configFile);
+
+        return $defaultConfig;
     }
+
+    /**
+     * Save extensions configuration to JSON file
+     *
+     * @param array $config Configuration to save
+     * @param string|null $file Optional file path, uses default if not provided
+     * @return bool Success status
+     */
+    private static function saveExtensionsJson(array $config, ?string $file = null): bool
+    {
+        $file = $file ?: config('services.extensions.config_file');
+
+        // Ensure directory exists
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return file_put_contents($file, $json) !== false;
+    }
+
 
     /**
      * Check dependencies when enabling an extension
@@ -899,7 +1237,8 @@ class ExtensionsManager
         // Get dependencies from extension metadata
         $dependencies = [];
         try {
-            $dependencies = $extensionClass::getDependencies();
+            $metadata = $extensionClass::getMetadata();
+            $dependencies = $metadata['requires']['extensions'] ?? [];
         } catch (\Throwable $e) {
             self::debug("Error getting dependencies for $extensionName: " . $e->getMessage());
         }
@@ -965,7 +1304,8 @@ class ExtensionsManager
             }
 
             try {
-                $dependencies = $extensionClass::getDependencies();
+                $metadata = $extensionClass::getMetadata();
+                $dependencies = $metadata['requires']['extensions'] ?? [];
                 if (in_array($extensionName, $dependencies)) {
                     $dependentExtensions[] = $enabledExt;
                 }
@@ -1074,7 +1414,8 @@ class ExtensionsManager
                 ];
 
                 // Get dependencies and create edges
-                $dependencies = $extensionClass::getDependencies();
+                $metadata = $extensionClass::getMetadata();
+                $dependencies = $metadata['requires']['extensions'] ?? [];
                 $allDependencies[$shortName] = $dependencies;
 
                 foreach ($dependencies as $dependency) {
@@ -1135,10 +1476,24 @@ class ExtensionsManager
         $config = self::loadExtensionsConfig();
         $enabled = [];
 
-        foreach ($config['extensions'] as $name => $ext) {
-            if ($ext['enabled'] === true) {
-                $enabled[] = $name;
+        // Get base enabled extensions
+        if (isset($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if ($ext['enabled'] === true) {
+                    $enabled[] = $name;
+                }
             }
+        }
+
+        // Check for environment-specific filtering
+        $env = config('app.environment', 'production');
+        $envMapping = config('services.extensions.environments', []);
+        $mappedEnv = $envMapping[$env] ?? $env;
+
+        if (isset($config['environments'][$mappedEnv]['enabledExtensions'])) {
+            // Only include extensions that are both individually enabled AND listed in environment config
+            $envEnabled = $config['environments'][$mappedEnv]['enabledExtensions'];
+            return array_intersect($enabled, $envEnabled);
         }
 
         return $enabled;
@@ -1293,7 +1648,7 @@ class ExtensionsManager
                 'healthy' => empty($issues),
                 'issues' => $issues,
                 'metrics' => [
-                    'files_count' => count(glob($extensionDir . '/*.php')),
+                    'files_count' => self::countPhpFiles($extensionDir),
                     'last_modified' => filemtime($classPath)
                 ]
             ];
@@ -1369,17 +1724,26 @@ class ExtensionsManager
             ];
         }
 
+        // Validate .gluex extension
+        $extension = pathinfo($source, PATHINFO_EXTENSION);
+        if ($extension !== 'gluex') {
+            return [
+                'success' => false,
+                'message' => "Invalid file format. Expected .gluex extension, got .$extension"
+            ];
+        }
+
         // If no target name provided, try to derive it from the source
         if (empty($targetName)) {
             if (filter_var($source, FILTER_VALIDATE_URL)) {
                 // Extract from URL
                 $urlPath = parse_url($source, PHP_URL_PATH);
                 $fileName = pathinfo($urlPath, PATHINFO_FILENAME);
-                $targetName = self::sanitizeExtensionName($fileName);
+                $targetName = self::extractExtensionNameFromGluex($fileName);
             } else {
                 // Extract from file path
                 $fileName = pathinfo($source, PATHINFO_FILENAME);
-                $targetName = self::sanitizeExtensionName($fileName);
+                $targetName = self::extractExtensionNameFromGluex($fileName);
             }
         }
 
@@ -1428,7 +1792,7 @@ class ExtensionsManager
         $mainClassFile = "$extensionDir/$targetName.php";
         if (!file_exists($mainClassFile)) {
             // Try to find any PHP file that might be the main extension file
-            $phpFiles = glob("$extensionDir/*.php");
+            $phpFiles = self::findPhpFilesInDirectory($extensionDir);
 
             if (empty($phpFiles)) {
                 return [
@@ -1454,6 +1818,12 @@ class ExtensionsManager
             }
         }
 
+        // Verify installation and update extensions.json
+        $installResult = self::postInstallSetup($targetName, $extensionDir);
+        if (!$installResult['success']) {
+            return $installResult;
+        }
+
         // Force reload the extensions to include the newly installed one
         self::$loadedExtensions = [];
         self::loadExtensions();
@@ -1461,8 +1831,182 @@ class ExtensionsManager
         return [
             'success' => true,
             'message' => "Extension '$targetName' installed successfully",
-            'name' => $targetName
+            'name' => $targetName,
+            'version' => $installResult['version'] ?? '1.0.0'
         ];
+    }
+
+    /**
+     * Extract extension name from .gluex filename, removing version
+     *
+     * Examples:
+     * - "SocialLogin-0.18.0" -> "SocialLogin"
+     * - "EmailNotification-1.2.3" -> "EmailNotification"
+     * - "MyExtension-v2.0.0" -> "MyExtension"
+     *
+     * @param string $fileName Filename without extension
+     * @return string Clean extension name
+     */
+    private static function extractExtensionNameFromGluex(string $fileName): string
+    {
+        // Remove common version patterns:
+        // - ExtensionName-1.2.3
+        // - ExtensionName-v1.2.3
+        // - ExtensionName_1.2.3
+        $patterns = [
+            '/^(.+)-v?\d+\.\d+\.\d+.*$/',  // Remove version like -1.2.3 or -v1.2.3
+            '/^(.+)_v?\d+\.\d+\.\d+.*$/',  // Remove version like _1.2.3 or _v1.2.3
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $fileName, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        // If no version pattern found, return the original filename
+        return $fileName;
+    }
+
+    /**
+     * Post-installation setup and validation
+     *
+     * @param string $extensionName Extension name
+     * @param string $extensionDir Extension directory path
+     * @return array Result with success status and metadata
+     */
+    private static function postInstallSetup(string $extensionName, string $extensionDir): array
+    {
+        // Check for extension.json file
+        $extensionJsonPath = "$extensionDir/extension.json";
+        $version = '1.0.0';
+        $installPath = "extensions/$extensionName";
+
+        if (file_exists($extensionJsonPath)) {
+            $extensionJson = json_decode(file_get_contents($extensionJsonPath), true);
+            if ($extensionJson && isset($extensionJson['version'])) {
+                $version = $extensionJson['version'];
+            }
+        }
+
+        // Update extensions.json configuration
+        $config = self::loadExtensionsConfig();
+
+        // Create full extension entry for schema v2.0
+        $extensionEntry = self::createExtensionConfigEntry($extensionName, $version, $installPath);
+        $config['extensions'][$extensionName] = $extensionEntry;
+
+        // Ensure schema version is set
+        if (!isset($config['schema_version'])) {
+            $config['schema_version'] = '2.0';
+        }
+
+        // Save updated configuration
+        if (!self::saveExtensionsJson($config)) {
+            return [
+                'success' => false,
+                'message' => "Extension files installed but failed to update configuration"
+            ];
+        }
+
+        return [
+            'success' => true,
+            'version' => $version
+        ];
+    }
+
+    /**
+     * Uninstall an extension
+     *
+     * @param string $extensionName Extension name to uninstall
+     * @param bool $removeFiles Whether to remove extension files (default: true)
+     * @return array Result with success status and messages
+     */
+    public static function uninstallExtension(string $extensionName, bool $removeFiles = true): array
+    {
+        // Check if extension exists
+        if (!self::extensionExists($extensionName)) {
+            return [
+                'success' => false,
+                'message' => "Extension '$extensionName' is not installed"
+            ];
+        }
+
+        // Disable extension first if it's enabled
+        if (self::isExtensionEnabled($extensionName)) {
+            $disableResult = self::disableExtension($extensionName);
+            if (!$disableResult['success']) {
+                return [
+                    'success' => false,
+                    'message' => "Failed to disable extension before uninstall: " . $disableResult['message']
+                ];
+            }
+        }
+
+        // Remove from extensions.json
+        $config = self::loadExtensionsConfig();
+        if (isset($config['extensions'][$extensionName])) {
+            unset($config['extensions'][$extensionName]);
+        }
+
+        // Remove from all environment configurations
+        if (isset($config['environments'])) {
+            foreach ($config['environments'] as $env => $envConfig) {
+                if (isset($envConfig['enabledExtensions'])) {
+                    $config['environments'][$env]['enabledExtensions'] = array_values(
+                        array_diff($envConfig['enabledExtensions'], [$extensionName])
+                    );
+                }
+            }
+        }
+
+        // Save updated configuration
+        if (!self::saveExtensionsJson($config)) {
+            return [
+                'success' => false,
+                'message' => "Failed to update configuration during uninstall"
+            ];
+        }
+
+        // Remove files if requested
+        if ($removeFiles) {
+            $extensionDir = config('app.paths.project_extensions') . $extensionName;
+            if (is_dir($extensionDir)) {
+                if (!self::removeDirectory($extensionDir)) {
+                    return [
+                        'success' => false,
+                        'message' => "Extension removed from configuration but failed to delete files from " .
+                                    $extensionDir
+                    ];
+                }
+            }
+        }
+
+        // Reload extensions
+        self::$loadedExtensions = [];
+        self::loadExtensions();
+
+        return [
+            'success' => true,
+            'message' => "Extension '$extensionName' uninstalled successfully"
+        ];
+    }
+
+    /**
+     * Recursively remove a directory and its contents using FileManager
+     *
+     * @param string $dir Directory to remove
+     * @return bool Success status
+     */
+    private static function removeDirectory(string $dir): bool
+    {
+        try {
+            $fileManager = self::getFileManager();
+            return $fileManager->remove($dir);
+        } catch (\Exception $e) {
+            self::debug("Error removing directory {$dir}: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -1481,36 +2025,29 @@ class ExtensionsManager
         }
 
         // Generate a temporary file name
-        $tempFile = $tempDir . '/' . md5($source . time()) . '.zip';
+        $tempFile = $tempDir . '/' . md5($source . time()) . '.gluex';
 
         // Handle URL or local file
         if (filter_var($source, FILTER_VALIDATE_URL)) {
-            // It's a URL, download it
-            $ch = curl_init($source);
-            $fp = fopen($tempFile, 'wb');
+            // It's a URL, download it using HTTP Client
+            try {
+                $container = ContainerBootstrap::getContainer();
+                $client = $container->get(Client::class);
 
-            if (!$ch || !$fp) {
-                self::debug("Failed to initialize download");
-                return false;
-            }
+                $response = $client->get($source, [
+                    'timeout' => 60,
+                    'stream' => true
+                ]);
 
-            curl_setopt($ch, CURLOPT_FILE, $fp);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+                if (!$response->isSuccessful()) {
+                    self::debug("Download failed with HTTP status code: " . $response->getStatusCode());
+                    return false;
+                }
 
-            if (!curl_exec($ch)) {
-                self::debug("Download failed: " . curl_error($ch));
-                curl_close($ch);
-                fclose($fp);
-                return false;
-            }
-
-            $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            fclose($fp);
-
-            if ($statusCode !== 200) {
-                self::debug("Download failed with HTTP status code: $statusCode");
+                // Write response content to temp file
+                file_put_contents($tempFile, $response->getContent());
+            } catch (HttpException $e) {
+                self::debug("Download failed: " . $e->getMessage());
                 return false;
             }
         } else {
@@ -1563,9 +2100,16 @@ class ExtensionsManager
         if ($hasSingleRoot && $rootFolderName) {
             $extractedPath = dirname($destDir) . '/' . $rootFolderName;
             if (is_dir($extractedPath) && $extractedPath !== $destDir) {
-                if (!rename($extractedPath, $destDir)) {
-                    self::debug("Failed to rename extracted folder to target name");
-                    return false;
+                // Clean up any version numbers from the extracted folder name
+                $cleanRootName = self::extractExtensionNameFromGluex($rootFolderName);
+                $targetBaseName = basename($destDir);
+                // Only rename if the clean name doesn't match the target
+                if ($cleanRootName !== $targetBaseName || $extractedPath !== $destDir) {
+                    if (!rename($extractedPath, $destDir)) {
+                        self::debug("Failed to rename extracted folder from '$rootFolderName' to target name");
+                        return false;
+                    }
+                    self::debug("Renamed extracted folder from '$rootFolderName' to '$targetBaseName'");
                 }
             }
         }
@@ -1806,21 +2350,11 @@ class ExtensionsManager
         $dependencies = [];
 
         try {
-            // Get dependencies from the extension
-            if ($reflection->hasMethod('getDependencies') && class_exists($extensionClass)) {
-                $dependencies = call_user_func([$extensionClass, 'getDependencies']);
-            }
-
-            // Check if the extension implements getMetadata() method
+            // Get dependencies from the extension metadata
             if ($reflection->hasMethod('getMetadata') && class_exists($extensionClass)) {
                 $metadata = call_user_func([$extensionClass, 'getMetadata']);
-                if (isset($metadata['requires']) && isset($metadata['requires']['extensions'])) {
-                    $dependencies = array_merge($dependencies, $metadata['requires']['extensions']);
-                }
+                $dependencies = $metadata['requires']['extensions'] ?? [];
             }
-
-            // Remove duplicates
-            $dependencies = array_unique($dependencies);
 
             if (!empty($dependencies)) {
                 foreach ($dependencies as $dependency) {
@@ -1851,25 +2385,12 @@ class ExtensionsManager
                 }
 
                 try {
-                    // Check if the extension implements getDependencies() method
-                    if ($otherReflection->hasMethod('getDependencies')) {
-                        $otherDependencies = $otherExtension::getDependencies();
-                        if (in_array($extensionName, $otherDependencies)) {
-                            $dependentExtensions[] = $otherName;
-                        }
-                    }
-
                     // Check if the extension implements getMetadata() method
                     if ($otherReflection->hasMethod('getMetadata')) {
                         $otherMetadata = $otherExtension::getMetadata();
-                        if (
-                            isset($otherMetadata['requires']) &&
-                            isset($otherMetadata['requires']['extensions']) &&
-                            in_array($extensionName, $otherMetadata['requires']['extensions'])
-                        ) {
-                            if (!in_array($otherName, $dependentExtensions)) {
-                                $dependentExtensions[] = $otherName;
-                            }
+                        $otherDependencies = $otherMetadata['requires']['extensions'] ?? [];
+                        if (in_array($extensionName, $otherDependencies)) {
+                            $dependentExtensions[] = $otherName;
                         }
                     }
                 } catch (\Exception $e) {
@@ -2009,7 +2530,7 @@ class ExtensionsManager
             if (method_exists($extensionClass, 'getScreenshots')) {
                 $screenshotsDir = dirname((new \ReflectionClass($extensionClass))->getFileName()) . '/screenshots';
                 if (is_dir($screenshotsDir)) {
-                    $screenshotsCount = count(glob($screenshotsDir . '/*.{png,jpg,jpeg,gif}', GLOB_BRACE));
+                    $screenshotsCount = self::countScreenshots($screenshotsDir);
 
                     if (
                         $screenshotsCount > 0 &&
@@ -2152,145 +2673,15 @@ class ExtensionsManager
      * @return string Path to the configuration file
      */
 
-
-    private static function getTemplatesPath(): string
-    {
-        return dirname(__DIR__) . '/Console/Templates/Extensions';
-    }
-
     /**
-     * Create a new extension
-     *
-     * Creates a new extension directory and scaffolds all necessary files using templates.
-     *
-     * @param string $extensionName Extension name
-     * @param string $extensionType Extension type (optional by default)
-     * @param string $templateType Template type to use (Basic by default)
-     * @param array $templateData Additional template data for substitutions
-     * @return array Result with success status and messages
-     */
-    public static function createExtension(
-        string $extensionName,
-        string $extensionType = 'optional',
-        string $templateType = 'Basic',
-        array $templateData = []
-    ): array {
-        // Check if extension name is valid
-        if (!self::isValidExtensionName($extensionName)) {
-            return [
-                'success' => false,
-                'message' => "Invalid extension name '$extensionName'. Use PascalCase naming (e.g. MyExtension)"
-            ];
-        }
-
-        $extensionsPath = config('app.paths.project_extensions');
-        $extensionDir = $extensionsPath . $extensionName;
-
-        if (is_dir($extensionDir)) {
-            return [
-                'success' => false,
-                'message' => "Extension directory already exists: $extensionDir"
-            ];
-        }
-
-        // Create extension directory
-        if (!mkdir($extensionDir, 0755, true)) {
-            return [
-                'success' => false,
-                'message' => "Failed to create directory: $extensionDir"
-            ];
-        }
-
-        // Get template path
-        $templatePath = self::getTemplatesPath();
-        $templateSourceDir = "$templatePath/$templateType";
-
-        // If the specified template doesn't exist, fall back to Basic
-        if (!is_dir($templateSourceDir)) {
-            $templateType = 'Basic';
-            $templateSourceDir = "$templatePath/$templateType";
-            // If even the Basic template doesn't exist, return an error
-            if (!is_dir($templateSourceDir)) {
-                // Clean up the created directory
-                self::rrmdir($extensionDir);
-                return [
-                    'success' => false,
-                    'message' => "Extension templates not found. " .
-                        "Please ensure template directories exist at: $templatePath"
-                ];
-            }
-        }
-
-        // Create directories for extension assets
-        $directories = [
-            "$extensionDir/screenshots",
-        ];
-
-        foreach ($directories as $dir) {
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-        }
-
-        $filesCreated = [];
-
-        // Prepare template substitution values
-        $substitutions = array_merge([
-            'EXTENSION_NAME' => $extensionName,
-            'EXTENSION_TYPE' => $extensionType,
-            'EXTENSION_DESCRIPTION' => $templateData['description'] ?? "A Glueful API extension",
-            'AUTHOR_NAME' => $templateData['author'] ?? "Glueful User",
-            'AUTHOR_EMAIL' => $templateData['email'] ?? "",
-            'CURRENT_DATE' => date('Y-m-d')
-        ], $templateData);
-
-        // Copy template files with proper substitutions
-        self::copyTemplateFiles($templateSourceDir, $extensionDir, $substitutions);
-        // Get list of created files
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($extensionDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::LEAVES_ONLY
-        );
-
-        foreach ($iterator as $file) {
-            $filesCreated[] = substr($file->getPathname(), strlen($extensionDir) + 1);
-        }
-
-        return [
-            'success' => true,
-            'message' => "Extension '{$extensionName}' created successfully using '{$templateType}' template",
-            'data' => [
-                'name' => $extensionName,
-                'path' => $extensionDir,
-                'template' => $templateType,
-                'files' => $filesCreated,
-            ]
-        ];
-    }
-
-    /**
-     * Recursively remove a directory
+     * Recursively remove a directory (alias for removeDirectory)
      *
      * @param string $dir Directory path
      * @return bool Success status
      */
     private static function rrmdir(string $dir): bool
     {
-        if (is_dir($dir)) {
-            $objects = scandir($dir);
-            foreach ($objects as $object) {
-                if ($object !== '.' && $object !== '..') {
-                    $path = $dir . '/' . $object;
-                    if (is_dir($path)) {
-                        self::rrmdir($path);
-                    } else {
-                        unlink($path);
-                    }
-                }
-            }
-            return rmdir($dir);
-        }
-        return false;
+        return self::removeDirectory($dir);
     }
 
     /**
@@ -2309,8 +2700,30 @@ class ExtensionsManager
             return [];
         }
 
-        $config = include $configFile;
-        return $config['core'] ?? [];
+        // Read JSON file
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+
+        if (!is_array($config)) {
+            return [];
+        }
+
+        // Check for explicit core array first
+        if (isset($config['core']) && is_array($config['core'])) {
+            return $config['core'];
+        }
+
+        // Fallback: look for extensions with type="core"
+        $coreExtensions = [];
+        if (isset($config['extensions']) && is_array($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if (isset($ext['type']) && $ext['type'] === 'core') {
+                    $coreExtensions[] = $name;
+                }
+            }
+        }
+
+        return $coreExtensions;
     }
 
     /**
@@ -2329,8 +2742,30 @@ class ExtensionsManager
             return [];
         }
 
-        $config = include $configFile;
-        return $config['optional'] ?? [];
+        // Read JSON file
+        $content = file_get_contents($configFile);
+        $config = json_decode($content, true);
+
+        if (!is_array($config)) {
+            return [];
+        }
+
+        // Check for explicit optional array first
+        if (isset($config['optional']) && is_array($config['optional'])) {
+            return $config['optional'];
+        }
+
+        // Fallback: look for extensions with type="optional" or no type (default to optional)
+        $optionalExtensions = [];
+        if (isset($config['extensions']) && is_array($config['extensions'])) {
+            foreach ($config['extensions'] as $name => $ext) {
+                if (!isset($ext['type']) || $ext['type'] === 'optional') {
+                    $optionalExtensions[] = $name;
+                }
+            }
+        }
+
+        return $optionalExtensions;
     }
 
     /**
@@ -2583,7 +3018,7 @@ class ExtensionsManager
 
         if (!$foundMainFile) {
             // Try to find any PHP file that might be the main extension file
-            $phpFiles = glob("$tempDir/*.php");
+            $phpFiles = self::findPhpFilesInDirectory($tempDir);
 
             if (empty($phpFiles)) {
                 // Clean up temporary directory
@@ -2946,39 +3381,38 @@ class ExtensionsManager
             'php_version' => PHP_VERSION
         ]);
 
-        // Set up curl request
-        $ch = curl_init($url);
+        // Set up HTTP Client request
+        try {
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
 
-        if (!$ch) {
-            self::debug("Failed to initialize curl for update check");
-            return null;
-        }
+            $options = [
+                'timeout' => 10,
+                'headers' => [
+                    'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
+                ]
+            ];
 
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
+            // Set authorization header if provided
+            if (isset($source['auth_token'])) {
+                $options['headers']['Authorization'] = 'Bearer ' . $source['auth_token'];
+            }
 
-        // Set authorization header if provided
-        if (isset($source['auth_token'])) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $source['auth_token']
-            ]);
-        }
+            $response = $client->get($url, $options);
 
-        $response = curl_exec($ch);
-        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($statusCode !== 200 || empty($response)) {
-            self::debug("Update API returned status code $statusCode");
-            return null;
-        }
-
-        // Parse response
-        $data = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            self::debug("Failed to parse update API response: " . json_last_error_msg());
+            if (!$response->isSuccessful()) {
+                self::debug("Update API returned status code " . $response->getStatusCode());
+                return null;
+            }
+            // Parse response
+            try {
+                $data = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("Failed to parse update API response: " . $e->getMessage());
+                return null;
+            }
+        } catch (HttpException $e) {
+            self::debug("Failed to check for updates: " . $e->getMessage());
             return null;
         }
 
@@ -3010,77 +3444,75 @@ class ExtensionsManager
         $repo = $source['repository'];
         $apiUrl = "https://api.github.com/repos/$repo/releases/latest";
 
-        // Set up curl request
-        $ch = curl_init($apiUrl);
-
-        if (!$ch) {
-            self::debug("Failed to initialize curl for GitHub update check");
-            return null;
-        }
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Glueful Extension Manager ' . config('app.version', '1.0.0'));
-
-        // Set GitHub token if provided
-        if (isset($source['github_token'])) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: token ' . $source['github_token']
-            ]);
-        }
-
-        $response = curl_exec($ch);
-        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($statusCode !== 200 || empty($response)) {
-            self::debug("GitHub API returned status code $statusCode");
-            return null;
-        }
-
-        // Parse response
+        // Set up HTTP Client request
         try {
-            $data = json_decode($response, true);
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
 
-            // GitHub releases use tag_name for version
-            if (!isset($data['tag_name'])) {
+            $options = [
+                'timeout' => 10,
+                'headers' => [
+                    'User-Agent' => 'Glueful Extension Manager ' . config('app.version', '1.0.0')
+                ]
+            ];
+
+            // Set GitHub token if provided
+            if (isset($source['github_token'])) {
+                $options['headers']['Authorization'] = 'token ' . $source['github_token'];
+            }
+
+            $response = $client->get($apiUrl, $options);
+
+            if (!$response->isSuccessful()) {
+                self::debug("GitHub API returned status code " . $response->getStatusCode());
                 return null;
             }
-
-            // Remove 'v' prefix if present
-            $version = ltrim($data['tag_name'], 'v');
-
-            // Find zip asset
-            $downloadUrl = null;
-            if (isset($data['assets']) && is_array($data['assets'])) {
-                foreach ($data['assets'] as $asset) {
-                    if (
-                        isset($asset['browser_download_url']) &&
-                        (str_ends_with($asset['browser_download_url'], '.zip') ||
-                         str_ends_with($asset['browser_download_url'], '.tar.gz'))
-                    ) {
-                        $downloadUrl = $asset['browser_download_url'];
-                        break;
-                    }
-                }
+            // Parse response
+            try {
+                $data = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("Failed to parse GitHub API response: " . $e->getMessage());
+                return null;
             }
-
-            // If no specific asset found, use the source code zip
-            if ($downloadUrl === null && isset($data['zipball_url'])) {
-                $downloadUrl = $data['zipball_url'];
-            }
-
-            return [
-                'version' => $version,
-                'download_url' => $downloadUrl,
-                'release_notes' => $data['body'] ?? null,
-                'release_date' => $data['published_at'] ?? null
-            ];
-        } catch (\Throwable $e) {
-            self::debug("Failed to parse GitHub API response: " . $e->getMessage());
+        } catch (HttpException $e) {
+            self::debug("Failed to check GitHub for updates: " . $e->getMessage());
             return null;
         }
+
+        // GitHub releases use tag_name for version
+        if (!isset($data['tag_name'])) {
+            return null;
+        }
+
+        // Remove 'v' prefix if present
+        $version = ltrim($data['tag_name'], 'v');
+
+        // Find zip asset
+        $downloadUrl = null;
+        if (isset($data['assets']) && is_array($data['assets'])) {
+            foreach ($data['assets'] as $asset) {
+                if (
+                    isset($asset['browser_download_url']) &&
+                    (str_ends_with($asset['browser_download_url'], '.zip') ||
+                     str_ends_with($asset['browser_download_url'], '.tar.gz'))
+                ) {
+                    $downloadUrl = $asset['browser_download_url'];
+                    break;
+                }
+            }
+        }
+
+        // If no specific asset found, use the source code zip
+        if ($downloadUrl === null && isset($data['zipball_url'])) {
+            $downloadUrl = $data['zipball_url'];
+        }
+
+        return [
+            'version' => $version,
+            'download_url' => $downloadUrl,
+            'release_notes' => $data['body'] ?? null,
+            'release_date' => $data['published_at'] ?? null
+        ];
     }
 
     /**
@@ -3578,102 +4010,6 @@ class ExtensionsManager
     }
 
     /**
-     * Copy template files from source to target directory
-     *
-     * @param string $sourceDir Source directory containing template files
-     * @param string $targetDir Target directory to copy files to
-     * @param array $replacements Array of replacements for template placeholders
-     */
-    private static function copyTemplateFiles(string $sourceDir, string $targetDir, array $replacements): void
-    {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($sourceDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-
-        foreach ($iterator as $item) {
-            $sourcePath = $item->getPathname();
-            $relativePath = substr($sourcePath, strlen($sourceDir) + 1);
-
-            // Handle special file renaming cases first
-            $targetRelativePath = $relativePath;
-
-            // Special case: Extension.php.tpl should become {EXTENSION_NAME}.php
-            if (basename($relativePath) === 'Extension.php.tpl') {
-                $extensionName = $replacements['EXTENSION_NAME'] ?? '';
-                if (!empty($extensionName)) {
-                    $targetRelativePath = dirname($relativePath) . '/' . $extensionName . '.php';
-                } else {
-                    $targetRelativePath = dirname($relativePath) . '/Extension.php';
-                }
-            } elseif (str_ends_with($relativePath, '.tpl')) {
-                $targetRelativePath = substr($relativePath, 0, -4); // Remove .tpl extension
-            }
-
-            // Replace template placeholders in path
-            $targetRelativePath =
-            preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
-                // Get the placeholder name (either from first or second capturing group)
-                $key = !empty($matches[1]) ? $matches[1] : $matches[2];
-
-                // Look up replacement value (case-insensitive)
-                foreach ($replacements as $placeholder => $value) {
-                    if (strtolower($placeholder) === strtolower($key)) {
-                        return is_array($value) ? json_encode($value) : (string)$value;
-                    }
-                }
-
-                return $matches[0];
-            }, $targetRelativePath);
-
-            $targetPath = $targetDir . '/' . $targetRelativePath;
-
-            if ($item->isDir()) {
-                if (!is_dir($targetPath)) {
-                    mkdir($targetPath, 0755, true);
-                }
-            } else {
-                // Read file contents using a specific encoding to avoid issues
-                $content = @file_get_contents($sourcePath);
-
-                if ($content === false) {
-                    self::debug("Failed to read template file: $sourcePath");
-                    continue;
-                }
-
-                // Detect BOM and remove if present
-                if (substr($content, 0, 3) === "\xEF\xBB\xBF") {
-                    $content = substr($content, 3);
-                }
-
-                // Process content with regex pattern replacement
-                $content = preg_replace_callback('/\{\{(\w+)\}\}|\{(\w+)\}/', function ($matches) use ($replacements) {
-                    // Get the placeholder name (either from first or second capturing group)
-                    $key = !empty($matches[1]) ? $matches[1] : $matches[2];
-
-                    // Look up replacement value (case-insensitive)
-                    foreach ($replacements as $placeholder => $value) {
-                        if (strtolower($placeholder) === strtolower($key)) {
-                            return is_array($value) ? json_encode($value) : (string)$value;
-                        }
-                    }
-
-                    // Return original if no replacement found
-                    return $matches[0];
-                }, $content);
-
-                // Ensure proper line endings (LF)
-                $content = str_replace("\r\n", "\n", $content);
-
-                // Write content to file
-                if (file_put_contents($targetPath, $content) === false) {
-                    self::debug("Failed to write file: $targetPath");
-                }
-            }
-        }
-    }
-
-    /**
      * Get the file system path for an extension
      *
      * @param string $extensionName Extension name
@@ -3681,13 +4017,26 @@ class ExtensionsManager
     */
     public static function getExtensionPath(string $extensionName): ?string
     {
+        // First try to find extension using class loading
         $extensionClass = self::findExtension($extensionName);
-        if (!$extensionClass) {
-            return null;
+        if ($extensionClass) {
+            $reflection = new \ReflectionClass($extensionClass);
+            return dirname($reflection->getFileName());
         }
 
-        $reflection = new \ReflectionClass($extensionClass);
-        return dirname($reflection->getFileName());
+        // Fall back to filesystem check for documentation generation
+        // when classes haven't been loaded yet
+        $extensionsPath = config('services.extensions.paths.extensions_dir');
+        if (empty($extensionsPath)) {
+            $extensionsPath = dirname(__DIR__, 2) . '/extensions/';
+        }
+
+        $extensionDir = rtrim($extensionsPath, '/') . '/' . $extensionName;
+        if (is_dir($extensionDir)) {
+            return $extensionDir;
+        }
+
+        return null;
     }
 
     /**
@@ -3944,5 +4293,646 @@ class ExtensionsManager
             'success' => empty($issues),
             'issues' => $issues
         ];
+    }
+
+    /**
+     * Create a complete extension configuration entry for schema v2.0
+     *
+     * @param string $extensionName Extension name
+     * @param string $version Extension version
+     * @param string $installPath Installation path
+     * @return array Complete extension configuration
+     */
+    private static function createExtensionConfigEntry(
+        string $extensionName,
+        string $version,
+        string $installPath
+    ): array {
+        // Extract autoload mappings from extension's composer.json
+        $autoload = self::extractExtensionAutoloadMappings($extensionName, $installPath);
+
+        // Extract dependencies
+        $dependencies = self::extractExtensionDependencies($extensionName, $installPath);
+
+        // Extract provides information
+        $provides = self::extractExtensionProvides($extensionName, $installPath);
+
+        // Extract config information
+        $config = self::extractExtensionConfig($extensionName, $installPath);
+
+        return [
+            'version' => $version,
+            'enabled' => false, // Start disabled by default
+            'type' => 'optional', // Default type, can be updated later
+            'description' => $config['description'] ?? "Extension: {$extensionName}",
+            'author' => $config['author'] ?? 'Unknown',
+            'license' => $config['license'] ?? 'MIT',
+            'installPath' => $installPath,
+            'autoload' => $autoload,
+            'dependencies' => $dependencies,
+            'provides' => $provides,
+            'config' => $config
+        ];
+    }
+
+    /**
+     * Extract autoload mappings from extension's composer.json
+     */
+    private static function extractExtensionAutoloadMappings(string $extensionName, string $installPath): array
+    {
+        $autoload = ['psr-4' => []];
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+
+        if (!file_exists($composerPath)) {
+            // Fallback: assume standard structure
+            $autoload['psr-4']["Glueful\\Extensions\\{$extensionName}\\"] = "{$installPath}/src/";
+            return $autoload;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \RuntimeException('Invalid JSON in composer.json');
+            }
+
+            // Extract PSR-4 mappings
+            if (isset($composerConfig['autoload']['psr-4'])) {
+                foreach ($composerConfig['autoload']['psr-4'] as $namespace => $path) {
+                    $autoload['psr-4'][$namespace] = "{$installPath}/" . ltrim($path, '/');
+                }
+            }
+
+            // Extract dev PSR-4 mappings
+            if (isset($composerConfig['autoload-dev']['psr-4'])) {
+                foreach ($composerConfig['autoload-dev']['psr-4'] as $namespace => $path) {
+                    $autoload['psr-4'][$namespace] = "{$installPath}/" . ltrim($path, '/');
+                }
+            }
+
+            // Extract files
+            if (isset($composerConfig['autoload']['files'])) {
+                $autoload['files'] = array_map(
+                    fn($file) => "{$installPath}/" . ltrim($file, '/'),
+                    $composerConfig['autoload']['files']
+                );
+            }
+        } catch (\Exception $e) {
+            // Fallback on error
+            $autoload['psr-4']["Glueful\\Extensions\\{$extensionName}\\"] = "{$installPath}/src/";
+        }
+
+        return $autoload;
+    }
+
+    /**
+     * Extract dependencies from extension's composer.json
+     */
+    private static function extractExtensionDependencies(string $extensionName, string $installPath): array
+    {
+        $dependencies = [
+            'php' => '>=8.2',
+            'extensions' => [],
+            'packages' => []
+        ];
+
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+        if (!file_exists($composerPath)) {
+            return $dependencies;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return $dependencies;
+            }
+
+            // Extract PHP version
+            if (isset($composerConfig['require']['php'])) {
+                $dependencies['php'] = $composerConfig['require']['php'];
+            }
+
+            // Extract package dependencies
+            foreach ($composerConfig['require'] ?? [] as $package => $version) {
+                if ($package !== 'php' && !str_starts_with($package, 'ext-')) {
+                    $dependencies['packages'][$package] = $version;
+                }
+            }
+
+            // Extract extension dependencies
+            if (isset($composerConfig['extra']['glueful']['requires']['extensions'])) {
+                $dependencies['extensions'] = $composerConfig['extra']['glueful']['requires']['extensions'];
+            }
+        } catch (\Exception $e) {
+            // Return defaults on error
+        }
+
+        return $dependencies;
+    }
+
+    /**
+     * Extract provides information from extension structure
+     */
+    private static function extractExtensionProvides(string $extensionName, string $installPath): array
+    {
+        $provides = [
+            'main' => "{$installPath}/{$extensionName}.php",
+            'services' => [],
+            'routes' => [],
+            'middleware' => [],
+            'commands' => [],
+            'migrations' => []
+        ];
+
+        $extensionPath = dirname(__DIR__, 2) . "/{$installPath}";
+
+        // Look for common files
+        $commonFiles = [
+            'routes' => ['routes.php', 'src/routes.php'],
+            'services' => ['services.php', 'src/services.php', "src/Services/{$extensionName}ServiceProvider.php"],
+        ];
+
+        foreach ($commonFiles as $type => $files) {
+            foreach ($files as $file) {
+                $fullPath = "{$extensionPath}/{$file}";
+                if (file_exists($fullPath)) {
+                    $provides[$type][] = "{$installPath}/{$file}";
+                }
+            }
+        }
+
+        // Find migrations
+        $migrationDirs = ['migrations', 'database/migrations'];
+        foreach ($migrationDirs as $dir) {
+            $fullDir = "{$extensionPath}/{$dir}";
+            if (is_dir($fullDir)) {
+                $migrationFiles = self::findPhpFilesInDirectory($fullDir);
+                foreach ($migrationFiles as $migrationFile) {
+                    $provides['migrations'][] = "{$installPath}/{$dir}/" . basename($migrationFile);
+                }
+            }
+        }
+
+        return $provides;
+    }
+
+    /**
+     * Extract config information from extension's composer.json
+     */
+    private static function extractExtensionConfig(string $extensionName, string $installPath): array
+    {
+        $config = [
+            'categories' => [],
+            'publisher' => 'unknown',
+            'icon' => "{$installPath}/assets/icon.png",
+            'description' => "Extension: {$extensionName}",
+            'author' => 'Unknown',
+            'license' => 'MIT'
+        ];
+
+        $composerPath = dirname(__DIR__, 2) . "/{$installPath}/composer.json";
+        if (!file_exists($composerPath)) {
+            return $config;
+        }
+
+        try {
+            $composerConfig = json_decode(file_get_contents($composerPath), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return $config;
+            }
+
+            // Extract basic info
+            $config['description'] = $composerConfig['description'] ?? $config['description'];
+            $config['license'] = $composerConfig['license'] ?? $config['license'];
+
+            if (isset($composerConfig['authors'][0]['name'])) {
+                $config['author'] = $composerConfig['authors'][0]['name'];
+            }
+
+            // Extract from extra.glueful section
+            if (isset($composerConfig['extra']['glueful'])) {
+                $extra = $composerConfig['extra']['glueful'];
+
+                $config['categories'] = $extra['categories'] ?? [];
+                $config['publisher'] = $extra['publisher'] ?? 'unknown';
+
+                if (isset($extra['icon'])) {
+                    $config['icon'] = "{$installPath}/" . ltrim($extra['icon'], './');
+                }
+
+                if (isset($extra['galleryBanner'])) {
+                    $config['galleryBanner'] = $extra['galleryBanner'];
+                }
+
+                if (isset($extra['features'])) {
+                    $config['features'] = $extra['features'];
+                }
+            }
+        } catch (\Exception $e) {
+            // Return defaults on error
+        }
+
+        return $config;
+    }
+
+    /**
+     * Fetch extensions catalog from GitHub repository
+     *
+     * Retrieves the extension catalog data from the official Glueful catalog repository.
+     * This method provides access to the latest available extensions with their metadata,
+     * including versions, descriptions, download URLs, and compatibility information.
+     *
+     * @param int $timeout Request timeout in seconds (default: 30)
+     * @param bool $useCache Whether to use cached data if available (default: true)
+     * @return array|null Returns catalog data array on success, null on failure
+     * @throws \Exception When the request fails or returns invalid data
+     */
+    public static function fetchExtensionsCatalog(int $timeout = 30, bool $useCache = true): ?array
+    {
+        $catalogUrl = 'https://raw.githubusercontent.com/glueful/catalog/main/catalog.json';
+        $cacheKey = 'extensions_catalog';
+        $cacheTtl = 3600; // Cache for 1 hour
+
+        // Try to get from cache first if enabled
+        if ($useCache && function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            self::debug("Loading extensions catalog from cache");
+            return apcu_fetch($cacheKey) ?: null;
+        }
+
+        self::debug("Fetching extensions catalog from: {$catalogUrl}");
+
+        try {
+            // Configure HTTP Client
+            $container = ContainerBootstrap::getContainer();
+            $client = $container->get(Client::class);
+
+            // Execute request
+            $response = $client->get($catalogUrl, [
+                'timeout' => $timeout,
+                'headers' => [
+                    'User-Agent' => 'Glueful-Framework/' . (config('app.version_full') ?? '1.0.0'),
+                    'Accept' => 'application/json',
+                    'Cache-Control' => 'no-cache'
+                ]
+            ]);
+
+            if (!$response->isSuccessful()) {
+                self::debug("HTTP error: " . $response->getStatusCode());
+                return null;
+            }
+
+            // Parse JSON response
+            try {
+                $catalogData = $response->json();
+            } catch (\JsonException $e) {
+                self::debug("JSON decode error: " . $e->getMessage());
+                return null;
+            }
+
+            // Validate catalog structure
+            if (
+                !is_array($catalogData) ||
+                !isset($catalogData['extensions']) ||
+                !is_array($catalogData['extensions'])
+            ) {
+                self::debug("Invalid catalog structure");
+                return null;
+            }
+
+            // Validate extension entries
+            foreach ($catalogData['extensions'] as $extension) {
+                if (!is_array($extension) || !isset($extension['name']) || !isset($extension['version'])) {
+                    self::debug("Invalid extension entry found in catalog");
+                    return null;
+                }
+            }
+
+            self::debug("Successfully fetched catalog with " . count($catalogData['extensions']) . " extensions");
+
+            // Cache the result if caching is enabled
+            if ($useCache && function_exists('apcu_store')) {
+                apcu_store($cacheKey, $catalogData, $cacheTtl);
+                self::debug("Cached catalog data for {$cacheTtl} seconds");
+            }
+
+            return $catalogData;
+        } catch (HttpException $e) {
+            self::debug("Failed to fetch catalog: " . $e->getMessage());
+            return null;
+        } catch (\JsonException $e) {
+            self::debug("Failed to parse catalog JSON: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get available extensions from catalog
+     *
+     * Returns a filtered list of extensions from the catalog, optionally
+     * filtered by tags, compatibility, or other criteria.
+     *
+     * @param array $filters Optional filters to apply
+     * @param bool $useCache Whether to use cached catalog data
+     * @return array Array of extension information
+     */
+    public static function getAvailableExtensions(array $filters = [], bool $useCache = true): array
+    {
+        $catalog = self::fetchExtensionsCatalog(30, $useCache);
+        if (!$catalog || !isset($catalog['extensions'])) {
+            return [];
+        }
+
+        $extensions = $catalog['extensions'];
+
+        // Apply filters if provided
+        if (!empty($filters)) {
+            $extensions = array_filter($extensions, function ($extension) use ($filters) {
+                // Filter by tags
+                if (isset($filters['tags']) && is_array($filters['tags'])) {
+                    $extensionTags = $extension['tags'] ?? [];
+                    if (!array_intersect($filters['tags'], $extensionTags)) {
+                        return false;
+                    }
+                }
+
+                // Filter by minimum rating
+                if (isset($filters['min_rating']) && is_numeric($filters['min_rating'])) {
+                    $rating = $extension['rating'] ?? 0;
+                    if ($rating < $filters['min_rating']) {
+                        return false;
+                    }
+                }
+
+                // Filter by publisher
+                if (isset($filters['publisher']) && is_string($filters['publisher'])) {
+                    $publisher = $extension['publisher'] ?? '';
+                    if (stripos($publisher, $filters['publisher']) === false) {
+                        return false;
+                    }
+                }
+
+                // Filter by search term
+                if (isset($filters['search']) && is_string($filters['search'])) {
+                    $searchTerm = strtolower($filters['search']);
+                    $searchableText = strtolower(
+                        ($extension['name'] ?? '') . ' ' .
+                        ($extension['displayName'] ?? '') . ' ' .
+                        ($extension['description'] ?? '') . ' ' .
+                        implode(' ', $extension['tags'] ?? [])
+                    );
+                    if (strpos($searchableText, $searchTerm) === false) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        return array_values($extensions);
+    }
+
+    /**
+     * Clear the extensions catalog cache
+     *
+     * Removes the cached catalog data, forcing a fresh fetch on the next request.
+     *
+     * @return bool True if cache was cleared successfully
+     */
+    public static function clearCatalogCache(): bool
+    {
+        $cacheKey = 'extensions_catalog';
+
+        if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            $result = apcu_delete($cacheKey);
+            self::debug($result ? "Catalog cache cleared successfully" : "Failed to clear catalog cache");
+            return $result;
+        }
+
+        return true; // No cache to clear
+    }
+
+    /**
+     * Get synchronized catalog data with local extension status
+     *
+     * Fetches the GitHub catalog and enriches each extension with local status information:
+     * - "installed": whether the extension files exist locally
+     * - "enabled": whether the extension is currently enabled
+     *
+     * This provides a complete view of available extensions and their local status,
+     * useful for extension management interfaces and API endpoints.
+     *
+     * @param array $filters Optional filters to apply to the catalog
+     * @param bool $useCache Whether to use cached catalog data
+     * @return array Enriched catalog data with local status information
+     */
+    public static function getSynchronizedCatalog(array $filters = [], bool $useCache = true): array
+    {
+        // Fetch the remote catalog
+        $catalog = self::fetchExtensionsCatalog(30, $useCache);
+        if (!$catalog || !isset($catalog['extensions'])) {
+            self::debug("Failed to fetch catalog or no extensions found");
+            return ['extensions' => [], 'metadata' => ['source' => 'empty', 'synchronized_at' => date('c')]];
+        }
+
+        // Get local extension configuration
+        $localConfig = self::loadExtensionsConfig();
+        $localExtensions = $localConfig['extensions'] ?? [];
+
+        self::debug("Synchronizing " . count($catalog['extensions']) . " catalog extensions with local status");
+
+        // Enrich each catalog extension with local status
+        $enrichedExtensions = [];
+        foreach ($catalog['extensions'] as $extension) {
+            $extensionName = $extension['name'] ?? '';
+
+            if (empty($extensionName)) {
+                self::debug("Skipping extension with empty name");
+                continue;
+            }
+
+            // Check if extension is installed (files exist locally)
+            $isInstalled = self::findExtension($extensionName, true) !== null;
+
+            // Check if extension is enabled in configuration
+            $isEnabled = self::isExtensionEnabled($extensionName);
+
+            // Get local metadata if available
+            $localMetadata = [];
+            if (isset($localExtensions[$extensionName])) {
+                $localMetadata = [
+                    'local_version' => $localExtensions[$extensionName]['version'] ?? null,
+                    'installed_at' => $localExtensions[$extensionName]['installed_at'] ?? null,
+                    'install_path' => $localExtensions[$extensionName]['install_path'] ?? null,
+                    'local_config' => $localExtensions[$extensionName] ?? []
+                ];
+            }
+
+            // Create enriched extension data
+            $enrichedExtension = array_merge($extension, [
+                'installed' => $isInstalled,
+                'enabled' => $isEnabled,
+                'local_metadata' => $localMetadata,
+                'status' => self::getExtensionStatusSummary($isInstalled, $isEnabled),
+                'actions_available' => self::getAvailableActions($extensionName, $isInstalled, $isEnabled)
+            ]);
+
+            $enrichedExtensions[] = $enrichedExtension;
+        }
+
+        // Apply filters if provided
+        if (!empty($filters)) {
+            $enrichedExtensions = array_filter($enrichedExtensions, function ($extension) use ($filters) {
+                // Filter by installation status
+                if (isset($filters['installed']) && is_bool($filters['installed'])) {
+                    if ($extension['installed'] !== $filters['installed']) {
+                        return false;
+                    }
+                }
+
+                // Filter by enabled status
+                if (isset($filters['enabled']) && is_bool($filters['enabled'])) {
+                    if ($extension['enabled'] !== $filters['enabled']) {
+                        return false;
+                    }
+                }
+
+                // Filter by status
+                if (isset($filters['status']) && is_string($filters['status'])) {
+                    if ($extension['status'] !== $filters['status']) {
+                        return false;
+                    }
+                }
+
+                // Apply other filters from parent method
+                return self::applyStandardFilters($extension, $filters);
+            });
+        }
+
+        // Generate metadata about the synchronization
+        $metadata = [
+            'source' => 'github_catalog',
+            'catalog_url' => 'https://raw.githubusercontent.com/glueful/catalog/main/catalog.json',
+            'synchronized_at' => date('c'),
+            'total_available' => count($catalog['extensions']),
+            'total_after_filters' => count($enrichedExtensions),
+            'summary' => [
+                'installed' => count(array_filter($enrichedExtensions, fn($ext) => $ext['installed'])),
+                'enabled' => count(array_filter($enrichedExtensions, fn($ext) => $ext['enabled'])),
+                'available_for_install' => count(array_filter($enrichedExtensions, fn($ext) => !$ext['installed'])),
+                'disabled' => count(array_filter(
+                    $enrichedExtensions,
+                    fn($ext) => $ext['installed'] && !$ext['enabled']
+                ))
+            ]
+        ];
+
+        self::debug("Synchronization complete: " . json_encode($metadata['summary']));
+
+        return [
+            'extensions' => array_values($enrichedExtensions),
+            'metadata' => $metadata
+        ];
+    }
+
+    /**
+     * Get extension status summary
+     *
+     * @param bool $isInstalled Whether the extension is installed
+     * @param bool $isEnabled Whether the extension is enabled
+     * @return string Status summary
+     */
+    private static function getExtensionStatusSummary(bool $isInstalled, bool $isEnabled): string
+    {
+        if (!$isInstalled) {
+            return 'available';
+        }
+
+        if ($isEnabled) {
+            return 'active';
+        }
+
+        return 'inactive';
+    }
+
+    /**
+     * Get available actions for an extension
+     *
+     * @param string $extensionName Extension name
+     * @param bool $isInstalled Whether the extension is installed
+     * @param bool $isEnabled Whether the extension is enabled
+     * @return array List of available actions
+     */
+    private static function getAvailableActions(string $extensionName, bool $isInstalled, bool $isEnabled): array
+    {
+        $actions = [];
+
+        if (!$isInstalled) {
+            $actions[] = 'install';
+        } else {
+            if ($isEnabled) {
+                $actions[] = 'disable';
+                $actions[] = 'uninstall';
+                $actions[] = 'update';
+            } else {
+                $actions[] = 'enable';
+                $actions[] = 'uninstall';
+                $actions[] = 'update';
+            }
+        }
+
+        $actions[] = 'view_details';
+        $actions[] = 'view_readme';
+
+        return $actions;
+    }
+
+    /**
+     * Apply standard catalog filters
+     *
+     * @param array $extension Extension data
+     * @param array $filters Filters to apply
+     * @return bool Whether the extension passes the filters
+     */
+    private static function applyStandardFilters(array $extension, array $filters): bool
+    {
+        // Filter by tags
+        if (isset($filters['tags']) && is_array($filters['tags'])) {
+            $extensionTags = $extension['tags'] ?? [];
+            if (!array_intersect($filters['tags'], $extensionTags)) {
+                return false;
+            }
+        }
+
+        // Filter by minimum rating
+        if (isset($filters['min_rating']) && is_numeric($filters['min_rating'])) {
+            $rating = $extension['rating'] ?? 0;
+            if ($rating < $filters['min_rating']) {
+                return false;
+            }
+        }
+
+        // Filter by publisher
+        if (isset($filters['publisher']) && is_string($filters['publisher'])) {
+            $publisher = $extension['publisher'] ?? '';
+            if (stripos($publisher, $filters['publisher']) === false) {
+                return false;
+            }
+        }
+
+        // Filter by search term
+        if (isset($filters['search']) && is_string($filters['search'])) {
+            $searchTerm = strtolower($filters['search']);
+            $searchableText = strtolower(
+                ($extension['name'] ?? '') . ' ' .
+                ($extension['displayName'] ?? '') . ' ' .
+                ($extension['description'] ?? '') . ' ' .
+                implode(' ', $extension['tags'] ?? [])
+            );
+            if (strpos($searchableText, $searchTerm) === false) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

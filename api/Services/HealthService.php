@@ -2,14 +2,15 @@
 
 namespace Glueful\Services;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Health Service
  *
  * Provides shared health check functionality for both CLI and HTTP endpoints.
- * All checks use the framework's abstraction layers (QueryBuilder, CacheEngine)
+ * All checks use the framework's abstraction layers (QueryBuilder, CacheStore)
  * to ensure consistent behavior across different database and cache drivers.
  */
 class HealthService
@@ -18,6 +19,22 @@ class HealthService
 
     /** @var self|null Singleton instance */
     private static ?self $instance = null;
+
+    /** @var CacheStore|null Cache driver instance */
+    private ?CacheStore $cache = null;
+
+    /**
+     * Constructor
+     */
+    public function __construct(?CacheStore $cache = null)
+    {
+        $this->cache = $cache ?? CacheHelper::createCacheInstance();
+        if ($this->cache === null) {
+            throw new \RuntimeException(
+                'CacheStore is required for HealthService: Unable to create cache instance.'
+            );
+        }
+    }
 
     /**
      * Get singleton instance
@@ -74,7 +91,7 @@ class HealthService
                 return [
                     'status' => 'warning',
                     'message' => 'Database connected but migrations not run',
-                    'suggestion' => 'Run: php glueful db:migrate'
+                    'suggestion' => 'Run: php glueful migrate run'
                 ];
             }
 
@@ -91,22 +108,22 @@ class HealthService
      */
     public static function checkCache(): array
     {
-        try {
-            if (!CacheEngine::isEnabled()) {
-                return [
-                    'status' => 'disabled',
-                    'message' => 'Cache is not enabled',
-                    'driver' => 'none'
-                ];
-            }
+        return self::getInstance()->performCacheCheck();
+    }
 
+    /**
+     * Perform cache health check using injected cache driver
+     */
+    private function performCacheCheck(): array
+    {
+        try {
             // Test cache write/read/delete operations
             $testKey = 'health_check_' . time();
             $testValue = 'health_test_' . uniqid();
 
-            CacheEngine::set($testKey, $testValue, 60);
-            $retrieved = CacheEngine::get($testKey);
-            CacheEngine::delete($testKey);
+            $this->cache->set($testKey, $testValue, 60);
+            $retrieved = $this->cache->get($testKey);
+            $this->cache->delete($testKey);
 
             if ($retrieved === $testValue) {
                 return [

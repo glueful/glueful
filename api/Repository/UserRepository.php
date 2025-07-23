@@ -6,7 +6,8 @@ namespace Glueful\Repository;
 
 use Glueful\DTOs\{UsernameDTO, EmailDTO};
 use Glueful\Validation\Validator;
-use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * User Repository
@@ -14,7 +15,7 @@ use Glueful\Helpers\Utils;
  * Handles all database operations related to users:
  * - User retrieval by various identifiers
  * - Profile data management
- * - Role association lookups
+ * - User data management (role functionality moved to RBAC extension)
  * - Password management
  *
  * This repository extends BaseRepository to leverage common CRUD operations
@@ -24,8 +25,7 @@ use Glueful\Helpers\Utils;
  */
 class UserRepository extends BaseRepository
 {
-    /** @var RoleRepository Role repository instance */
-    private RoleRepository $roleRepository;
+    // Note: Role functionality migrated to RBAC extension
 
     /** @var Validator Data validator instance */
     private Validator $validator;
@@ -36,23 +36,33 @@ class UserRepository extends BaseRepository
     /**
      * Initialize repository
      *
-     * Sets up database connection and dependencies
+     * Sets up database connection and dependencies with optional dependency injection
+     *
+     * @param Connection|null $connection Database connection instance
+     * @param Validator|null $validator Validator instance
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null, ?Validator $validator = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'users';
-        $this->primaryKey = 'uuid';
-        $this->defaultFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
-        $this->containsSensitiveData = true;
-        $this->sensitiveFields = ['password', 'api_key', 'remember_token', 'reset_token'];
+        // Configure repository settings before calling parent
+        $this->defaultFields = ['*'];
+        $this->hasUpdatedAt = false; // users table doesn't have updated_at column
 
         // Call parent constructor to set up database connection
-        parent::__construct();
+        parent::__construct($connection);
 
-        // Initialize additional dependencies
-        $this->validator = new Validator();
-        $this->roleRepository = new RoleRepository();
+        // Initialize validator with dependency injection or fallback
+        $this->validator = $validator ?? $this->createValidatorInstance();
+        // Role repository functionality moved to RBAC extension
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'users';
     }
 
     /**
@@ -76,6 +86,8 @@ class UserRepository extends BaseRepository
         // Use BaseRepository's findBy method
         return $this->findBy('username', $username);
     }
+
+
 
     /**
      * Find user by email address
@@ -108,10 +120,10 @@ class UserRepository extends BaseRepository
      * @param string $uuid User UUID to search for
      * @return array|null User data or null if not found
      */
-    public function findByUUID(string $uuid): ?array
+    public function findByUuid(string $uuid, ?array $fields = null): ?array
     {
-        // Use BaseRepository's findById method since UUID is our primary key
-        return $this->findBy($this->primaryKey, $uuid);
+        // Use BaseRepository's findRecordByUuid method since UUID is our primary key
+        return $this->findRecordByUuid($uuid, $fields);
     }
 
     /**
@@ -135,29 +147,32 @@ class UserRepository extends BaseRepository
     }
 
     /**
-     * Get user roles
+     * Get profiles for multiple users in a single query (bulk operation)
      *
-     * Retrieves all roles assigned to a user.
-     * Used for authorization and permission checks.
-     *
-     * @param string $uuid User UUID to get roles for
-     * @return array|null Role data or null if none found
+     * @param array $userUuids Array of user UUIDs
+     * @return array Associative array indexed by user_uuid
      */
-    public function getRoles(string $uuid): ?array
+    public function getProfilesForUsers(array $userUuids): array
     {
-        $query = $this->db
-            ->join('roles', 'user_roles_lookup.role_uuid = roles.uuid') // Apply JOIN first
-            ->select('user_roles_lookup', [
-                'user_roles_lookup.user_uuid',
-                'user_roles_lookup.role_uuid',
-                'roles.uuid AS role_id',
-                'roles.name AS role_name'
-            ])
-            ->where(['user_uuid' => $uuid]) // Ensure column exists
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        // Remove duplicates and ensure we have valid UUIDs
+        $userUuids = array_unique(array_filter($userUuids));
+        if (empty($userUuids)) {
+            return [];
+        }
+
+        // Fetch all profiles in a single query
+        $profiles = $this->db->select('profiles', $this->userProfileFields)
+            ->whereIn('user_uuid', $userUuids)
             ->get();
 
-        return $query ?: null;
+        // Return indexed by user_uuid for easy lookup
+        return array_column($profiles, null, 'user_uuid');
     }
+
 
    /**
      * Update user password
@@ -187,9 +202,8 @@ class UserRepository extends BaseRepository
         if ($identifierType === 'email') {
             $user = $this->findByEmail($identifier);
         } else {
-            $user = $this->findByUUID($identifier);
+            $user = $this->findByUuid($identifier);
         }
-
         if (!$user) {
             return false; // User not found
         }
@@ -200,10 +214,9 @@ class UserRepository extends BaseRepository
 
         // Update just the password field using the parent update method
         // The BaseRepository.auditDataAction method will automatically handle audit logging
-        $success = $this->update($user['uuid'], [
+        $success = parent::update($user['uuid'], [
             'password' => $password
-        ], $userId);
-
+        ]);
         return $success;
     }
 
@@ -214,14 +227,17 @@ class UserRepository extends BaseRepository
      * Additional profile data should be added separately.
      *
      * @param array $userData User data (username, email, password, etc.)
-     * @param string|null $createdByUserId UUID of user creating this user (for audit)
-     * @return string|null New user UUID or null on failure
+     * @return string New user UUID
+     * @throws \InvalidArgumentException If validation fails
      */
-    public function create(array $userData, ?string $createdByUserId = null): ?string
+    public function create(array $userData): string
     {
-        // Ensure required fields are present
-        if (!isset($userData['username']) || !isset($userData['email']) || !isset($userData['password'])) {
-            return null;
+        // Validate required fields
+        $required = ['username', 'email', 'password'];
+        foreach ($required as $field) {
+            if (empty($userData[$field])) {
+                throw new \InvalidArgumentException("Field '{$field}' is required");
+            }
         }
 
         // Validate username and email
@@ -231,28 +247,30 @@ class UserRepository extends BaseRepository
         $emailDTO = new EmailDTO();
         $emailDTO->email = $userData['email'];
 
-        if (!$this->validator->validate($usernameDTO) || !$this->validator->validate($emailDTO)) {
-            return null;
+        if (!$this->validator->validate($usernameDTO)) {
+            throw new \InvalidArgumentException('Invalid username format');
         }
 
-        // Set default values for optional fields
-        $userData['status'] = $userData['status'] ?? 'active';
-
-        // Generate UUID if not provided
-        if (!isset($userData['uuid'])) {
-            $userData['uuid'] = Utils::generateNanoID();
+        if (!$this->validator->validate($emailDTO)) {
+            throw new \InvalidArgumentException('Invalid email format');
         }
 
-        // Get current user ID for audit if not provided
-        if (!$createdByUserId) {
-            $currentUser = $this->getCurrentUser();
-            $createdByUserId = $currentUser['uuid'] ?? null;
+        // Check for duplicates
+        if ($this->emailExists($userData['email'])) {
+            throw new \InvalidArgumentException("Email '{$userData['email']}' already exists");
         }
 
-        // Use parent create method which handles insertion and audit logging
-        $result = parent::create($userData, $createdByUserId);
+        if ($this->usernameExists($userData['username'])) {
+            throw new \InvalidArgumentException("Username '{$userData['username']}' already exists");
+        }
 
-        return $result ? (string)$userData['uuid'] : null;
+        // Set default status if not provided
+        if (!isset($userData['status'])) {
+            $userData['status'] = 'active';
+        }
+
+        // Use parent create method which handles UUID generation and audit logging
+        return parent::create($userData);
     }
 
     /**
@@ -269,12 +287,6 @@ class UserRepository extends BaseRepository
      */
     public function update($id, array $userData, ?string $updatedByUserId = null): bool
     {
-        // Ensure user exists
-        $user = $this->findByUUID($id);
-        if (!$user) {
-            return false;
-        }
-
         // Remove fields that shouldn't be updated directly
         unset($userData['password']); // Use setNewPassword for password changes
         unset($userData['uuid']);     // Primary key shouldn't be changed
@@ -285,8 +297,8 @@ class UserRepository extends BaseRepository
             $updatedByUserId = $currentUser['uuid'] ?? null;
         }
 
-        // Use parent update method which handles update and audit logging
-        return parent::update($id, $userData, $updatedByUserId);
+        // Use parent update method which handles existence check and audit logging
+        return parent::update($id, $userData);
     }
 
     /**
@@ -303,7 +315,7 @@ class UserRepository extends BaseRepository
     public function updateProfile(string $uuid, array $profileData, ?string $updatedByUserId = null): bool
     {
         // Ensure user exists
-        $user = $this->findByUUID($uuid);
+        $user = $this->findByUuid($uuid);
         if (!$user) {
             return false;
         }
@@ -331,10 +343,10 @@ class UserRepository extends BaseRepository
 
             if ($existingProfile) {
                 // Update existing profile
-                $success = parent::update($uuid, $profileData, $updatedByUserId);
+                $success = parent::update($uuid, $profileData);
             } else {
                 // Create new profile
-                $success = parent::create($profileData, $updatedByUserId) !== null;
+                $success = parent::create($profileData) !== null;
             }
         } finally {
             // Restore the original table and primary key
@@ -368,12 +380,12 @@ class UserRepository extends BaseRepository
      */
     public function findOrCreateFromSaml(array $userData): ?array
     {
-        try {
-            // Email is required to identify the user
-            if (empty($userData['email'])) {
-                return null;
-            }
+        // Email is required to identify the user
+        if (empty($userData['email'])) {
+            return null;
+        }
 
+        return $this->executeInTransaction(function () use ($userData) {
             // Try to find the user by email
             $user = $this->findByEmail($userData['email']);
 
@@ -403,14 +415,9 @@ class UserRepository extends BaseRepository
                 $this->update($user['uuid'], $updates);
 
                 // Reload the user to get updated data
-                $user = $this->findByUUId($user['uuid']);
-
-                // Sync roles if available
-                if (!empty($userData['roles'])) {
-                    $this->syncUserRoles($user['uuid'], $userData['roles']);
-                }
-                return $user;
+                return $this->findByUUId($user['uuid']);
             }
+
             // User doesn't exist, create a new one
             $newUser = [
                 'uuid' => \Glueful\Helpers\Utils::generateNanoID(),
@@ -431,78 +438,17 @@ class UserRepository extends BaseRepository
             // This will also handle the audit logging
             $userId = $this->create($newUser);
             if (!$userId) {
-                return null;
+                throw new DatabaseException('Failed to create user');
             }
 
-            // Assign default roles for new SAML users
-            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
-            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+            // Note: Role assignment moved to RBAC extension
+            // Use RBAC extension APIs for default role assignment
 
             // Return the newly created user
             return $this->findByUUId($newUser['uuid']);
-        } catch (\Throwable $e) {
-            // Log the error
-            error_log('Error in findOrCreateFromSaml: ' . $e->getMessage());
-
-            return null;
-        }
+        });
     }
 
-    /**
-     * Sync user roles with the provided role array
-     *
-     * @param string $userUuid User UUID
-     * @param array $roles Array of role data
-     * @return bool Success
-     */
-    private function syncUserRoles(string $userUuid, array $roles): bool
-    {
-        try {
-            $connection = new \Glueful\Database\Connection();
-            $queryBuilder = new \Glueful\Database\QueryBuilder($connection->getPDO(), $connection->getDriver());
-            // Delete existing roles for this user
-            $queryBuilder->delete('user_roles_lookup', ['user_uuid' => $userUuid]);
-
-            // Prepare role data for insertion
-            $rolesToInsert = [];
-            $roleNames = [];
-
-            foreach ($roles as $role) {
-                if (!isset($role['name'])) {
-                    continue;
-                }
-
-                // Get role UUID from role name
-                $roleUuid = $this->roleRepository->getRoleUuidByName($role['name']);
-                if (!$roleUuid) {
-                    continue;
-                }
-
-                $roleNames[] = $role['name'];
-
-                // Create a record for insertion
-                $rolesToInsert[] = [
-                    'user_uuid' => $userUuid,
-                    'role_uuid' => $roleUuid,
-                    'created_at' => date('Y-m-d H:i:s')
-                ];
-            }
-
-            if (empty($rolesToInsert)) {
-                return true;
-            }
-
-            // Use batch insert for better performance
-            $result = $queryBuilder->insert('user_roles_lookup', $rolesToInsert);
-            $success = $result > 0;
-
-            return $success;
-        } catch (\Throwable $e) {
-            error_log('Error in syncUserRoles: ' . $e->getMessage());
-
-            return false;
-        }
-    }
 
     /**
      * Find or create a user from LDAP authentication data
@@ -557,15 +503,10 @@ class UserRepository extends BaseRepository
                 $this->update($user['uuid'], $updates);
 
                 // Reload the user to get updated data
-                $user = $this->findByUUID($user['uuid']);
+                $user = $this->findByUuid($user['uuid']);
 
-                // Sync roles if available
-                if (!empty($userData['roles'])) {
-                    $this->syncUserRoles($user['uuid'], $userData['roles']);
-
-                    // Reload roles for the user
-                    $user['roles'] = $this->roleRepository->getUserRoles($user['uuid']);
-                }
+                // Note: Role synchronization moved to RBAC extension
+                // Use RBAC extension APIs for role assignment
 
                 return $user;
             }
@@ -597,13 +538,12 @@ class UserRepository extends BaseRepository
                 return $value !== null;
             }));
 
-            // Assign default roles for new LDAP users
-            $defaultRoles = !empty($userData['roles']) ? $userData['roles'] : [['name' => 'user']];
-            $this->syncUserRoles($newUser['uuid'], $defaultRoles);
+            // Note: Role assignment moved to RBAC extension
+            // Use RBAC extension APIs for default role assignment
 
             // Return the newly created user with roles
-            $user = $this->findByUUID($newUser['uuid']);
-            $user['roles'] = $this->roleRepository->getUserRoles($newUser['uuid']);
+            $user = $this->findByUuid($newUser['uuid']);
+            $user['roles'] = []; // Roles managed by RBAC extension
 
             return $user;
         } catch (\Throwable $e) {
@@ -641,19 +581,129 @@ class UserRepository extends BaseRepository
             }
 
             // Get session data directly from the session cache
-            $userData = \Glueful\Auth\SessionCacheManager::getSession($token);
+            $sessionCacheManager = $this->getSessionCacheManager();
+            $sessionData = $sessionCacheManager->getSession($token);
 
-            if ($userData && isset($userData['uuid'])) {
-                // If we just have a basic user record with UUID, get the full user data
-                if (count($userData) <= 2) {
-                    return $this->findByUUID($userData['uuid']);
-                }
-                return $userData;
+            if ($sessionData && isset($sessionData['user'])) {
+                // Return the user data directly from session cache to avoid DB query
+                return $sessionData['user'];
             }
         } catch (\Throwable $e) {
             // Silently handle auth errors - logging should continue to work
             // even if authentication fails
         }
         return null;
+    }
+
+
+    /**
+     * Find active users
+     *
+     * @param array $orderBy Sorting criteria
+     * @param int|null $limit Maximum number of records
+     * @return array Array of active users
+     */
+    public function findActive(array $orderBy = [], ?int $limit = null): array
+    {
+        return $this->findWhere(['status' => 'active'], $orderBy, $limit);
+    }
+
+    /**
+     * Check if email exists
+     *
+     * @param string $email The email to check
+     * @param string|null $excludeUuid UUID to exclude from check (for updates)
+     * @return bool True if email exists
+     */
+    public function emailExists(string $email, ?string $excludeUuid = null): bool
+    {
+        $conditions = ['email' => $email];
+
+        if ($excludeUuid) {
+            $conditions['uuid'] = ['!=', $excludeUuid];
+        }
+
+        return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Check if username exists
+     *
+     * @param string $username The username to check
+     * @param string|null $excludeUuid UUID to exclude from check (for updates)
+     * @return bool True if username exists
+     */
+    public function usernameExists(string $username, ?string $excludeUuid = null): bool
+    {
+        $conditions = ['username' => $username];
+
+        if ($excludeUuid) {
+            $conditions['uuid'] = ['!=', $excludeUuid];
+        }
+
+        return $this->count($conditions) > 0;
+    }
+
+    /**
+     * Create validator instance with proper fallback handling
+     *
+     * @return Validator Validator instance
+     */
+    private function createValidatorInstance(): Validator
+    {
+        try {
+            return container()->get(Validator::class);
+        } catch (\Exception) {
+            // Fallback to direct instantiation if container fails
+            // This should not happen in normal operation since the ValidatorServiceProvider
+            // registers the validator, but we provide a fallback for edge cases
+            throw new \RuntimeException(
+                'Unable to create Validator instance - ValidatorServiceProvider may not be registered'
+            );
+        }
+    }
+
+    /**
+     * Get session cache manager instance with proper fallback handling
+     *
+     * @return \Glueful\Auth\SessionCacheManager Session cache manager instance
+     */
+    private function getSessionCacheManager(): \Glueful\Auth\SessionCacheManager
+    {
+        try {
+            return container()->get(\Glueful\Auth\SessionCacheManager::class);
+        } catch (\Exception) {
+            // Fallback to direct instantiation if container fails
+            // SessionCacheManager requires a CacheStore, so create one
+            $cacheStore = \Glueful\Helpers\CacheHelper::createCacheInstance();
+            if ($cacheStore === null) {
+                throw new \RuntimeException('Unable to create cache instance for SessionCacheManager');
+            }
+            return new \Glueful\Auth\SessionCacheManager($cacheStore);
+        }
+    }
+
+    /**
+     * Update user last login timestamp
+     *
+     * @param string $uuid User UUID
+     * @return bool True if successful
+     */
+    public function updateLastLogin(string $uuid): bool
+    {
+        return $this->update($uuid, [
+            'last_login_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    /**
+     * Deactivate users by UUIDs
+     *
+     * @param array $uuids Array of user UUIDs
+     * @return int Number of affected records
+     */
+    public function deactivateUsers(array $uuids): int
+    {
+        return $this->bulkUpdate($uuids, ['status' => 'inactive']);
     }
 }

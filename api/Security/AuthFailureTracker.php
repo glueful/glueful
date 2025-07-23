@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\Utils;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Authentication Failure Tracker
@@ -17,19 +19,24 @@ class AuthFailureTracker
     /** @var string Cache key prefix for failed attempts */
     private const PREFIX = 'auth_fail:';
 
+    /** @var CacheStore Cache driver instance */
+    private CacheStore $cache;
+
     /**
      * Constructor
      *
      * @param string $key Identifier (user ID or IP)
      * @param int $maxAttempts Maximum failed attempts before blocking
      * @param int $decaySeconds Block duration in seconds
+     * @param CacheStore|null $cache Cache driver instance
      */
     public function __construct(
         private readonly string $key, // Either user ID or IP
         private readonly int $maxAttempts = 5,
-        private readonly int $decaySeconds = 900 // 15 minutes
+        private readonly int $decaySeconds = 900, // 15 minutes
+        ?CacheStore $cache = null
     ) {
-        CacheEngine::initialize('Glueful:', config('cache.default'));
+        $this->cache = $cache ?? $this->createCacheInstance();
     }
 
     /**
@@ -40,12 +47,12 @@ class AuthFailureTracker
     public function recordFailure(): void
     {
         $key = $this->getCacheKey();
-        $attempts = (int)(CacheEngine::get($key) ?? 0);
+        $attempts = (int)($this->cache->get($key) ?? 0);
 
         if ($attempts === 0) {
-            CacheEngine::set($key, 1, $this->decaySeconds);
+            $this->cache->set($key, 1, $this->decaySeconds);
         } else {
-            CacheEngine::increment($key);
+            $this->cache->increment($key);
         }
     }
 
@@ -56,7 +63,7 @@ class AuthFailureTracker
      */
     public function getFailures(): int
     {
-        return (int)(CacheEngine::get($this->getCacheKey()) ?? 0);
+        return (int)($this->cache->get($this->getCacheKey()) ?? 0);
     }
 
     /**
@@ -66,7 +73,7 @@ class AuthFailureTracker
      */
     public function resetFailures(): void
     {
-        CacheEngine::delete($this->getCacheKey());
+        $this->cache->delete($this->getCacheKey());
     }
 
     /**
@@ -86,7 +93,7 @@ class AuthFailureTracker
      */
     public function getRetryAfter(): int
     {
-        return CacheEngine::ttl($this->getCacheKey());
+        return $this->cache->ttl($this->getCacheKey());
     }
 
     /**
@@ -96,7 +103,30 @@ class AuthFailureTracker
      */
     private function getCacheKey(): string
     {
-        return self::PREFIX . $this->key;
+        return self::PREFIX . Utils::sanitizeCacheKey($this->key);
+    }
+
+    /**
+     * Create cache instance with proper fallback handling
+     *
+     * @return CacheStore Cache instance
+     * @throws \RuntimeException If cache cannot be created
+     */
+    private function createCacheInstance(): CacheStore
+    {
+        try {
+            return container()->get(CacheStore::class);
+        } catch (\Exception) {
+            // Try using CacheHelper as fallback
+            $cache = CacheHelper::createCacheInstance();
+            if ($cache === null) {
+                throw new \RuntimeException(
+                    'Cache is required for AuthFailureTracker. '
+                    . 'Please ensure cache is properly configured.'
+                );
+            }
+            return $cache;
+        }
     }
 
     /**
@@ -109,7 +139,7 @@ class AuthFailureTracker
      */
     public static function forUser(string $userId, int $maxAttempts = 5, int $decaySeconds = 900): self
     {
-        return new self("user:$userId", $maxAttempts, $decaySeconds);
+        return new self("user:$userId", $maxAttempts, $decaySeconds, self::createStaticCacheInstance());
     }
 
     /**
@@ -122,6 +152,21 @@ class AuthFailureTracker
      */
     public static function forIp(string $ip, int $maxAttempts = 5, int $decaySeconds = 900): self
     {
-        return new self("ip:$ip", $maxAttempts, $decaySeconds);
+        return new self("ip:$ip", $maxAttempts, $decaySeconds, self::createStaticCacheInstance());
+    }
+
+    /**
+     * Create cache instance for static factory methods
+     *
+     * @return CacheStore|null Cache instance or null for graceful degradation
+     */
+    private static function createStaticCacheInstance(): ?CacheStore
+    {
+        try {
+            return container()->get(CacheStore::class);
+        } catch (\Exception) {
+            // Try using CacheHelper as fallback
+            return CacheHelper::createCacheInstance();
+        }
     }
 }

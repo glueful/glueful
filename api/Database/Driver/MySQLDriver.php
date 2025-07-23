@@ -72,4 +72,65 @@ class MySQLDriver implements DatabaseDriver
         return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
                " ON DUPLICATE KEY UPDATE $updates";
     }
+
+    /**
+     * Get MySQL table columns query
+     *
+     * Returns INFORMATION_SCHEMA query to retrieve column names for a table.
+     * This query works with the current database and properly handles MySQL's
+     * INFORMATION_SCHEMA structure.
+     *
+     * @param string $table Target table name
+     * @return string MySQL query to get column information
+     */
+    public function getTableColumnsQuery(string $table): string
+    {
+        return "SELECT COLUMN_NAME as column_name FROM INFORMATION_SCHEMA.COLUMNS " .
+               "WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE() " .
+               "ORDER BY ORDINAL_POSITION";
+    }
+
+    /**
+     * Format datetime for MySQL storage
+     *
+     * MySQL stores datetime values in 'Y-m-d H:i:s' format in the server's timezone.
+     * This method ensures consistent datetime formatting for MySQL DATETIME columns.
+     *
+     * @param \DateTime|string|null $datetime Datetime to format (defaults to current time)
+     * @return string MySQL-compatible datetime string
+     * @throws \InvalidArgumentException If provided datetime string is invalid
+     */
+    public function formatDateTime($datetime = null): string
+    {
+        if ($datetime === null) {
+            return date('Y-m-d H:i:s');
+        }
+
+        if ($datetime instanceof \DateTime) {
+            return $datetime->format('Y-m-d H:i:s');
+        }
+
+        if (is_string($datetime)) {
+            $parsedDate = \DateTime::createFromFormat('Y-m-d H:i:s', $datetime);
+            if ($parsedDate === false) {
+                // Try to parse as a general date string
+                try {
+                    $parsedDate = new \DateTime($datetime);
+                } catch (\Exception) {
+                    throw new \InvalidArgumentException("Invalid datetime string: {$datetime}");
+                }
+            }
+            return $parsedDate->format('Y-m-d H:i:s');
+        }
+
+        throw new \InvalidArgumentException('Datetime must be null, DateTime object, or string');
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getPingQuery(): string
+    {
+        return 'SELECT 1';
+    }
 }

@@ -11,18 +11,18 @@ return [
     // Core system jobs
     'jobs' => [
         [
-            'name' => 'session-cleanup',
+            'name' => 'session_cleaner',
             'schedule' => '0 0 * * *',  // Daily at midnight
             'handler_class' => 'Glueful\\Cron\\SessionCleaner',
             'parameters' => [],
             'description' => 'Cleans up expired access and refresh tokens from the database.',
-            'enabled' => env('SESSION_CLEANUP_ENABLED', true),
+            'enabled' => env('SESSION_CLEANER_ENABLED', true),
             'persistence' => false,
             'timeout' => 300,  // 5 minutes
             'retry_attempts' => 3,
         ],
         [
-            'name' => 'log-cleanup',
+            'name' => 'log_cleanup',
             'schedule' => '0 1 * * *',  // Daily at 1 AM
             'handler_class' => 'Glueful\\Cron\\LogCleaner',
             'parameters' => [
@@ -35,7 +35,7 @@ return [
             'retry_attempts' => 2,
         ],
         [
-            'name' => 'backup',
+            'name' => 'database_backup',
             'schedule' => env('DB_BACKUP_SCHEDULE', '0 2 * * *'),  // Daily at 2 AM
             'handler_class' => 'Glueful\\Cron\\DatabaseBackup',
             'parameters' => [
@@ -48,10 +48,10 @@ return [
             'retry_attempts' => 1,
         ],
         [
-            'name' => 'process-notification-retries',
+            'name' => 'notification_retry_processor',
             'schedule' => '*/10 * * * *',  // Every 10 minutes
-            'handler_class' => 'Glueful\\Console\\Commands\\Notifications\\ProcessNotificationRetriesCommand',
-            'parameters' => ['--limit' => 50],
+            'handler_class' => 'Glueful\\Notifications\\Services\\NotificationRetryService',
+            'parameters' => ['limit' => 50],
             'description' => 'Process queued notification retries',
             'enabled' => env('NOTIFICATION_RETRIES_ENABLED', true),
             'persistence' => false,
@@ -59,7 +59,7 @@ return [
             'retry_attempts' => 2,
         ],
         [
-            'name' => 'cache-maintenance',
+            'name' => 'cache_maintenance',
             'schedule' => '0 3 * * *',  // Daily at 3 AM
             'handler_class' => 'Glueful\\Cron\\CacheMaintenance',
             'parameters' => [],
@@ -67,6 +67,17 @@ return [
             'enabled' => env('CACHE_MAINTENANCE_ENABLED', true),
             'persistence' => false,
             'timeout' => 600,  // 10 minutes
+            'retry_attempts' => 2,
+        ],
+        [
+            'name' => 'queue_maintenance',
+            'schedule' => '*/15 * * * *',  // Every 15 minutes
+            'handler_class' => 'Glueful\\Queue\\Jobs\\QueueMaintenance',
+            'parameters' => [],
+            'description' => 'Perform queue system maintenance and optimization',
+            'enabled' => env('QUEUE_MAINTENANCE_ENABLED', true),
+            'persistence' => false,
+            'timeout' => 300,  // 5 minutes
             'retry_attempts' => 2,
         ],
     ],

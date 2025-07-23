@@ -33,7 +33,7 @@ return [
         'strategy' => env('API_VERSION_STRATEGY', 'url'), // url, header, both
         'current' => env('API_VERSION', 'v1'),
         'supported' => explode(',', env('API_SUPPORTED_VERSIONS', 'v1')),
-        'default' => env('API_DEFAULT_VERSION', 'v1'),
+        'default' => env('API_VERSION', 'v1'),
     ],
 
     // Application Paths
@@ -41,15 +41,21 @@ return [
         'base' => dirname(__DIR__),
         'api_base_directory' => dirname(__DIR__) . '/api/',
         'api_docs' => dirname(__DIR__) . '/docs/',
-        'cdn' => env('BASE_URL', 'http://localhost/glueful') . '/storage/cdn/',
-        'domain' => env('BASE_URL', 'http://localhost/glueful/'),
-        'api_base_url' => env('API_BASE_URL', 'http://localhost/glueful/api/'),
+        'api_docs_url' => env('BASE_URL', 'http://localhost') . '/api/' . env('API_VERSION', 'v1') . '/docs/',
+        'cdn' => env('BASE_URL', 'http://localhost') . '/storage/cdn/',
+        'domain' => env('BASE_URL', 'http://localhost'),
+        'api_base_url' => env('API_BASE_URL', 'http://localhost/api/') . env('API_VERSION', 'v1'),
         'uploads' => dirname(__DIR__) . '/storage/cdn/',
         'logs' => dirname(__DIR__) . '/storage/logs/',
         'cache' => dirname(__DIR__) . '/storage/cache/',
         'backups' => dirname(__DIR__) . '/storage/backups/',
+        'storage' => dirname(__DIR__) . '/storage/',
         'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
         'project_extensions' => dirname(__DIR__) . '/extensions/',
+        'archives' => dirname(__DIR__) . '/storage/archives/',
+        'migrations' => dirname(__DIR__) . '/database/migrations',
+        'app_events' => dirname(__DIR__) . '/app/Events',
+        'app_listeners' => dirname(__DIR__) . '/app/Events/Listeners',
     ],
 
     // Pagination Settings
@@ -82,19 +88,4 @@ return [
         ]
     ],
 
-    // Logging Configuration
-    'logging' => [
-        'log_channel' => env('LOG_CHANNEL', 'app'),
-        // Smart environment-aware log level (error in production, debug in development)
-        'log_level' => env('LOG_LEVEL', match (env('APP_ENV')) {
-            'production' => 'error',
-            'staging' => 'warning',
-            default => 'debug'
-        }),
-        'log_to_file' => env('LOG_TO_FILE', true),
-        'log_to_db' => env('LOG_TO_DB', true),
-        'log_file_path' => dirname(__DIR__) . '/storage/logs/',
-        'api_log_file' => env('API_LOG_FILE', 'api_debug_') . date('Y-m-d') . '.log',
-        'log_rotation_days' => env('LOG_ROTATION_DAYS', 30),
-    ],
 ];

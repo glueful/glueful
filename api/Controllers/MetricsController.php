@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
-use Glueful\Helpers\{Request, ExtensionsManager, DatabaseConnectionTrait};
-use Glueful\Database\Connection;
+use Glueful\Extensions\ExtensionManager;
 use Glueful\Database\Schema\SchemaManager;
 
-class MetricsController
+class MetricsController extends BaseController
 {
-    use DatabaseConnectionTrait;
-
     private SchemaManager $schemaManager;
 
-    public function __construct()
-    {
+    public function __construct(
+        ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
+        ?\Glueful\Auth\AuthenticationManager $authManager = null,
+        ?\Symfony\Component\HttpFoundation\Request $request = null
+    ) {
+        parent::__construct($repositoryFactory, $authManager, $request);
         $connection = $this->getConnection();
         $this->schemaManager = $connection->getSchemaManager();
     }
@@ -29,24 +30,39 @@ class MetricsController
      *
      * @return mixed HTTP response
      */
+    /**
+     * Get API metrics data without sending response (for internal use)
+     *
+     * @return array API metrics data
+     */
+    public function getApiMetricsData(): array
+    {
+        // Cache API metrics with permission-aware caching
+        return $this->cacheByPermission(
+            'api_metrics_data',
+            function () {
+                $metricsService = new \Glueful\Services\ApiMetricsService();
+                return $metricsService->getApiMetrics();
+            },
+            $this->isAdmin() ? 60 : 300 // 1 min for admins, 5 min for users
+        );
+    }
+
     public function getApiMetrics(): mixed
     {
-        try {
-            // Use the real API metrics service to get metrics
-            $metricsService = new \Glueful\Services\ApiMetricsService();
-            $endpointMetrics = $metricsService->getApiMetrics();
+        $this->requirePermission('system.metrics.view', 'metrics:api');
+        $this->conditionalRateLimit('api_metrics_view');
 
-            return Response::ok($endpointMetrics, 'API metrics retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get API metrics error: " . $e->getMessage());
-            return Response::error(
-                'Failed to get API metrics',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'METRICS_FETCH_FAILED',
-                ['original_error' => $e->getMessage()]
-            )->send();
-        }
+
+        // Use the new method to get data
+        $endpointMetrics = $this->getApiMetricsData();
+
+        // Use private caching for metrics (sensitive data)
+        $ttl = $this->isAdmin() ? 60 : 300; // 1 min for admins, 5 min for users
+        return $this->privateCached(
+            Response::success($endpointMetrics, 'API metrics retrieved successfully'),
+            $ttl
+        );
     }
 
     /**
@@ -58,29 +74,31 @@ class MetricsController
      */
     public function resetApiMetrics(): mixed
     {
-        try {
-            $metricsService = new \Glueful\Services\ApiMetricsService();
-            $success = $metricsService->resetApiMetrics();
+        $this->requirePermission('system.metrics.reset', 'metrics:api');
+        $this->rateLimit('metrics_reset', 5, 3600);
+        $this->requireLowRiskBehavior(0.4, 'metrics_reset');
 
-            if ($success) {
-                return Response::ok(null, 'API metrics reset successfully')->send();
-            } else {
-                return Response::error(
-                    'Failed to reset API metrics',
-                    Response::HTTP_INTERNAL_SERVER_ERROR,
-                    Response::ERROR_SERVER,
-                    'METRICS_RESET_FAILED'
-                )->send();
-            }
-        } catch (\Exception $e) {
-            error_log("Reset API metrics error: " . $e->getMessage());
+
+        $metricsService = new \Glueful\Services\ApiMetricsService();
+        $success = $metricsService->resetApiMetrics();
+
+        if ($success) {
+            // Invalidate all metrics-related caches
+            $this->invalidateCache([
+                'api_metrics_data',
+                'system_health_metrics',
+                'admin_cache',
+                'user_cache',
+                'metrics:api',
+                'metrics:system'
+            ]);
+
+            return Response::success(null, 'API metrics reset successfully');
+        } else {
             return Response::error(
                 'Failed to reset API metrics',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'METRICS_RESET_FAILED',
-                ['original_error' => $e->getMessage()]
-            )->send();
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            );
         }
     }
 
@@ -99,61 +117,121 @@ class MetricsController
      *
      * @return mixed HTTP response with system health metrics
      */
+    /**
+     * Get system health data without sending response (for internal use)
+     *
+     * @return array System health data
+     */
+    public function getSystemHealthData(): array
+    {
+        // Use permission-aware caching for system health data
+        return $this->cacheByPermission(
+            'system_health_metrics',
+            function () {
+                return $this->generateSystemHealthMetrics();
+            },
+            $this->isAdmin() ? 300 : 600 // 5 min for admins, 10 min for users
+        );
+    }
+
     public function systemHealth(): mixed
     {
+        $this->requirePermission('system.health.view', 'metrics:system');
+        $this->multiLevelRateLimit('system_health', [
+            'user' => ['attempts' => 60, 'window' => 60, 'adaptive' => true],
+            'ip' => ['attempts' => 100, 'window' => 60, 'adaptive' => false]
+        ]);
+        $this->requireLowRiskBehavior(0.6, 'system_health_access');
+
+
+        // Use the new method to get data
+        $metrics = $this->getSystemHealthData();
+
+        // Use private caching for system health metrics (sensitive data)
+        $ttl = $this->isAdmin() ? 300 : 600; // 5 min for admins, 10 min for users
+        return $this->privateCached(
+            Response::success($metrics, 'System health metrics retrieved successfully'),
+            $ttl
+        );
+    }
+
+    /**
+     * Generate system health metrics data
+     *
+     * @return array System health metrics
+     */
+    private function generateSystemHealthMetrics(): array
+    {
+        $metrics = [];
+
+        // Filter PHP information based on permissions
+        $phpInfo = [
+            'version' => phpversion(),
+            'memory_limit' => ini_get('memory_limit'),
+            'max_execution_time' => ini_get('max_execution_time'),
+        ];
+
+        // Add sensitive PHP info only for admins
+        if ($this->isAdmin()) {
+            $phpInfo['upload_max_filesize'] = ini_get('upload_max_filesize');
+            $phpInfo['post_max_size'] = ini_get('post_max_size');
+            $phpInfo['extensions'] = get_loaded_extensions();
+        }
+
+        $metrics['php'] = $phpInfo;
+
+        // Memory usage
+        $metrics['memory'] = [
+            'current_usage' => $this->formatBytes(memory_get_usage(true)),
+            'peak_usage' => $this->formatBytes(memory_get_peak_usage(true)),
+        ];
+
+        // Database health
         try {
-            $metrics = [];
+            $dbStartTime = microtime(true);
+            $databaseTables = $this->schemaManager->getTables();
+            $dbResponseTime = microtime(true) - $dbStartTime;
 
-            // PHP information
-            $metrics['php'] = [
-                'version' => phpversion(),
-                'memory_limit' => ini_get('memory_limit'),
-                'max_execution_time' => ini_get('max_execution_time'),
-                'upload_max_filesize' => ini_get('upload_max_filesize'),
-                'post_max_size' => ini_get('post_max_size'),
-                'extensions' => get_loaded_extensions(),
+            $dbMetrics = [
+                'status' => 'connected',
+                'response_time_ms' => round($dbResponseTime * 1000, 2),
+                'table_count' => count($databaseTables),
             ];
 
-            // Memory usage
-            $metrics['memory'] = [
-                'current_usage' => $this->formatBytes(memory_get_usage(true)),
-                'peak_usage' => $this->formatBytes(memory_get_peak_usage(true)),
-            ];
-
-            // Database health
-            try {
-                $dbStartTime = microtime(true);
-                $databaseTables = $this->schemaManager->getTables();
-                $dbResponseTime = microtime(true) - $dbStartTime;
-
-                $metrics['database'] = [
-                    'status' => 'connected',
-                    'response_time_ms' => round($dbResponseTime * 1000, 2),
-                    'table_count' => count($databaseTables),
-                ];
-
+            // Add sensitive database info only for admins
+            if ($this->isAdmin()) {
                 // Get database size (total of all tables)
                 $totalSize = 0;
                 foreach ($databaseTables as $table) {
                     $tableSize = $this->schemaManager->getTableSize($table);
                     $totalSize += $tableSize['size_bytes'] ?? 0;
                 }
-                $metrics['database']['total_size'] = $this->formatBytes($totalSize);
-            } catch (\Exception $e) {
-                $metrics['database'] = [
-                    'status' => 'error',
-                    'error' => $e->getMessage()
-                ];
+                $dbMetrics['total_size'] = $this->formatBytes($totalSize);
+                $dbMetrics['table_names'] = $databaseTables;
             }
+
+            $metrics['database'] = $dbMetrics;
+        } catch (\Exception $e) {
+            $metrics['database'] = [
+                'status' => 'error',
+                'error' => $this->isAdmin() ? $e->getMessage() : 'Database connection failed'
+            ];
+        }
 
             // File system metrics
             $storagePath = realpath(__DIR__ . '/../../storage');
-            $metrics['file_system'] = [
-                'storage_path' => $storagePath,
+            $fileSystemMetrics = [
                 'storage_free_space' => $this->formatBytes(disk_free_space($storagePath)),
                 'storage_total_space' => $this->formatBytes(disk_total_space($storagePath)),
                 'storage_usage_percent' => $this->calculateStoragePercentage($storagePath)
             ];
+
+            // Add sensitive file system info only for admins
+            if ($this->isAdmin()) {
+                $fileSystemMetrics['storage_path'] = $storagePath;
+            }
+
+            $metrics['file_system'] = $fileSystemMetrics;
 
             // Check for log files
             $logPath = realpath(__DIR__ . '/../../storage/logs');
@@ -235,27 +313,45 @@ class MetricsController
                 }
             }
 
-            // Extensions status
-            $extensions = ExtensionsManager::getLoadedExtensions();
-            $enabledExtensions = ExtensionsManager::getEnabledExtensions();
+            // Extensions status - get from config without loading classes
+            try {
+                $extensionManager = container()->get(ExtensionManager::class);
+                $globalConfig = $extensionManager->getGlobalConfig();
+                $extensionConfigFile = $globalConfig['config_path'] ?? 'config/extensions.json';
+                $content = file_get_contents($extensionConfigFile);
+                $config = json_decode($content, true);
 
-            $extensionStatus = [];
-            foreach ($extensions as $extension) {
-                $reflection = new \ReflectionClass($extension);
-                $shortName = $reflection->getShortName();
-                $version = ExtensionsManager::getExtensionMetadata($shortName, 'version');
-                $extensionStatus[] = [
-                    'name' => $shortName,
-                    'status' => in_array($shortName, $enabledExtensions) ? 'enabled' : 'disabled',
-                    'version' => is_string($version) ? $version : 'unknown',
+                $extensionStatus = [];
+                $enabledCount = 0;
+
+                if (is_array($config) && isset($config['extensions'])) {
+                    foreach ($config['extensions'] as $extensionName => $extensionInfo) {
+                        $isEnabled = $extensionInfo['enabled'] ?? false;
+                        if ($isEnabled) {
+                            $enabledCount++;
+                        }
+
+                        $extensionStatus[] = [
+                            'name' => $extensionName,
+                            'status' => $isEnabled ? 'enabled' : 'disabled',
+                            'version' => $extensionInfo['version'] ?? 'unknown',
+                        ];
+                    }
+                }
+
+                $metrics['extensions'] = [
+                    'total_count' => count($extensionStatus),
+                    'enabled_count' => $enabledCount,
+                    'extensions' => $extensionStatus
+                ];
+            } catch (\Exception $e) {
+                $metrics['extensions'] = [
+                    'total_count' => 0,
+                    'enabled_count' => 0,
+                    'extensions' => [],
+                    'error' => 'Failed to load extension information: ' . $e->getMessage()
                 ];
             }
-
-            $metrics['extensions'] = [
-                'total_count' => count($extensions),
-                'enabled_count' => count($enabledExtensions),
-                'extensions' => $extensionStatus
-            ];
 
             // Server load
             if (function_exists('sys_getloadavg')) {
@@ -282,17 +378,8 @@ class MetricsController
                 'timezone' => date_default_timezone_get()
             ];
 
-            return Response::ok($metrics, 'System health metrics retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("System health check error: " . $e->getMessage());
-            return Response::error(
-                'Failed to retrieve system health metrics',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'HEALTH_CHECK_FAILED',
-                ['original_error' => $e->getMessage()]
-            )->send();
-        }
+            // Apply user context filtering before returning
+            return $this->filterMetricsByUserContext($metrics);
     }
 
     /**
@@ -360,7 +447,7 @@ class MetricsController
      * @param int $misses Number of cache misses
      * @return string Formatted hit rate percentage
      */
-    private function calculateHitRate(int $hits, int $misses): string
+    private function calculateHitRate(float|int $hits, float|int $misses): string
     {
         if ($hits > 0) {
             return round($hits / ($hits + $misses) * 100, 2) . '%';
@@ -389,43 +476,153 @@ class MetricsController
      */
     public function getExtensionHealth(?array $extension): mixed
     {
-        try {
-            if (!isset($extension['name'])) {
-                return Response::error(
-                    'Extension name is required',
-                    Response::HTTP_BAD_REQUEST,
-                    Response::ERROR_VALIDATION,
-                    'MISSING_EXTENSION_NAME'
-                )->send();
-            }
+        $this->requirePermission('system.extensions.health.view', 'metrics:extensions');
+        $this->rateLimit('extension_health', 30, 60);
 
-            $extensionName = $extension['name'];
+        $extensionName = $extension['name'] ?? 'unknown';
 
-            if (!ExtensionsManager::extensionExists($extensionName)) {
-                return Response::error(
-                    'Extension not found',
-                    Response::HTTP_NOT_FOUND,
-                    Response::ERROR_NOT_FOUND,
-                    'EXTENSION_NOT_FOUND',
-                    ['extension_name' => $extensionName]
-                )->send();
-            }
 
-            $health = ExtensionsManager::checkExtensionHealth($extensionName);
-
-            return Response::ok([
-                'extension' => $extensionName,
-                'health' => $health
-            ], 'Extension health status retrieved successfully')->send();
-        } catch (\Exception $e) {
-            error_log("Get extension health error: " . $e->getMessage());
+        if (!isset($extension['name'])) {
             return Response::error(
-                'Failed to get extension health',
-                Response::HTTP_INTERNAL_SERVER_ERROR,
-                Response::ERROR_SERVER,
-                'EXTENSION_HEALTH_FAILED',
-                ['original_error' => $e->getMessage()]
-            )->send();
+                'Extension name is required',
+                Response::HTTP_BAD_REQUEST
+            );
         }
+
+        $extensionName = $extension['name'];
+
+        $extensionManager = container()->get(ExtensionManager::class);
+        if (!$extensionManager->isInstalled($extensionName)) {
+            return Response::error(
+                'Extension not found',
+                Response::HTTP_NOT_FOUND,
+                ['extension_name' => $extensionName]
+            );
+        }
+
+        // Cache extension health data
+        $health = $this->cacheResponse(
+            "extension_health_{$extensionName}",
+            function () use ($extensionName) {
+                $extensionManager = container()->get(ExtensionManager::class);
+                return $extensionManager->checkHealth($extensionName);
+            },
+            600, // 10 minutes
+            ['extensions', 'extension:' . $extensionName]
+        );
+
+        // Filter health data based on permissions
+        $healthData = $this->filterExtensionHealthData($health, $extensionName);
+
+        return $this->withSecurityHeaders(
+            $this->withCacheHeaders(
+                Response::success([
+                    'extension' => $extensionName,
+                    'health' => $healthData
+                ], 'Extension health status retrieved successfully'),
+                [
+                    'public' => false,
+                    'max_age' => 600,
+                    'must_revalidate' => true,
+                    'vary' => ['Authorization']
+                ]
+            )
+        );
+    }
+
+    /**
+     * Filter extension health data based on user permissions
+     *
+     * @param array $health Raw health data
+     * @param string $extensionName Extension name
+     * @return array Filtered health data
+     */
+    private function filterExtensionHealthData(array $health, string $extensionName): array
+    {
+        // Basic health info available to all users with permission
+        $filteredHealth = [
+            'status' => $health['status'] ?? 'unknown',
+            'enabled' => $health['enabled'] ?? false
+        ];
+
+        // Add more detailed information for admins
+        if ($this->isAdmin()) {
+            $filteredHealth = array_merge($filteredHealth, [
+                'version' => $health['version'] ?? 'unknown',
+                'last_checked' => $health['last_checked'] ?? null,
+                'errors' => $health['errors'] ?? [],
+                'warnings' => $health['warnings'] ?? [],
+                'dependencies' => $health['dependencies'] ?? [],
+                'file_integrity' => $health['file_integrity'] ?? null
+            ]);
+        } elseif ($this->can('extensions.detailed_health', $extensionName)) {
+            // Premium users or those with detailed permissions get version info
+            $filteredHealth['version'] = $health['version'] ?? 'unknown';
+            $filteredHealth['last_checked'] = $health['last_checked'] ?? null;
+        }
+
+        return $filteredHealth;
+    }
+
+    /**
+     * Apply context-aware data filtering for system metrics
+     *
+     * @param array $metrics Raw metrics data
+     * @return array Filtered metrics based on user context
+     */
+    private function filterMetricsByUserContext(array $metrics): array
+    {
+        if ($this->isAdmin()) {
+            // Admins get all data
+            return $metrics;
+        }
+
+        // Remove sensitive paths and detailed system information for non-admins
+        if (isset($metrics['file_system']['storage_path'])) {
+            unset($metrics['file_system']['storage_path']);
+        }
+
+        if (isset($metrics['logs']['recent_logs']['recent_entries'])) {
+            // Limit log entries for non-admins
+            $metrics['logs']['recent_logs']['recent_entries'] = array_slice(
+                $metrics['logs']['recent_logs']['recent_entries'],
+                -3 // Only last 3 entries
+            );
+        }
+
+        // Remove detailed PHP extensions list for non-admins
+        if (isset($metrics['php']['extensions'])) {
+            $metrics['php']['extensions'] = count($metrics['php']['extensions']);
+        }
+
+        return $metrics;
+    }
+
+    /**
+     * Add security headers to response for metrics endpoints
+     *
+     * @param Response $response Response object
+     * @return Response Response with security headers
+     */
+    private function withSecurityHeaders(Response $response): Response
+    {
+        // Security headers for sensitive metrics data
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+        header('X-XSS-Protection: 1; mode=block');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+
+        // Content Security Policy for JSON responses
+        header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+
+        // Ensure no sensitive data is cached by browsers
+        if (!$this->isAdmin()) {
+            header('Cache-Control: private, no-store, no-cache, must-revalidate');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+        }
+
+        return $response;
     }
 }

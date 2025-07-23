@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: mailto:security@glueful.com
+    about: Please report security vulnerabilities via email
+  - name: Community Support
+    url: https://github.com/glueful/glueful/discussions
+    about: Ask questions and discuss with the community
+  - name: Documentation
+    url: https://docs.glueful.com
+    about: Check our documentation for guides and tutorials

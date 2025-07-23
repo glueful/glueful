@@ -3,7 +3,8 @@
 namespace Glueful\Cache;
 
 use Glueful\Cache\CDN\CDNAdapterInterface;
-use Glueful\Helpers\ExtensionsManager;
+use Glueful\Extensions\ExtensionManager;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Service for edge caching functionality.
@@ -15,11 +16,11 @@ use Glueful\Helpers\ExtensionsManager;
 class EdgeCacheService
 {
     /**
-     * The cache engine instance
+     * The cache store instance
      *
-     * @var CacheEngine
+     * @var CacheStore|null
      */
-    private $cacheEngine;
+    private ?CacheStore $cacheStore = null;
 
     /**
      * The CDN adapter instance
@@ -38,12 +39,22 @@ class EdgeCacheService
     /**
      * Constructor for the Edge Cache Service
      *
-     * @param CacheEngine|null $cacheEngine The cache engine to use
+     * @param CacheStore|null $cacheStore The cache store to use
      * @param CDNAdapterInterface|null $cdnAdapter A specific CDN adapter to use
      */
-    public function __construct(?CacheEngine $cacheEngine = null, ?CDNAdapterInterface $cdnAdapter = null)
+    public function __construct(?CacheStore $cacheStore = null, ?CDNAdapterInterface $cdnAdapter = null)
     {
-        $this->cacheEngine = $cacheEngine ?? new CacheEngine();
+        // Set up cache store - try provided instance or get from container
+        $this->cacheStore = $cacheStore;
+
+        // If no cache provided, try to get from helper
+        if ($this->cacheStore === null) {
+            $this->cacheStore = CacheHelper::createCacheInstance();
+            if ($this->cacheStore === null) {
+                // Log but continue - edge cache service might work without local cache
+                error_log('EdgeCacheService: Could not create CacheStore instance');
+            }
+        }
         $this->config = config('cache.edge', []);
 
         // If no adapter is provided, attempt to resolve one
@@ -207,10 +218,37 @@ class EdgeCacheService
 
         try {
             // Get the extension manager
-            $extensionManager = new ExtensionsManager();
+            $extensionManager = container()->get(ExtensionManager::class);
 
-            // Try to resolve an adapter for the configured provider
-            return $extensionManager->resolveCDNAdapter($this->config['provider'], $this->config);
+            // Normalize provider name for consistent lookup
+            $normalizedProvider = strtolower($this->config['provider']);
+
+            // Look for extensions with CDN adapters
+            $loadedExtensions = $extensionManager->getLoadedExtensions();
+            foreach ($loadedExtensions as $extension) {
+                if (!method_exists($extension, 'registerCDNAdapters')) {
+                    continue;
+                }
+
+                // Get the adapters this extension provides
+                $adapters = $extension::registerCDNAdapters();
+
+                // Check if this extension provides the requested adapter
+                foreach ($adapters as $adapterProvider => $adapterClass) {
+                    if (strtolower($adapterProvider) === $normalizedProvider) {
+                        // Found the adapter, try to instantiate it
+                        if (
+                            class_exists($adapterClass) &&
+                            is_subclass_of($adapterClass, CDNAdapterInterface::class)
+                        ) {
+                            return new $adapterClass($this->config);
+                        }
+                    }
+                }
+            }
+
+            // No adapter found for this provider
+            return null;
         } catch (\Throwable $e) {
             // Log the error
             error_log('Failed to resolve CDN adapter: ' . $e->getMessage());

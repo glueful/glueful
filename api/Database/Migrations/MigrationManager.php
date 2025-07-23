@@ -8,7 +8,10 @@ use Glueful\Database\Migrations\MigrationInterface;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
-use RuntimeException;
+use Glueful\Extensions\ExtensionManager;
+use Glueful\Exceptions\DatabaseException;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Services\FileFinder;
 
 /**
  * Database Migration Manager
@@ -50,6 +53,12 @@ class MigrationManager
     /** @var string Directory containing migration files */
     private string $migrationsPath;
 
+    /** @var ExtensionManager Extensions manager for checking enabled extensions */
+    private ExtensionManager $extensionsManager;
+
+    /** @var FileFinder File finder service for migration discovery */
+    private FileFinder $fileFinder;
+
     /** @var string Name of migrations tracking table */
     private const VERSION_TABLE = 'migrations';
 
@@ -59,15 +68,22 @@ class MigrationManager
      * Sets up schema manager and ensures version table exists.
      *
      * @param string|null $migrationsPath Custom path to migrations directory
-     * @throws RuntimeException If database connection fails
+     * @param ExtensionManager|null $extensionsManager Extensions manager instance
+     * @param FileFinder|null $fileFinder File finder service instance
+     * @throws \Glueful\Exceptions\DatabaseException If database connection fails
      */
-    public function __construct(?string $migrationsPath = null)
-    {
+    public function __construct(
+        ?string $migrationsPath = null,
+        ?ExtensionManager $extensionsManager = null,
+        ?FileFinder $fileFinder = null
+    ) {
         $connection = new Connection();
         $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $this->schema = $connection->getSchemaManager();
 
-        $this->migrationsPath = $migrationsPath ?? dirname(__DIR__, 3) . '/database/migrations';
+        $this->migrationsPath = $migrationsPath ?? config(('app.paths.migrations'));
+        $this->extensionsManager = $extensionsManager ?? container()->get(ExtensionManager::class);
+        $this->fileFinder = $fileFinder ?? container()->get(FileFinder::class);
         // echo $this->migrationsPath;
         // exit;
         $this->ensureVersionTable();
@@ -83,6 +99,7 @@ class MigrationManager
      * - applied_at: Timestamp of execution
      * - checksum: File hash for integrity check
      * - description: Migration description
+     * - extension: Extension name (NULL for core migrations)
      */
     private function ensureVersionTable(): void
     {
@@ -93,7 +110,8 @@ class MigrationManager
             'batch' => 'INTEGER NOT NULL',
             'applied_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
             'checksum' => 'VARCHAR(64) NOT NULL',
-            'description' => 'TEXT'
+            'description' => 'TEXT',
+            'extension' => 'VARCHAR(100) DEFAULT NULL'
         ])->addIndex([
             'type' => 'UNIQUE',
             'column' => 'migration',
@@ -106,7 +124,7 @@ class MigrationManager
      *
      * Returns list of migration files that haven't been executed:
      * - Scans migrations directory for .php files
-     * - Scans extensions migration directories
+     * - Scans ENABLED extensions migration directories only
      * - Compares against applied migrations
      * - Returns array of pending migration paths
      *
@@ -116,25 +134,33 @@ class MigrationManager
     {
         $applied = $this->getAppliedMigrations();
 
-        // Get migrations from main directory
-        $files = glob($this->migrationsPath . '/*.php');
+        // Get migrations from main directory using FileFinder
+        $files = [];
+        $mainMigrations = $this->fileFinder->findMigrations($this->migrationsPath);
+        foreach ($mainMigrations as $file) {
+            $files[] = $file->getPathname();
+        }
 
-        // Get migrations from extensions
-        $extensionsDir = dirname(__DIR__, 3) . '/extensions';
-        if (is_dir($extensionsDir)) {
-            // Get all extension directories
-            $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
+        // Get migrations from enabled extensions only
+        $enabledExtensions = $this->extensionsManager->listEnabled();
 
-            foreach ($extensions as $extension) {
-                $migrationDir = $extension . '/migrations';
-                if (is_dir($migrationDir)) {
-                    $extensionFiles = glob($migrationDir . '/*.php');
-                    $files = array_merge($files, $extensionFiles);
+        foreach ($enabledExtensions as $extensionName) {
+            $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+            if ($extensionPath) {
+                $migrationDir = $extensionPath . '/migrations';
+                $extensionMigrations = $this->fileFinder->findMigrations($migrationDir);
+                foreach ($extensionMigrations as $file) {
+                    $files[] = $file->getPathname();
                 }
             }
         }
 
-        return array_filter($files, fn($file) => !in_array(basename($file), $applied));
+        $pendingFiles = array_filter($files, fn($file) => !in_array(basename($file), $applied));
+
+        // Sort files by filename to ensure proper execution order
+        usort($pendingFiles, fn($a, $b) => basename($a) <=> basename($b));
+
+        return $pendingFiles;
     }
 
     /**
@@ -150,6 +176,16 @@ class MigrationManager
         ->get();
 
         return array_column($result, 'migration');
+    }
+
+    /**
+     * Get list of applied migrations (public method)
+     *
+     * @return array<string> List of applied migration filenames
+     */
+    public function getAppliedMigrationsList(): array
+    {
+        return $this->getAppliedMigrations();
     }
 
     /**
@@ -199,7 +235,7 @@ class MigrationManager
      * 1. Loads migration class
      * 2. Verifies interface implementation
      * 3. Executes migration within transaction
-     * 4. Records successful execution
+     * 4. Records successful execution with extension tracking
      *
      * @param string $file Migration file path
      * @param int|null $batch Optional batch number
@@ -229,18 +265,36 @@ class MigrationManager
         if (!class_exists($fullClassName)) {
             // Fall back to non-namespaced class if namespace detection failed
             if (!class_exists($className)) {
-                throw new RuntimeException("Migration class $className not found in $file");
+                throw DatabaseException::queryFailed(
+                    'MIGRATION_ERROR',
+                    "Migration class $className not found in $file"
+                );
             }
             $fullClassName = $className;
         }
 
         $migration = new $fullClassName();
         if (!$migration instanceof MigrationInterface) {
-            throw new RuntimeException("Migration $fullClassName must implement MigrationInterface");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_validation',
+                "Migration $fullClassName must implement MigrationInterface"
+            );
         }
 
         $filename = basename($file);
         $checksum = hash_file('sha256', $file);
+
+        // Determine if this is an extension migration
+        $extensionName = null;
+        $enabledExtensions = $this->extensionsManager->listEnabled();
+
+        foreach ($enabledExtensions as $extension) {
+            $extensionPath = $this->extensionsManager->getExtensionPath($extension);
+            if ($extensionPath && strpos($file, $extensionPath) === 0) {
+                $extensionName = $extension;
+                break;
+            }
+        }
 
         try {
             // Make sure no transaction is active before starting a new one
@@ -257,7 +311,8 @@ class MigrationManager
                     'migration' => $filename,
                     'batch' => $batch ?? $this->getNextBatchNumber(),
                     'checksum' => $checksum,
-                    'description' => $migration->getDescription()
+                    'description' => $migration->getDescription(),
+                    'extension' => $extensionName
                 ]
             );
 
@@ -363,19 +418,28 @@ class MigrationManager
         // First check in main migrations directory
         $file = $this->migrationsPath . '/' . $filename;
 
-        // If not found in main directory, check in extension directories
+        // If not found in main directory, check in enabled extension directories
         if (!file_exists($file)) {
-            $extensionsDir = dirname(__DIR__, 3) . '/extensions';
             $found = false;
+            $enabledExtensions = $this->extensionsManager->listEnabled();
 
-            if (is_dir($extensionsDir)) {
-                $extensions = array_filter(glob($extensionsDir . '/*'), 'is_dir');
-
-                foreach ($extensions as $extension) {
-                    $migrationDir = $extension . '/migrations';
+            foreach ($enabledExtensions as $extensionName) {
+                $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+                if ($extensionPath) {
+                    $migrationDir = $extensionPath . '/migrations';
                     $extensionFile = $migrationDir . '/' . $filename;
 
-                    if (is_dir($migrationDir) && file_exists($extensionFile)) {
+                    // Use FileFinder to check if migration directory exists and file exists
+                    $extensionMigrations = $this->fileFinder->findMigrations($migrationDir);
+                    $matchingFile = null;
+                    foreach ($extensionMigrations as $migFile) {
+                        if ($migFile->getFilename() === $filename) {
+                            $matchingFile = $migFile;
+                            break;
+                        }
+                    }
+
+                    if ($matchingFile && file_exists($extensionFile)) {
                         $file = $extensionFile;
                         $found = true;
                         break;
@@ -384,7 +448,7 @@ class MigrationManager
             }
 
             if (!$found) {
-                return ['success' => false, 'file' => $filename, 'error' => 'File not found'];
+                return ['success' => false, 'file' => $filename, 'error' => 'File not found in enabled extensions'];
             }
         }
 
@@ -393,12 +457,18 @@ class MigrationManager
         $className = preg_replace('/^\d+_/', '', $className); // Removes any leading digits and underscore
 
         if (!class_exists($className)) {
-            throw new RuntimeException("Migration class $className not found in $file");
+            throw DatabaseException::queryFailed(
+                'MIGRATION_ERROR',
+                "Migration class $className not found in $file"
+            );
         }
 
         $migration = new $className();
         if (!$migration instanceof MigrationInterface) {
-            throw new RuntimeException("Migration $className must implement MigrationInterface");
+            throw BusinessLogicException::operationNotAllowed(
+                'migration_validation',
+                "Migration $className must implement MigrationInterface"
+            );
         }
 
         try {

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Glueful\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+use Glueful\Permissions\Helpers\PermissionHelper;
 
 /**
  * JWT Authentication Provider
@@ -14,7 +14,7 @@ use Glueful\Logging\AuditEvent;
  * Implements authentication using JWT tokens and the existing
  * authentication infrastructure in the Glueful framework.
  *
- * This provider leverages the TokenManager and SessionCacheManager
+ * This provider leverages the TokenManager and TokenStorageService
  * while providing a standardized interface for authentication.
  */
 class JwtAuthenticationProvider implements AuthenticationProviderInterface
@@ -28,7 +28,6 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
     public function authenticate(Request $request): ?array
     {
         $this->lastError = null;
-        $auditLogger = AuditLogger::getInstance();
         $clientIp = $request->getClientIp();
 
         try {
@@ -37,42 +36,15 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
 
             if (!$token) {
                 $this->lastError = 'No authentication token provided';
-
-                // Log authentication failure - no token
-                $auditLogger->audit(
-                    AuditEvent::CATEGORY_AUTH,
-                    'token_validation_failure',
-                    AuditEvent::SEVERITY_WARNING,
-                    [
-                        'reason' => 'no_token_provided',
-                        'ip_address' => $clientIp,
-                        'user_agent' => $request->headers->get('User-Agent'),
-                        'uri' => $request->getRequestUri()
-                    ]
-                );
-
                 return null;
             }
 
-            // Validate token and get session data
-            $sessionData = SessionCacheManager::getSession($token);
+            // Validate token and get session data using TokenStorageService
+            $tokenStorage = new TokenStorageService();
+            $sessionData = $tokenStorage->getSessionByAccessToken($token);
 
             if (!$sessionData) {
                 $this->lastError = 'Invalid or expired authentication token';
-
-                // Log authentication failure - invalid token
-                $auditLogger->audit(
-                    AuditEvent::CATEGORY_AUTH,
-                    'token_validation_failure',
-                    AuditEvent::SEVERITY_WARNING,
-                    [
-                        'reason' => 'invalid_or_expired_token',
-                        'ip_address' => $clientIp,
-                        'user_agent' => $request->headers->get('User-Agent'),
-                        'uri' => $request->getRequestUri()
-                    ]
-                );
-
                 return null;
             }
 
@@ -81,38 +53,9 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             $request->attributes->set('user_id', $sessionData['uuid'] ?? null);
             $request->attributes->set('user_data', $sessionData);
 
-            // Log successful authentication via token
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_validation_success',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'user_id' => $sessionData['uuid'] ?? null,
-                    'username' => $sessionData['username'] ?? null,
-                    'ip_address' => $clientIp,
-                    'user_agent' => $request->headers->get('User-Agent'),
-                    'uri' => $request->getRequestUri()
-                ]
-            );
-
             return $sessionData;
         } catch (\Throwable $e) {
             $this->lastError = 'Authentication error: ' . $e->getMessage();
-
-            // Log authentication error - exception
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_validation_error',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'reason' => 'exception',
-                    'message' => $e->getMessage(),
-                    'ip_address' => $clientIp,
-                    'user_agent' => $request->headers->get('User-Agent'),
-                    'uri' => $request->getRequestUri()
-                ]
-            );
-
             return null;
         }
     }
@@ -122,28 +65,32 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function isAdmin(array $userData): bool
     {
-        // Get the actual user data from the nested structure if available
         $user = $userData['user'] ?? $userData;
 
-        // First check if there's an explicit is_admin flag in the user data
-        if (isset($user['is_admin']) && $user['is_admin'] === true) {
-            error_log("Admin access granted through is_admin flag for user: " . ($user['username'] ?? 'unknown'));
+        // Fallback to is_admin flag if no UUID available
+        if (!isset($user['uuid'])) {
+            return !empty($user['is_admin']);
+        }
+
+        // Check if permission system is available
+        if (!PermissionHelper::isAvailable()) {
+            // Fall back to is_admin flag
+            return !empty($user['is_admin']);
+        }
+
+        // Check if user has admin access using PermissionHelper
+        $hasAdminAccess = PermissionHelper::canAccessAdmin(
+            $user['uuid'],
+            ['auth_check' => true, 'provider' => 'jwt']
+        );
+
+        // If permission check fails, fall back to is_admin flag as safety net
+        if (!$hasAdminAccess && !empty($user['is_admin'])) {
+            error_log("Admin permission check failed for user {$user['uuid']}, falling back to is_admin flag");
             return true;
         }
 
-        // Also check for superuser role as before
-        if (isset($user['roles']) && is_array($user['roles'])) {
-            foreach ($user['roles'] as $role) {
-                if (isset($role['name']) && $role['name'] === 'superuser') {
-                    return true;
-                }
-            }
-        }
-
-        error_log("Admin access denied for user: " . ($user['username'] ?? 'unknown') .
-                  ", roles: " . (isset($user['roles']) ? json_encode($user['roles']) : 'none'));
-
-        return false;
+        return $hasAdminAccess;
     }
 
     /**
@@ -181,56 +128,11 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function validateToken(string $token): bool
     {
-        $auditLogger = AuditLogger::getInstance();
-        $tokenData = null;
-
-        // Extract payload from token for logging if possible
-        try {
-            $parts = explode('.', $token);
-            if (count($parts) === 3) {
-                $payloadJson = base64_decode(strtr($parts[1], '-_', '+/'));
-                if ($payloadJson) {
-                    $tokenData = json_decode($payloadJson, true);
-                }
-            }
-        } catch (\Throwable $e) {
-            // Silently fail, this is just for logging purposes
-            $tokenData = null;
-        }
-
         try {
             // Use JWTService to verify the token
-            $isValid = JWTService::verify($token);
-
-            // Log the validation result
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_standalone_validation',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'result' => $isValid ? 'valid' : 'invalid',
-                    'user_id' => $tokenData['sub'] ?? null,
-                    'token_type' => $tokenData['type'] ?? 'unknown',
-                    'token_expiry' => $tokenData['exp'] ?? null
-                ]
-            );
-
-            return $isValid;
+            return JWTService::verify($token);
         } catch (\Throwable $e) {
             $this->lastError = 'Token validation error: ' . $e->getMessage();
-
-            // Log validation error
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_standalone_validation_error',
-                AuditEvent::SEVERITY_ERROR,
-                [
-                    'error' => $e->getMessage(),
-                    'user_id' => $tokenData['sub'] ?? null,
-                    'token_type' => $tokenData['type'] ?? 'unknown'
-                ]
-            );
-
             return false;
         }
     }
@@ -240,53 +142,25 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
      */
     public function canHandleToken(string $token): bool
     {
-        $auditLogger = AuditLogger::getInstance();
-        $result = false;
-        $reason = 'unknown';
-
         try {
             // Check if the token is a valid JWT structure
             // JWT tokens consist of 3 parts separated by periods
             $parts = explode('.', $token);
             if (count($parts) !== 3) {
-                $reason = 'invalid_format';
-                $result = false;
                 return false;
             }
 
             // Try to decode the header (first part)
             $headerJson = base64_decode(strtr($parts[0], '-_', '+/'));
             if (!$headerJson) {
-                $reason = 'invalid_header_encoding';
-                $result = false;
                 return false;
             }
 
             $header = json_decode($headerJson, true);
             // Check if it has typical JWT header fields
-            $result = is_array($header) && isset($header['alg']) && isset($header['typ']);
-
-            if (!$result) {
-                $reason = 'missing_jwt_fields';
-            }
-
-            return $result;
+            return is_array($header) && isset($header['alg']) && isset($header['typ']);
         } catch (\Throwable $e) {
-            $reason = 'exception: ' . $e->getMessage();
-            $result = false;
             return false;
-        } finally {
-            // Log token type check regardless of outcome
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_format_check',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'result' => $result ? 'valid_jwt_format' : 'invalid_jwt_format',
-                    'reason' => $reason,
-                    'partial_token' => substr($token, 0, 10) . '...' // Log only a small prefix for identification
-                ]
-            );
         }
     }
 

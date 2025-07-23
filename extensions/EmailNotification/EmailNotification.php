@@ -1,0 +1,189 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Glueful\Extensions;
+
+use Glueful\Extensions\BaseExtension;
+use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
+use Glueful\Extensions\EmailNotification\EmailNotificationServiceProvider;
+use Glueful\Notifications\Services\ChannelManager;
+use Glueful\Logging\LogManager;
+
+/**
+ * Email Notification Extension
+ * @description Provides email notification channels for the system
+ * @license MIT
+ * @version 1.0.0
+ * @author Glueful Extensions Team
+ *
+ * Provides email notification capabilities for Glueful:
+ * - SMTP email sending
+ * - Email templates
+ * - HTML and plain text formats
+ * - Customizable email layouts
+ *
+ * Features:
+ * - Integration with notification system
+ * - Template-based emails
+ * - Support for various email providers
+ * - Configurable settings
+ * - Email delivery logging
+ *
+ * @package Glueful\Extensions
+ */
+class EmailNotification extends BaseExtension
+{
+    /** @var array Configuration for the extension */
+    private static array $config = [];
+
+    /** @var EmailNotificationProvider The provider instance */
+    private static ?EmailNotificationProvider $provider = null;
+
+    /** @var LogManager Logger instance */
+    private static ?LogManager $logger = null;
+
+    /**
+     * Initialize extension
+     *
+     * Sets up the email notification provider and registers it with
+     * the notification system via DI container.
+     *
+     * @return void
+     */
+    public static function initialize(): void
+    {
+        try {
+            // Get the DI container
+            $container = app();
+
+            // Initialize logger
+            self::$logger = $container->get(LogManager::class);
+
+            // Load configuration
+            self::loadConfig();
+
+            // Get the provider from the container (registered by service provider)
+            self::$provider = $container->get(EmailNotificationProvider::class);
+
+            if (!self::$provider->initialize(self::$config)) {
+                self::$logger->error('Failed to initialize email notification provider');
+            }
+
+            self::$logger->info('EmailNotification extension initialized successfully');
+        } catch (\Exception $e) {
+            if (self::$logger) {
+                self::$logger->error('Error initializing EmailNotification extension: ' . $e->getMessage(), [
+                    'exception' => $e
+                ]);
+            } else {
+                error_log('Error initializing EmailNotification extension: ' . $e->getMessage());
+            }
+        }
+    }
+
+
+
+    /**
+     * Load configuration for the extension
+     *
+     * @return void
+     */
+    private static function loadConfig(): void
+    {
+        // Default configuration
+        $defaultConfig = require __DIR__ . '/src/config.php';
+
+        // Try to load main mail config
+        $mailConfig = config('services.mail') ?? [];
+
+        // Merge configurations with mail config taking precedence
+        self::$config = array_merge($defaultConfig, $mailConfig);
+    }
+
+
+
+    /**
+     * Validate extension health
+     *
+     * Checks if the extension is functioning correctly by verifying:
+     * - Required configuration values are present
+     * - SMTP connection can be established
+     * - Templates directory exists and is readable
+     *
+     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
+     */
+    public static function checkHealth(): array
+    {
+        $healthy = true;
+        $issues = [];
+        $metrics = [
+            'memory_usage' => memory_get_usage(true),
+            'execution_time' => 0,
+            'database_queries' => 0,
+            'cache_usage' => 0
+        ];
+
+        // Start execution time tracking
+        $startTime = microtime(true);
+
+        // Check configuration
+        if (empty(self::$config)) {
+            self::loadConfig();
+            if (empty(self::$config)) {
+                $healthy = false;
+                $issues[] = 'Failed to load email configuration';
+            }
+        }
+
+        // Check provider initialization
+        if (!self::$provider) {
+            $healthy = false;
+            $issues[] = 'Email notification provider not initialized';
+        } else {
+            // Check if provider is properly configured
+            if (!self::$provider->isEmailProviderConfigured()) {
+                $healthy = false;
+                $issues[] = 'Email provider not properly configured';
+            }
+        }
+
+        // Check template directory
+        $templateDir = self::$config['template_dir'] ?? null;
+        if (!$templateDir || !is_dir($templateDir) || !is_readable($templateDir)) {
+            $healthy = false;
+            $issues[] = 'Email template directory not found or not readable';
+        }
+
+        // Check required config values
+        $requiredConfigs = ['from_email', 'from_name', 'driver'];
+        foreach ($requiredConfigs as $requiredConfig) {
+            if (empty(self::$config[$requiredConfig])) {
+                $healthy = false;
+                $issues[] = "Required configuration '$requiredConfig' is missing";
+            }
+        }
+
+        // Check notifications channel manager
+        try {
+            $container = app();
+            $channelManager = $container->get(ChannelManager::class);
+            if (!$channelManager->hasChannel('email')) {
+                $healthy = false;
+                $issues[] = 'Email channel not registered with notification system';
+            }
+        } catch (\Exception $e) {
+            $healthy = false;
+            $issues[] = 'Error checking notification channels: ' . $e->getMessage();
+        }
+
+        // Calculate execution time
+        $metrics['execution_time'] = microtime(true) - $startTime;
+
+        return [
+            'healthy' => $healthy,
+            'issues' => $issues,
+            'metrics' => $metrics
+        ];
+    }
+}

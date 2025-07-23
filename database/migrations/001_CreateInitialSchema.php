@@ -10,10 +10,9 @@ use Glueful\Database\Schema\SchemaManager;
  *
  * Creates core system tables and relationships:
  * - Users and authentication
- * - Roles and permissions
+ * - Roles
  * - File storage and blobs
  * - User profiles
- * - Audit logging
  *
  * Database Design:
  * - Follows ACID principles
@@ -25,8 +24,6 @@ use Glueful\Database\Schema\SchemaManager;
  * Security Features:
  * - Password hashing
  * - Token management
- * - Permission tracking
- * - Activity logging
  *
  * @package Glueful\Database\Migrations
  */
@@ -43,12 +40,9 @@ class CreateInitialSchema implements MigrationInterface
      *
      * Tables created:
      * - users: User accounts and authentication
-     * - roles: Role definitions and hierarchy
-     * - role_permissions, user_permissions: Access control rules
      * - profiles: User profile information
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
-     * - logs: System activity tracking
      *
      * @param SchemaManager $schema Database schema manager
      */
@@ -66,67 +60,15 @@ class CreateInitialSchema implements MigrationInterface
             'ip_address' => 'VARCHAR(40)',
             'x_forwarded_for_ip_address' => 'VARCHAR(40)',
             'last_login_date' => 'TIMESTAMP',
+            'email_verified_at' => 'TIMESTAMP NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'UNIQUE', 'column' => 'username'],
             ['type' => 'UNIQUE', 'column' => 'email']
         ]);
 
-        // Create Roles Table
-        $schema->createTable('roles', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'description' => 'TEXT NOT NULL',
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'name']
-        ]);
-
-        // Create Role Permissions Table
-        $schema->createTable('role_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL',
-            'model' => 'VARCHAR(255) NOT NULL',
-            'permissions' => 'VARCHAR(10) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-            ]
-        ]);
-
-        // Create User Permissions Table
-        $schema->createTable('user_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'model' => 'VARCHAR(255) NOT NULL',
-            'permissions' => 'VARCHAR(10) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-            ]
-        ]);
 
         // Create Blobs Table
         $schema->createTable('blobs', [
@@ -142,7 +84,7 @@ class CreateInitialSchema implements MigrationInterface
             'created_by' => 'CHAR(12) NOT NULL',
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'created_by']
@@ -166,7 +108,7 @@ class CreateInitialSchema implements MigrationInterface
             'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
             'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
             'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
+            'deleted_at' => 'TIMESTAMP NULL'
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'user_uuid'],
@@ -186,26 +128,6 @@ class CreateInitialSchema implements MigrationInterface
             ]
         ]);
 
-        // Create User Roles Lookup Table
-        $schema->createTable('user_roles_lookup', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL'
-        ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-            ],
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-            ]
-        ]);
 
         // Create Auth Sessions Table
         $schema->createTable('auth_sessions', [
@@ -222,7 +144,9 @@ class CreateInitialSchema implements MigrationInterface
             'refresh_expires_at' => 'TIMESTAMP NOT NULL',
             'status' => "ENUM('active', 'revoked') DEFAULT 'active'",
             'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+            'provider' => "TEXT DEFAULT 'jwt'",
+            'remember_me' => 'BOOLEAN DEFAULT FALSE',
         ])->addIndex([
             ['type' => 'UNIQUE', 'column' => 'uuid'],
             ['type' => 'INDEX', 'column' => 'user_uuid'],
@@ -233,23 +157,6 @@ class CreateInitialSchema implements MigrationInterface
                 'references' => 'uuid',
                 'on' => 'users'
             ]
-        ]);
-
-        // Create App Logs Table
-        $schema->createTable('app_logs', [
-            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'level' => "ENUM('INFO', 'WARNING', 'ERROR') NOT NULL",
-            'message' => 'TEXT NOT NULL',
-            'context' => 'JSON NULL',
-            'exec_time' => 'FLOAT NULL',
-            'channel' => 'VARCHAR(255) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'level'],
-            ['type' => 'INDEX', 'column' => 'channel'],
-            ['type' => 'INDEX', 'column' => 'created_at']
         ]);
     }
 
@@ -262,7 +169,7 @@ class CreateInitialSchema implements MigrationInterface
      * - Cleans up completely
      *
      * Drop order:
-     * 1. Dependent tables first (logs, sessions)
+     * 1. Dependent tables first (sessions)
      * 2. Junction tables (role assignments)
      * 3. Feature tables (blobs, profiles)
      * 4. Core tables (roles, users)
@@ -271,14 +178,9 @@ class CreateInitialSchema implements MigrationInterface
      */
     public function down(SchemaManager $schema): void
     {
-        $schema->dropTable('app_logs');
         $schema->dropTable('auth_sessions');
-        $schema->dropTable('user_roles_lookup');
         $schema->dropTable('blobs');
         $schema->dropTable('profiles');
-        $schema->dropTable('role_permissions');
-        $schema->dropTable('user_permissions');
-        $schema->dropTable('roles');
         $schema->dropTable('users');
     }
 
@@ -294,6 +196,6 @@ class CreateInitialSchema implements MigrationInterface
      */
     public function getDescription(): string
     {
-        return 'Creates initial database schema including users, roles, and permissions tables';
+        return 'Creates initial database schema including users, profiles, and core system tables';
     }
 }

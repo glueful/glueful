@@ -8,6 +8,11 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Exceptions\ExceptionHandler;
+use Glueful\DI\Container;
+use Glueful\Events\Http\RequestEvent;
+use Glueful\Events\Http\ResponseEvent;
+use Glueful\Events\Http\ExceptionEvent;
+use Glueful\Events\Event;
 
 /**
  * PSR-15 Compatible Middleware Dispatcher
@@ -24,13 +29,20 @@ class MiddlewareDispatcher implements RequestHandlerInterface
     /** @var callable The final request handler to use if no middleware produces a response */
     private $fallbackHandler;
 
+    /** @var Container|null DI Container */
+    private ?Container $container;
+
+
     /**
      * Create a new middleware dispatcher
      *
      * @param callable|null $fallbackHandler The fallback handler to use at the end of the middleware stack
+     * @param Container|null $container DI Container instance
      */
-    public function __construct(?callable $fallbackHandler = null)
+    public function __construct(?callable $fallbackHandler = null, ?Container $container = null)
     {
+        $this->container = $container ?? $this->getDefaultContainer();
+
         $this->fallbackHandler = $fallbackHandler ?: function (Request $request) {
             // Default fallback handler returns a JSON 404 response
             return new JsonResponse([
@@ -64,6 +76,50 @@ class MiddlewareDispatcher implements RequestHandlerInterface
         foreach ($middlewareList as $middleware) {
             if ($middleware instanceof MiddlewareInterface) {
                 $this->pipe($middleware);
+            }
+        }
+        return $this;
+    }
+
+    /**
+     * Add middleware by class name (resolved through DI container)
+     *
+     * @param string $middlewareClass The middleware class name
+     * @param array $constructorArgs Additional constructor arguments
+     * @return self Fluent interface
+     */
+    public function pipeClass(string $middlewareClass, array $constructorArgs = []): self
+    {
+        // Resolve middleware through DI container if available
+        if ($this->container && empty($constructorArgs)) {
+            $middleware = $this->container->get($middlewareClass);
+        } else {
+            // If constructor args are provided or no container, create instance manually
+            $middleware = new $middlewareClass(...$constructorArgs);
+        }
+
+        if ($middleware instanceof MiddlewareInterface) {
+            $this->pipe($middleware);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add multiple middleware by class names
+     *
+     * @param array $middlewareClasses Array of middleware class names or [class => args] pairs
+     * @return self Fluent interface
+     */
+    public function pipeManyClasses(array $middlewareClasses): self
+    {
+        foreach ($middlewareClasses as $key => $value) {
+            if (is_string($key)) {
+                // Format: ['ClassName' => [arg1, arg2]]
+                $this->pipeClass($key, $value);
+            } else {
+                // Format: ['ClassName1', 'ClassName2']
+                $this->pipeClass($value);
             }
         }
         return $this;
@@ -109,31 +165,48 @@ class MiddlewareDispatcher implements RequestHandlerInterface
      */
     public function handle(Request $request): Response
     {
+        $startTime = microtime(true);
+
         try {
+            // Dispatch request started event
+            Event::dispatch(new RequestEvent($request, [
+                'start_time' => $startTime,
+                'middleware_count' => count($this->middlewareStack)
+            ]));
+
             // If there are no middleware, use the fallback handler
             if (empty($this->middlewareStack)) {
-                return $this->processFallback($request);
+                $response = $this->processFallback($request);
+            } else {
+                // Take the first middleware and create a new dispatcher with the remaining stack
+                $middleware = $this->middlewareStack[0];
+                $next = clone $this;
+                $next->middlewareStack = array_slice($this->middlewareStack, 1);
+
+                // Process the request through the middleware
+                $response = $middleware->process($request, $next);
             }
 
-            // Take the first middleware and create a new dispatcher with the remaining stack
-            $middleware = array_shift($this->middlewareStack);
-            $next = clone $this;
+            // Dispatch response event
+            $processingTime = microtime(true) - $startTime;
+            Event::dispatch(new ResponseEvent($request, $response, [
+                'processing_time' => $processingTime,
+                'memory_usage' => memory_get_usage(true),
+                'middleware_count' => count($this->middlewareStack)
+            ]));
 
-            // Process the request through the middleware
-            return $middleware->process($request, $next);
+            return $response;
         } catch (\Throwable $exception) {
-            // Log the exception
-            if (class_exists('\\Glueful\\Exceptions\\ExceptionHandler')) {
-                ExceptionHandler::logError($exception);
-            }
+            // Dispatch exception event
+            $processingTime = microtime(true) - $startTime;
+            Event::dispatch(new ExceptionEvent($request, $exception, [
+                'processing_time' => $processingTime,
+                'memory_usage' => memory_get_usage(true),
+                'middleware_count' => count($this->middlewareStack)
+            ]));
 
-            // Return an error response
-            return new JsonResponse([
-                'success' => false,
-                'message' => 'Internal server error: ' . $exception->getMessage(),
-                'code' => $exception->getCode() ?: 500,
-                'type' => get_class($exception)
-            ], 500);
+            // Let the global exception handler deal with this
+            throw $exception;
         }
     }
 
@@ -163,5 +236,25 @@ class MiddlewareDispatcher implements RequestHandlerInterface
             'success' => true,
             'data' => $result
         ], 200);
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return Container|null
+     */
+    private function getDefaultContainer(): ?Container
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('container')) {
+            try {
+                return container();
+            } catch (\Exception) {
+                // Fall back to null if container is not available
+                return null;
+            }
+        }
+
+        return null;
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
+use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
+
 /**
  * Authentication Bootstrapper
  *
@@ -31,7 +33,6 @@ class AuthBootstrap
         // Create default authentication providers
         $jwtProvider = new JwtAuthenticationProvider();
         $apiKeyProvider = new ApiKeyAuthenticationProvider();
-        $adminProvider = new AdminAuthenticationProvider();
 
         // Create manager with JWT provider as default
         $manager = new AuthenticationManager($jwtProvider);
@@ -39,7 +40,6 @@ class AuthBootstrap
         // Register additional providers
         $manager->registerProvider('jwt', $jwtProvider);
         $manager->registerProvider('api_key', $apiKeyProvider);
-        $manager->registerProvider('admin', $adminProvider);
 
         // Register additional custom providers
         self::registerCustomProviders($manager);
@@ -58,7 +58,7 @@ class AuthBootstrap
     private static function registerCustomProviders(AuthenticationManager $manager): void
     {
         // Get configured providers from configuration
-        $configuredProviders = config('auth.providers', []);
+        $configuredProviders = config('session.providers', []);
 
         foreach ($configuredProviders as $name => $providerClass) {
             // Skip if already registered

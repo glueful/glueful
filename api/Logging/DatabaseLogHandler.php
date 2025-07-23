@@ -46,7 +46,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         parent::__construct($options['level'] ?? Level::Debug);
         $connection = new Connection();
         $this->schema = $connection->getSchemaManager();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver(), null);
 
         // Ensure logs table exists
         if (isset($options['table'])) {
@@ -86,10 +86,10 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     {
         try {
             // Insert log entry using SchemaManager
-            $this->db->insert('app_logs', [
+            $this->db->insert($this->table, [
                 'uuid' => Utils::generateNanoID(),
                 'channel' => $record->channel,
-                'level' => $record->level,
+                'level' => $record->level->name,
                 'message' => $record->message,
                 'context' => json_encode(
                     $record->context,
@@ -105,19 +105,21 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     private function ensureLogsTable(): void
     {
-        $this->schema->createTable('app_logs', [
-            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
+        $this->schema->createTable($this->table, [
+            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
             'uuid' => 'CHAR(12) NOT NULL',
-            'channel' => 'VARCHAR(50) NOT NULL',
-            'level' => 'INTEGER NOT NULL',
+            'level' => "ENUM('Debug', 'Info', 'Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency') NOT NULL",
             'message' => 'TEXT NOT NULL',
-            'context' => 'JSON',
+            'context' => 'JSON NULL',
             'exec_time' => 'FLOAT NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ], [
-            ['type' => 'INDEX', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'channel'],
+            'batch_uuid' => 'CHAR(12) NULL',
+            'channel' => 'VARCHAR(255) NOT NULL',
+            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
+        ])->addIndex([
+            ['type' => 'UNIQUE', 'column' => 'uuid'],
+            ['type' => 'INDEX', 'column' => 'batch_uuid'],
             ['type' => 'INDEX', 'column' => 'level'],
+            ['type' => 'INDEX', 'column' => 'channel'],
             ['type' => 'INDEX', 'column' => 'created_at']
         ]);
     }

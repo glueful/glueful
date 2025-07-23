@@ -7,101 +7,644 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Glueful API Documentation</title>
-  
-    <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+    
+    <script type="module" src="https://unpkg.com/rapidoc/dist/rapidoc-min.js"></script>
     <style>
+      :root {
+        /* shark - Primary */
+        --color-shark: #231f20;
+
+        --color-shark-50: #f3f1f3;
+        --color-shark-100: #e5e2e2;
+        --color-shark-200: #c5bebf;
+        --color-shark-300: #938588;
+        --color-shark-400: #51484a;
+        --color-shark-500: var(--color-shark);
+        --color-shark-600: #1d191a;
+        --color-shark-700: #171515;
+        --color-shark-800: #141112;
+        --color-shark-900: #110f0f;
+        --color-shark-950: #090808;
+
+        /* boulder - Secondary */
+        --color-boulder: #747474;
+
+        --color-boulder-50: #f6f6f6;
+        --color-boulder-100: #e7e7e7;
+        --color-boulder-200: #d1d1d1;
+        --color-boulder-300: #b0b0b0;
+        --color-boulder-400: #888888;
+        --color-boulder-500: var(--color-boulder);
+        --color-boulder-600: #5d5d5d;
+        --color-boulder-700: #4f4f4f;
+        --color-boulder-800: #454545;
+        --color-boulder-900: #3d3d3d;
+        --color-boulder-950: #262626;
+
+        --primary-color: var(--color-shark);
+        --nav-bg: #ffffff;
+        --nav-text: var(--color-shark-800);
+        --nav-hover-bg: var(--color-shark-100);
+        --nav-hover-text: var(--color-shark);
+        --bg-color: #ffffff;
+        --text-color: var(--color-shark-800);
+        --border-color: var(--color-shark-100);
+        --code-bg: var(--color-shark-50);
+        --text-input-bg: var(--color-boulder-50);
+      }
+
+      [data-theme="dark"] {
+        --primary-color: var(--color-boulder-400);
+        --nav-bg: var(--color-shark-900);
+        --nav-text: var(--color-boulder-300);
+        --nav-hover-bg: var(--color-shark-800);
+        --nav-hover-text: var(--color-boulder-100);
+        --bg-color: var(--color-shark-950);
+        --text-color: var(--color-boulder-200);
+        --border-color: var(--color-shark-700);
+        --code-bg: var(--color-shark-800);
+        --text-input-bg: var(--color-shark-700);
+      }
+
       body {
         margin: 0;
-        font-family: Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
       }
-  
-      elements-api {
+      
+      rapi-doc {
+        width: 100%;
+        height: 100vh;
+        --green: #10b981;
+        --blue: #3b82f6;
+        --orange: #f59e0b;
+        --red: #ef4444;
+        --purple: #8b5cf6;
+      }
+
+      /* Custom header with logo and theme toggle */
+      .custom-header {
         display: flex;
-        height: 100vh;
-        flex-direction: column;
-        /* width: 100vw; */
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 24px;
+        background: var(--nav-bg);
+        border-bottom: 1px solid var(--border-color);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        height: 60px;
+        box-sizing: border-box;
       }
-  
-      /* Force the sidebar to scroll internally */
-      elements-api::part(toc) {
-        height: 100vh;
-        overflow-y: auto;
-        padding: 10px;
+
+      .logo {
+        display: flex;
+        align-items: center;
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--primary-color);
+        text-decoration: none;
+      }
+
+      /* Modern toggle switch styling */
+      .theme-toggle {
+        position: relative;
+        width: 56px;
+        height: 28px;
+        background-color: var(--color-boulder-300);
+        border: none;
+        border-radius: 28px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .theme-toggle:hover {
+        background-color: var(--color-boulder-400);
+      }
+
+      /* Toggle track for dark mode */
+      [data-theme="dark"] .theme-toggle {
+        background-color: var(--color-shark-700);
+      }
+
+      [data-theme="dark"] .theme-toggle:hover {
+        background-color: var(--color-shark-600);
+      }
+
+      /* Toggle knob */
+      .theme-toggle-knob {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
+        background-color: white;
+        border-radius: 50%;
+        transition: transform 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Dark mode - move knob to right */
+      [data-theme="dark"] .theme-toggle-knob {
+        transform: translateX(28px);
+        background-color: var(--color-boulder-100);
+      }
+
+      rapi-doc::part(section-navbar) {
+        border-right: 1px solid var(--color-boulder-100);
+        width: 280px;
+        padding-top: 20px;
+      }
+
+      /* Dark mode navbar border */
+      [data-theme="dark"] rapi-doc::part(section-navbar) {
+        border-right: 1px solid var(--color-shark-800);
+      }
+
+      rapi-doc::part(section-navbar-active-item) {
+        background-color: var(--nav-hover-bg);
+        border-left: none !important;
+        border-radius: 0px !important;
+      }
+
+      rapi-doc::part(section-servers) {
+        display: flex;
+        justify-content: center;
+        padding: 30px;
+        background-color: var(--code-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        min-height: 48px;
+        flex-direction: column;
+        width: 50%;
+        margin-left: auto;
+        margin-right: auto;
+        margin-top: 10%;
+      }
+
+     
+      rapi-doc::part(btn) {
+       border-radius: 6px;
+      }
+      
+      rapi-doc::part(textbox) {
+        background-color: var(--text-input-bg);
+      }
+      /* Adjust rapi-doc to account for fixed header */
+      rapi-doc {
+        margin-top: 60px;
+        height: calc(100vh - 60px);
       }
     </style>
   </head>
   <body>
+    <!-- Custom Header -->
+    <div class="custom-header">
+      <a href="#" class="logo">
+        <img src="logo_full.svg" alt="Glueful" style="height: 36px; width: auto;">
+      </a>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <span class="theme-toggle-knob" id="theme-icon">🌙</span>
+      </button>
+    </div>
 
-    <elements-api
+    <rapi-doc 
       id="api-docs"
-      layout="responsive"
-      router="hash"
-    />
+      spec-url="/api/v1/swagger.json"
+
+      render-style="focused"
+      theme="light"
+
+      nav-active-item-marker="colored-block"
+
+      bg-color="#ffffff"
+      text-color="#141112"
+      header-color="#231f20"
+      primary-color="#231f20"
+      nav-bg-color="#ffffff"
+      nav-text-color="#141112"
+      nav-hover-bg-color="#e5e2e2"
+      nav-hover-text-color="#231f20"
+      nav-accent-color="#231f20"
+      
+      show-method-in-nav-bar="as-colored-text"
+      
+      allow-try="true"
+      allow-authentication="true"
+      allow-spec-url-load="false"
+      allow-spec-file-load="false"
+      show-header="false"
+      show-info="true"
+      show-components="true"
+      show-advanced-search="true"
+      show-curl-before-try="true"
+      
+
+      sort-tags="true"
+      sort-endpoints-by="path"
+      
+
+      regular-font="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+      mono-font="'Monaco', 'Menlo', 'Ubuntu Mono', monospace"
+      font-size="default"
+      
+
+      response-area-height="400px"
+      schema-style="table"
+    >
+    <div slot="overview" style="padding: 24px; background: var(--bg-color); color: var(--text-color);">
+        <!-- Header Section -->
+        <div style="text-align: left; margin-bottom: 32px;">
+          <h1 style="margin: 0 0 16px 0; font-size: 2.5rem; font-weight: 700; color: var(--primary-color);">
+            Overview
+          </h1>
+          <p style="margin: 0; font-size: 1.25rem; color: var(--text-color); opacity: 0.8; max-width: 600px;">
+            A modern PHP 8.2+ API framework platform designed for building robust APIs with enterprise-grade features
+          </p>
+        </div>
+
+        <!-- Key Features Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 32px;">
+          <div style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--code-bg);">
+            <h3 style="margin: 0 0 12px 0; color: var(--primary-color); font-size: 1.1rem;">🚀 Framework Platform</h3>
+            <p style="margin: 0; font-size: 0.9rem; line-height: 1.5;">
+              Ships with 6 core extensions and supports a growing ecosystem of third-party extensions for building and distributing modular applications.
+            </p>
+          </div>
+          
+          <div style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--code-bg);">
+            <h3 style="margin: 0 0 12px 0; color: var(--primary-color); font-size: 1.1rem;">🔐 Enterprise Security</h3>
+            <p style="margin: 0; font-size: 0.9rem; line-height: 1.5;">
+              JWT-based authentication with dual-layer session storage, RBAC permissions, rate limiting, and comprehensive security features.
+            </p>
+          </div>
+          
+          <div style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--code-bg);">
+            <h3 style="margin: 0 0 12px 0; color: var(--primary-color); font-size: 1.1rem;">⚡ High Performance</h3>
+            <p style="margin: 0; font-size: 0.9rem; line-height: 1.5;">
+              Database connection pooling, advanced caching with Redis/Memcached, queue systems, and memory management optimization.
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Start Section -->
+        <div style="background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 24px; margin-bottom: 32px;">
+          <h3 style="margin: 0 0 16px 0; color: var(--primary-color);">🏃‍♂️ Quick Start</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--text-color);">1. Installation</h4>
+              <code style="display: block; background: var(--bg-color); padding: 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-color);">
+                composer install<br>
+                cp .env.example .env
+              </code>
+            </div>
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--text-color);">2. Setup Database</h4>
+              <code style="display: block; background: var(--bg-color); padding: 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-color);">
+                php glueful migrate:run<br>
+                php glueful cache:clear
+              </code>
+            </div>
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--text-color);">3. Start Server</h4>
+              <code style="display: block; background: var(--bg-color); padding: 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-color);">
+                php glueful serve<br>
+                # Server at localhost:8000
+              </code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Core Extensions -->
+        <div style="margin-bottom: 32px;">
+          <h3 style="margin: 0 0 16px 0; color: var(--primary-color);">🧩 Core Extensions</h3>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <span style="padding: 4px 12px; background: var(--primary-color); color: white; border-radius: 16px; font-size: 0.8rem;">Admin</span>
+            <span style="padding: 4px 12px; background: var(--primary-color); color: white; border-radius: 16px; font-size: 0.8rem;">EmailNotification</span>
+            <span style="padding: 4px 12px; background: var(--primary-color); color: white; border-radius: 16px; font-size: 0.8rem;">RBAC</span>
+            <span style="padding: 4px 12px; background: var(--primary-color); color: white; border-radius: 16px; font-size: 0.8rem;">SocialLogin</span>
+            <span style="padding: 4px 12px; background: var(--primary-color); color: white; border-radius: 16px; font-size: 0.8rem;">BeanstalkdQueue</span>
+          </div>
+        </div>
+
+        <!-- API Standards -->
+        <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, var(--primary-color)20, var(--primary-color)10); border-radius: 8px; border: 1px solid var(--border-color);">
+          <h3 style="margin: 0 0 12px 0; color: var(--primary-color);">📖 API Standards</h3>
+          <p style="margin: 0 0 16px 0; font-size: 0.9rem;">
+            Built with OpenAPI/Swagger specifications • RESTful endpoints • JWT authentication • 
+            Comprehensive validation • Rate limiting • Extensive documentation
+          </p>
+          <a href="https://glueful.com/docs/getting-started" target="_blank" rel="noopener noreferrer" 
+             style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: opacity 0.2s ease;"
+             onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+            📚 Complete Documentation
+            <span style="font-size: 12px;">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <div slot="auth" style="padding: 24px; background: var(--bg-color); color: var(--text-color);">
+        <!-- Header Section -->
+        <div style="margin-bottom: 32px;">
+          <h2 style="margin: 0 0 16px 0; font-size: 2rem; font-weight: 700; color: var(--primary-color);">
+            🔐 Authentication
+          </h2>
+          <p style="margin: 0; font-size: 1.1rem; color: var(--text-color); opacity: 0.8; line-height: 1.6;">
+            Glueful provides multiple authentication methods with enterprise-grade security features including JWT tokens and API keys for robust API access control.
+          </p>
+        </div>
+
+        <!-- Authentication Methods Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px;">
+          
+          <!-- JWT Authentication -->
+          <div style="padding: 24px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--code-bg);">
+            <div style="display: flex; align-items: center; margin-bottom: 16px;">
+              <span style="background: #10b981; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; margin-right: 12px;">JWT</span>
+              <h3 style="margin: 0; color: var(--primary-color); font-size: 1.2rem;">JSON Web Tokens</h3>
+            </div>
+            <p style="margin: 0 0 16px 0; font-size: 0.9rem; line-height: 1.5; color: var(--text-color); opacity: 0.8;">
+              Stateless authentication with access/refresh token pairs. Supports dual-layer session storage with database + cache.
+            </p>
+            <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 12px;">
+              <code style="font-size: 0.8rem; color: var(--text-color);">
+                Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc...
+              </code>
+            </div>
+            <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-color); opacity: 0.7;">
+              • Session analytics & monitoring<br>
+              • Remember me functionality<br>
+              • Automatic token refresh<br>
+              • Configurable expiration times
+            </div>
+          </div>
+
+          <!-- API Key Authentication -->
+          <div style="padding: 24px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--code-bg);">
+            <div style="display: flex; align-items: center; margin-bottom: 16px;">
+              <span style="background: #3b82f6; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; margin-right: 12px;">API KEY</span>
+              <h3 style="margin: 0; color: var(--primary-color); font-size: 1.2rem;">API Key Authentication</h3>
+            </div>
+            <p style="margin: 0 0 16px 0; font-size: 0.9rem; line-height: 1.5; color: var(--text-color); opacity: 0.8;">
+              Simple authentication using API keys for service-to-service communication and automated systems.
+            </p>
+            <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 12px;">
+              <code style="font-size: 0.8rem; color: var(--text-color);">
+                X-API-Key: gk_live_abc123def456...<br>
+                # or via query parameter<br>
+                ?api_key=gk_live_abc123def456...
+              </code>
+            </div>
+            <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-color); opacity: 0.7;">
+              • Multiple key formats supported<br>
+              • Usage tracking & rate limiting<br>
+              • Scoped permissions per key<br>
+              • Header or query parameter
+            </div>
+          </div>
+        </div>
+
+        <!-- Security Features -->
+        <div style="background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 24px; margin-bottom: 32px;">
+          <h3 style="margin: 0 0 20px 0; color: var(--primary-color); font-size: 1.3rem;">🛡️ Security Features</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 1rem; color: var(--text-color);">Session Management</h4>
+              <ul style="margin: 0; padding-left: 16px; font-size: 0.9rem; line-height: 1.6; color: var(--text-color); opacity: 0.8;">
+                <li>Dual-layer storage (DB + Cache)</li>
+                <li>Session analytics & monitoring</li>
+                <li>Automatic session cleanup</li>
+                <li>Multi-device session tracking</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 1rem; color: var(--text-color);">Rate Limiting</h4>
+              <ul style="margin: 0; padding-left: 16px; font-size: 0.9rem; line-height: 1.6; color: var(--text-color); opacity: 0.8;">
+                <li>Adaptive rate limiting</li>
+                <li>Per-user & per-IP limits</li>
+                <li>Endpoint-specific rules</li>
+                <li>Lockdown mode support</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="margin: 0 0 8px 0; font-size: 1rem; color: var(--text-color);">Token Security</h4>
+              <ul style="margin: 0; padding-left: 16px; font-size: 0.9rem; line-height: 1.6; color: var(--text-color); opacity: 0.8;">
+                <li>Configurable expiration times</li>
+                <li>Token fingerprinting</li>
+                <li>Automatic rotation</li>
+                <li>Revocation support</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Getting Started -->
+        <div style="background: linear-gradient(135deg, var(--primary-color)15, var(--primary-color)05); border: 1px solid var(--border-color); border-radius: 8px; padding: 24px;">
+          <h3 style="margin: 0 0 16px 0; color: var(--primary-color); font-size: 1.3rem;">🚀 Getting Started</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            <div>
+              <h4 style="margin: 0 0 12px 0; font-size: 1rem; color: var(--text-color);">1. Login Endpoint</h4>
+              <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 12px;">
+                <code style="font-size: 0.8rem; color: var(--text-color);">
+                  POST /api/v1/auth/login<br>
+                  {"username": "user", "password": "pass"}
+                </code>
+              </div>
+            </div>
+            <div>
+              <h4 style="margin: 0 0 12px 0; font-size: 1rem; color: var(--text-color);">2. Use Token</h4>
+              <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 12px;">
+                <code style="font-size: 0.8rem; color: var(--text-color);">
+                  Authorization: Bearer {access_token}<br>
+                  GET /api/v1/protected-endpoint
+                </code>
+              </div>
+            </div>
+          </div>
+          <p style="margin: 16px 0 0 0; font-size: 0.9rem; color: var(--text-color); opacity: 0.8;">
+            💡 <strong>Pro Tip:</strong> Use the "Try it out" feature below to test authentication with your own credentials or API keys.
+          </p>
+        </div>
+      </div>
+
+      <div slot="servers" style="text-align: left; margin-top: 20px; background-color: var(--bg-color); padding: 20px; border-radius: 8px;">
+        <!-- <h3 style="margin: 0 0 12px 0; color: var(--primary-color); font-size: 1.1rem;">🌐 API Server</h3> -->
+        <p style="margin: 0 0 16px 0; font-size: 0.9rem; color: var(--text-color); opacity: 0.8;">
+          Select your environment from the dropdown above. The API supports multiple deployment configurations<br/>
+          with automatic failover and global edge caching for optimal performance.
+        </p>
+        <div style="display: flex; gap: 16px; justify-content: flex-start; flex-wrap: wrap;">
+          <span style="font-size: 0.85rem; padding: 4px 12px; background: var(--primary-color)15; color: var(--primary-color); border-radius: 16px;">
+            ⚡ Load Balanced
+          </span>
+          <span style="font-size: 0.85rem; padding: 4px 12px; background: var(--primary-color)15; color: var(--primary-color); border-radius: 16px;">
+            🔒 HTTPS Only
+          </span>
+          <span style="font-size: 0.85rem; padding: 4px 12px; background: var(--primary-color)15; color: var(--primary-color); border-radius: 16px;">
+            🚀 CDN Enabled
+          </span>
+          <span style="font-size: 0.85rem; padding: 4px 12px; background: var(--primary-color)15; color: var(--primary-color); border-radius: 16px;">
+            🌍 Multi-Region
+          </span>
+        </div>
+      </div>
+
+    </rapi-doc>
 
     <script>
-      async function loadAndSortOpenAPISpec(url) {
-        try {
-          const response = await fetch(url, {
-            cache: 'no-store', // Explicitly prevent caching
-            headers: {
-              'Pragma': 'no-cache',
-              'Cache-Control': 'no-cache'
-            }
-          });
-          const spec = await response.json();
-
-          // Function to capitalize first letter and replace underscores
-          function formatText(text) {
-            return text
-              .replace(/_/g, " ") // Replace underscores with spaces
-              .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize each word
-          }
-
-          // Sort paths alphabetically
-          if (spec.paths) {
-            const sortedPaths = Object.keys(spec.paths)
-              .sort()
-              .reduce((acc, key) => {
-                acc[key] = spec.paths[key];
-                return acc;
-              }, {});
-            spec.paths = sortedPaths;
-          }
-
-          // Sort tags alphabetically and format them
-          if (spec.tags && Array.isArray(spec.tags)) {
-            spec.tags.sort((a, b) => a.name.localeCompare(b.name));
-            spec.tags = spec.tags.map((tag) => ({
-              ...tag,
-              name: formatText(tag.name), // Capitalize & replace underscores
-            }));
-          }
-
-          // Ensure each path's operations (GET, POST, etc.) maintain correct tag order
-          Object.keys(spec.paths).forEach((path) => {
-            Object.keys(spec.paths[path]).forEach((method) => {
-              if (spec.paths[path][method].tags) {
-                spec.paths[path][method].tags = spec.paths[path][method].tags
-                  .map(formatText) // Format tag names
-                  .sort();
-              }
-            });
-          });
-
-          // Update Stoplight Elements with sorted spec
-          document.getElementById("api-docs").apiDescriptionDocument = spec;
-
-        } catch (error) {
-          console.error("Error loading OpenAPI spec:", error);
+      // Theme switching functionality like Zuplo
+      let isDark = localStorage.getItem('theme') === 'dark';
+      
+      // Initialize theme on page load
+      function initializeTheme() {
+        if (isDark) {
+          const apiDoc = document.getElementById('api-docs');
+          const themeIcon = document.getElementById('theme-icon');
+          const body = document.body;
+          
+          // Apply dark theme
+          apiDoc.setAttribute('theme', 'dark');
+          apiDoc.setAttribute('bg-color', '#090808');  // shark-950
+          apiDoc.setAttribute('text-color', '#d1d1d1');  // boulder-200
+          apiDoc.setAttribute('header-color', '#888888');  // boulder-400
+          apiDoc.setAttribute('primary-color', '#888888');  // boulder-400
+          apiDoc.setAttribute('nav-bg-color', '#110f0f');  // shark-900
+          apiDoc.setAttribute('nav-text-color', '#b0b0b0');  // boulder-300
+          apiDoc.setAttribute('nav-hover-bg-color', '#141112');  // shark-800
+          apiDoc.setAttribute('nav-hover-text-color', '#e7e7e7');  // boulder-100
+          apiDoc.setAttribute('nav-accent-color', '#888888');  // boulder-400
+          
+          body.setAttribute('data-theme', 'dark');
+          themeIcon.textContent = '☀️';
         }
       }
+      
+      function toggleTheme() {
+        const apiDoc = document.getElementById('api-docs');
+        const themeIcon = document.getElementById('theme-icon');
+        const body = document.body;
+        
+        if (!isDark) {
+          // Switch to dark theme using shark/boulder colors
+          apiDoc.setAttribute('theme', 'dark');
+          apiDoc.setAttribute('bg-color', '#090808');  // shark-950
+          apiDoc.setAttribute('text-color', '#d1d1d1');  // boulder-200
+          apiDoc.setAttribute('header-color', '#888888');  // boulder-400
+          apiDoc.setAttribute('primary-color', '#888888');  // boulder-400
+          apiDoc.setAttribute('nav-bg-color', '#110f0f');  // shark-900
+          apiDoc.setAttribute('nav-text-color', '#b0b0b0');  // boulder-300
+          apiDoc.setAttribute('nav-hover-bg-color', '#141112');  // shark-800
+          apiDoc.setAttribute('nav-hover-text-color', '#e7e7e7');  // boulder-100
+          apiDoc.setAttribute('nav-accent-color', '#888888');  // boulder-400
+          
+          body.setAttribute('data-theme', 'dark');
+          themeIcon.textContent = '☀️';
+          isDark = true;
+          localStorage.setItem('theme', 'dark');
+        } else {
+          // Switch to light theme using shark/boulder colors
+          apiDoc.setAttribute('theme', 'light');
+          apiDoc.setAttribute('bg-color', '#ffffff');
+          apiDoc.setAttribute('text-color', '#141112');  // shark-800
+          apiDoc.setAttribute('header-color', '#231f20');  // shark
+          apiDoc.setAttribute('primary-color', '#231f20');  // shark
+          apiDoc.setAttribute('nav-bg-color', '#ffffff');  // shark-50
+          apiDoc.setAttribute('nav-text-color', '#141112');  // shark-800
+          apiDoc.setAttribute('nav-hover-bg-color', '#e5e2e2');  // shark-100
+          apiDoc.setAttribute('nav-hover-text-color', '#231f20');  // shark
+          apiDoc.setAttribute('nav-accent-color', '#231f20');  // shark
+          
+          body.removeAttribute('data-theme');
+          themeIcon.textContent = '🌙';
+          isDark = false;
+          localStorage.setItem('theme', 'light');
+        }
+      }
+      
+      // Load OpenAPI spec with cache busting
+      const timestamp = new Date().getTime();
+      document.getElementById('api-docs').setAttribute('spec-url', `/api/v1/swagger.json?v=${timestamp}`);
+      
+      // Initialize theme on page load
+      window.addEventListener('DOMContentLoaded', () => {
+        initializeTheme();
+        
+        // Function to apply modern flexbox styles to auth container
+        function applyAuthInputStyles() {
+          const apiDoc = document.getElementById('api-docs');
+          if (apiDoc && apiDoc.shadowRoot) {
+            const authSection = apiDoc.shadowRoot.querySelector('[part~="section-auth"]');
+            if (authSection) {
+              // Find the div with max-height: 28px
+              const authContainer = authSection.querySelector('div[style*="max-height:28px"], div[style*="max-height: 28px"]');
+              if (authContainer && !authContainer.classList.contains('auth-styled')) {
+                // Apply modern flexbox styling to the container
+                authContainer.style.display = 'flex';
+                authContainer.style.gap = '8px';
+                authContainer.style.alignItems = 'center';
+                authContainer.style.width = '100%';
+                authContainer.classList.add('auth-styled');
+                
+                // Style the input to flex-grow
+                const input = authContainer.querySelector('input[type="text"], input[type="password"]');
+                if (input) {
+                  input.style.flex = '1';
+                  input.style.minWidth = '0';
+                  input.classList.add('api-token-input');
+                }
+                
+                // Style the button to maintain its natural width
+                const button = authContainer.querySelector('button');
+                if (button) {
+                  button.style.flexShrink = '0';
+                }
+                
+                return true;
+              }
+            }
+          }
+          return false;
+        }
 
-      // Load and sort OpenAPI spec
-      const timestamp = new Date().getTime(); // Add timestamp for cache busting
-      const openApiUrl = `swagger.json?v=${timestamp}`;
-      loadAndSortOpenAPISpec(openApiUrl);
+        // Try to apply styles immediately and then use observer
+        let attempts = 0;
+        const quickCheck = setInterval(() => {
+          attempts++;
+          if (applyAuthInputStyles() || attempts > 20) {
+            clearInterval(quickCheck);
+          }
+        }, 100);
+
+        // Also observe for DOM changes in case the element appears later
+        setTimeout(() => {
+          const apiDoc = document.getElementById('api-docs');
+          if (apiDoc && apiDoc.shadowRoot) {
+            const observer = new MutationObserver(() => {
+              applyAuthInputStyles();
+            });
+            observer.observe(apiDoc.shadowRoot, { 
+              childList: true, 
+              subtree: true 
+            });
+          }
+        }, 200);
+      });
+      
+      // Optional: Set initial theme based on system preference (only if no saved preference)
+      if (!localStorage.getItem('theme') && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        localStorage.setItem('theme', 'dark');
+        isDark = true;
+        initializeTheme();
+      }
     </script>
-  
   </body>
 </html>

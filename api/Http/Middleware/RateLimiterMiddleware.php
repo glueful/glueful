@@ -9,6 +9,10 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Glueful\Security\RateLimiter;
 use Glueful\Security\AdaptiveRateLimiter;
+use Glueful\DI\Container;
+use Glueful\Exceptions\RateLimitExceededException;
+use Glueful\Events\Auth\RateLimitExceededEvent;
+use Glueful\Events\Event;
 
 /**
  * Rate Limiter Middleware
@@ -44,6 +48,10 @@ class RateLimiterMiddleware implements MiddlewareInterface
     /** @var bool Whether to enable distributed rate limiting */
     private bool $enableDistributed;
 
+    /** @var Container|null DI Container */
+    private ?Container $container;
+
+
     /**
      * Create a new rate limiter middleware
      *
@@ -52,17 +60,21 @@ class RateLimiterMiddleware implements MiddlewareInterface
      * @param string $type Rate limiter type (ip, user, endpoint)
      * @param bool $useAdaptiveLimiter Whether to use adaptive rate limiting
      * @param bool $enableDistributed Whether to enable distributed rate limiting
+     * @param Container|null $container DI Container instance
      */
     public function __construct(
         int $maxAttempts = 60,
         int $windowSeconds = 60,
         string $type = 'ip',
         ?bool $useAdaptiveLimiter = null,
-        ?bool $enableDistributed = null
+        ?bool $enableDistributed = null,
+        ?Container $container = null
     ) {
+        $this->container = $container ?? $this->getDefaultContainer();
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
         $this->type = $type;
+
 
         // Default to config values if not specified
         $this->useAdaptiveLimiter = $useAdaptiveLimiter ??
@@ -85,7 +97,24 @@ class RateLimiterMiddleware implements MiddlewareInterface
 
         // Check if the rate limit has been exceeded
         if ($limiter->isExceeded()) {
-            return $this->createRateLimitExceededResponse($limiter);
+            // Emit event for application business logic
+            $currentAttempts = $this->maxAttempts - $limiter->remaining();
+            Event::dispatch(new RateLimitExceededEvent(
+                $request->getClientIp() ?: '0.0.0.0',
+                $this->type,
+                $currentAttempts,
+                $this->maxAttempts,
+                $this->windowSeconds,
+                [
+                    'endpoint' => $request->getPathInfo(),
+                    'method' => $request->getMethod(),
+                    'user_agent' => $request->headers->get('User-Agent'),
+                    'request_id' => $request->attributes->get('request_id')
+                ]
+            ));
+
+            // Let exceptions bubble up instead of returning response directly
+            throw new RateLimitExceededException('Too Many Requests', $limiter->getRetryAfter());
         }
 
         // Register this attempt
@@ -204,6 +233,9 @@ class RateLimiterMiddleware implements MiddlewareInterface
             $key = "ip:" . ($request->getClientIp() ?: '0.0.0.0');
         }
 
+        // Create new AdaptiveRateLimiter instance with specific parameters
+        // Note: AdaptiveRateLimiter requires specific constructor parameters per request,
+        // so we create new instances rather than using DI container
         return new AdaptiveRateLimiter(
             $key,
             $this->maxAttempts,
@@ -211,6 +243,27 @@ class RateLimiterMiddleware implements MiddlewareInterface
             $context,
             $this->enableDistributed
         );
+    }
+
+    /**
+     * Get default container safely
+     *
+     * @return Container|null
+     */
+    private function getDefaultContainer(): ?Container
+    {
+        // Check if app() function exists (available when bootstrap is loaded)
+        if (function_exists('container')) {
+            try {
+                return container();
+            } catch (\Exception) {
+                // In test environment or when container isn't initialized, return null
+                // This allows the middleware to work without DI container
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -234,8 +287,9 @@ class RateLimiterMiddleware implements MiddlewareInterface
             // Remove 'Bearer ' prefix if present
             $token = str_replace('Bearer ', '', $token);
 
-            // Try to get user from session cache
-            $session = \Glueful\Auth\SessionCacheManager::getSession($token);
+            // Try to get user from session using TokenStorageService
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $session = $tokenStorage->getSessionByAccessToken($token);
             return $session['uuid'] ?? null;
         }
 

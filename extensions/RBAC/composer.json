@@ -1,0 +1,55 @@
+{
+    "name": "glueful/rbac-extension",
+    "description": "Role-Based Access Control extension for Glueful",
+    "type": "glueful-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Glueful Team"
+        }
+    ],
+    "require": {
+        "php": ">=8.1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "phpstan/phpstan": "^1.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "Glueful\\Extensions\\RBAC\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Glueful\\Extensions\\RBAC\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "glueful": {
+            "name": "RBAC",
+            "displayName": "Role-Based Access Control",
+            "description": "Modern, hierarchical role-based access control system",
+            "version": "1.0.0",
+            "icon": "assets/icon.png",
+            "galleryBanner": {
+                "color": "#2563EB",
+                "theme": "dark"
+            },
+            "categories": ["authentication", "authorization", "security"],
+            "publisher": "glueful-team",
+            "main": "./RBAC.php",
+            "requires": {
+                "glueful": ">=0.27.0",
+                "extensions": []
+            }
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage",
+        "analyse": "phpstan analyse src tests --level=8"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

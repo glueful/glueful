@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
-use Glueful\Logging\AuditLogger;
-use Glueful\Logging\AuditEvent;
+use Glueful\Http\RequestContext;
 
 /**
  * Token Management System
@@ -32,22 +31,42 @@ class TokenManager
     private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour
     private static ?int $ttl = null;
+    private static ?CacheStore $cache = null;
 
     /**
      * Initialize token manager
      *
      * Sets up caching and loads configuration.
      */
-    public static function initialize(): void
+    public static function initialize(?CacheStore $cache = null): void
     {
-        if (!defined('CACHE_ENGINE')) {
-            define('CACHE_ENGINE', true);
-        }
-
-        CacheEngine::initialize('glueful:', 'redis');
+        self::$cache = $cache ?? app(CacheStore::class);
 
         // Cast the config value to int
         self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+    }
+
+    /**
+     * Get cache instance
+     *
+     * @return CacheStore
+     */
+    private static function getCache(): CacheStore
+    {
+        if (self::$cache === null) {
+            self::initialize();
+        }
+        return self::$cache;
+    }
+
+    /**
+     * Get SessionCacheManager instance from container
+     *
+     * @return SessionCacheManager
+     */
+    private static function getSessionCacheManager(): SessionCacheManager
+    {
+        return app(SessionCacheManager::class);
     }
 
    /**
@@ -65,7 +84,9 @@ class TokenManager
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
     ): array {
-        self::initialize();
+        if (self::$ttl === null) {
+            self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
+        }
 
         // Use provided lifetimes or defaults
         $accessTokenLifetime = $accessTokenLifetime ?? self::$ttl;
@@ -81,25 +102,12 @@ class TokenManager
         $accessToken = JWTService::generate($tokenPayload, $accessTokenLifetime);
         $refreshToken = bin2hex(random_bytes(32)); // 64 character random string
 
-        // Log token generation event
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_pair_generated',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userData['uuid'] ?? null,
-                'token_lifetime' => $accessTokenLifetime,
-                'token_type' => 'bearer',
-                'is_persistent' => isset($userData['remember_me']) && $userData['remember_me'],
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
+        // Skip audit logging for token generation - login success is sufficient
 
         return [
-        'access_token' => $accessToken,
-        'refresh_token' => $refreshToken,
-        'expires_in' => $accessTokenLifetime
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => $accessTokenLifetime
         ];
     }
     /**
@@ -113,21 +121,11 @@ class TokenManager
      */
     public static function mapTokenToSession(string $token, string $sessionId): bool
     {
-        self::initialize();
+        $cache = self::getCache();
 
-        // Log token to session mapping
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_mapped_to_session',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'session_id' => $sessionId,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
+        // Skip audit logging for token mapping - this is internal implementation detail
 
-        return CacheEngine::set(
+        return $cache->set(
             self::TOKEN_PREFIX . $token,
             $sessionId,
             self::$ttl
@@ -144,8 +142,8 @@ class TokenManager
      */
     public static function getSessionIdFromToken(string $token): ?string
     {
-        self::initialize();
-        return CacheEngine::get(self::TOKEN_PREFIX . $token);
+        $cache = self::getCache();
+        return $cache->get(self::TOKEN_PREFIX . $token);
     }
 
     /**
@@ -156,24 +154,12 @@ class TokenManager
      * @param string $token Authentication token
      * @return bool Success status
      */
-    public static function removeTokenMapping(string $token): bool
+    public static function removeTokenMapping(string $token, ?RequestContext $requestContext = null): bool
     {
-        self::initialize();
+        $cache = self::getCache();
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
 
-        // Log token mapping removal
-        $auditLogger = AuditLogger::getInstance();
-        $sessionId = self::getSessionIdFromToken($token);
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_mapping_removed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'session_id' => $sessionId,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
-
-        return CacheEngine::delete(self::TOKEN_PREFIX . $token);
+        return $cache->delete(self::TOKEN_PREFIX . $token);
     }
 
     /**
@@ -186,8 +172,13 @@ class TokenManager
      * @param string|null $provider Optional provider name to use for validation
      * @return bool Validity status
      */
-    public static function validateAccessToken(string $token, ?string $provider = null): bool
-    {
+    public static function validateAccessToken(
+        string $token,
+        ?string $provider = null,
+        ?RequestContext $requestContext = null
+    ): bool {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
+
         // Get the authentication manager instance
         $authManager = self::getAuthManager();
 
@@ -212,19 +203,6 @@ class TokenManager
             $isValid = JWTService::verify($token) && !self::isTokenRevoked($token);
         }
 
-        // Log token validation attempt
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            $isValid ? 'token_validated' : 'token_validation_failed',
-            $isValid ? AuditEvent::SEVERITY_INFO : AuditEvent::SEVERITY_WARNING,
-            [
-                'provider' => $provider ?? 'auto-detect',
-                'is_valid' => $isValid,
-                'is_revoked' => self::isTokenRevoked($token),
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
 
         return $isValid;
     }
@@ -239,27 +217,18 @@ class TokenManager
      * @param string|null $provider Optional provider name to use
      * @return array|null New token pair or null if invalid
      */
-    public static function refreshTokens(string $refreshToken, ?string $provider = null): ?array
-    {
+    public static function refreshTokens(
+        string $refreshToken,
+        ?string $provider = null,
+        ?RequestContext $requestContext = null
+    ): ?array {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         // Get session data from refresh token
         $sessionData = self::getSessionFromRefreshToken($refreshToken);
 
-        // Log refresh token attempt
-        $auditLogger = AuditLogger::getInstance();
         $isValid = $sessionData !== null;
 
         if (!$isValid) {
-            // Log invalid refresh token attempt
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_AUTH,
-                'token_refresh_failed',
-                AuditEvent::SEVERITY_WARNING,
-                [
-                    'reason' => 'invalid_refresh_token',
-                    'provider' => $provider ?? 'auto-detect',
-                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                ]
-            );
             return null;
         }
 
@@ -296,20 +265,23 @@ class TokenManager
 
         // Default to standard JWT token generation for backward compatibility
         if (!$tokens) {
-            $tokens = self::generateTokenPair($sessionData);
+            // Get remember_me status from the session to determine token lifetime
+            $connection = new Connection();
+            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+            $sessionResult = $queryBuilder->select('auth_sessions', ['remember_me'])
+                ->where(['refresh_token' => $refreshToken])
+                ->get();
+            $rememberMe = !empty($sessionResult[0]['remember_me']);
+            // Set appropriate token lifetime based on remember_me
+            $accessTokenLifetime = $rememberMe
+                ? (int)config('session.remember_expiration', 30 * 24 * 3600)  // 30 days
+                : (int)config('session.access_token_lifetime', 3600);         // 1 hour
+            $refreshTokenLifetime = $rememberMe
+                ? (int)config('session.remember_expiration', 60 * 24 * 3600)  // 60 days for refresh
+                : (int)config('session.refresh_token_lifetime', 7 * 24 * 3600); // 7 days
+            $tokens = self::generateTokenPair($sessionData, $accessTokenLifetime, $refreshTokenLifetime);
         }
 
-        // Log successful token refresh
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_refreshed',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $sessionData['uuid'] ?? null,
-                'provider' => $provider ?? $result[0]['provider'] ?? 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]
-        );
 
         return $tokens;
     }
@@ -335,7 +307,69 @@ class TokenManager
             return null;
         }
 
-        return json_decode($result[0]['user_uuid'], true);
+        // Return basic session data with user UUID
+        // The calling method will handle fetching full user data
+        // Note: We exclude access_token to prevent token wrapping
+        return [
+            'uuid' => $result[0]['user_uuid'],
+            'created_at' => $result[0]['created_at']
+        ];
+    }
+
+     /**
+     * Normalize user data to ensure consistent structure across all providers
+     *
+     * Ensures all user objects contain required fields with proper defaults.
+     * Fetches missing profile data from database if needed.
+     *
+     * @param array $user Raw user data from authentication provider
+     * @param string|null $provider Provider name (jwt, admin, ldap, saml, etc.)
+     * @return array Normalized user data with consistent structure
+     */
+    private static function normalizeUserData(array $user, ?string $provider = null): array
+    {
+        // Start with the existing user data
+        $normalizedUser = $user;
+
+        // Ensure critical fields exist
+        if (!isset($normalizedUser['uuid'])) {
+            // Cannot normalize without UUID
+            return $user;
+        }
+
+        // Set default values for commonly missing fields
+        $normalizedUser['remember_me'] = $normalizedUser['remember_me'] ?? false;
+        $normalizedUser['provider'] = $provider ?? 'jwt';
+
+        // Ensure profile data exists
+        if (!isset($normalizedUser['profile']) || empty($normalizedUser['profile'])) {
+            // Try to fetch profile data from database
+            $userRepository = new \Glueful\Repository\UserRepository();
+            $profileData = $userRepository->getProfile($normalizedUser['uuid']);
+
+            // Create profile structure with null-safe access
+            $normalizedUser['profile'] = [
+                'first_name' => $profileData['first_name'] ?? null,
+                'last_name' => $profileData['last_name'] ?? null,
+                'photo_uuid' => $profileData['photo_uuid'] ?? null,
+                'photo_url' => $profileData['photo_url'] ?? null
+            ];
+        }
+
+        // Don't include roles in the login response - fetch via separate endpoint
+        // This follows OAuth/OIDC best practices for minimal token responses
+
+        // Ensure consistent timestamp fields
+        if (isset($normalizedUser['last_login_at']) && !isset($normalizedUser['last_login'])) {
+            $normalizedUser['last_login'] = $normalizedUser['last_login_at'];
+        }
+
+        // Ensure last_login_date is set (used in JWT token claims)
+        if (!isset($normalizedUser['last_login_date'])) {
+            $normalizedUser['last_login_date'] = $normalizedUser['last_login'] ?? date('Y-m-d H:i:s');
+        }
+
+        return $normalizedUser;
     }
 
      /**
@@ -354,7 +388,9 @@ class TokenManager
             return [];  // Return empty array that will be caught as failure
         }
 
-        $user['remember_me'] = $user['remember_me'] ?? false;
+        // Normalize user data to ensure consistent structure
+        $user = self::normalizeUserData($user, $provider);
+
         // Adjust token lifetime based on remember-me preference
         $accessTokenLifetime = $user['remember_me']
             ? (int)config('session.remember_expiration', 30 * 24 * 3600) // 30 days
@@ -379,30 +415,59 @@ class TokenManager
             $tokens = self::generateTokenPair($user, $accessTokenLifetime, $refreshTokenLifetime);
         }
 
-        // Store session
+        // Store session using TokenStorageService for unified database/cache management
         $user['refresh_token'] = $tokens['refresh_token'];
-        SessionCacheManager::storeSession($user, $tokens['access_token']);
+        $user['session_id'] = Utils::generateNanoID(); // Generate session ID once
+        $user['provider'] = $provider ?? 'jwt';
+        $user['remember_me'] = $user['remember_me'] ?? false;
 
-        self::storeSession(
-            $user['uuid'],
-            [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'token_fingerprint' => self::generateTokenFingerprint($tokens['access_token']),
-                'remember_me' => $user['remember_me'],
-                'provider' => $provider ?? 'jwt' // Store the provider used
-            ],
-            $refreshTokenLifetime
+        $tokenStorage = new TokenStorageService();
+        $tokenStorage->storeSession($user, $tokens);
+
+        // Also store in cache for quick lookup
+        $sessionCacheManager = self::getSessionCacheManager();
+        $sessionCacheManager->storeSession(
+            $user, // userData array
+            $tokens['access_token'], // token string
+            $provider ?? 'jwt', // provider
+            $tokens['expires_in'] // ttl
         );
+
         unset($user['refresh_token']);
+
+        // Build OIDC-compliant user object
+        $oidcUser = [
+            'id' => $user['uuid'],
+            'email' => $user['email'] ?? null,
+            'email_verified' => !empty($user['email_verified_at']),
+            'username' => $user['username'] ?? null,
+            'locale' => $user['locale'] ?? 'en-US',
+            'updated_at' => isset($user['updated_at']) ? strtotime($user['updated_at']) : time()
+        ];
+
+        // Add name fields if profile exists
+        if (isset($user['profile'])) {
+            $firstName = $user['profile']['first_name'] ?? '';
+            $lastName = $user['profile']['last_name'] ?? '';
+
+            if ($firstName || $lastName) {
+                $oidcUser['name'] = trim($firstName . ' ' . $lastName);
+                $oidcUser['given_name'] = $firstName ?: null;
+                $oidcUser['family_name'] = $lastName ?: null;
+            }
+
+            if (!empty($user['profile']['photo_url'])) {
+                $oidcUser['picture'] = $user['profile']['photo_url'];
+            }
+        }
+
+        // Return OAuth 2.0 compliant response structure
         return [
-            'tokens' => [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'expires_in' => $accessTokenLifetime,
-                'token_type' => 'Bearer'
-            ],
-            'user' => $user
+            'access_token' => $tokens['access_token'],
+            'token_type' => 'Bearer',
+            'expires_in' => $accessTokenLifetime,
+            'refresh_token' => $tokens['refresh_token'],
+            'user' => $oidcUser
         ];
     }
 
@@ -417,8 +482,13 @@ class TokenManager
      * @param int|null $refreshTokenLifetime Optional refresh token lifetime
      * @return int Number of rows affected
      */
-    public static function storeSession(string $userUuid, array $tokens, ?int $refreshTokenLifetime = null): int
-    {
+    public static function storeSession(
+        string $userUuid,
+        array $tokens,
+        ?int $refreshTokenLifetime = null,
+        ?RequestContext $requestContext = null
+    ): int {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
         $uuid = Utils::generateNanoID();
@@ -436,28 +506,14 @@ class TokenManager
             'access_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600)),
             'refresh_expires_at' => date('Y-m-d H:i:s', time() + $refreshTokenLifetime),
             'status' => 'active',
-            'ip_address' => $_SERVER['REMOTE_ADDR'],
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'],
+            'ip_address' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
             'last_token_refresh' => date('Y-m-d H:i:s'),
             'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
         ]);
 
-        // Log session creation
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'session_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userUuid,
-                'session_id' => $uuid,
-                'provider' => $tokens['provider'] ?? 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                'is_persistent' => $tokens['remember_me'] ?? false,
-                'refresh_token_lifetime' => $refreshTokenLifetime,
-                'access_token_lifetime' => (int)config('session.access_token_lifetime', 3600),
-            ]
-        );
+        // Skip session creation audit log as login success is already logged
+        // This reduces duplicate audit entries during login
 
         return $result;
     }
@@ -470,36 +526,19 @@ class TokenManager
      * @param string $token Access token to revoke
      * @return int Number of rows affected
      */
-    public static function revokeSession(string $token): int
+    public static function revokeSession(string $token, ?RequestContext $requestContext = null): int
     {
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
         $connection = new Connection();
         $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-        // Get session details before revocation for audit logging
-        $sessionDetails = $queryBuilder->select('auth_sessions', ['user_uuid', 'provider', 'uuid'])
-            ->where(['access_token' => $token])
-            ->get();
 
-        $result = $queryBuilder->upsert(
+        $result = $queryBuilder->update(
             'auth_sessions',
             ['status' => 'revoked'],
             ['access_token' => $token]
         );
 
-        // Log token revocation event
-        $auditLogger = AuditLogger::getInstance();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_AUTH,
-            'token_revoked',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => !empty($sessionDetails) ? $sessionDetails[0]['user_uuid'] : null,
-                'session_id' => !empty($sessionDetails) ? $sessionDetails[0]['uuid'] : null,
-                'provider' => !empty($sessionDetails) ? $sessionDetails[0]['provider'] : 'jwt',
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                'result' => $result > 0 ? 'success' : 'no_changes',
-            ]
-        );
 
         return $result;
     }
@@ -564,17 +603,10 @@ class TokenManager
      * }
      * ```
      */
-    public static function extractTokenFromRequest(): ?string
+    public static function extractTokenFromRequest(?RequestContext $requestContext = null): ?string
     {
-        $authorization_header = null;
-
-        // Check multiple possible locations in $_SERVER
-        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'Authorization'] as $key) {
-            if (isset($_SERVER[$key])) {
-                $authorization_header = $_SERVER[$key];
-                break;
-            }
-        }
+        $requestContext = $requestContext ?? RequestContext::fromGlobals();
+        $authorization_header = $requestContext->getAuthorizationHeader();
 
         // Fallback to getallheaders() (case-insensitive)
         if (!$authorization_header && function_exists('getallheaders')) {
@@ -602,7 +634,7 @@ class TokenManager
         }
 
         // Last fallback: Check query parameter `token`
-        return $_GET['token'] ?? null;
+        return $requestContext->getQueryParam('token');
     }
 
     /**
@@ -647,7 +679,7 @@ class TokenManager
                 if ($authService && method_exists($authService, 'getAuthManager')) {
                     return $authService->getAuthManager();
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable) {
                 // Silently fail and return null
             }
         }
@@ -655,7 +687,7 @@ class TokenManager
         // Try direct instantiation of AuthenticationManager if the service is not available
         try {
             return new AuthenticationManager();
-        } catch (\Throwable $e) {
+        } catch (\Throwable) {
             // Silently fail
             return null;
         }
@@ -677,7 +709,7 @@ class TokenManager
         if (method_exists($authManager, 'getProviders')) {
             try {
                 return $authManager->getProviders();
-            } catch (\Throwable $e) {
+            } catch (\Throwable) {
                 // Silently fail and continue with fallback
             }
         }
@@ -689,7 +721,7 @@ class TokenManager
                 if ($provider) {
                     $providers[] = $provider;
                 }
-            } catch (\Throwable $e) {
+            } catch (\Throwable) {
                 // Skip this provider
             }
         }

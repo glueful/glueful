@@ -4,266 +4,257 @@ declare(strict_types=1);
 
 namespace Glueful\Http;
 
-use Glueful\Exceptions\HttpException;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
+use Glueful\Http\Response\Response;
+use Glueful\Http\Exceptions\HttpClientException;
+use Glueful\Events\Http\HttpClientFailureEvent;
+use Glueful\Events\Event;
+use Psr\Log\LoggerInterface;
 
 /**
- * HTTP Client
+ * HTTP Client Service
  *
- * A simple cURL-based HTTP client for making API requests.
+ * Modern HTTP client built on Symfony HttpClient with support for async requests,
+ * connection pooling, retry mechanisms, and PSR-18 compliance.
  */
 class Client
 {
-    /**
-     * Default request options
-     */
-    private array $defaultOptions = [
-        'timeout' => 30,
-        'connect_timeout' => 10,
-        'headers' => [],
-        'query' => [],
-        'form_params' => [],
-        'json' => null,
-        'verify' => true,
-        'sink' => null, // File path to save response body
-    ];
-
-    /**
-     * Create a new Client instance
-     *
-     * @param array $defaultOptions Default options for all requests
-     */
-    public function __construct(array $defaultOptions = [])
-    {
-        $this->defaultOptions = array_merge($this->defaultOptions, $defaultOptions);
+    public function __construct(
+        private HttpClientInterface $httpClient,
+        private LoggerInterface $logger
+    ) {
     }
 
     /**
      * Send a GET request
-     *
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function get(string $url, array $options = []): HttpResponse
+    public function get(string $url, array $options = []): Response
     {
         return $this->request('GET', $url, $options);
     }
 
     /**
      * Send a POST request
-     *
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function post(string $url, array $options = []): HttpResponse
+    public function post(string $url, array $options = []): Response
     {
         return $this->request('POST', $url, $options);
     }
 
     /**
      * Send a PUT request
-     *
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function put(string $url, array $options = []): HttpResponse
+    public function put(string $url, array $options = []): Response
     {
         return $this->request('PUT', $url, $options);
     }
 
     /**
      * Send a DELETE request
-     *
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function delete(string $url, array $options = []): HttpResponse
+    public function delete(string $url, array $options = []): Response
     {
         return $this->request('DELETE', $url, $options);
     }
 
     /**
      * Send a PATCH request
-     *
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function patch(string $url, array $options = []): HttpResponse
+    public function patch(string $url, array $options = []): Response
     {
         return $this->request('PATCH', $url, $options);
     }
 
     /**
      * Send an HTTP request
-     *
-     * @param string $method HTTP method
-     * @param string $url URL to request
-     * @param array $options Request options
-     * @return HttpResponse
-     * @throws HttpException
      */
-    public function request(string $method, string $url, array $options = []): HttpResponse
+    public function request(string $method, string $url, array $options = []): Response
     {
-        // Merge default options with request-specific options
-        $options = array_merge($this->defaultOptions, $options);
+        $startTime = microtime(true);
 
-        // Build URL with query parameters
-        if (!empty($options['query'])) {
-            $separator = (strpos($url, '?') === false) ? '?' : '&';
-            $url .= $separator . http_build_query($options['query']);
-        }
+        try {
+            // Transform options to Symfony format
+            $symfonyOptions = $this->transformOptions($options);
 
-        // Initialize cURL
-        $ch = curl_init();
+            $response = $this->httpClient->request($method, $url, $symfonyOptions);
 
-        // Set common cURL options
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $options['timeout']);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $options['connect_timeout']);
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
 
-        // SSL verification
-        if ($options['verify'] === false) {
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        }
+            // Log slow requests
+            $this->logSlowRequest($method, $url, $duration);
 
-        // Set method-specific options
-        switch (strtoupper($method)) {
-            case 'GET':
-                break;
+            // Log server errors
+            $statusCode = $response->getStatusCode();
+            if ($statusCode >= 500) {
+                $this->logServerError($method, $url, $statusCode, $duration);
 
-            case 'POST':
-                curl_setopt($ch, CURLOPT_POST, true);
-                $this->setRequestBody($ch, $options);
-                break;
-
-            case 'PUT':
-            case 'DELETE':
-            case 'PATCH':
-            case 'HEAD':
-            case 'OPTIONS':
-                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
-                $this->setRequestBody($ch, $options);
-                break;
-
-            default:
-                throw new HttpException("Unsupported HTTP method: $method");
-        }
-
-        // Set request headers
-        $headers = [];
-        if (!empty($options['headers'])) {
-            foreach ($options['headers'] as $name => $value) {
-                $headers[] = "$name: $value";
+                $exception = new HttpClientException("HTTP $statusCode error from server", $statusCode);
+                Event::dispatch(new HttpClientFailureEvent(
+                    $method,
+                    $url,
+                    $exception,
+                    'server_error',
+                    ['duration_ms' => $duration, 'status_code' => $statusCode]
+                ));
             }
+
+            return new Response($response);
+        } catch (\Exception $e) {
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            $this->logger->error('HTTP request failed', [
+                'method' => $method,
+                'url' => $url,
+                'error' => $e->getMessage(),
+                'duration_ms' => $duration
+            ]);
+
+            $exception = new HttpClientException($e->getMessage(), $e->getCode());
+
+            Event::dispatch(new HttpClientFailureEvent(
+                $method,
+                $url,
+                $exception,
+                'connection_failed',
+                ['duration_ms' => $duration]
+            ));
+
+            throw $exception;
         }
-
-        // Add content type header if sending JSON
-        if (isset($options['json']) && !isset($options['headers']['Content-Type'])) {
-            $headers[] = 'Content-Type: application/json';
-        }
-
-        if (!empty($headers)) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        }
-
-        // Capture response headers
-        $responseHeaders = [];
-        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$responseHeaders) {
-            $len = strlen($header);
-            $header = explode(':', $header, 2);
-            if (count($header) < 2) { // ignore invalid headers
-                return $len;
-            }
-            $responseHeaders[trim($header[0])] = trim($header[1]);
-            return $len;
-        });
-
-        // If sink is set, write to file
-        if (!empty($options['sink'])) {
-            $fp = fopen($options['sink'], 'w');
-            if ($fp === false) {
-                throw new HttpException("Could not open file for writing: {$options['sink']}");
-            }
-            curl_setopt($ch, CURLOPT_FILE, $fp);
-        }
-
-        // Execute request
-        $responseBody = curl_exec($ch);
-        $responseCode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        $error = curl_error($ch);
-        $errorCode = curl_errno($ch);
-
-        // Close file pointer if sink was set
-        if (!empty($options['sink']) && isset($fp)) {
-            fclose($fp);
-        }
-
-        // Close cURL handle
-        curl_close($ch);
-
-        // Handle errors
-        if ($errorCode !== 0) {
-            throw new HttpException("cURL error ($errorCode): $error", $errorCode);
-        }
-
-        // Create response object
-        $response = new HttpResponse(
-            $responseCode,
-            $responseHeaders,
-            $responseBody !== false ? $responseBody : ''
-        );
-
-        // For sink option, return response with empty body
-        if (!empty($options['sink'])) {
-            return new HttpResponse(
-                $responseCode,
-                $responseHeaders,
-                ''
-            );
-        }
-
-        return $response;
     }
 
     /**
-     * Set request body according to options
-     *
-     * @param \CurlHandle $ch cURL handle
-     * @param array $options Request options
+     * Create a scoped client with default options
      */
-    private function setRequestBody(\CurlHandle $ch, array $options): void
+    public function createScopedClient(array $defaultOptions = []): self
     {
-        // JSON body has highest precedence
+        $scopedClient = $this->httpClient->withOptions($defaultOptions);
+        return new self($scopedClient, $this->logger);
+    }
+
+    /**
+     * Send an async request (returns Symfony ResponseInterface)
+     */
+    public function requestAsync(string $method, string $url, array $options = []): ResponseInterface
+    {
+        $symfonyOptions = $this->transformOptions($options);
+        return $this->httpClient->request($method, $url, $symfonyOptions);
+    }
+
+    /**
+     * Send multiple requests in batch
+     */
+    public function requestBatch(array $requests): array
+    {
+        $responses = [];
+        foreach ($requests as $key => $request) {
+            $responses[$key] = $this->requestAsync(
+                $request['method'],
+                $request['url'],
+                $request['options'] ?? []
+            );
+        }
+        return $responses;
+    }
+
+    /**
+     * Transform Glueful options to Symfony HttpClient format
+     */
+    private function transformOptions(array $options): array
+    {
+        $symfonyOptions = [];
+
+        // Transform timeout options
+        if (isset($options['timeout'])) {
+            $symfonyOptions['timeout'] = $options['timeout'];
+        }
+        if (isset($options['connect_timeout'])) {
+            $symfonyOptions['timeout'] = $options['connect_timeout'];
+        }
+
+        // Transform headers
+        if (isset($options['headers'])) {
+            $symfonyOptions['headers'] = $options['headers'];
+        }
+
+        // Transform query parameters
+        if (isset($options['query'])) {
+            $symfonyOptions['query'] = $options['query'];
+        }
+
+        // Transform JSON body
         if (isset($options['json'])) {
-            $body = json_encode($options['json']);
-            if ($body === false) {
-                throw new HttpException('Failed to encode request body as JSON');
-            }
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-            return;
+            $symfonyOptions['json'] = $options['json'];
         }
 
-        // Then form params
-        if (!empty($options['form_params'])) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($options['form_params']));
-            return;
+        // Transform form parameters
+        if (isset($options['form_params'])) {
+            $symfonyOptions['body'] = http_build_query($options['form_params']);
+            $symfonyOptions['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
         }
 
-        // Finally raw body
+        // Transform raw body
         if (isset($options['body'])) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $options['body']);
+            $symfonyOptions['body'] = $options['body'];
         }
+
+        // Transform SSL verification
+        if (isset($options['verify'])) {
+            $symfonyOptions['verify_peer'] = $options['verify'];
+            $symfonyOptions['verify_host'] = $options['verify'];
+        }
+
+        // Transform sink (file download)
+        if (isset($options['sink'])) {
+            $symfonyOptions['buffer'] = false;
+            $symfonyOptions['user_data'] = ['sink' => $options['sink']];
+        }
+
+        return $symfonyOptions;
+    }
+
+    /**
+     * Log slow HTTP requests
+     */
+    private function logSlowRequest(string $method, string $url, float $duration): void
+    {
+        $slowThreshold = config('http.logging.slow_threshold_ms', 5000);
+        if ($duration > $slowThreshold) {
+            $this->logger->warning('HTTP client slow request', [
+                'type' => 'performance',
+                'message' => 'HTTP request exceeded threshold',
+                'url' => $url,
+                'method' => $method,
+                'duration_ms' => $duration,
+                'threshold_ms' => $slowThreshold,
+                'timestamp' => date('c')
+            ]);
+        }
+    }
+
+    /**
+     * Log server errors
+     */
+    private function logServerError(string $method, string $url, int $statusCode, float $duration): void
+    {
+        $this->logger->error('HTTP client server error', [
+            'type' => 'http_client',
+            'message' => 'Server error response received',
+            'url' => $url,
+            'method' => $method,
+            'status' => $statusCode,
+            'duration_ms' => $duration,
+            'timestamp' => date('c')
+        ]);
+    }
+
+    /**
+     * Set logger for framework infrastructure logging (backward compatibility)
+     */
+    public function setLogger(LoggerInterface $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
     }
 }

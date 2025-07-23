@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Logging\AuditEvent;
-use Glueful\Logging\AuditLogger;
-
 /**
  * Rate Limiter Rule
  *
@@ -79,9 +76,6 @@ class RateLimiterRule
         $this->active = $active;
         $this->priority = $priority;
         $this->lastModified = new \DateTime();
-
-        // Audit log rule creation
-        $this->auditRuleChange('rule_created');
     }
 
     /**
@@ -134,7 +128,6 @@ class RateLimiterRule
     {
         $this->maxAttempts = max(1, $maxAttempts);
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_modified', ['property' => 'maxAttempts']);
         return $this;
     }
 
@@ -158,7 +151,6 @@ class RateLimiterRule
     {
         $this->windowSeconds = max(1, $windowSeconds);
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_modified', ['property' => 'windowSeconds']);
         return $this;
     }
 
@@ -182,7 +174,6 @@ class RateLimiterRule
     {
         $this->threshold = max(0.0, min(1.0, $threshold));
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_modified', ['property' => 'threshold']);
         return $this;
     }
 
@@ -206,7 +197,6 @@ class RateLimiterRule
     {
         $this->conditions = $conditions;
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_modified', ['property' => 'conditions']);
         return $this;
     }
 
@@ -221,7 +211,6 @@ class RateLimiterRule
     {
         $this->conditions[$key] = $value;
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_condition_added', ['condition' => $key]);
         return $this;
     }
 
@@ -245,7 +234,6 @@ class RateLimiterRule
         if (!$this->active) {
             $this->active = true;
             $this->lastModified = new \DateTime();
-            $this->auditRuleChange('rule_activated');
         }
         return $this;
     }
@@ -260,7 +248,6 @@ class RateLimiterRule
         if ($this->active) {
             $this->active = false;
             $this->lastModified = new \DateTime();
-            $this->auditRuleChange('rule_deactivated');
         }
         return $this;
     }
@@ -285,7 +272,6 @@ class RateLimiterRule
     {
         $this->priority = $priority;
         $this->lastModified = new \DateTime();
-        $this->auditRuleChange('rule_modified', ['property' => 'priority']);
         return $this;
     }
 
@@ -345,28 +331,5 @@ class RateLimiterRule
         }
 
         return $rule;
-    }
-
-    /**
-     * Log rule changes to audit logger
-     *
-     * @param string $action Rule action
-     * @param array $context Additional context
-     */
-    private function auditRuleChange(string $action, array $context = []): void
-    {
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'rate_limit_rule_' . $action,
-            AuditEvent::SEVERITY_INFO,
-            array_merge([
-                'rule_id' => $this->id,
-                'rule_name' => $this->name,
-                'max_attempts' => $this->maxAttempts,
-                'window_seconds' => $this->windowSeconds,
-                'active' => $this->active,
-            ], $context)
-        );
     }
 }

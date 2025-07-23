@@ -1,0 +1,20 @@
+{{> header}}
+<div class="message">
+    <p>Important Alert:</p>
+    <p>{{message}}</p>
+    
+    {{#if details}}
+    <div class="alert-box">
+        <p style="margin: 0;"><strong>Details:</strong> {{details}}</p>
+    </div>
+    {{/if}}
+    
+    <p>Please take action immediately.</p>
+    
+    {{#if action_url}}
+    <div style="text-align: center;">
+        <a href="{{action_url}}" class="btn">Take Action</a>
+    </div>
+    {{/if}}
+</div>
+{{> footer}}

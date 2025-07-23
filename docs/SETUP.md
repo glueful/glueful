@@ -1,122 +1,962 @@
-# Database Setup Guide
+# Glueful Framework Setup Guide
+
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Detailed Installation](#detailed-installation)
+- [Database Configuration](#database-configuration)
+- [Cache Configuration](#cache-configuration)
+- [Queue System Setup](#queue-system-setup)
+- [Notification System](#notification-system)
+- [Archive System](#archive-system)
+- [Extension System](#extension-system)
+- [Security Configuration](#security-configuration)
+- [Performance Optimization](#performance-optimization)
+- [Production Deployment](#production-deployment)
+- [CLI Commands Reference](#cli-commands-reference)
+- [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
-- MySQL 8.0 or higher
-- PHP 8.2.0 or higher (Required)
-  ```bash
-  # Check PHP version
-  php -v
-  
-  # If needed, update PHP:
-  # For MacOS with Homebrew:
-  brew update
-  brew upgrade php
-  
-  # For Ubuntu/Debian:
-  sudo add-apt-repository ppa:ondrej/php
-  sudo apt update
-  sudo apt install php8.2
-  ```
-- Composer
-- OpenSSL for encryption keys
-- Minimum 4GB RAM recommended
 
-## Installation Steps
+### System Requirements
+- **PHP 8.2.0** or higher (Required)
+- **MySQL 8.0** or higher (or MariaDB 10.4+)
+- **Redis 6.0+** (recommended for cache/queue)
+- **Composer 2.0+**
+- **OpenSSL** for encryption keys
+- **Minimum 4GB RAM** (8GB recommended for production)
 
-### Development Environment
-1. Clone the repository
-2. Create a secure database user
-   ```bash
-   mysql -u root -p
-   CREATE DATABASE glueful CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-   CREATE USER 'glueful_user'@'localhost' IDENTIFIED BY 'strong_password';
-   GRANT ALL PRIVILEGES ON glueful.* TO 'glueful_user'@'localhost';
-   FLUSH PRIVILEGES;
-   ```
-3. Configure environment
-   ```bash
-   cp .env.example .env
-   # Note: Key generation not yet implemented
-   ```
-4. Update .env with database credentials
-   ```
-   DB_CONNECTION=mysql
-   DB_HOST=127.0.0.1
-   DB_PORT=3306
-   DB_DATABASE=glueful
-   DB_USERNAME=glueful_user
-   DB_PASSWORD=strong_password
-   ```
-5. Run migrations
-   ```bash
-   php glueful migrate
-   ```
-
-### Production Environment
-1. Follow security best practices
-   - Use strong passwords
-   - Limit database user privileges
-   - Enable SSL for database connections
-   - Configure proper firewall rules
-
-2. Set up production environment
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Run migrations
-   ```bash
-   php glueful migrate
-   ```
-
-## Maintenance
-
-### Database Backups
-1. Configure automated backups
-   ```bash
-   mysqldump -u glueful_user -p glueful > backup_$(date +%Y%m%d).sql
-   ```
-
-### Available Commands
-Currently implemented commands:
+### PHP Extensions Required
 ```bash
-php glueful help              # Show available commands
-php glueful generate:json     # Generate JSON files
-php glueful migrate           # Run database migrations
-php glueful db:status        # Show database connection status and statistics
-php glueful db:reset         # Reset database (requires --force flag)
+# Check PHP version and extensions
+php -v
+php -m
+
+# Required extensions:
+- pdo_mysql
+- openssl
+- mbstring
+- tokenizer
+- json
+- redis (recommended)
+- pcntl (for queue workers)
+- curl
+- zip
 ```
 
-Examples:
+### Installing Prerequisites
+
+#### macOS (Homebrew)
+```bash
+brew update
+brew install php@8.2 mysql redis composer
+brew services start mysql
+brew services start redis
+```
+
+#### Ubuntu/Debian
+```bash
+sudo add-apt-repository ppa:ondrej/php
+sudo apt update
+sudo apt install php8.2 php8.2-mysql php8.2-redis php8.2-mbstring \
+  php8.2-xml php8.2-curl php8.2-zip mysql-server redis-server composer
+```
+
+## Quick Start
+
+For a rapid development setup:
+
+```bash
+# 1. Clone repository
+git clone https://github.com/glueful/glueful.git
+cd glueful
+
+# 2. Install dependencies
+composer install
+
+# 3. Setup environment
+cp .env.example .env
+
+# 4. Generate security key
+php glueful generate:key
+
+# 5. Create database
+mysql -u root -p -e "CREATE DATABASE glueful CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 6. Update .env with your database credentials
+
+# 7. Run migrations
+php glueful migrate:run
+
+# 8. Clear cache
+php glueful cache:clear
+
+# 9. Start development server
+php glueful serve
+# Server runs at http://localhost:8000
+```
+
+## Detailed Installation
+
+### 1. Clone and Install Dependencies
+
+```bash
+# Clone the repository
+git clone https://github.com/glueful/glueful.git
+cd glueful
+
+# Install PHP dependencies
+composer install
+
+# For production (without dev dependencies)
+composer install --no-dev --optimize-autoloader
+```
+
+### 2. Environment Configuration
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Generate application key
+php glueful generate:key
+```
+
+Edit `.env` file with your configuration:
+
+```env
+# Application Settings
+APP_ENV=development                    # development|production
+APP_DEBUG=true                         # Auto-disabled in production
+API_DOCS_ENABLED=true                  # Auto-disabled in production
+
+# Security Keys
+JWT_KEY=your-generated-key             # Generated by generate:key
+ACCESS_TOKEN_LIFETIME=900              # 15 minutes
+REFRESH_TOKEN_LIFETIME=604800          # 7 days
+SESSION_LIFETIME=86400                 # 24 hours
+REMEMBER_ME_LIFETIME=2592000           # 30 days
+
+# Database Configuration
+DB_DRIVER=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=glueful
+DB_USER=glueful_user
+DB_PASSWORD=strong_password
+DB_CHARSET=utf8mb4
+DB_COLLATION=utf8mb4_unicode_ci
+
+# Connection Pooling
+DB_POOL_ENABLED=true
+DB_POOL_MIN_CONNECTIONS=5
+DB_POOL_MAX_CONNECTIONS=20
+DB_POOL_MAX_IDLE_TIME=300
+DB_POOL_WAIT_TIMEOUT=5
+
+# Cache Configuration
+CACHE_DRIVER=redis                     # redis|file|memcached
+CACHE_PREFIX=glueful_
+CACHE_TTL=3600
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=null
+REDIS_DATABASE=0
+
+# Queue Configuration
+QUEUE_CONNECTION=redis                 # redis|database|beanstalkd
+QUEUE_RETRY_AFTER=90
+QUEUE_BATCH_SIZE=1000
+QUEUE_MAX_ATTEMPTS=3
+
+# Performance Settings
+MEMORY_LIMIT_WARNING=128M
+MEMORY_LIMIT_CRITICAL=256M
+CHUNK_SIZE=1000
+MAX_EXECUTION_TIME=300
+
+# Feature Flags
+ENABLE_PERMISSIONS=true
+ENABLE_NOTIFICATIONS=true
+ENABLE_ARCHIVE=true
+ENABLE_EXTENSIONS=true
+API_DEBUG_MODE=true
+
+# Security Features
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_REQUESTS=60
+RATE_LIMIT_WINDOW=60
+RATE_LIMIT_ADAPTIVE=true
+SECURITY_HEADERS_ENABLED=true
+LOCKDOWN_ENABLED=false
+CSRF_PROTECTION_ENABLED=true
+
+# Notification Settings
+NOTIFICATION_CHANNELS=email,database,sms
+NOTIFICATION_DEFAULT_CHANNEL=email
+NOTIFICATION_QUEUE_ENABLED=true
+
+# Archive Settings
+ARCHIVE_ENABLED=true
+ARCHIVE_STORAGE=database              # database|filesystem|s3
+ARCHIVE_RETENTION_DAYS=365
+ARCHIVE_BATCH_SIZE=1000
+ARCHIVE_COMPRESSION=true
+
+# Logging
+LOG_CHANNEL=daily
+LOG_LEVEL=debug
+LOG_DAYS=14
+```
+
+## Database Configuration
+
+### Create Database and User
+
+```sql
+-- Connect to MySQL
+mysql -u root -p
+
+-- Create database with proper charset
+CREATE DATABASE glueful CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Create user with limited privileges
+CREATE USER 'glueful_user'@'localhost' IDENTIFIED BY 'strong_password';
+
+-- Grant privileges for development
+GRANT ALL PRIVILEGES ON glueful.* TO 'glueful_user'@'localhost';
+
+-- For production, use limited privileges
+-- GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, ALTER 
+-- ON glueful.* TO 'glueful_user'@'localhost';
+
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### Run Migrations
+
+```bash
+# Check migration status
+php glueful migrate:status
+
+# Run all pending migrations
+php glueful migrate:run
+
+# Rollback last migration
+php glueful migrate:rollback
+
+# Create a new migration
+php glueful migrate:create <migration_name>
+
+# Reset database (WARNING: destructive operation)
+php glueful db:reset --force
+```
+
+### Database Monitoring
+
 ```bash
 # Check database status
 php glueful db:status
 
-# Reset database (warning: destructive operation)
-php glueful db:reset --force
+# Profile database queries
+php glueful db:profile
 ```
 
-Note: Always backup your database before running destructive commands.
+## Cache Configuration
 
-### Adding New Tables
-1. Create migration file
+### Redis Setup (Recommended)
+
+```bash
+# Install Redis
+# macOS: brew install redis && brew services start redis
+# Ubuntu: sudo apt install redis-server
+
+# Test Redis connection
+redis-cli ping
+
+# Configure in .env
+CACHE_DRIVER=redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+```
+
+### Cache Management
+
+```bash
+# Clear all cache
+php glueful cache:clear
+php glueful cache:clear --tag=users
+php glueful cache:clear --tag=permissions
+
+# View cache statistics
+php glueful cache:status
+
+# Cache operations
+php glueful cache:get <key>              # Get cache value
+php glueful cache:set <key> <value>      # Set cache value
+php glueful cache:delete <key>           # Delete cache key
+php glueful cache:ttl <key>              # Get/set TTL
+php glueful cache:expire <key> <seconds> # Set expiration
+php glueful cache:purge                  # Purge cache
+```
+
+### Advanced Cache Configuration
+
+```env
+# Configure cache drivers in .env
+CACHE_DRIVER=redis                     # redis|file|memcached
+CACHE_PREFIX=glueful_
+CACHE_TTL=3600
+```
+
+## Queue System Setup
+
+### Redis Queue (Recommended)
+
+```bash
+# Ensure Redis is running
+redis-cli ping
+
+# Configure in .env
+QUEUE_CONNECTION=redis
+QUEUE_RETRY_AFTER=90
+QUEUE_BATCH_SIZE=1000
+```
+
+### Database Queue
+
+```bash
+# Use database queue (no additional setup)
+QUEUE_CONNECTION=database
+
+# Create queue tables (included in migrations)
+php glueful migrate run
+```
+
+### Running Queue Workers
+
+```bash
+# Start queue worker
+php glueful queue:work
+
+# Start worker with specific queue
+php glueful queue:work --queue=emails,notifications
+
+# Auto-scale queue workers
+php glueful queue:autoscale
+
+# Manage queue scheduler
+php glueful queue:scheduler
+```
+
+### Queue Supervisor Configuration (Production)
+
+```ini
+# /etc/supervisor/conf.d/glueful-worker.conf
+[program:glueful-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /path/to/glueful/glueful queue:work redis --sleep=3 --tries=3
+autostart=true
+autorestart=true
+user=www-data
+numprocs=8
+redirect_stderr=true
+stdout_logfile=/var/log/glueful/worker.log
+```
+
+## Notification System
+
+### Basic Configuration
+
+```bash
+# Configure channels in .env
+NOTIFICATION_CHANNELS=email,database,sms,slack
+NOTIFICATION_DEFAULT_CHANNEL=email
+
+# Email configuration
+MAIL_DRIVER=smtp
+MAIL_HOST=smtp.mailtrap.io
+MAIL_PORT=2525
+MAIL_USERNAME=your-username
+MAIL_PASSWORD=your-password
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=noreply@example.com
+MAIL_FROM_NAME="Glueful App"
+
+# SMS configuration (optional)
+SMS_DRIVER=twilio
+TWILIO_SID=your-account-sid
+TWILIO_TOKEN=your-auth-token
+TWILIO_FROM=+1234567890
+```
+
+### Managing Notifications
+
+```bash
+# Process notification retries
+php glueful notifications:process-retries
+```
+
+### Creating Notification Templates
+
+```bash
+# Templates location: storage/app/notifications/templates/
+
+# Email template example:
+# storage/app/notifications/templates/email/welcome.blade.php
+```
+
+## Archive System
+
+### Configuration
+
+```env
+# Archive settings in .env
+ARCHIVE_ENABLED=true
+ARCHIVE_STORAGE=database              # database|filesystem|s3
+ARCHIVE_RETENTION_DAYS=365
+ARCHIVE_BATCH_SIZE=1000
+ARCHIVE_COMPRESSION=true
+
+# For S3 storage
+ARCHIVE_S3_KEY=your-key
+ARCHIVE_S3_SECRET=your-secret
+ARCHIVE_S3_REGION=us-east-1
+ARCHIVE_S3_BUCKET=glueful-archives
+```
+
+### Archive Operations
+
+```bash
+# Manage archives
+php glueful archive:manage
+```
+
+## Extension System
+
+### Installing Extensions
+
+```bash
+# Show extension info (also lists extensions)
+php glueful extensions:info
+php glueful extensions:info PaymentGateway
+
+# Enable an extension
+php glueful extensions:enable PaymentGateway
+
+# Disable an extension
+php glueful extensions:disable PaymentGateway
+
+# Install an extension
+php glueful extensions:install PaymentGateway
+
+# Delete an extension
+php glueful extensions:delete PaymentGateway
+
+# Validate extension
+php glueful extensions:validate PaymentGateway
+```
+
+### Creating Extensions
+
+```bash
+# Create new extension
+php glueful extensions:create MyExtension
+
+# Extension structure created:
+# extensions/MyExtension/
+# ├── Extension.php
+# ├── config.php
+# ├── routes.php
+# └── composer.json
+```
+
+### Extension Development
+
+```php
+// extensions/MyExtension/Extension.php
+namespace Extensions\MyExtension;
+
+class Extension extends BaseExtension
+{
+    public function boot(): void
+    {
+        // Register services
+        $this->container->singleton(MyService::class);
+        
+        // Register routes
+        $this->registerRoutes(__DIR__ . '/routes.php');
+        
+        // Register event listeners
+        $this->events->listen('user.created', [MyListener::class, 'handle']);
+    }
+}
+```
+
+### Extension Performance
+
+```bash
+# Benchmark extensions
+php glueful extensions:benchmark
+
+# Debug extension loading
+php glueful extensions:debug
+```
+
+## Security Configuration
+
+### JWT and Session Security
+
+```bash
+# Generate secure JWT key
+php glueful generate:key
+
+# Configure session security in .env
+SESSION_SECURE_COOKIE=true      # HTTPS only
+SESSION_HTTP_ONLY=true          # No JavaScript access
+SESSION_SAME_SITE=strict        # CSRF protection
+```
+
+### Rate Limiting
+
+```bash
+# Configure in .env
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_REQUESTS=60
+RATE_LIMIT_WINDOW=60            # seconds
+RATE_LIMIT_ADAPTIVE=true        # Adaptive rate limiting
+```
+
+### Security Headers
+
+```bash
+# Enable security headers in .env
+SECURITY_HEADERS_ENABLED=true
+```
+
+### Vulnerability Scanning
+
+```bash
+# Run security check
+php glueful security:check
+
+# Run security scan
+php glueful security:scan
+
+# Check for known vulnerabilities
+php glueful security:vulnerabilities
+
+# Generate security report
+php glueful security:report
+
+# Manage lockdown mode
+php glueful security:lockdown
+
+# Reset user passwords
+php glueful security:reset-password
+
+# Revoke authentication tokens
+php glueful security:revoke-tokens
+```
+
+## Performance Optimization
+
+### Memory Management
+
+```bash
+# Configure memory limits in .env
+MEMORY_LIMIT_WARNING=128M
+MEMORY_LIMIT_CRITICAL=256M
+PHP_MEMORY_LIMIT=512M
+
+# Monitor memory usage
+php glueful system:memory
+```
+
+### Database Optimization
+
+```bash
+# Profile queries
+php glueful db:profile
+
+# Enable query caching in .env
+QUERY_CACHE_ENABLED=true
+QUERY_CACHE_TTL=300
+```
+
+### Application Performance
+
+```bash
+# Check system health
+php glueful system:check
+
+# Optimize autoloader (production)
+composer dump-autoload --optimize
+
+# Enable OPcache (php.ini)
+opcache.enable=1
+opcache.memory_consumption=256
+opcache.max_accelerated_files=20000
+```
+
+## Production Deployment
+
+### Pre-deployment Checklist
+
+1. **Environment Configuration**
    ```bash
-   php glueful make:migration create_table_name
+   # Set production environment
+   APP_ENV=production
+   APP_DEBUG=false
+   API_DOCS_ENABLED=false
+   API_DEBUG_MODE=false
+   
+   # Enable all security features
+   SECURITY_HEADERS_ENABLED=true
+   RATE_LIMIT_ENABLED=true
+   CSRF_PROTECTION_ENABLED=true
    ```
-2. Update schema documentation in SCHEMA.md
-3. Test migration locally
+
+2. **Security Hardening**
    ```bash
-   php glueful db:migrate --dry-run
-   php glueful db:migrate
+   # Generate new keys
+   php glueful generate:key
+   
+   # Set strong database passwords
+   # Enable SSL for database connections
+   DB_SSL_MODE=require
+   DB_SSL_CA=/path/to/ca-cert.pem
+   
+   # Configure HTTPS
+   FORCE_HTTPS=true
+   SESSION_SECURE_COOKIE=true
    ```
 
-### Troubleshooting
-- Check MySQL logs: `/var/log/mysql/error.log`
-- Verify database connections: `php glueful db:status`
-- Reset database: `php glueful db:reset --force`
+3. **Performance Optimization**
+   ```bash
+   # Optimize Composer autoloader
+   composer install --no-dev --optimize-autoloader
+   
+   # Clear and optimize cache
+   php glueful cache:clear
+   php glueful cache:purge
+   ```
 
-### Security Notes
-- Regularly update MySQL to latest version
-- Monitor audit logs for suspicious activity
-- Use prepared statements for all queries
-- Implement rate limiting on database operations
+4. **Database Preparation**
+   ```bash
+   # Run migrations
+   php glueful migrate:run --force
+   
+   # Verify database integrity
+   php glueful db:status
+   
+   # Set up automated backups
+   # Add to crontab:
+   0 2 * * * mysqldump -u user -p glueful | gzip > /backups/glueful_$(date +\%Y\%m\%d).sql.gz
+   ```
+
+5. **Queue and Schedule Setup**
+   ```bash
+   # Set up queue workers (see Supervisor config above)
+   
+   # Add cron job for notification retries
+   */5 * * * * cd /path/to/glueful && php glueful notifications:process-retries >> /dev/null 2>&1
+   ```
+
+### Deployment Steps
+
+1. **Upload Code**
+   ```bash
+   # Using Git
+   git clone https://github.com/glueful/glueful.git /var/www/glueful
+   cd /var/www/glueful
+   git checkout tags/v1.0.0  # Use specific version
+   ```
+
+2. **Set Permissions**
+   ```bash
+   # Set ownership
+   chown -R www-data:www-data /var/www/glueful
+   
+   # Set directory permissions
+   find /var/www/glueful -type d -exec chmod 755 {} \;
+   
+   # Set file permissions
+   find /var/www/glueful -type f -exec chmod 644 {} \;
+   
+   # Set storage permissions
+   chmod -R 775 storage/
+   chmod -R 775 bootstrap/cache/
+   ```
+
+3. **Web Server Configuration**
+
+   **Nginx Configuration:**
+   ```nginx
+   server {
+       listen 443 ssl http2;
+       server_name api.example.com;
+       root /var/www/glueful/public;
+       
+       ssl_certificate /etc/ssl/certs/example.com.crt;
+       ssl_certificate_key /etc/ssl/private/example.com.key;
+       
+       add_header X-Frame-Options "SAMEORIGIN";
+       add_header X-Content-Type-Options "nosniff";
+       add_header X-XSS-Protection "1; mode=block";
+       
+       location / {
+           try_files $uri /index.php?$query_string;
+       }
+       
+       location ~ \.php$ {
+           fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+           fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+           include fastcgi_params;
+       }
+       
+       location ~ /\.(?!well-known).* {
+           deny all;
+       }
+   }
+   ```
+
+4. **Health Monitoring**
+   ```bash
+   # Set up health check endpoint monitoring
+   # Available at: /health
+   
+   # Add to monitoring system (e.g., Nagios, Zabbix)
+   curl https://api.example.com/health
+   ```
+
+5. **Logging and Monitoring**
+   ```bash
+   # Configure log rotation
+   # /etc/logrotate.d/glueful
+   /var/www/glueful/storage/logs/*.log {
+       daily
+       missingok
+       rotate 14
+       compress
+       notifempty
+       create 0640 www-data www-data
+       sharedscripts
+   }
+   
+   # Monitor logs
+   tail -f storage/logs/app-*.log
+   tail -f storage/logs/error-*.log
+   ```
+
+## CLI Commands Reference
+
+### Migration Commands
+```bash
+php glueful migrate:run                       # Run pending migrations
+php glueful migrate:rollback                  # Rollback last migration
+php glueful migrate:status                    # Check migration status
+php glueful migrate:create <name>             # Create new migration
+```
+
+### Database Commands
+```bash
+php glueful db:status                         # Database connection status
+php glueful db:reset --force                  # Reset database (destructive)
+php glueful db:profile                        # Profile database queries
+```
+
+### Cache Commands
+```bash
+php glueful cache:clear                       # Clear all cache
+php glueful cache:clear --tag=<tag>           # Clear by tag
+php glueful cache:status                      # View cache statistics
+php glueful cache:get <key>                   # Get cache value
+php glueful cache:set <key> <value>           # Set cache value
+php glueful cache:delete <key>                # Delete cache key
+php glueful cache:ttl <key>                   # Get/set TTL
+php glueful cache:expire <key> <seconds>      # Set expiration
+php glueful cache:purge                       # Purge cache
+```
+
+### Queue Commands
+```bash
+php glueful queue:work [driver]               # Process queue jobs
+php glueful queue:autoscale                   # Auto-scale queue workers
+php glueful queue:scheduler                   # Manage queue scheduler
+```
+
+### Extension Commands
+```bash
+php glueful extensions:info [name]            # Show extension info/list
+php glueful extensions:enable <name>          # Enable extension
+php glueful extensions:disable <name>         # Disable extension
+php glueful extensions:create <name>          # Create extension
+php glueful extensions:install <name>         # Install extension
+php glueful extensions:delete <name>          # Delete extension
+php glueful extensions:validate <name>        # Validate extension
+php glueful extensions:benchmark              # Performance test
+php glueful extensions:debug                  # Debug extensions
+```
+
+### Security Commands
+```bash
+php glueful security:check                    # Security check
+php glueful security:scan                     # Security scan
+php glueful security:vulnerabilities          # Check vulnerabilities
+php glueful security:report                   # Generate security report
+php glueful security:lockdown                 # Manage lockdown mode
+php glueful security:reset-password           # Reset user passwords
+php glueful security:revoke-tokens            # Revoke auth tokens
+```
+
+### Generate Commands
+```bash
+php glueful generate:key                      # Generate security key
+php glueful generate:api-definitions          # Generate API definitions
+php glueful generate:controller <name>        # Generate controller
+```
+
+### System Commands
+```bash
+php glueful install                           # Install framework
+php glueful serve                             # Start dev server
+php glueful system:check                      # System health check
+php glueful system:memory                     # Monitor memory usage
+php glueful system:production                 # Setup for production
+```
+
+### Event Commands
+```bash
+php glueful event:create <name>               # Create event class
+php glueful event:listener <name>             # Create event listener
+```
+
+### Other Commands
+```bash
+php glueful help                              # Show all commands
+php glueful route                             # List registered routes
+php glueful archive:manage                    # Manage archives
+php glueful notifications:process-retries     # Process notification retries
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Database Connection Failed**
+   ```bash
+   # Check database status
+   php glueful db:status
+   
+   # Verify credentials in .env
+   # Check MySQL is running
+   systemctl status mysql
+   
+   # Test connection
+   mysql -u glueful_user -p glueful
+   ```
+
+2. **Cache Connection Failed**
+   ```bash
+   # Check Redis status
+   redis-cli ping
+   
+   # Verify Redis config in .env
+   # Clear file cache
+   rm -rf storage/cache/*
+   ```
+
+3. **Permission Errors**
+   ```bash
+   # Fix storage permissions
+   chmod -R 775 storage/
+   chown -R www-data:www-data storage/
+   
+   # Fix bootstrap cache
+   chmod -R 775 bootstrap/cache/
+   ```
+
+4. **Memory Limit Errors**
+   ```bash
+   # Increase PHP memory limit
+   # In php.ini or .htaccess:
+   memory_limit = 512M
+   
+   # Or in code:
+   ini_set('memory_limit', '512M');
+   ```
+
+5. **Queue Worker Issues**
+   ```bash
+   # Monitor queue workers
+   php glueful queue:work --status
+   
+   # Auto-scale workers if needed
+   php glueful queue:autoscale
+   
+   # Restart workers
+   supervisorctl restart glueful-worker:*
+   ```
+
+### Debug Mode
+
+For development debugging:
+
+```env
+# Enable debug mode
+APP_DEBUG=true
+API_DEBUG_MODE=true
+
+# Enable query logging
+DB_QUERY_LOG=true
+
+# Enable detailed error reporting
+ERROR_REPORTING=E_ALL
+DISPLAY_ERRORS=On
+```
+
+### Logs Location
+
+```bash
+# Application logs
+storage/logs/app-YYYY-MM-DD.log
+
+# Error logs
+storage/logs/error-YYYY-MM-DD.log
+
+# Query logs
+storage/logs/query-YYYY-MM-DD.log
+
+# Debug logs
+storage/logs/debug-YYYY-MM-DD.log
+
+# Performance logs
+storage/logs/performance-YYYY-MM-DD.log
+```
+
+### Getting Help
+
+```bash
+# Show all available commands
+php glueful help
+
+# Get help for specific command
+php glueful help migrate:run
+
+# Check system requirements
+php glueful system:check
+
+# Check installed extensions
+php glueful extensions:info
+```
+
+## Next Steps
+
+1. Review [CLAUDE.md](../CLAUDE.md) for development guidelines
+2. Explore the [API documentation](http://localhost:8000/api/docs) (dev mode)
+3. Check [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for upgrading
+4. Join the community forums for support
+
+For production deployments, always follow the security checklist and performance optimization steps outlined above.

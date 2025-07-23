@@ -75,4 +75,55 @@ interface DatabaseDriver
      * @throws \InvalidArgumentException If parameters are invalid
      */
     public function upsert(string $table, array $columns, array $updateColumns): string;
+
+    /**
+     * Get query to retrieve table column information
+     *
+     * Returns a database-specific SQL query to retrieve column names for a given table.
+     * Used for expanding table.* wildcard patterns in SELECT statements.
+     *
+     * Implementation examples:
+     * - MySQL:      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     *               WHERE TABLE_NAME = ? AND TABLE_SCHEMA = DATABASE()
+     * - PostgreSQL: SELECT column_name FROM information_schema.columns
+     *               WHERE table_name = ? AND table_schema = current_schema()
+     * - SQLite:     PRAGMA table_info(table_name)
+     *
+     * @param string $table The target table name (unquoted)
+     * @return string SQL query to retrieve column information
+     */
+    public function getTableColumnsQuery(string $table): string;
+
+    /**
+     * Format current datetime for database storage
+     *
+     * Returns database-agnostic datetime formatting that ensures consistent
+     * datetime storage across different database engines while maintaining
+     * proper timezone handling and precision.
+     *
+     * Implementation examples:
+     * - MySQL:      Returns datetime in 'Y-m-d H:i:s' format
+     * - PostgreSQL: Returns datetime in 'Y-m-d H:i:s' format with timezone awareness
+     * - SQLite:     Returns datetime in 'Y-m-d H:i:s' format (stored as TEXT)
+     *
+     * @param \DateTime|string|null $datetime Optional datetime to format (defaults to current time)
+     * @return string Formatted datetime string ready for database storage
+     * @throws \InvalidArgumentException If provided datetime string is invalid
+     */
+    public function formatDateTime($datetime = null): string;
+
+    /**
+     * Get database-specific ping query for health checks
+     *
+     * Returns an optimized, lightweight query that can be used to verify
+     * database connectivity and responsiveness during connection health checks.
+     *
+     * Implementation examples:
+     * - MySQL:      SELECT 1
+     * - PostgreSQL: SELECT 1
+     * - SQLite:     SELECT 1
+     *
+     * @return string Lightweight SQL query for connectivity testing
+     */
+    public function getPingQuery(): string;
 }

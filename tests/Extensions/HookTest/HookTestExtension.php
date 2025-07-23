@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Extensions\HookTest;
 
-use Glueful\Extensions;
+use Glueful\Extensions\BaseExtension;
 
 /**
  * Test Extension for testing hooks functionality
@@ -12,7 +12,7 @@ use Glueful\Extensions;
  * This is a mock extension used to verify that hooks are properly called
  * during the extension initialization process.
  */
-class HookTestExtension extends Extensions
+class HookTestExtension extends BaseExtension
 {
     /**
      * Initialize the extension
@@ -24,24 +24,24 @@ class HookTestExtension extends Extensions
         $GLOBALS['extension_hooks_called']['initialize'] = true;
     }
 
-    /**
-     * Register services provided by this extension
-     *
-     * @return void
-     */
-    public static function registerServices(): void
-    {
-        $GLOBALS['extension_hooks_called']['registerServices'] = true;
-    }
 
     /**
-     * Register middleware provided by this extension
+     * Check extension health
      *
-     * @return void
+     * @return array Health status with 'healthy' (bool) and 'issues' (array) keys
      */
-    public static function registerMiddleware(): void
+    public static function checkHealth(): array
     {
-        $GLOBALS['extension_hooks_called']['registerMiddleware'] = true;
+        return [
+            'healthy' => true,
+            'issues' => [],
+            'metrics' => [
+                'memory_usage' => memory_get_usage(true),
+                'execution_time' => 0,
+                'database_queries' => 0,
+                'cache_usage' => 0
+            ]
+        ];
     }
 
     /**
@@ -57,15 +57,5 @@ class HookTestExtension extends Extensions
             'version' => '1.0.0',
             'type' => 'test'
         ];
-    }
-
-    /**
-     * Get extension dependencies
-     *
-     * @return array List of extension dependencies
-     */
-    public static function getDependencies(): array
-    {
-        return [];
     }
 }

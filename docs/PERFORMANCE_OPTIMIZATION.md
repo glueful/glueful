@@ -1,37 +1,415 @@
-# Database Performance Optimization Guide
+# Glueful Performance Optimization Guide
 
-This comprehensive guide covers all database performance optimization features in Glueful, including query optimization, caching, profiling, and analysis tools.
+This comprehensive guide covers all performance optimization features in Glueful, including response optimization, database optimization, caching, profiling, and analysis tools.
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Query Optimization](#query-optimization)
-3. [Query Caching System](#query-caching-system)
-4. [Query Analysis Tools](#query-analysis-tools)
-5. [Database Profiling Tools](#database-profiling-tools)
-6. [Query Logger Optimizations](#query-logger-optimizations)
-7. [Best Practices](#best-practices)
-8. [Performance Metrics](#performance-metrics)
-9. [Troubleshooting](#troubleshooting)
+2. [Response Performance Optimization](#response-performance-optimization)
+3. [Query Optimization](#query-optimization)
+4. [Query Caching System](#query-caching-system)
+5. [Query Analysis Tools](#query-analysis-tools)
+6. [Database Profiling Tools](#database-profiling-tools)
+7. [Query Logger Optimizations](#query-logger-optimizations)
+8. [Session Analytics Optimization](#session-analytics-optimization)
+9. [API Metrics System Performance](#api-metrics-system-performance)
+10. [Response Caching Strategies](#response-caching-strategies)
+11. [Memory Management Features](#memory-management-features)
+12. [Best Practices](#best-practices)
+13. [Performance Metrics](#performance-metrics)
+14. [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-Glueful v0.27.0 introduces a comprehensive suite of database performance optimization tools designed to:
+Glueful provides a comprehensive suite of performance optimization tools designed to maximize application performance across all layers:
 
+### Response Performance
+- **40,000+ operations per second** for Response API
+- **25μs average response time** for response generation
+- **Zero memory overhead** compared to direct JsonResponse usage
+- **HTTP caching** with proper headers and ETag validation
+- **Application-level caching** for expensive operations
+
+### Database Performance
 - **Automatically optimize queries** for different database engines (MySQL, PostgreSQL, SQLite)
 - **Cache query results** intelligently with automatic invalidation
 - **Analyze and profile** database operations for bottlenecks
 - **Detect performance issues** and provide actionable recommendations
 - **Monitor query patterns** and identify N+1 problems
 
+### System Performance
+- **Session analytics optimization** with intelligent caching
+- **API metrics** with asynchronous recording and batch processing
+- **Memory management** with monitoring, pooling, and efficient processing
+- **Response caching strategies** with multiple layers and invalidation
+
 ### Performance Improvements
 
 The optimization features provide significant performance gains:
 
+- **Response generation**: 40,000+ operations per second
 - **Complex queries**: 20-40% performance improvement
 - **Join-heavy queries**: Up to 50% improvement for inefficient joins
 - **Cached queries**: 50-95% improvement for frequently accessed data
 - **High-traffic applications**: 30-50% reduction in database load
+- **Memory efficiency**: Up to 98% reduction in memory usage for large datasets
+
+## Response Performance Optimization
+
+The Glueful Response API provides excellent out-of-the-box performance with 40,000+ operations per second and 25μs average response time.
+
+### 📊 When Additional Optimization is Needed
+
+Most applications will never need optimization beyond the standard Response class. Consider additional caching only when:
+
+- **Serving > 50,000 requests per minute**
+- **Response generation becomes a bottleneck** (profiling shows high CPU usage)
+- **Identical responses generated repeatedly** (e.g., configuration endpoints)
+
+### 🎯 Recommended Optimization Strategies
+
+#### 1. HTTP Caching (Recommended)
+
+Use proper HTTP caching headers instead of application-level caching:
+
+```php
+// Add caching headers to responses
+public function getConfiguration(): Response
+{
+    $config = $this->configService->getPublicConfig();
+    
+    return Response::success($config, 'Configuration retrieved')
+        ->setMaxAge(3600)           // Cache for 1 hour
+        ->setPublic()               // Allow CDN/proxy caching
+        ->setEtag(md5(serialize($config))); // Enable conditional requests
+}
+
+// For user-specific data
+public function getUserProfile(int $userId): Response
+{
+    $profile = $this->userService->getProfile($userId);
+    
+    return Response::success($profile, 'Profile retrieved')
+        ->setMaxAge(300)            // 5 minutes
+        ->setPrivate()              // Don't cache in shared caches
+        ->setLastModified($profile->updated_at);
+}
+```
+
+#### 2. Application-Level Caching
+
+Cache expensive operations, not responses:
+
+```php
+class UserService
+{
+    public function getProfile(int $userId): array
+    {
+        return cache()->remember("user_profile:$userId", 600, function() use ($userId) {
+            return $this->repository->getUserWithPermissions($userId);
+        });
+    }
+}
+
+// Controller stays clean
+public function show(int $userId): Response
+{
+    $profile = $this->userService->getProfile($userId);
+    return Response::success($profile, 'Profile retrieved');
+}
+```
+
+#### 3. Middleware-Based Response Caching
+
+For repeated identical responses:
+
+```php
+class ResponseCacheMiddleware implements MiddlewareInterface
+{
+    public function __construct(
+        private CacheStore $cache,
+        private array $cacheableRoutes = []
+    ) {}
+
+    public function process(Request $request, RequestHandlerInterface $handler): Response
+    {
+        if (!$this->shouldCache($request)) {
+            return $handler->handle($request);
+        }
+
+        $cacheKey = $this->generateCacheKey($request);
+        
+        // Try to get from cache
+        if ($cached = $this->cache->get($cacheKey)) {
+            return unserialize($cached);
+        }
+
+        // Generate response
+        $response = $handler->handle($request);
+
+        // Cache successful responses
+        if ($response->getStatusCode() === 200) {
+            $this->cache->set($cacheKey, serialize($response), 300);
+        }
+
+        return $response;
+    }
+
+    private function shouldCache(Request $request): bool
+    {
+        return $request->getMethod() === 'GET' && 
+               in_array($request->getPathInfo(), $this->cacheableRoutes);
+    }
+}
+```
+
+#### 4. Reverse Proxy Caching
+
+Use Nginx, Varnish, or CDN for maximum performance:
+
+```nginx
+# Nginx configuration
+location /api/config {
+    proxy_pass http://backend;
+    proxy_cache api_cache;
+    proxy_cache_valid 200 1h;
+    proxy_cache_key "$request_uri";
+    add_header X-Cache-Status $upstream_cache_status;
+}
+```
+
+### 🔧 Implementation Examples
+
+#### HTTP Cache Helper
+
+Add to BaseController for easy HTTP caching:
+
+```php
+abstract class BaseController
+{
+    protected function cached(Response $response, int $maxAge = 300, bool $public = false): Response
+    {
+        $response->setMaxAge($maxAge);
+        
+        if ($public) {
+            $response->setPublic();
+        } else {
+            $response->setPrivate();
+        }
+        
+        // Add ETag for conditional requests
+        $response->setEtag(md5($response->getContent()));
+        
+        return $response;
+    }
+    
+    protected function notModified(): Response
+    {
+        return new Response('', 304);
+    }
+}
+
+// Usage
+class ConfigController extends BaseController
+{
+    public function show(): Response
+    {
+        $config = $this->configService->getPublicConfig();
+        
+        return $this->cached(
+            Response::success($config, 'Configuration retrieved'),
+            3600,  // 1 hour
+            true   // public caching
+        );
+    }
+}
+```
+
+#### Smart Caching Service
+
+For application-level caching with tags:
+
+```php
+class SmartCache
+{
+    public function __construct(private CacheStore $cache) {}
+    
+    public function rememberResponse(string $key, int $ttl, callable $callback, array $tags = []): Response
+    {
+        $cached = $this->cache->get($key);
+        
+        if ($cached) {
+            return unserialize($cached);
+        }
+        
+        $response = $callback();
+        
+        if ($response instanceof Response && $response->getStatusCode() === 200) {
+            $this->cache->set($key, serialize($response), $ttl);
+            
+            // Tag the cache entry for easy invalidation
+            foreach ($tags as $tag) {
+                $this->cache->tag($tag, $key);
+            }
+        }
+        
+        return $response;
+    }
+    
+    public function invalidateTag(string $tag): void
+    {
+        $keys = $this->cache->getTaggedKeys($tag);
+        foreach ($keys as $key) {
+            $this->cache->delete($key);
+        }
+    }
+}
+
+// Usage
+class UserController extends BaseController
+{
+    public function show(int $userId): Response
+    {
+        return $this->smartCache->rememberResponse(
+            "user_profile:$userId",
+            600,
+            fn() => Response::success(
+                $this->userService->getProfile($userId),
+                'Profile retrieved'
+            ),
+            ["user:$userId", 'user_profiles']
+        );
+    }
+}
+```
+
+### 📈 Performance Monitoring
+
+#### Track Response Performance
+
+```php
+class ResponsePerformanceMiddleware implements MiddlewareInterface
+{
+    public function process(Request $request, RequestHandlerInterface $handler): Response
+    {
+        $start = microtime(true);
+        $response = $handler->handle($request);
+        $duration = (microtime(true) - $start) * 1000;
+        
+        // Add performance headers in development
+        if (app()->isDebug()) {
+            $response->headers->set('X-Response-Time', $duration . 'ms');
+            $response->headers->set('X-Memory-Usage', memory_get_usage(true));
+        }
+        
+        // Log slow responses
+        if ($duration > 100) { // 100ms threshold
+            logger()->warning('Slow response detected', [
+                'url' => $request->getUri(),
+                'duration' => $duration,
+                'memory' => memory_get_usage(true)
+            ]);
+        }
+        
+        return $response;
+    }
+}
+```
+
+#### Cache Hit Rate Monitoring
+
+```php
+class CacheMetrics
+{
+    private static int $hits = 0;
+    private static int $misses = 0;
+    
+    public static function hit(): void { self::$hits++; }
+    public static function miss(): void { self::$misses++; }
+    
+    public static function getStats(): array
+    {
+        $total = self::$hits + self::$misses;
+        return [
+            'hits' => self::$hits,
+            'misses' => self::$misses,
+            'hit_rate' => $total > 0 ? (self::$hits / $total) * 100 : 0
+        ];
+    }
+}
+```
+
+### 🎯 Performance Targets
+
+#### Benchmarks for Different Application Types
+
+**Small Applications (< 1K requests/min)**
+- Standard Response API: ✅ Sufficient
+- Additional optimizations: ❌ Not needed
+
+**Medium Applications (1K-10K requests/min)**  
+- HTTP caching: ✅ Recommended
+- Application caching: ✅ For expensive operations
+- Response caching: ⚠️ Only if needed
+
+**Large Applications (> 10K requests/min)**
+- All above optimizations: ✅ Required
+- Reverse proxy caching: ✅ Essential  
+- CDN integration: ✅ Recommended
+
+### 🔍 Response Optimization Best Practices
+
+#### 1. Measure First, Optimize Second
+
+```php
+// Use profiling to identify bottlenecks
+$profiler = app()->get(ProfilerInterface::class);
+$profiler->start('user_profile_generation');
+
+$profile = $this->userService->getProfile($userId);
+
+$profiler->end('user_profile_generation');
+```
+
+#### 2. Cache Invalidation Strategy
+
+```php
+class UserService
+{
+    public function updateProfile(int $userId, array $data): User
+    {
+        $user = $this->repository->update($userId, $data);
+        
+        // Clear related caches
+        cache()->forget("user_profile:$userId");
+        cache()->invalidateTag("user:$userId");
+        
+        return $user;
+    }
+}
+```
+
+#### 3. Gradual Optimization
+
+```php
+// Start with simple HTTP caching
+return Response::success($data)->setMaxAge(300);
+
+// Add application caching if needed
+$data = cache()->remember($key, 300, $callback);
+
+// Add response caching only for high-traffic endpoints
+// (via middleware or custom implementation)
+```
+
+### ✅ Response Performance Summary
+
+The standard Glueful Response API provides excellent performance (40K+ ops/sec) for the vast majority of applications. When additional performance is needed:
+
+1. **Start with HTTP caching** - proper, standards-compliant, works with CDNs
+2. **Add application-level caching** - cache expensive operations, not responses  
+3. **Use reverse proxy caching** - for maximum performance at scale
+4. **Implement response caching selectively** - only for specific high-traffic endpoints
 
 ## Query Optimization
 
@@ -725,6 +1103,397 @@ $metrics = $queryLogger->getAuditPerformanceMetrics();
     'avg_audit_time' => 1.505     // milliseconds per logged operation
 ]
 */
+```
+
+## Session Analytics Optimization
+
+The SessionAnalytics class provides comprehensive session tracking with performance optimizations for high-traffic applications.
+
+### Key Features
+
+- **Cache-optimized analytics**: Intelligent caching with configurable TTL
+- **Geographic distribution analysis**: Efficient country/region tracking
+- **Device and browser analytics**: Performance-optimized user agent parsing
+- **Security event tracking**: Real-time suspicious activity detection
+- **Memory-efficient filtering**: Optimized session aggregation and filtering
+
+### Basic Usage
+
+```php
+use Glueful\Auth\SessionAnalytics;
+
+// Initialize analytics service
+$analytics = container()->get(SessionAnalytics::class);
+
+// Get performance-optimized session metrics
+$metrics = $analytics->getSessionMetrics($userUuid);
+/*
+[
+    'total_sessions' => 45,
+    'active_sessions' => 3,
+    'average_duration' => 1847.5,
+    'geographic_distribution' => [
+        'US' => 25,
+        'UK' => 12,
+        'CA' => 8
+    ],
+    'device_breakdown' => [
+        'desktop' => 32,
+        'mobile' => 13
+    ]
+]
+*/
+```
+
+### Advanced Analytics Features
+
+#### Session Behavior Analysis
+
+```php
+// Analyze session patterns with caching
+$patterns = $analytics->analyzeSessionPatterns($userUuid);
+/*
+[
+    'login_frequency' => [
+        'daily_avg' => 2.3,
+        'peak_hours' => [9, 14, 20],
+        'peak_days' => ['monday', 'wednesday']
+    ],
+    'session_duration_trends' => [
+        'avg_duration' => 1847,
+        'trend' => 'increasing',
+        'variance' => 234.5
+    ],
+    'geographic_patterns' => [
+        'primary_locations' => ['New York', 'London'],
+        'travel_detected' => false
+    ]
+]
+*/
+```
+
+#### Security Risk Assessment
+
+```php
+// Calculate security risk score efficiently
+$riskScore = $analytics->calculateRiskScore($sessionId);
+/*
+[
+    'overall_score' => 85, // 0-100 scale
+    'risk_factors' => [
+        'unusual_location' => false,
+        'suspicious_timing' => false,
+        'device_mismatch' => true,
+        'multiple_concurrent' => false
+    ],
+    'recommendations' => [
+        'Verify new device authentication',
+        'Monitor for concurrent sessions'
+    ]
+]
+*/
+```
+
+### Configuration for High Performance
+
+```php
+// config/session.php
+'analytics' => [
+    'enabled' => true,
+    'cache_ttl' => 300, // 5 minutes for session metrics
+    'geographic_cache_ttl' => 3600, // 1 hour for geographic data
+    'bulk_processing_enabled' => true,
+    'max_concurrent_analysis' => 10,
+    'memory_limit_per_analysis' => '64M'
+]
+```
+
+## API Metrics System Performance
+
+The ApiMetricsService provides comprehensive API performance monitoring with optimization features for production environments.
+
+### Key Features
+
+- **Asynchronous metric recording**: Non-blocking metric collection
+- **Batch processing**: Configurable batch sizes for optimal database performance
+- **Daily aggregation**: Automatic data compression for long-term storage
+- **Rate limiting integration**: Performance monitoring with circuit breakers
+- **Memory-efficient processing**: Chunked data processing for large datasets
+
+### Basic Usage
+
+```php
+use Glueful\Services\ApiMetricsService;
+
+// Initialize metrics service
+$metrics = container()->get(ApiMetricsService::class);
+
+// Record API call (asynchronous)
+$metrics->recordApiCall($endpoint, $method, $responseTime, $statusCode, [
+    'user_id' => $userId,
+    'ip_address' => $clientIp,
+    'user_agent' => $userAgent
+]);
+
+// Get performance metrics
+$performanceData = $metrics->getEndpointPerformance($endpoint, [
+    'time_range' => '24h',
+    'include_percentiles' => true
+]);
+```
+
+### Performance Optimization Features
+
+#### Asynchronous Processing
+
+```php
+// Configure async processing for high-traffic applications
+$metrics->configureAsyncProcessing([
+    'enabled' => true,
+    'batch_size' => 100,
+    'flush_interval' => 30, // seconds
+    'max_memory_usage' => '128M'
+]);
+
+// Record metrics without blocking the main request
+$metrics->recordApiCallAsync($endpoint, $method, $responseTime, $statusCode);
+```
+
+#### Daily Aggregation
+
+```php
+// Automatic daily aggregation reduces storage and improves query performance
+$dailyStats = $metrics->getDailyAggregatedStats($date);
+/*
+[
+    'total_requests' => 15420,
+    'avg_response_time' => 245.7,
+    'error_rate' => 2.3,
+    'top_endpoints' => [
+        '/api/users' => 3245,
+        '/api/orders' => 2156
+    ],
+    'performance_percentiles' => [
+        'p50' => 198.2,
+        'p95' => 567.8,
+        'p99' => 1234.5
+    ]
+]
+*/
+```
+
+### Configuration for Production
+
+```php
+// config/api_metrics.php
+'performance' => [
+    'async_enabled' => true,
+    'batch_processing' => true,
+    'batch_size' => 500,
+    'flush_interval' => 30,
+    'daily_aggregation' => true,
+    'retention_days' => 90,
+    'memory_limit' => '256M',
+    'max_concurrent_processing' => 5
+]
+```
+
+## Response Caching Strategies
+
+The ResponseCachingTrait provides multiple caching strategies optimized for different use cases and performance requirements.
+
+### Key Features
+
+- **Multiple caching strategies**: Response, query, fragment, and edge caching
+- **Permission-aware caching**: Different TTL for user types and roles
+- **ETag validation**: Efficient cache revalidation with conditional requests
+- **CDN integration**: Edge cache headers for maximum performance
+- **Tag-based invalidation**: Intelligent cache invalidation
+- **Performance tracking**: Cache hit/miss metrics and optimization insights
+
+### Basic Usage
+
+```php
+use Glueful\Controllers\Traits\ResponseCachingTrait;
+
+class ProductController extends BaseController
+{
+    use ResponseCachingTrait;
+    
+    public function index(): Response
+    {
+        return $this->cacheResponse('products.index', 3600, function() {
+            $products = $this->productService->getAllProducts();
+            return Response::success($products, 'Products retrieved');
+        });
+    }
+}
+```
+
+### Advanced Caching Strategies
+
+#### Permission-Aware Caching
+
+```php
+// Different cache TTL based on user permissions
+public function getProducts(): Response
+{
+    $cacheKey = $this->getPermissionAwareCacheKey('products', auth()->user());
+    $ttl = auth()->user()->hasRole('admin') ? 1800 : 3600; // Shorter cache for admins
+    
+    return $this->cacheResponse($cacheKey, $ttl, function() {
+        return $this->productService->getProductsForUser(auth()->user());
+    });
+}
+```
+
+#### CDN Edge Caching
+
+```php
+// Optimize for CDN edge caching
+public function getPublicContent(): Response
+{
+    return $this->cacheForCDN('public.content', 7200, function() {
+        return $this->contentService->getPublicContent();
+    }, [
+        'vary_headers' => ['Accept-Language'],
+        'edge_ttl' => 3600,
+        'browser_ttl' => 1800
+    ]);
+}
+```
+
+### Cache Invalidation Strategies
+
+```php
+// Cache with tags for intelligent invalidation
+public function getOrderSummary(int $orderId): Response
+{
+    return $this->cacheWithTags(
+        "order.summary.{$orderId}", 
+        1800,
+        ['orders', "order.{$orderId}", "user." . auth()->id()],
+        function() use ($orderId) {
+            return $this->orderService->getOrderSummary($orderId);
+        }
+    );
+}
+```
+
+### Configuration
+
+```php
+// config/cache.php
+'response_caching' => [
+    'enabled' => true,
+    'default_ttl' => 3600,
+    'permission_aware' => true,
+    'cdn_integration' => true,
+    'etag_validation' => true,
+    'performance_tracking' => true
+]
+```
+
+## Memory Management Features
+
+Glueful includes comprehensive memory management features to optimize performance and prevent memory issues in production environments.
+
+### MemoryManager
+
+The MemoryManager class provides real-time memory monitoring and management capabilities.
+
+#### Basic Usage
+
+```php
+use Glueful\Performance\MemoryManager;
+
+$memoryManager = new MemoryManager();
+
+// Get current memory usage
+$usage = $memoryManager->getCurrentUsage();
+/*
+[
+    'current' => '64MB',
+    'peak' => '89MB',
+    'limit' => '256MB',
+    'percentage' => 25.0
+]
+*/
+
+// Check memory thresholds
+if ($memoryManager->isMemoryWarning()) {
+    // Implement memory cleanup strategies
+    $this->performMemoryCleanup();
+}
+
+if ($memoryManager->isMemoryCritical()) {
+    // Emergency memory management
+    $this->emergencyMemoryCleanup();
+}
+```
+
+### MemoryPool
+
+The MemoryPool class provides efficient object pooling to reduce memory allocation overhead.
+
+```php
+use Glueful\Performance\MemoryPool;
+
+$pool = new MemoryPool();
+
+// Acquire and release resources
+$resource = $pool->acquire('database_connections');
+try {
+    // Use the resource
+    $results = $resource->query($sql);
+} finally {
+    $pool->release('database_connections', $resource);
+}
+```
+
+### ChunkedDatabaseProcessor
+
+Process large datasets efficiently with minimal memory usage.
+
+```php
+use Glueful\Performance\ChunkedDatabaseProcessor;
+
+$processor = new ChunkedDatabaseProcessor($connection, 1000);
+
+// Process large result sets in chunks
+$totalProcessed = $processor->processSelectQuery(
+    "SELECT * FROM users WHERE status = ? AND created_at > ?",
+    function($rows) {
+        foreach ($rows as $row) {
+            $this->processUser($row);
+        }
+        return count($rows);
+    },
+    ['active', '2024-01-01'],
+    500 // chunk size
+);
+```
+
+### Configuration
+
+```php
+// config/performance.php
+'memory_management' => [
+    'monitoring_enabled' => true,
+    'warning_threshold' => '128M',
+    'critical_threshold' => '200M',
+    'auto_cleanup_enabled' => true,
+    'pool_size_limits' => [
+        'default' => 100,
+        'database_connections' => 50,
+        'api_clients' => 25
+    ],
+    'chunked_processing' => [
+        'default_chunk_size' => 1000,
+        'max_chunk_size' => 10000,
+        'memory_limit' => '256M'
+    ]
+]
 ```
 
 ## Best Practices

@@ -51,6 +51,11 @@ abstract class TestCase extends BaseTestCase
      */
     protected function loadTestEnvironment(): void
     {
+        // Set default test environment settings
+        $_ENV['EVENTS_ENABLED'] = $_ENV['EVENTS_ENABLED'] ?? 'false';
+        $_ENV['CACHE_DRIVER'] = $_ENV['CACHE_DRIVER'] ?? 'file';
+        $_ENV['DB_POOLING_ENABLED'] = $_ENV['DB_POOLING_ENABLED'] ?? 'false';
+
         // Load environment variables from .env.testing if it exists
         if (file_exists(__DIR__ . '/../.env.testing')) {
             $dotenv = \Dotenv\Dotenv::createImmutable(__DIR__ . '/..', '.env.testing');
@@ -78,8 +83,11 @@ abstract class TestCase extends BaseTestCase
     /**
      * Helper method to create a test request
      */
-    protected function createRequest(string $method, string $uri, array $parameters = []): \Symfony\Component\HttpFoundation\Request
-    {
+    protected function createRequest(
+        string $method,
+        string $uri,
+        array $parameters = []
+    ): \Symfony\Component\HttpFoundation\Request {
         $request = \Symfony\Component\HttpFoundation\Request::create($uri, $method, $parameters);
         return $request;
     }

@@ -1,0 +1,73 @@
+{
+  "manifestVersion": "2.0",
+  "id": "rbac",
+  "name": "RBAC",
+  "displayName": "Role-Based Access Control",
+  "version": "0.27.0",
+  "description": "Modern, flexible role-based access control system with hierarchical roles, permissions, and audit trails",
+  "author": {
+    "name": "Glueful Team",
+    "email": "dev@glueful.com",
+    "url": "https://glueful.com"
+  },
+  "publisher": "glueful-team",
+  "license": "MIT",
+  "main": "./RBAC.php",
+  "main_class": "Glueful\\Extensions\\RBAC",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\RBAC\\": "src/"
+    }
+  },
+  "categories": ["authentication", "authorization", "security"],
+  "keywords": ["rbac", "roles", "permissions", "security", "access-control"],
+  "engines": {
+    "glueful": ">=0.27.0",
+    "php": ">=8.2.0"
+  },
+  "dependencies": {
+    "composer": {},
+    "extensions": []
+  },
+  "provides": {
+    "services": ["RBACServiceProvider"],
+    "commands": [],
+    "middleware": ["rbac.permission", "rbac.role"],
+    "routes": ["rbac"],
+    "channels": []
+  },
+  "capabilities": [
+    "rbac.permission.provider",
+    "rbac.role.management",
+    "rbac.permission.management",
+    "rbac.hierarchy.enabled",
+    "rbac.audit.enabled",
+    "rbac.cache.enabled",
+    "rbac.temporal.permissions"
+  ],
+  "assets": {
+    "templates": "./templates/",
+    "public": "./assets/",
+    "migrations": "./migrations/",
+    "config": "./src/config.php"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#2563EB",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/RBAC"
+  },
+  "support": {
+    "documentation": "https://docs.glueful.com/extensions/rbac",
+    "issues": "https://github.com/glueful/extensions/issues",
+    "email": "support@glueful.com"
+  },
+  "compatibility": {
+    "environments": ["production", "development"],
+    "platforms": ["linux", "macos", "windows"],
+    "databases": ["MySQL", "PostgreSQL", "SQLite"]
+  }
+}

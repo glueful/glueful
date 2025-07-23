@@ -1,9 +1,7 @@
 <?php
 
 require_once __DIR__ . '/Mocks/config_helper.php';
-require_once __DIR__ . '/Mocks/AuditEvent.php';
 require_once __DIR__ . '/Mocks/MockCacheEngine.php';
-require_once __DIR__ . '/Mocks/MockAuditLogger.php';
 require_once __DIR__ . '/Mocks/MockRateLimiterDistributor.php';
 require_once __DIR__ . '/Mocks/MockRateLimiter.php';
 require_once __DIR__ . '/Mocks/MockRateLimiterRule.php';

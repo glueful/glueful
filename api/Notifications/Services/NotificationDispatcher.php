@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Notifications\Services;
 
 use DateTime;
-use Glueful\Events\EventDispatcher;
+use Glueful\Events\Event;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Contracts\NotificationExtension;
@@ -39,10 +39,6 @@ class NotificationDispatcher
      */
     private ?LogManager $logger;
 
-    /**
-     * @var EventDispatcher|null Event dispatcher for notification events
-     */
-    private ?EventDispatcher $eventDispatcher;
 
     /**
      * @var array Configuration options
@@ -54,18 +50,15 @@ class NotificationDispatcher
      *
      * @param ChannelManager $channelManager Channel manager instance
      * @param LogManager|null $logger Logger instance
-     * @param EventDispatcher|null $eventDispatcher Event dispatcher instance
      * @param array $config Configuration options
      */
     public function __construct(
         ChannelManager $channelManager,
         ?LogManager $logger = null,
-        ?EventDispatcher $eventDispatcher = null,
         array $config = []
     ) {
         $this->channelManager = $channelManager;
         $this->logger = $logger;
-        $this->eventDispatcher = $eventDispatcher;
         $this->config = $config;
     }
 
@@ -297,27 +290,6 @@ class NotificationDispatcher
         return $this->channelManager;
     }
 
-    /**
-     * Set the event dispatcher
-     *
-     * @param EventDispatcher $eventDispatcher Event dispatcher instance
-     * @return self
-     */
-    public function setEventDispatcher(EventDispatcher $eventDispatcher): self
-    {
-        $this->eventDispatcher = $eventDispatcher;
-        return $this;
-    }
-
-    /**
-     * Get the event dispatcher
-     *
-     * @return EventDispatcher|null The event dispatcher
-     */
-    public function getEventDispatcher(): ?EventDispatcher
-    {
-        return $this->eventDispatcher;
-    }
 
     /**
      * Resolve which channels to use for sending a notification
@@ -428,10 +400,8 @@ class NotificationDispatcher
             'channel' => $channel
         ]);
 
-        // Dispatch the event if event dispatcher is available
-        if ($this->eventDispatcher !== null) {
-            $this->eventDispatcher->dispatch($event);
-        }
+        // Dispatch the event
+        Event::dispatch($event);
     }
 
     /**
@@ -469,10 +439,8 @@ class NotificationDispatcher
             'exception' => $exception ? $exception->getMessage() : null
         ]);
 
-        // Dispatch the event if event dispatcher is available
-        if ($this->eventDispatcher !== null) {
-            $this->eventDispatcher->dispatch($event);
-        }
+        // Dispatch the event
+        Event::dispatch($event);
     }
 
     /**

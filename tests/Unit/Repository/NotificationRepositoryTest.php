@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Unit\Repository;
 
 use Tests\Unit\Repository\Mocks\TestNotificationRepository;
-use Tests\Unit\Repository\Mocks\TestNotification;
 use Tests\Unit\Repository\Mocks\MockNotificationConnection;
 use Tests\TestCase;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -159,15 +158,15 @@ class NotificationRepositoryTest extends TestCase
         // Call the method
         $result = $this->notificationRepository->findForNotifiable('user', 'user-uuid');
 
-        // Assert we got notification objects
+        // Assert we got notification arrays
         $this->assertCount(2, $result);
-        $this->assertInstanceOf(Notification::class, $result[0]);
-        $this->assertInstanceOf(Notification::class, $result[1]);
+        $this->assertIsArray($result[0]);
+        $this->assertIsArray($result[1]);
 
         // Check first notification values
-        $this->assertEquals('12345678-1234-1234-1234-123456789012', $result[0]->getUuid());
-        $this->assertEquals('account_created', $result[0]->getType());
-        $this->assertEquals('Welcome to Glueful', $result[0]->getSubject());
+        $this->assertEquals('12345678-1234-1234-1234-123456789012', $result[0]['uuid']);
+        $this->assertEquals('account_created', $result[0]['type']);
+        $this->assertEquals('Welcome to Glueful', $result[0]['subject']);
     }
 
     /**
@@ -244,11 +243,11 @@ class NotificationRepositoryTest extends TestCase
         $this->mockQueryBuilder
             ->method('get')
             ->willReturn($unreadNotifications);
-        // Mock update method to simulate successful updates
+        // Mock update method to simulate successful bulk update
         $this->mockQueryBuilder
-            ->expects($this->exactly(2))
+            ->expects($this->once())
             ->method('update')
-            ->willReturn(1); // Each update returns 1 row affected
+            ->willReturn(2); // Bulk update returns total rows affected
 
         // Mock transaction methods - void methods don't return values
         $this->mockQueryBuilder
@@ -509,19 +508,16 @@ class NotificationRepositoryTest extends TestCase
      */
     public function testCountForNotifiable(): void
     {
-        // Configure mock to return count
+        // Configure mock to return count using the count method
         $this->mockQueryBuilder
-            ->method('select')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('where')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('whereNull')
-            ->willReturnSelf();
-        $this->mockQueryBuilder
-            ->method('get')
-            ->willReturn([['count' => 5]]);
+            ->expects($this->once())
+            ->method('count')
+            ->with('notifications', [
+                'notifiable_type' => 'user',
+                'notifiable_id' => 'user-123',
+                'read_at' => null
+            ])
+            ->willReturn(5);
 
         // Call method
         $result = $this->notificationRepository->countForNotifiable('user', 'user-123', true);
@@ -552,13 +548,37 @@ class NotificationRepositoryTest extends TestCase
      */
     public function testDeleteNotificationByUuid(): void
     {
-        // Configure mock for successful delete
+        $testUuid = 'test-uuid-123';
+        // Mock find method to return an existing record
+        $this->mockQueryBuilder
+            ->method('select')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('where')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('limit')
+            ->willReturnSelf();
+        $this->mockQueryBuilder
+            ->method('get')
+            ->willReturn([
+                [
+                    'uuid' => $testUuid,
+                    'type' => 'test_notification',
+                    'subject' => 'Test Subject',
+                    'content' => 'Test Content',
+                    'notifiable_type' => 'user',
+                    'notifiable_id' => 'user-123'
+                ]
+            ]);
+
+        // Configure mock for successful delete (QueryBuilder.delete returns bool)
         $this->mockQueryBuilder
             ->method('delete')
             ->willReturn(true);
 
         // Call method
-        $result = $this->notificationRepository->deleteNotificationByUuid('test-uuid-123');
+        $result = $this->notificationRepository->deleteNotificationByUuid($testUuid);
 
         // Assert success
         $this->assertTrue($result);

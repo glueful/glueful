@@ -3,11 +3,11 @@
 use Glueful\Http\Router;
 use Glueful\Controllers\FilesController;
 
-
-$filesController = new FilesController();
+// Get the container from the global app() helper
+$container = app();
 
 // File routes
-Router::group('/files', function() use ($filesController) {
+Router::group('/files', function () use ($container) {
     /**
      * @route GET /files/{uuid}
      * @summary Get File
@@ -20,7 +20,7 @@ Router::group('/files', function() use ($filesController) {
      * @param h query integer false "Image height in pixels (1-1500)"
      * @param q query integer false "Image quality (1-100)"
      * @response 200 application/json "File retrieved successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="File unique identifier",
@@ -37,12 +37,12 @@ Router::group('/files', function() use ($filesController) {
      *     created_at:string="Creation timestamp",
      *     updated_at:string="Last update timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{uuid}', function($params) use ($filesController) {
+    Router::get('/{uuid}', function ($params) use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->getFile($params);
     });
 
@@ -52,9 +52,12 @@ Router::group('/files', function() use ($filesController) {
      * @description Uploads a new file to the system, supporting both multipart form uploads and base64 encoded content
      * @tag Files
      * @requiresAuth true
-     * @requestBody file:file="File to upload (when using multipart/form-data)" base64:string="Base64 encoded file content (when using application/json)" name:string="Custom filename (optional)" mime_type:string="MIME type of the file (optional)" {required=file|base64}
+     * @requestBody file:file="File to upload (when using multipart/form-data)"
+     *             base64:string="Base64 encoded file content (when using application/json)"
+     *             name:string="Custom filename (optional)"
+     *             mime_type:string="MIME type of the file (optional)" {required=file|base64}
      * @response 201 application/json "File uploaded successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="Success message",
      *   data:{
      *     uuid:string="File unique identifier",
@@ -64,14 +67,14 @@ Router::group('/files', function() use ($filesController) {
      *     size:integer="File size in bytes",
      *     created_at:string="Creation timestamp"
      *   },
-     *   code:integer="HTTP status code"
      * }
      * @response 400 "Invalid file data"
      * @response 401 "Unauthorized access"
      * @response 413 "File too large"
      * @response 415 "Unsupported file type"
      */
-    Router::post('/', function() use ($filesController) {
+    Router::post('/', function () use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->uploadFile();
     });
 
@@ -83,15 +86,15 @@ Router::group('/files', function() use ($filesController) {
      * @requiresAuth true
      * @param uuid path string true "UUID of the file to delete"
      * @response 200 application/json "File deleted successfully" {
-     *   success:boolean="Success status",
+     *   success:boolean="true",
      *   message:string="File deleted successfully",
-     *   code:integer="HTTP status code"
      * }
      * @response 404 "File not found"
      * @response 401 "Unauthorized access"
      * @response 403 "Permission denied"
      */
-    Router::delete('/{uuid}', function($params) use ($filesController) {
+    Router::delete('/{uuid}', function ($params) use ($container) {
+        $filesController = $container->get(FilesController::class);
         return $filesController->deleteFile($params);
     });
 }, requiresAuth: true);

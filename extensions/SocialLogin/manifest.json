@@ -1,0 +1,71 @@
+{
+  "manifestVersion": "2.0",
+  "id": "social-login",
+  "name": "SocialLogin",
+  "displayName": "Social Login",
+  "version": "0.18.0",
+  "description": "Provides social authentication through Google, Facebook, GitHub, and Apple",
+  "author": {
+    "name": "Glueful Team",
+    "email": "dev@glueful.com",
+    "url": "https://glueful.com"
+  },
+  "publisher": "glueful-team",
+  "license": "MIT",
+  "main": "./SocialLogin.php",
+  "main_class": "Glueful\\Extensions\\SocialLogin",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\SocialLogin\\": "src/"
+    }
+  },
+  "categories": ["authentication", "social-integration"],
+  "keywords": ["social", "oauth", "authentication", "google", "facebook", "github", "apple"],
+  "engines": {
+    "glueful": ">=0.27.0",
+    "php": ">=8.2.0"
+  },
+  "dependencies": {
+    "composer": {},
+    "extensions": []
+  },
+  "provides": {
+    "services": ["SocialLoginServiceProvider"],
+    "commands": [],
+    "middleware": [],
+    "routes": ["social-login"],
+    "channels": []
+  },
+  "capabilities": [
+    "auth.social.google",
+    "auth.social.facebook",
+    "auth.social.github",
+    "auth.social.apple",
+    "oauth.client",
+    "jwt.tokens"
+  ],
+  "assets": {
+    "templates": "./templates/",
+    "public": "./assets/",
+    "migrations": "./migrations/",
+    "config": "./src/config.php"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#4285F4",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/SocialLogin"
+  },
+  "support": {
+    "documentation": "https://docs.glueful.com/extensions/social-login",
+    "issues": "https://github.com/glueful/extensions/issues",
+    "email": "support@glueful.com"
+  },
+  "compatibility": {
+    "environments": ["production", "development"],
+    "platforms": ["linux", "macos", "windows"]
+  }
+}

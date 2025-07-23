@@ -27,7 +27,6 @@ class TestNotificationRepository extends NotificationRepository
         $this->table = 'notifications';
         $this->primaryKey = 'uuid';
         $this->defaultFields = ['*'];
-        $this->containsSensitiveData = false;
 
         // Set the db property (which was previously set to queryBuilder)
         $this->db = $queryBuilder;
@@ -249,7 +248,7 @@ class TestNotificationRepository extends NotificationRepository
      * Override the save method with mock implementation
      *
      * @param \Glueful\Notifications\Models\Notification $notification The notification to save
-     * @param string|null $userId ID of user performing the action, for audit logging
+     * @param string|null $userId ID of user performing the action
      * @return bool Success status
      */
     public function save(\Glueful\Notifications\Models\Notification $notification, ?string $userId = null): bool

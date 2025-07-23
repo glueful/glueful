@@ -1,0 +1,70 @@
+{
+  "manifestVersion": "2.0",
+  "id": "email-notification",
+  "name": "EmailNotification",
+  "displayName": "Email Notification",
+  "version": "0.21.0",
+  "description": "Provides email notification capabilities using SMTP/PHPMailer",
+  "author": {
+    "name": "Glueful Team",
+    "email": "dev@glueful.com",
+    "url": "https://glueful.com"
+  },
+  "publisher": "glueful-team",
+  "license": "MIT",
+  "main": "./EmailNotification.php",
+  "main_class": "Glueful\\Extensions\\EmailNotification",
+  "autoload": {
+    "psr-4": {
+      "Glueful\\Extensions\\EmailNotification\\": "src/"
+    }
+  },
+  "categories": ["notifications", "communication"],
+  "keywords": ["email", "smtp", "notifications", "phpmailer"],
+  "engines": {
+    "glueful": ">=0.27.0",
+    "php": ">=8.2.0"
+  },
+  "dependencies": {
+    "composer": {
+      "phpmailer/phpmailer": "^6.8"
+    },
+    "extensions": []
+  },
+  "provides": {
+    "services": ["EmailNotificationServiceProvider"],
+    "channels": ["email"],
+    "commands": [],
+    "middleware": [],
+    "routes": []
+  },
+  "capabilities": [
+    "notifications.email",
+    "smtp.authentication",
+    "templates.html",
+    "templates.text"
+  ],
+  "assets": {
+    "templates": "./src/Templates/",
+    "public": "./assets/",
+    "config": "./src/config.php"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#3064D0",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glueful/extensions/tree/main/extensions/EmailNotification"
+  },
+  "support": {
+    "documentation": "https://docs.glueful.com/extensions/email-notification",
+    "issues": "https://github.com/glueful/extensions/issues",
+    "email": "support@glueful.com"
+  },
+  "compatibility": {
+    "environments": ["production", "development", "testing"],
+    "platforms": ["linux", "macos", "windows"]
+  }
+}

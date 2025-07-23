@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Glueful;
 
-use Glueful\Permissions\Permission;
 use Glueful\Helpers\Utils;
 use Glueful\Database\Schema\SchemaManager;
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
+use Glueful\Services\FileFinder;
 
 /**
  * JSON Definition Generator for API
@@ -234,30 +234,36 @@ class ApiDefinitionGenerator
         $definitionsPath = config('app.paths.json_definitions');
         $definitionsDocPath = config('app.paths.api_docs') . 'api-doc-json-definitions/';
 
-        // Process API doc definition files
+        // Process API doc definition files using FileFinder
+        $fileFinder = container()->get(FileFinder::class);
+        $finder = $fileFinder->createFinder();
+
         if (is_dir($definitionsDocPath)) {
-            foreach (glob($definitionsDocPath . "*.json") as $file) {
+            $docFiles = $finder->files()->in($definitionsDocPath)->name('*.json');
+            foreach ($docFiles as $file) {
                 try {
-                    $docGenerator->generateFromDocJson($file);
-                    $this->log("Processed Custom API doc for: " . basename($file));
+                    $docGenerator->generateFromDocJson($file->getPathname());
+                    $this->log("Processed Custom API doc for: " . $file->getFilename());
                 } catch (\Exception $e) {
-                    $this->log("Error processing doc definition {$file}: " . $e->getMessage());
+                    $this->log("Error processing doc definition {$file->getPathname()}: " . $e->getMessage());
                 }
             }
         }
 
         // Process table definition files
-        foreach (glob($definitionsPath . "*.json") as $file) {
-            $parts = explode('.', basename($file));
+        $finder = $fileFinder->createFinder();
+        $definitionFiles = $finder->files()->in($definitionsPath)->name('*.json');
+        foreach ($definitionFiles as $file) {
+            $parts = explode('.', basename($file->getFilename()));
             if (count($parts) !== 3) {
                 continue; // Skip if not in format: dbname.tablename.json
             }
 
             try {
-                $docGenerator->generateFromJson($file);
-                $this->log("Processed Table API doc for: " . basename($file));
+                $docGenerator->generateFromJson($file->getPathname());
+                $this->log("Processed Table API doc for: " . $file->getFilename());
             } catch (\Exception $e) {
-                $this->log("Error processing table definition {$file}: " . $e->getMessage());
+                $this->log("Error processing table definition {$file->getPathname()}: " . $e->getMessage());
             }
         }
 
@@ -283,12 +289,12 @@ class ApiDefinitionGenerator
                 $this->log("Forcing generation of extension documentation...");
 
                 // If forcing generation, handle each extension separately
-                $extensionDirs = array_filter(glob(dirname(__DIR__) . '/extensions' . '/*'), 'is_dir');
+                $extensionDirs = $fileFinder->findExtensions(dirname(__DIR__) . '/extensions');
                 $generatedFiles = [];
 
                 foreach ($extensionDirs as $extDir) {
-                    $extName = basename($extDir);
-                    $routeFile = $extDir . '/routes.php';
+                    $extName = $extDir->getFilename();
+                    $routeFile = $extDir->getPathname() . '/routes.php';
 
                     if (file_exists($routeFile)) {
                         $docFile = $extDocGen->generateForExtension($extName, $routeFile, true);
@@ -299,9 +305,10 @@ class ApiDefinitionGenerator
                 }
 
                 // Force generation for main routes
-                $routeFiles = glob(dirname(__DIR__) . '/routes/*.php');
-                foreach ($routeFiles as $routeFile) {
-                    $routeName = basename($routeFile, '.php');
+                $routeFiles = $fileFinder->findRouteFiles([dirname(__DIR__) . '/routes']);
+                foreach ($routeFiles as $routeFileObj) {
+                    $routeFile = $routeFileObj->getPathname();
+                    $routeName = $routeFileObj->getBasename('.php');
                     $docFile = $extDocGen->generateForRouteFile($routeName, $routeFile, true);
                     if ($docFile) {
                         $generatedFiles[] = $docFile;
@@ -452,7 +459,6 @@ class ApiDefinitionGenerator
         $this->log("--- Creating Superuser Role ---");
 
         $roleUuid = $this->getOrCreateAdminRole();
-        $this->updateAdminPermissions($roleUuid);
     }
 
     /**
@@ -569,214 +575,5 @@ class ApiDefinitionGenerator
             $this->log("Failed to create admin role: " . $e->getMessage());
             throw $e;
         }
-    }
-
-    /**
-     * Update administrator permissions
-     *
-     * @param string $roleUuid Administrator role UUID
-     */
-    private function updateAdminPermissions(string $roleUuid): void
-    {
-        $this->log("--- Assigning/Updating Superuser Permissions ---");
-
-        try {
-            // Collect all permissions using separate functions
-            $allPermissions = array_merge(
-                $this->collectCorePermissions($roleUuid),
-                $this->collectExtensionPermissions($roleUuid),
-                $this->collectUIModelPermissions($roleUuid)
-            );
-
-            // echo "Permissions: ";
-            // print_r($allPermissions);
-            // exit;
-
-            if (!empty($allPermissions)) {
-                $this->log("Found " . count($allPermissions) . " permissions to assign");
-
-                // Use transaction through QueryBuilder
-                $this->db->transaction(function ($qb) use ($allPermissions) {
-                    $insertCount = 0;
-                    foreach ($allPermissions as $permission) {
-                        $this->log($permission['model']);
-
-                        // Use upsert to handle potential duplicates
-                        if (
-                            $qb->upsert(
-                                'role_permissions',
-                                [$permission],
-                                ['permissions'] // Update permissions if record exists
-                            ) > 0
-                        ) {
-                            $insertCount++;
-                        }
-                    }
-
-                    if ($insertCount > 0) {
-                        $this->log("Successfully assigned $insertCount permissions");
-                        return true;
-                    } else {
-                        $this->log("No permissions were inserted");
-                        return false;
-                    }
-                });
-            } else {
-                $this->log("No new permissions to assign");
-            }
-        } catch (\Exception $e) {
-            $this->log("Error updating permissions: " . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Collect core permissions for JSON definition files
-     */
-    private function collectCorePermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        foreach (glob(config('app.paths.json_definitions') . "*.json") as $file) {
-            $parts = explode('.', basename($file));
-            if (count($parts) !== 3) {
-                continue;
-            }
-
-            $model = "api.{$parts[0]}.{$parts[1]}";
-            if (!$this->permissionExists($roleUuid, $model)) {
-                $permissions[] = [
-                    'uuid' => Utils::generateNanoID(),
-                    'role_uuid' => $roleUuid,
-                    'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                ];
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Collect extension-based permissions
-     */
-    private function collectExtensionPermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        foreach ($this->getExtensionPaths() as $path) {
-            $path = str_replace("\\", "/", $path);
-            $parts = explode('/', $path);
-            $filename = end($parts);
-            $function = current(explode('.', $filename));
-            $action = prev($parts);
-
-            if (!file_exists($path)) {
-                continue;
-            }
-
-            $extension = file_get_contents($path);
-            if (!str_contains($extension, 'extends') || !str_contains($extension, 'Extensions')) {
-                continue;
-            }
-
-            $model = "api.ext.$action.$function";
-            if (!$this->permissionExists($roleUuid, $model)) {
-                $permissions[] = [
-                    'uuid' => Utils::generateNanoID(),
-                    'role_uuid' => $roleUuid,
-                    'model' => $model,
-                    'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                ];
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Collect UI model permissions
-     */
-    private function collectUIModelPermissions(string $roleUuid): array
-    {
-        $permissions = [];
-        global $uiModels;
-
-        if (!empty($uiModels)) {
-            foreach ($uiModels as $view) {
-                $model = "ui.$view";
-                if (!$this->permissionExists($roleUuid, $model)) {
-                    $permissions[] = [
-                        'uuid' => Utils::generateNanoID(),
-                        'role_uuid' => $roleUuid,
-                        'model' => $model,
-                        'permissions' => implode('', array_map(fn($p) => $p->value, Permission::getAll()))
-                    ];
-                }
-            }
-        }
-        return $permissions;
-    }
-
-    /**
-     * Check if permission exists
-     *
-     * @param string $roleUuid Role UUID
-     * @param string $model Model to check
-     * @return bool True if permission exists
-     * @throws \Exception On database errors
-     */
-    private function permissionExists(string $roleUuid, string $model): bool
-    {
-        try {
-            // Check permissions using role UUID directly
-            $permissions = $this->db->select(
-                'role_permissions',
-                ['id'],
-            )->where(['role_uuid' => $roleUuid, 'model' => $model])->limit(1)->get();
-
-            return !empty($permissions);
-        } catch (\Exception $e) {
-            $this->log("Error checking permissions: " . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Get extension file paths
-     *
-     * @return array Extension file paths
-     */
-    private function getExtensionPaths(): array
-    {
-        $paths = [];
-        foreach ([config('app.paths.api_extensions'), config('app.paths.project_extensions')] as $dir) {
-            if (is_dir($dir)) {
-                $paths = [...$paths, ...$this->scanDirectory($dir)];
-            } else {
-                $this->log(strtoupper("--- Extensions Directory does not exist ---"));
-            }
-        }
-        return $paths;
-    }
-
-    /**
-     * Recursively scan directory for files
-     *
-     * @param string $dir Directory to scan
-     * @param array $results Accumulated results
-     * @return array File paths
-     */
-    private function scanDirectory(string $dir, array &$results = []): array
-    {
-        foreach (scandir($dir) as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
-            $path = realpath($dir . DIRECTORY_SEPARATOR . $file);
-            if (is_dir($path)) {
-                $this->scanDirectory($path, $results);
-            } elseif ($file[0] !== '.') {
-                $results[] = $path;
-            }
-        }
-        return $results;
     }
 }

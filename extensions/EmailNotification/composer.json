@@ -1,0 +1,71 @@
+{
+    "name": "glueful/email-notification",
+    "description": "Provides email notification capabilities using SMTP/PHPMailer",
+    "type": "glueful-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Michael Tawiah Sowah",
+            "email": "michael@glueful.dev"
+        }
+    ],
+    "keywords": ["notifications", "communication", "email", "smtp"],
+    "require": {
+        "php": "^8.2",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "require-dev": {
+        "glueful/glueful": "dev-main",
+        "phpunit/phpunit": "^10.5",
+        "squizlabs/php_codesniffer": "^3.6",
+        "phpstan/phpstan": "^1.0"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "${GLUEFUL_PATH}"
+        }
+    ],
+    "homepage": "https://github.com/glueful/extensions/tree/main/extensions/EmailNotification",
+    "autoload": {
+        "psr-4": {
+            "Glueful\\Extensions\\EmailNotification\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Glueful\\Extensions\\EmailNotification\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "phpcs": "vendor/bin/phpcs --standard=Squiz src",
+        "phpcbf": "vendor/bin/phpcbf --standard=Squiz src",
+        "analyze": "vendor/bin/phpstan analyze src --level=5",
+        "build": "php scripts/build.php",
+        "deploy": "php scripts/deploy.php"
+    },
+    "extra": {
+        "glueful": {
+            "name": "EmailNotification",
+            "displayName": "Email Notification",
+            "description": "Provides email notification capabilities using SMTP/PHPMailer",
+            "version": "0.21.0",
+            "icon": "assets/icon.png",
+            "galleryBanner": {
+                "color": "#3064D0",
+                "theme": "dark"
+            },
+            "categories": ["notifications", "communication"],
+            "publisher": "glueful-team",
+            "main": "./EmailNotification.php",
+            "requires": {
+                "glueful": ">=0.27.0",
+                "extensions": []
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

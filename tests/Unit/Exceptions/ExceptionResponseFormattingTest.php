@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Exceptions;
 
 use Tests\TestCase;
@@ -60,7 +61,7 @@ class ExceptionResponseFormattingTest extends TestCase
 
         // Assertions
         $this->assertNotNull($responseData);
-        $this->assertEquals($statusCode, $responseData['status']);
+        $this->assertEquals($statusCode, $responseData['code']);
         $this->assertEquals($message, $responseData['message']);
         $this->assertEquals($errors, $responseData['data']);
     }
@@ -86,7 +87,7 @@ class ExceptionResponseFormattingTest extends TestCase
 
         // Assertions
         $this->assertNotNull($responseData);
-        $this->assertEquals($statusCode, $responseData['status']);
+        $this->assertEquals($statusCode, $responseData['code']);
         $this->assertEquals($message, $responseData['message']);
         $this->assertEquals('Invalid token', $responseData['data']);
     }
@@ -112,7 +113,7 @@ class ExceptionResponseFormattingTest extends TestCase
 
         // Assertions
         $this->assertNotNull($responseData);
-        $this->assertEquals($statusCode, $responseData['status']);
+        $this->assertEquals($statusCode, $responseData['code']);
         $this->assertEquals($message, $responseData['message']);
         $this->assertEquals('User not found', $responseData['data']);
     }
@@ -139,7 +140,7 @@ class ExceptionResponseFormattingTest extends TestCase
 
         // Assertions
         $this->assertNotNull($responseData);
-        $this->assertEquals($statusCode, $responseData['status']);
+        $this->assertEquals($statusCode, $responseData['code']);
         $this->assertEquals($message, $responseData['message']);
         $this->assertEquals($data, $responseData['data']);
     }
@@ -171,7 +172,7 @@ class ExceptionResponseFormattingTest extends TestCase
 
         // Assert response structure
         $this->assertNotNull($responseData);
-        $this->assertEquals($statusCode, $responseData['status']);
+        $this->assertEquals($statusCode, $responseData['code']);
         $this->assertEquals($message, $responseData['message']);
         $this->assertArrayNotHasKey('data', $responseData);
 

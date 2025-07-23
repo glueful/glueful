@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Auth;
 
 use Symfony\Component\HttpFoundation\Request;
@@ -143,6 +144,18 @@ class AuthenticationManagerTest extends TestCase
         $this->mockProvider
             ->setUserData($adminData)
             ->setAdminStatus(true);
+
+        // Set up mock permission provider
+        $mockPermissionProvider = new MockPermissionProvider();
+        $mockPermissionProvider->setUserPermission(
+            'admin-123',
+            \Glueful\Interfaces\Permission\PermissionStandards::PERMISSION_SYSTEM_ACCESS,
+            'system'
+        );
+
+        // Set up permission manager with mock provider
+        $permissionManager = \Glueful\Permissions\PermissionManager::getInstance();
+        $permissionManager->setProvider($mockPermissionProvider);
 
         // Authenticate the request
         $userData = $this->authManager->authenticate($this->request);

@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Glueful\Cache;
 
-use Glueful\Cache\Drivers\{CacheDriverInterface, RedisCacheDriver, MemcachedCacheDriver};
+use Glueful\Cache\Drivers\{RedisCacheDriver, MemcachedCacheDriver};
 use Redis;
 use Memcached;
-use Exception;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Cache Factory
@@ -24,10 +25,11 @@ class CacheFactory
      * Handles connection setup and error handling.
      *
      * @param string $driverOverride Optional driver override
-     * @return CacheDriverInterface Configured cache driver
-     * @throws Exception If cache type is not supported or connection fails
+     * @return CacheStore Configured cache driver
+     * @throws \Glueful\Exceptions\DatabaseException If connection fails
+     * @throws \Glueful\Exceptions\BusinessLogicException If cache type is not supported
      */
-    public static function create(string $driverOverride = ''): CacheDriverInterface
+    public static function create(string $driverOverride = ''): CacheStore
     {
         $cacheType = $driverOverride ?: config('cache.default', 'redis');
 
@@ -43,14 +45,18 @@ class CacheFactory
                 $connected = $redis->connect($host, $port, $timeout);
 
                 if (!$connected) {
-                    throw new Exception("Failed to connect to Redis at {$host}:{$port}");
+                    throw DatabaseException::connectionFailed(
+                        "Failed to connect to Redis at {$host}:{$port}"
+                    );
                 }
 
                 // Authenticate if password is set
                 if (!empty($password)) {
                     $authenticated = $redis->auth($password);
                     if (!$authenticated) {
-                        throw new Exception("Redis authentication failed");
+                        throw DatabaseException::connectionFailed(
+                            'Redis authentication failed'
+                        );
                     }
                 }
 
@@ -63,12 +69,17 @@ class CacheFactory
                 // Test connection with a ping
                 $ping = $redis->ping();
                 if ($ping !== "+PONG" && $ping !== true) {
-                    throw new Exception("Redis ping failed: " . var_export($ping, true));
+                    throw DatabaseException::connectionFailed(
+                        "Redis ping failed: " . var_export($ping, true)
+                    );
                 }
 
                 return new RedisCacheDriver($redis);
             } catch (\RedisException $e) {
-                throw new Exception("Redis connection error: " . $e->getMessage(), 0, $e);
+                throw DatabaseException::connectionFailed(
+                    "Redis connection error: " . $e->getMessage(),
+                    $e
+                );
             }
         }
 
@@ -83,7 +94,9 @@ class CacheFactory
                 // Check if server is added successfully
                 $serverList = $memcached->getServerList();
                 if (empty($serverList)) {
-                    throw new Exception("Failed to add Memcached server at {$host}:{$port}");
+                    throw DatabaseException::connectionFailed(
+                        "Failed to add Memcached server at {$host}:{$port}"
+                    );
                 }
 
                 // Check connection with a simple get operation
@@ -91,12 +104,17 @@ class CacheFactory
                 $memcached->set($testKey, 'test', 10);
                 $testGet = $memcached->get($testKey);
                 if ($testGet !== 'test') {
-                    throw new Exception("Memcached connection test failed: " . $memcached->getResultMessage());
+                    throw DatabaseException::connectionFailed(
+                        "Memcached connection test failed: " . $memcached->getResultMessage()
+                    );
                 }
 
                 return new MemcachedCacheDriver($memcached);
             } catch (\Exception $e) {
-                throw new Exception("Memcached connection error: " . $e->getMessage(), 0, $e);
+                throw DatabaseException::connectionFailed(
+                    "Memcached connection error: " . $e->getMessage(),
+                    $e
+                );
             }
         }
 
@@ -105,18 +123,24 @@ class CacheFactory
             return self::createFileDriver();
         }
 
-        throw new Exception("Unsupported cache type: {$cacheType}");
+        throw BusinessLogicException::operationNotAllowed(
+            'cache_creation',
+            "Unsupported cache type: {$cacheType}"
+        );
     }
 
     /**
      * Create a file-based cache driver as fallback
      *
-     * @return CacheDriverInterface File-based cache driver
+     * @return CacheStore File-based cache driver
      */
-    private static function createFileDriver(): CacheDriverInterface
+    private static function createFileDriver(): CacheStore
     {
         if (!class_exists('\\Glueful\\Cache\\Drivers\\FileCacheDriver')) {
-            throw new Exception("FileCacheDriver class not found");
+            throw BusinessLogicException::operationNotAllowed(
+                'cache_creation',
+                'FileCacheDriver class not found'
+            );
         }
 
         $path = config('app.paths.storage_path', __DIR__ . '/../../storage') . '/cache/';
@@ -124,6 +148,11 @@ class CacheFactory
             mkdir($path, 0755, true);
         }
 
-        return new \Glueful\Cache\Drivers\FileCacheDriver($path);
+        // Get file services from container
+        $container = \Glueful\DI\ContainerBootstrap::getContainer();
+        $fileManager = $container->get(\Glueful\Services\FileManager::class);
+        $fileFinder = $container->get(\Glueful\Services\FileFinder::class);
+
+        return new \Glueful\Cache\Drivers\FileCacheDriver($path, $fileManager, $fileFinder);
     }
 }

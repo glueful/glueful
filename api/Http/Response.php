@@ -1,183 +1,297 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Glueful\Http;
 
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Glueful\Constants\ErrorCodes;
+use Glueful\Serialization\Serializer;
+use Glueful\Serialization\Context\SerializationContext;
+
 /**
- * API Response Handler
+ * Modern API Response Handler using Symfony JsonResponse
  *
- * Provides standardized HTTP response formatting for the API.
- * Includes common HTTP status codes and response building methods.
+ * Provides clean, standardized HTTP response formatting for the API.
+ * Built on Symfony's JsonResponse for full middleware compatibility.
  */
-class Response
+class Response extends JsonResponse
 {
-    public const HTTP_OK = 200;
-    public const HTTP_CREATED = 201;
-    public const HTTP_NO_CONTENT = 204;
-    public const HTTP_BAD_REQUEST = 400;
-    public const HTTP_UNAUTHORIZED = 401;
-    public const HTTP_FORBIDDEN = 403;
-    public const HTTP_NOT_FOUND = 404;
-    public const HTTP_METHOD_NOT_ALLOWED = 405;
-    public const HTTP_UNPROCESSABLE_ENTITY = 422;
-    public const HTTP_TOO_MANY_REQUESTS = 429;
-    public const HTTP_SERVICE_UNAVAILABLE = 503;
-    public const HTTP_INTERNAL_SERVER_ERROR = 500;
+    private static ?Serializer $serializer = null;
 
-    // Error type constants for standardized error handling
-    public const ERROR_VALIDATION = 'VALIDATION_ERROR';
-    public const ERROR_AUTHENTICATION = 'AUTHENTICATION_ERROR';
-    public const ERROR_AUTHORIZATION = 'AUTHORIZATION_ERROR';
-    public const ERROR_NOT_FOUND = 'NOT_FOUND_ERROR';
-    public const ERROR_RATE_LIMIT = 'RATE_LIMIT_ERROR';
-    public const ERROR_SERVER = 'SERVER_ERROR';
-    public const ERROR_SECURITY = 'SECURITY_ERROR';
-
-    private int $statusCode;
-    private mixed $data;
-    private ?string $message;
-    private bool $success;
-    private ?array $errorDetails;
+    // HTTP status codes from ErrorCodes
+    public const HTTP_OK = ErrorCodes::SUCCESS;
+    public const HTTP_CREATED = ErrorCodes::CREATED;
+    public const HTTP_NO_CONTENT = ErrorCodes::NO_CONTENT;
+    public const HTTP_BAD_REQUEST = ErrorCodes::BAD_REQUEST;
+    public const HTTP_UNAUTHORIZED = ErrorCodes::UNAUTHORIZED;
+    public const HTTP_FORBIDDEN = ErrorCodes::FORBIDDEN;
+    public const HTTP_NOT_FOUND = ErrorCodes::NOT_FOUND;
+    public const HTTP_METHOD_NOT_ALLOWED = ErrorCodes::METHOD_NOT_ALLOWED;
+    public const HTTP_UNPROCESSABLE_ENTITY = ErrorCodes::VALIDATION_ERROR;
+    public const HTTP_TOO_MANY_REQUESTS = ErrorCodes::RATE_LIMIT_EXCEEDED;
+    public const HTTP_INTERNAL_SERVER_ERROR = ErrorCodes::INTERNAL_SERVER_ERROR;
+    public const HTTP_SERVICE_UNAVAILABLE = ErrorCodes::SERVICE_UNAVAILABLE;
 
     public function __construct(
         mixed $data = null,
-        int $statusCode = self::HTTP_OK,
-        ?string $message = null,
-        bool $success = true,
-        ?array $errorDetails = null
+        int $status = ErrorCodes::SUCCESS,
+        array $headers = [],
+        bool $json = false
     ) {
-        $this->data = $data ?? []; // Ensure data is at least an empty array
-        $this->statusCode = $statusCode;
-        $this->message = $message ?? ''; // Avoid null values in response
-        $this->success = $success;
-        $this->errorDetails = $errorDetails;
+        parent::__construct($data, $status, $headers, $json);
+
+        // Set consistent JSON encoding options
+        $this->setEncodingOptions(JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /**
-     * Send HTTP Response
-     *
-     * @param string|null $key Optional key to extract from data as the response data
-     * @return mixed Response data
+     * Set the serializer instance
      */
-    public function send(?string $key = null): mixed
+    public static function setSerializer(Serializer $serializer): void
     {
-        http_response_code($this->statusCode);
-        header('Content-Type: application/json; charset=utf-8');
+        self::$serializer = $serializer;
+    }
 
-        // Initialize response with base fields
-        $response = [
-            'success' => $this->success,
-            'message' => $this->message,
-            'code' => $this->statusCode,
+    /**
+     * Create successful response with optional serialization
+     */
+    public static function success(
+        mixed $data = null,
+        string $message = 'Success',
+        ?SerializationContext $context = null
+    ): self {
+        $responseData = [
+            'success' => true,
+            'message' => $message,
+            'data' => $data ?? []
         ];
 
-        // Add error details for failed responses
-        if (!$this->success && $this->errorDetails) {
-            $response['error'] = $this->errorDetails;
+        if (self::$serializer && $context && $data !== null) {
+            $responseData['data'] = self::$serializer->normalize($data, $context);
         }
 
-        // If a specific key is provided, use that to extract data
-        if ($key !== null && is_array($this->data) && isset($this->data[$key])) {
-            // Create a new response array with keys in specific order
-            $orderedResponse = $response;
-            $orderedResponse['data'] = $this->data[$key];
-            $response = $orderedResponse;
-        } elseif (is_array($this->data) && isset($this->data['data'])) {
-            // Create a new response array with keys in specific order
-            $orderedResponse = $response;
-            $orderedResponse['data'] = $this->data['data'];
+        return new self($responseData);
+    }
 
-            // Add columns right after data if available
-            if (isset($this->data['columns'])) {
-                $orderedResponse['columns'] = $this->data['columns'];
-            }
-
-            // Add pagination fields after columns
-            $paginationFields = ['current_page', 'per_page', 'total', 'last_page', 'has_more', 'from', 'to'];
-            foreach ($paginationFields as $field) {
-                if (isset($this->data[$field])) {
-                    $orderedResponse[$field] = $this->data[$field];
-                }
-            }
-
-            $response = $orderedResponse;
-        } else {
-            // Regular data response
-            $response['data'] = $this->data;
+    /**
+     * Create paginated response with serialization support
+     */
+    public static function paginated(
+        array $items,
+        int $total,
+        int $page,
+        int $perPage,
+        ?SerializationContext $context = null,
+        string $message = 'Data retrieved successfully'
+    ): self {
+        // Serialize items if context is provided
+        $serializedItems = $items;
+        if (self::$serializer && $context) {
+            $serializedItems = array_map(
+                fn($item) => self::$serializer->normalize($item, $context),
+                $items
+            );
         }
 
-        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        // Create flattened response structure
+        $responseData = [
+            'success' => true,
+            'message' => $message,
+            'data' => $serializedItems,
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'total_pages' => ceil($total / $perPage),
+            'has_next_page' => $page < ceil($total / $perPage),
+            'has_previous_page' => $page > 1
+        ];
 
-        exit;
+        return new self($responseData);
     }
 
-    public static function ok(mixed $data = null, ?string $message = null): self
+    /**
+     * Create created response (HTTP 201)
+     */
+    public static function created(
+        mixed $data = null,
+        string $message = 'Created successfully',
+        ?SerializationContext $context = null
+    ): self {
+        $responseData = [
+            'success' => true,
+            'message' => $message,
+            'data' => $data ?? []
+        ];
+
+        if (self::$serializer && $context && $data !== null) {
+            $responseData['data'] = self::$serializer->normalize($data, $context);
+        }
+
+        return new self($responseData, self::HTTP_CREATED);
+    }
+
+    /**
+     * Create no content response (HTTP 204)
+     */
+    public static function noContent(): self
     {
-        return new self($data, self::HTTP_OK, $message);
+        return new self(null, self::HTTP_NO_CONTENT);
     }
 
-    public static function created(mixed $data = null, ?string $message = null): self
-    {
-        return new self($data, self::HTTP_CREATED, $message);
-    }
-
+    /**
+     * Create error response
+     */
     public static function error(
         string $message,
-        int $statusCode = self::HTTP_BAD_REQUEST,
-        ?string $errorType = null,
-        ?string $errorCode = null,
-        mixed $details = null,
-        ?string $requestId = null
+        int $status = self::HTTP_BAD_REQUEST,
+        mixed $details = null
     ): self {
-        $errorDetails = [
-            'type' => $errorType ?? self::getErrorTypeFromStatus($statusCode),
-            'code' => $errorCode,
-            'details' => $details,
-            'timestamp' => date('c'),
-            'request_id' => $requestId ?? self::generateRequestId()
+        $errorData = [
+            'success' => false,
+            'message' => $message,
+            'error' => [
+                'code' => $status,
+                'timestamp' => date('c'),
+                'request_id' => 'req_' . bin2hex(random_bytes(6))
+            ]
         ];
 
-        // Remove null values from error details
-        $errorDetails = array_filter($errorDetails, fn($value) => $value !== null);
+        if ($details !== null) {
+            $errorData['error']['details'] = $details;
+        }
 
-        return new self(null, $statusCode, $message, false, $errorDetails);
+        return new self($errorData, $status);
     }
 
+    /**
+     * Create validation error response (HTTP 422)
+     */
+    public static function validation(
+        array $errors,
+        string $message = 'Validation failed'
+    ): self {
+        return self::error($message, self::HTTP_UNPROCESSABLE_ENTITY, $errors);
+    }
+
+    /**
+     * Create not found response (HTTP 404)
+     */
     public static function notFound(string $message = 'Resource not found'): self
     {
-        return new self([], self::HTTP_NOT_FOUND, $message, false);
+        return self::error($message, self::HTTP_NOT_FOUND);
     }
 
+    /**
+     * Create unauthorized response (HTTP 401)
+     */
     public static function unauthorized(string $message = 'Unauthorized'): self
     {
-        return self::error($message, self::HTTP_UNAUTHORIZED, self::ERROR_AUTHENTICATION);
+        return self::error($message, self::HTTP_UNAUTHORIZED);
     }
 
     /**
-     * Get error type based on HTTP status code
-     *
-     * @param int $statusCode HTTP status code
-     * @return string Error type constant
+     * Create forbidden response (HTTP 403)
      */
-    private static function getErrorTypeFromStatus(int $statusCode): string
+    public static function forbidden(string $message = 'Forbidden'): self
     {
-        return match ($statusCode) {
-            400, 422 => self::ERROR_VALIDATION,
-            401 => self::ERROR_AUTHENTICATION,
-            403 => self::ERROR_AUTHORIZATION,
-            404 => self::ERROR_NOT_FOUND,
-            429 => self::ERROR_RATE_LIMIT,
-            413, 415 => self::ERROR_SECURITY,
-            default => self::ERROR_SERVER
-        };
+        return self::error($message, self::HTTP_FORBIDDEN);
     }
 
     /**
-     * Generate a unique request ID for error tracking
-     *
-     * @return string Unique request identifier
+     * Create rate limit exceeded response (HTTP 429)
      */
-    private static function generateRequestId(): string
+    public static function rateLimited(string $message = 'Rate limit exceeded'): self
     {
-        return 'req_' . bin2hex(random_bytes(6));
+        return self::error($message, self::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    /**
+     * Create server error response (HTTP 500)
+     */
+    public static function serverError(string $message = 'Internal server error'): self
+    {
+        return self::error($message, self::HTTP_INTERNAL_SERVER_ERROR);
+    }
+
+
+    /**
+     * Create successful response with custom metadata (flattened structure)
+     */
+    public static function successWithMeta(
+        array $data,
+        array $meta,
+        string $message = 'Data retrieved successfully',
+        ?SerializationContext $context = null
+    ): self {
+        // Serialize data if context is provided
+        $serializedData = $data;
+        if (self::$serializer && $context) {
+            $serializedData = array_map(
+                fn($item) => self::$serializer->normalize($item, $context),
+                $data
+            );
+        }
+
+        // Build response with metadata at root level
+        $response = [
+            'success' => true,
+            'message' => $message,
+            'data' => $serializedData
+        ];
+
+        // Merge all meta fields directly into the response (flattened)
+        foreach ($meta as $key => $value) {
+            $response[$key] = $value;
+        }
+
+        return new self($response);
+    }
+
+
+    /**
+     * Add cache headers to response
+     */
+    public function withCacheHeaders(int $maxAge = 3600, bool $public = true): self
+    {
+        $this->headers->set('Cache-Control', $public ? "public, max-age={$maxAge}" : "private, max-age={$maxAge}");
+        $this->headers->set('Expires', gmdate('D, d M Y H:i:s', time() + $maxAge) . ' GMT');
+
+        return $this;
+    }
+
+    /**
+     * Add ETag header for caching
+     */
+    public function withETag(string $etag): self
+    {
+        $this->headers->set('ETag', '"' . $etag . '"');
+        return $this;
+    }
+
+    /**
+     * Add CORS headers
+     */
+    public function withCors(
+        array $allowedOrigins = ['*'],
+        array $allowedMethods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        array $allowedHeaders = ['Content-Type', 'Authorization']
+    ): self {
+        $this->headers->set('Access-Control-Allow-Origin', implode(', ', $allowedOrigins));
+        $this->headers->set('Access-Control-Allow-Methods', implode(', ', $allowedMethods));
+        $this->headers->set('Access-Control-Allow-Headers', implode(', ', $allowedHeaders));
+
+        return $this;
+    }
+
+    /**
+     * Set response as downloadable file
+     */
+    public function asDownload(string $filename, string $mimeType = 'application/octet-stream'): self
+    {
+        $this->headers->set('Content-Type', $mimeType);
+        $this->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+
+        return $this;
     }
 }

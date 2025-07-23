@@ -63,6 +63,37 @@ return [
     ],
 
     // Connection pooling settings
+    'pooling' => [
+        'enabled' => env('DB_POOLING_ENABLED', true),
+        'defaults' => [
+            'min_connections' => env('DB_POOL_MIN_CONNECTIONS', 2),
+            'max_connections' => env('DB_POOL_MAX_CONNECTIONS', 10),
+            'idle_timeout' => env('DB_POOL_IDLE_TIMEOUT', 300), // 5 minutes
+            'max_lifetime' => env('DB_POOL_MAX_LIFETIME', 3600), // 1 hour
+            'acquisition_timeout' => env('DB_POOL_ACQUIRE_TIMEOUT', 30),
+            'health_check_interval' => env('DB_POOL_HEALTH_CHECK_INTERVAL', 60),
+            'health_check_timeout' => env('DB_POOL_HEALTH_CHECK_TIMEOUT', 5),
+            'max_use_count' => env('DB_POOL_MAX_USE_COUNT', 1000),
+            'retry_attempts' => env('DB_POOL_RETRY_ATTEMPTS', 3),
+            'retry_delay' => env('DB_POOL_RETRY_DELAY', 100), // milliseconds
+        ],
+        'engines' => [
+            'mysql' => [
+                'max_connections' => env('DB_MYSQL_POOL_MAX', 20),
+                'min_connections' => env('DB_MYSQL_POOL_MIN', 5),
+            ],
+            'pgsql' => [
+                'max_connections' => env('DB_PGSQL_POOL_MAX', 15),
+                'min_connections' => env('DB_PGSQL_POOL_MIN', 3),
+            ],
+            'sqlite' => [
+                'max_connections' => 1, // SQLite limitation - single writer
+                'min_connections' => 1,
+            ]
+        ]
+    ],
+
+    // Legacy pool settings (for backward compatibility)
     'pool' => [
         'max_connections' => env('DB_POOL_MAX_CONNECTIONS', 20),
         'min_connections' => env('DB_POOL_MIN_CONNECTIONS', 5),

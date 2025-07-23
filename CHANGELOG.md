@@ -2,6 +2,96 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.28.0] - 2025-07-23
+
+### Added
+- Extension System v2.0 architecture
+  - Modern PSR-4 autoloading with manifest.json configuration
+  - BaseExtension architecture for improved extensibility
+  - Enhanced extension metadata and dependency management
+- Single Page Application (SPA) support for extensions
+  - Dynamic SPA configuration and routing
+  - Environment-aware asset loading for production deployment
+  - Admin panel with modern Vue.js interface
+- Comprehensive OpenAPI documentation system
+  - Modern documentation UI with interactive schemas
+  - Automated API schema generation and validation
+  - Enhanced API endpoint documentation
+- Dynamic configuration management
+  - Real-time env.json generation for SPA extensions
+  - Environment-specific configuration handling
+  - Centralized configuration validation
+- Enhanced logging infrastructure
+  - PSR-3 compliant logging with event system integration
+  - Request context and performance monitoring
+  - Configurable log levels and output formatting
+- Unified event dispatching system
+  - Complete event-driven architecture implementation
+  - Symfony EventDispatcher integration
+  - Comprehensive event listener management
+- Multi-worker queue system
+  - Symfony Process-based queue implementation
+  - Enhanced background job processing
+  - Improved queue reliability and monitoring
+- Database administration improvements
+  - Enhanced predefined queries with correct table schemas
+  - Environment-aware database query interface
+  - Improved query execution and error handling
+
+### Improved
+- Framework core modernization
+  - Complete migration to Symfony components (DependencyInjection, HttpClient, Serializer, Validator, Config, Console, Process, Lock, OptionsResolver)
+  - Enhanced dependency injection container management
+  - Improved service provider architecture
+- Admin interface production deployment
+  - Fixed asset loading paths for production environments
+  - Environment-aware routing and navigation
+  - Improved logout and authentication flows
+- Database query rate limiting
+  - Relaxed overly restrictive rate limits for better usability
+  - Improved risk assessment thresholds
+  - Enhanced error messaging and user feedback
+- API configuration management
+  - Consolidated API version configuration
+  - Removed redundant environment variables
+  - Simplified configuration maintenance
+- Extension loading and management
+  - Improved extension detection and synchronization
+  - Enhanced extension configuration access
+  - Better error handling for extension operations
+- Authentication and security
+  - Sanitized email addresses in cache keys for PSR-16 compliance
+  - Enhanced token storage and session management
+  - Improved authentication provider registration
+
+### Fixed
+- Admin panel production deployment issues
+  - Fixed asset path resolution for SPA routing
+  - Corrected environment configuration loading
+  - Resolved logout redirect paths
+- Database controller functionality
+  - Updated predefined queries to use correct table names (auth_sessions instead of sessions)
+  - Fixed query execution permissions and validation
+  - Improved error handling for database operations
+- Extension system stability
+  - Fixed extension installation and detection issues
+  - Resolved extension configuration access problems
+  - Improved extension metadata handling
+- API documentation generation
+  - Fixed OpenAPI schema parsing and validation
+  - Removed redundant response fields
+  - Improved documentation structure and organization
+- Core framework issues
+  - Fixed DI container registration for controllers and services
+  - Resolved PSR-16 cache key validation errors
+  - Improved file serving and document root handling
+
+### Documentation
+- Enhanced API documentation with OpenAPI schemas
+- Comprehensive extension development guides
+- Updated deployment and configuration documentation
+- Improved troubleshooting and debugging guides
+
 ## [0.27.0] - 2025-05-18
 
 ### Added
@@ -35,12 +125,88 @@ All notable changes to the Glueful framework will be documented in this file.
   - Execution plan visualization
   - Query pattern recognition
   - Performance bottleneck identification
+- API versioning middleware with multiple strategy support
+  - Version validation and routing
+  - Backward compatibility management
+  - Header and URL-based versioning
+- Comprehensive health check system
+  - HealthController for system health monitoring
+  - HealthService with database and cache connectivity checks
+  - PHP extension and configuration validation
+  - Dedicated health check API routes
+- Installation and setup wizard (InstallCommand)
+  - Environment validation and setup
+  - Database connection testing
+  - Encryption key generation
+  - Admin user creation workflow
+- CORS handler with configurable options
+  - Cross-origin request management
+  - Preflight request handling
+  - Origin validation with factory methods
+  - Environment-based configuration
+- Cache services enhancement
+  - CacheInvalidationService for targeted cache clearing
+  - CacheTaggingService for organized cache management
+  - CacheWarmupService for proactive cache population
+- Database monitoring and validation tools
+  - ConnectionValidator for connection health checks
+  - DevelopmentQueryMonitor for query analysis
+  - DatabaseException class for better error handling
+- Security enhancements
+  - Enhanced SecurityManager with request validation
+  - Rate limiting with detailed request analysis
+  - Size limits and user agent validation
+  - RateLimitExceededException and SecurityException classes
+- Command-line tools
+  - ServeCommand for local development server
+  - KeyGenerateCommand for secure key generation
+  - SystemCheckCommand for installation validation
+- Services configuration consolidation
+  - Unified mail, storage, and extensions configuration
+  - Centralized configuration management
 
 ### Improved
 - Overall framework performance at scale
 - Database query execution speed
 - Memory efficiency for large workloads
 - Cache hit rates and distribution
+- QueryBuilder with enhanced operator support
+  - Support for <, >, <=, >=, !=, LIKE, NOT LIKE operators
+  - Backward compatibility maintained
+  - Enhanced SQL condition handling
+- Scheduled jobs system reliability
+  - Fixed missing cron handler classes
+  - Corrected SessionCleaner SQL syntax
+  - All 5 scheduled jobs now functional
+- Exception handling and response structure
+  - Standardized validation error messages
+  - Consistent response formatting
+  - Enhanced error feedback
+- Database connection management
+  - Shared database connections across controllers
+  - Improved query builder performance
+- Router functionality
+  - Fixed path prefix issues for API routing
+  - Better route handling
+
+### Fixed
+- Scheduled jobs execution issues
+  - Added missing LogCleaner, DatabaseBackup, and CacheMaintenance handlers
+  - Fixed SessionCleaner SQL syntax errors
+  - Resolved notification retry processing
+- Security headers format in environment files
+- Database query builder operator syntax
+- Router path prefix handling for APIs
+- Exception message formatting consistency
+
+### Documentation
+- Consolidated performance optimization documentation
+- Merged query and database optimization guides into PERFORMANCE_OPTIMIZATION.md
+- Consolidated memory management documentation into MEMORY_MANAGEMENT.md
+- Added comprehensive deployment guide (DEPLOYMENT.md)
+- Created error handling guide (ERROR_HANDLING.md)
+- Enhanced security documentation (SECURITY.md)
+- Removed 18 fragmented documentation files
 
 ## [0.26.0] - 2025-05-17
 

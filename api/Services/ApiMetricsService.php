@@ -4,9 +4,13 @@ namespace Glueful\Services;
 
 use Glueful\Database\Connection;
 use Glueful\Database\QueryBuilder;
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Database\Schema\SchemaManager;
+use Glueful\Helpers\Utils;
+use Glueful\Helpers\CacheHelper;
 use Exception;
+use Glueful\Exceptions\BusinessLogicException;
+use Glueful\Exceptions\DatabaseException;
 
 /**
  * Service for collecting and analyzing API metrics
@@ -18,6 +22,7 @@ class ApiMetricsService
 {
     private QueryBuilder $db;
     private SchemaManager $schemaManager;
+    private ?CacheStore $cache;
     private string $metricsTable = 'api_metrics';
     private string $dailyMetricsTable = 'api_metrics_daily';
     private string $rateLimitsTable = 'api_rate_limits';
@@ -28,45 +33,29 @@ class ApiMetricsService
     private int $metricsFlushThreshold = 50; // Flush to database after this many metrics
     private string $cacheKeyPrefix = 'api_metrics_';
 
-    public function __construct()
-    {
+    public function __construct(
+        ?CacheStore $cache = null,
+        ?Connection $connection = null,
+        ?SchemaManager $schemaManager = null
+    ) {
         try {
-            try {
-                $connection = new Connection();
-                $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Database connection failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
+            // Assign dependencies with sensible defaults
+            $this->cache = $cache ?? CacheHelper::createCacheInstance();
+            $connection = $connection ?? new Connection();
+            $this->schemaManager = $schemaManager ?? $connection->getSchemaManager();
 
-            try {
-                // Check if CacheEngine class exists
-                if (!class_exists('\\Glueful\\Cache\\CacheEngine')) {
-                    throw new \Exception("CacheEngine class not found");
-                }
+            // Initialize derived dependencies
+            $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
 
-                // Ensure CacheEngine is properly initialized for metrics
-                CacheEngine::initialize();
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Cache initialization failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
-
-            try {
-                $this->schemaManager = $connection->getSchemaManager();
-
-                // Ensure metrics tables exist
-                $this->ensureTablesExist();
-            } catch (\Exception $e) {
-                error_log("ApiMetricsService ERROR: Schema management failed: " . $e->getMessage());
-                throw $e; // Re-throw to be caught by the outer try-catch
-            }
+            // Ensure metrics tables exist
+            $this->ensureTablesExist();
         } catch (\Exception $e) {
             error_log("ApiMetricsService CRITICAL ERROR: Service initialization failed: " . $e->getMessage());
             error_log($e->getTraceAsString());
             throw $e; // Re-throw so the middleware knows the service failed
         }
     }
+
 
     /**
      * Record a metric asynchronously to avoid impacting API performance
@@ -76,19 +65,12 @@ class ApiMetricsService
     public function recordMetricAsync(array $metric): void
     {
         try {
-            // Check if cache is initialized
-            $cacheInitialized = CacheEngine::isEnabled();
-
-            if (!$cacheInitialized) {
-                $initResult = CacheEngine::initialize();
-            }
-
             // Queue the metric for batch processing
             $cacheKey = $this->cacheKeyPrefix . 'pending';
 
             // Get existing metrics from cache
             try {
-                $pendingMetrics = CacheEngine::get($cacheKey);
+                $pendingMetrics = $this->cache?->get($cacheKey);
             } catch (\Exception $e) {
                 $pendingMetrics = null;
             }
@@ -104,7 +86,7 @@ class ApiMetricsService
 
             // Store back in cache with a 24-hour TTL to prevent loss
             try {
-                CacheEngine::set($cacheKey, $pendingMetrics, 86400);
+                $this->cache?->set($cacheKey, $pendingMetrics, 86400);
             } catch (\Exception $e) {
                 // Silently continue - we don't want metrics to break functionality
             }
@@ -138,7 +120,7 @@ class ApiMetricsService
         $pendingMetrics = [];
         try {
             $cacheKey = $this->cacheKeyPrefix . 'pending';
-            $pendingMetrics = CacheEngine::get($cacheKey) ?? [];
+            $pendingMetrics = $this->cache?->get($cacheKey) ?? [];
 
             if (empty($pendingMetrics)) {
                 error_log("API Metrics: No pending metrics to flush");
@@ -147,27 +129,34 @@ class ApiMetricsService
 
             // Reset the pending metrics list first to avoid losing metrics
             // if an error occurs during processing
-            CacheEngine::set($cacheKey, []);
+            $this->cache?->set($cacheKey, []);
 
-            // Process each metric
+            // Insert raw metrics in batch
+            $rawMetricsToInsert = [];
             foreach ($pendingMetrics as $metric) {
-                try {
-                    $this->db->insert($this->metricsTable, [
-                        'endpoint' => $metric['endpoint'],
-                        'method' => $metric['method'],
-                        'response_time' => $metric['response_time'],
-                        'status_code' => $metric['status_code'],
-                        'is_error' => $metric['is_error'] ? 1 : 0,
-                        'timestamp' => date('Y-m-d H:i:s', $metric['timestamp']),
-                        'ip' => $metric['ip']
-                    ]);
+                $rawMetricsToInsert[] = [
+                    'uuid' => Utils::generateNanoID(),
+                    'endpoint' => $metric['endpoint'],
+                    'method' => $metric['method'],
+                    'response_time' => $metric['response_time'],
+                    'status_code' => $metric['status_code'],
+                    'is_error' => $metric['is_error'] ? 1 : 0,
+                    'timestamp' => date('Y-m-d H:i:s', $metric['timestamp']),
+                    'ip' => $metric['ip']
+                ];
+            }
 
-                    // Update daily aggregates
-                    $this->updateDailyAggregate($metric);
+            // Batch insert raw metrics
+            if (!empty($rawMetricsToInsert)) {
+                try {
+                    $this->db->insertBatch($this->metricsTable, $rawMetricsToInsert);
                 } catch (Exception $e) {
-                    error_log("API Metrics ERROR: Database error: " . $e->getMessage());
+                    error_log("API Metrics ERROR: Batch insert failed: " . $e->getMessage());
                 }
             }
+
+            // Update daily aggregates in bulk to avoid N+1 queries
+            $this->updateDailyAggregatesBulk($pendingMetrics);
 
             // Purge old metrics to keep the database size manageable
             $this->purgeOldMetrics();
@@ -175,48 +164,131 @@ class ApiMetricsService
             error_log("Error flushing API metrics: " . $e->getMessage());
 
             // If an error occurs, put the metrics back in the queue to try again later
-            $currentPending = CacheEngine::get($this->cacheKeyPrefix . 'pending') ?? [];
-            CacheEngine::set($this->cacheKeyPrefix . 'pending', array_merge($currentPending, $pendingMetrics));
+            $currentPending = $this->cache->get($this->cacheKeyPrefix . 'pending') ?? [];
+            $this->cache->set($this->cacheKeyPrefix . 'pending', array_merge($currentPending, $pendingMetrics));
         }
     }
 
     /**
-     * Update daily aggregates for the metrics
+     * Update daily aggregates for the metrics in bulk to avoid N+1 queries
      *
-     * @param array $metric The metric data
+     * @param array $metrics Array of metric data
      */
-    private function updateDailyAggregate(array $metric): void
+    private function updateDailyAggregatesBulk(array $metrics): void
     {
-        $date = date('Y-m-d', $metric['timestamp']);
-        $key = $metric['endpoint'] . '|' . $metric['method'];
-
-        // Check if we have an aggregate for today for this endpoint+method
-        $aggregate = $this->db->select($this->dailyMetricsTable, ['*'])
-            ->where(['date' => $date])
-            ->where(['endpoint_key' => $key])
-            ->first();
-
-        if ($aggregate) {
-            // Update existing aggregate
-            $this->db->update($this->dailyMetricsTable, [
-                'calls' => $aggregate['calls'] + 1,
-                'total_response_time' => $aggregate['total_response_time'] + $metric['response_time'],
-                'error_count' => $aggregate['error_count'] + ($metric['is_error'] ? 1 : 0),
-                'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
-            ], ['id' => $aggregate['id']]);
-        } else {
-            // Create new aggregate
-            $this->db->insert($this->dailyMetricsTable, [
-                'date' => $date,
-                'endpoint' => $metric['endpoint'],
-                'method' => $metric['method'],
-                'endpoint_key' => $key,
-                'calls' => 1,
-                'total_response_time' => $metric['response_time'],
-                'error_count' => $metric['is_error'] ? 1 : 0,
-                'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
-            ]);
+        if (empty($metrics)) {
+            return;
         }
+
+        // Group metrics by date and endpoint_key
+        $aggregates = [];
+        foreach ($metrics as $metric) {
+            $date = date('Y-m-d', $metric['timestamp']);
+            $key = $metric['endpoint'] . '|' . $metric['method'];
+            $combinedKey = $date . '|' . $key;
+
+            if (!isset($aggregates[$combinedKey])) {
+                $aggregates[$combinedKey] = [
+                    'date' => $date,
+                    'endpoint' => $metric['endpoint'],
+                    'method' => $metric['method'],
+                    'endpoint_key' => $key,
+                    'calls' => 0,
+                    'total_response_time' => 0,
+                    'error_count' => 0,
+                    'last_called' => date('Y-m-d H:i:s', $metric['timestamp'])
+                ];
+            }
+
+            // Aggregate the metrics
+            $aggregates[$combinedKey]['calls']++;
+            $aggregates[$combinedKey]['total_response_time'] += $metric['response_time'];
+            $aggregates[$combinedKey]['error_count'] += $metric['is_error'] ? 1 : 0;
+
+            // Keep the latest timestamp
+            $currentTimestamp = date('Y-m-d H:i:s', $metric['timestamp']);
+            if (strtotime($currentTimestamp) > strtotime($aggregates[$combinedKey]['last_called'])) {
+                $aggregates[$combinedKey]['last_called'] = $currentTimestamp;
+            }
+        }
+
+        // Get unique date-endpoint_key combinations to check for existing records
+        $dateEndpointKeys = [];
+        foreach ($aggregates as $aggregate) {
+            $dateEndpointKeys[] = [
+                'date' => $aggregate['date'],
+                'endpoint_key' => $aggregate['endpoint_key']
+            ];
+        }
+
+        // Fetch existing aggregates in bulk using QueryBuilder methods
+        $existingAggregates = [];
+        if (count($dateEndpointKeys) > 0) {
+            // Group combinations by date for more efficient querying
+            $dateGroups = [];
+            foreach ($dateEndpointKeys as $combo) {
+                $dateGroups[$combo['date']][] = $combo['endpoint_key'];
+            }
+
+            // Query each date group separately and combine results
+            foreach ($dateGroups as $date => $endpointKeys) {
+                $results = $this->db->select($this->dailyMetricsTable, ['*'])
+                    ->where(['date' => $date])
+                    ->whereIn('endpoint_key', $endpointKeys)
+                    ->get();
+
+                foreach ($results as $existing) {
+                    $key = $existing['date'] . '|' . $existing['endpoint_key'];
+                    $existingAggregates[$key] = $existing;
+                }
+            }
+        }
+
+        // Process updates and inserts
+        $toUpdate = [];
+        $toInsert = [];
+
+        foreach ($aggregates as $combinedKey => $aggregate) {
+            if (isset($existingAggregates[$combinedKey])) {
+                // Update existing aggregate
+                $existing = $existingAggregates[$combinedKey];
+                $toUpdate[] = [
+                    'id' => $existing['id'],
+                    'calls' => $existing['calls'] + $aggregate['calls'],
+                    'total_response_time' => $existing['total_response_time'] + $aggregate['total_response_time'],
+                    'error_count' => $existing['error_count'] + $aggregate['error_count'],
+                    'last_called' => $aggregate['last_called']
+                ];
+            } else {
+                // Insert new aggregate
+                $toInsert[] = [
+                    'uuid' => Utils::generateNanoID(),
+                    'date' => $aggregate['date'],
+                    'endpoint' => $aggregate['endpoint'],
+                    'method' => $aggregate['method'],
+                    'endpoint_key' => $aggregate['endpoint_key'],
+                    'calls' => $aggregate['calls'],
+                    'total_response_time' => $aggregate['total_response_time'],
+                    'error_count' => $aggregate['error_count'],
+                    'last_called' => $aggregate['last_called']
+                ];
+            }
+        }
+
+        // Perform bulk operations in transaction for better performance
+        $this->db->transaction(function () use ($toUpdate, $toInsert) {
+            if (!empty($toUpdate)) {
+                foreach ($toUpdate as $update) {
+                    $id = $update['id'];
+                    unset($update['id']);
+                    $this->db->update($this->dailyMetricsTable, $update, ['id' => $id]);
+                }
+            }
+
+            if (!empty($toInsert)) {
+                $this->db->insertBatch($this->dailyMetricsTable, $toInsert);
+            }
+        });
     }
 
     /**
@@ -232,7 +304,7 @@ class ApiMetricsService
         $minute = floor(time() / 60) * 60; // Round to the current minute
 
         // Get current rate limit info from cache
-        $rateLimit = CacheEngine::get($key) ?? [
+        $rateLimit = $this->cache?->get($key) ?? [
             'count' => 0,
             'minute' => $minute,
             'limit' => 100 // Default limit (could be dynamic based on endpoint)
@@ -251,7 +323,7 @@ class ApiMetricsService
         }
 
         // Store the updated rate limit info
-        CacheEngine::set($key, $rateLimit, 3600); // Store for 1 hour
+        $this->cache?->set($key, $rateLimit, 3600); // Store for 1 hour
 
         // If the rate limit is approaching threshold, store in the database
         // for admin visibility in the dashboard
@@ -264,6 +336,7 @@ class ApiMetricsService
             ], false);
 
             $this->db->insert($this->rateLimitsTable, [
+                'uuid' => Utils::generateNanoID(),
                 'ip' => $ip,
                 'endpoint' => $endpoint,
                 'remaining' => $rateLimit['limit'] - $rateLimit['count'],
@@ -300,12 +373,6 @@ class ApiMetricsService
         try {
             // Get the last 7 days of daily aggregates
             $sevenDaysAgo = date('Y-m-d', strtotime('-7 days'));
-
-            // Log the contents of the daily metrics table to see what's actually in there
-            $allMetrics = $this->db->select($this->dailyMetricsTable, ['id', 'date', 'endpoint', 'method', 'calls'])
-                ->orderBy(['date' => 'DESC'])
-                ->limit(10)
-                ->get();
 
             $dailyMetrics = $this->db->select($this->dailyMetricsTable, ['*'])
                 ->where(['date' => ['>=', $sevenDaysAgo]])
@@ -474,7 +541,7 @@ class ApiMetricsService
             $this->db->delete($this->rateLimitsTable, [], false);
 
             // Clear cached metrics using the proper cache key prefix
-            CacheEngine::delete($this->cacheKeyPrefix . 'pending');
+            $this->cache?->delete($this->cacheKeyPrefix . 'pending');
 
             return true;
         } catch (Exception $e) {
@@ -492,19 +559,19 @@ class ApiMetricsService
             // Remove detailed metrics older than the TTL
             $cutoff = date('Y-m-d H:i:s', time() - $this->metricsTTL);
             $this->db->delete($this->metricsTable, [
-                'timestamp' => ['<', $cutoff]
+                'timestamp <' => $cutoff
             ], false); // Use hard delete
 
             // Remove aggregated metrics older than their TTL
             $aggCutoff = date('Y-m-d', time() - $this->aggregatedMetricsTTL);
             $this->db->delete($this->dailyMetricsTable, [
-                'date' => ['<', $aggCutoff]
+                'date <' => $aggCutoff
             ], false); // Use hard delete
 
             // Clean up old rate limits
             $rateLimitCutoff = date('Y-m-d H:i:s', time() - 3600); // 1 hour
             $this->db->delete($this->rateLimitsTable, [
-                'reset_time' => ['<', $rateLimitCutoff]
+                'reset_time <' => $rateLimitCutoff
             ], false); // Use hard delete
         } catch (Exception $e) {
             error_log("Error purging old API metrics: " . $e->getMessage());
@@ -521,6 +588,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->metricsTable)) {
                 $this->schemaManager->createTable($this->metricsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'method' => 'VARCHAR(10) NOT NULL',
                     'response_time' => 'FLOAT NOT NULL',
@@ -546,6 +614,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->dailyMetricsTable)) {
                 $this->schemaManager->createTable($this->dailyMetricsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'date' => 'DATE NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'method' => 'VARCHAR(10) NOT NULL',
@@ -572,6 +641,7 @@ class ApiMetricsService
             if (!$this->schemaManager->tableExists($this->rateLimitsTable)) {
                 $this->schemaManager->createTable($this->rateLimitsTable, [
                     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
+                    'uuid' => 'CHAR(12) NOT NULL',
                     'ip' => 'VARCHAR(45) NOT NULL',
                     'endpoint' => 'VARCHAR(255) NOT NULL',
                     'remaining' => 'INT NOT NULL',

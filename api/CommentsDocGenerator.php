@@ -6,6 +6,8 @@ namespace Glueful;
 
 use ReflectionClass;
 use ReflectionMethod;
+use Glueful\Extensions\ExtensionManager;
+use Glueful\Services\FileFinder;
 
 /**
  * Comments Documentation Generator
@@ -32,6 +34,9 @@ class CommentsDocGenerator
     /** @var array Processed route information */
     private array $routeData = [];
 
+    /** @var ExtensionManager Extensions manager for checking enabled extensions */
+    private ExtensionManager $extensionsManager;
+
     /**
      * Constructor
      *
@@ -39,23 +44,26 @@ class CommentsDocGenerator
      * @param string|null $outputPath Custom output path for extension documentation
      * @param string|null $routesPath Custom path to routes directory
      * @param string|null $routesOutputPath Custom output path for routes documentation
+     * @param ExtensionManager|null $extensionsManager Extensions manager instance
      */
     public function __construct(
         ?string $extensionsPath = null,
         ?string $outputPath = null,
         ?string $routesPath = null,
-        ?string $routesOutputPath = null
+        ?string $routesOutputPath = null,
+        ?ExtensionManager $extensionsManager = null
     ) {
-        $this->extensionsPath = $extensionsPath ?? dirname(__DIR__) . '/extensions';
+        $this->extensionsPath = $extensionsPath ?? config(('app.paths.project_extensions'));
         $this->outputPath = $outputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/extensions';
         $this->routesPath = $routesPath ?? dirname(__DIR__) . '/routes';
         $this->routesOutputPath = $routesOutputPath ?? dirname(__DIR__) . '/docs/api-doc-json-definitions/routes';
+        $this->extensionsManager = $extensionsManager ?? container()->get(ExtensionManager::class);
     }
 
     /**
      * Generate documentation for all extensions and routes
      *
-     * Scans all extensions and routes directories and generates documentation
+     * Scans enabled extensions and routes directories and generates documentation
      *
      * @return array List of generated documentation files
      */
@@ -63,17 +71,18 @@ class CommentsDocGenerator
     {
         $generatedFiles = [];
 
-        // First, generate docs for extensions
-        $extensionDirs = array_filter(glob($this->extensionsPath . '/*'), 'is_dir');
+        // Generate docs only for enabled extensions
+        $enabledExtensions = $this->extensionsManager->listEnabled();
+        foreach ($enabledExtensions as $extensionName) {
+            $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+            if ($extensionPath) {
+                $routeFile = $extensionPath . '/src/routes.php';
 
-        foreach ($extensionDirs as $extDir) {
-            $extName = basename($extDir);
-            $routeFile = $extDir . '/src/routes.php';
-
-            if (file_exists($routeFile)) {
-                $docFile = $this->generateForExtension($extName, $routeFile);
-                if ($docFile) {
-                    $generatedFiles[] = $docFile;
+                if (file_exists($routeFile)) {
+                    $docFile = $this->generateForExtension($extensionName, $routeFile);
+                    if ($docFile) {
+                        $generatedFiles[] = $docFile;
+                    }
                 }
             }
         }
@@ -101,10 +110,12 @@ class CommentsDocGenerator
             mkdir($this->routesOutputPath, 0755, true);
         }
 
-        // Get all route files in the routes directory
-        $routeFiles = glob($this->routesPath . '/*.php');
+        // Get all route files in the routes directory using FileFinder
+        $fileFinder = container()->get(FileFinder::class);
+        $routeFiles = $fileFinder->findRouteFiles([$this->routesPath]);
 
-        foreach ($routeFiles as $routeFile) {
+        foreach ($routeFiles as $routeFileObj) {
+            $routeFile = $routeFileObj->getPathname();
             $routeName = basename($routeFile, '.php');
             $docFile = $this->generateForRouteFile($routeName, $routeFile);
             if ($docFile) {
@@ -379,12 +390,18 @@ class CommentsDocGenerator
      */
     private function extractSimplifiedRequestBody(string $docComment): ?array
     {
-        if (!preg_match('/@requestBody\s+([^\n]+)/', $docComment, $matches)) {
+        // Updated regex to capture multiline @requestBody content
+        if (!preg_match('/@requestBody\s+([\s\S]*?)(?=@\w+|\*\/|$)/', $docComment, $matches)) {
             return null;
         }
 
         $requestBodyStr = $matches[1];
         $required = [];
+
+        // Clean up the multiline content by removing comment markers and extra whitespace
+        $requestBodyStr = preg_replace('/\*\s*/', ' ', $requestBodyStr);
+        $requestBodyStr = preg_replace('/\s+/', ' ', $requestBodyStr);
+        $requestBodyStr = trim($requestBodyStr);
 
         // Extract required fields if specified
         if (preg_match('/\{required=([^}]+)\}/', $requestBodyStr, $reqMatches)) {
@@ -393,9 +410,9 @@ class CommentsDocGenerator
             $requestBodyStr = str_replace($reqMatches[0], '', $requestBodyStr);
         }
 
-        // Parse fields
+        // Parse fields - updated pattern to handle the actual format from files.php
         $properties = [];
-        $pattern = '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/';
+        $pattern = '/(\w+):(file|string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/';
 
         preg_match_all($pattern, $requestBodyStr, $fieldMatches, PREG_SET_ORDER);
 
@@ -440,19 +457,42 @@ class CommentsDocGenerator
     private function extractSimplifiedResponses(string $docComment): array
     {
         $responses = [];
-        $pattern = '/@response\s+(\d+)\s+([\w\/\-+]+)?\s+"([^"]*)"\s*(\{[^}]*\})?/';
 
-        preg_match_all($pattern, $docComment, $matches, PREG_SET_ORDER);
+        // First, find all @response positions
+        preg_match_all(
+            '/@response\s+(\d+)\s+([\w\/\-+]+)?\s+"([^"]*)"/',
+            $docComment,
+            $responseMatches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        );
 
-        foreach ($matches as $match) {
-            $statusCode = $match[1];
-            $contentType = !empty($match[2]) ? $match[2] : 'application/json';
-            $description = $match[3];
-            $schemaStr = isset($match[4]) ? $match[4] : null;
+        foreach ($responseMatches as $i => $match) {
+            $statusCode = $match[1][0];
+            $contentType = !empty($match[2][0]) ? $match[2][0] : 'application/json';
+            $description = $match[3][0];
 
-            if ($schemaStr) {
-                // Parse schema from the simplified format
-                $schema = $this->parseSimplifiedSchema($schemaStr);
+            // Find the position after the quoted description
+            $startPos = $match[0][1] + strlen($match[0][0]);
+
+            // Find the end position (next @response or end of comment)
+            $endPos = strlen($docComment);
+            if (isset($responseMatches[$i + 1])) {
+                $endPos = $responseMatches[$i + 1][0][1];
+            } else {
+                // Look for end of comment or next @ tag that's not @response
+                $pattern = '/\*\/|\*\s*@(?!response)[a-zA-Z]/';
+                if (preg_match($pattern, $docComment, $endMatch, PREG_OFFSET_CAPTURE, $startPos)) {
+                    $endPos = $endMatch[0][1];
+                }
+            }
+
+            // Extract the content between start and end
+            $content = substr($docComment, $startPos, $endPos - $startPos);
+
+            // Check if there's a schema (starts with {)
+            if (preg_match('/\s*\{([\s\S]*)\}\s*$/m', $content, $schemaMatch)) {
+                $schemaContent = '{' . $schemaMatch[1] . '}';
+                $schema = $this->parseSimplifiedSchema($schemaContent);
 
                 $responses[$statusCode] = [
                     'description' => $description ?: $this->getDefaultResponseDescription($statusCode),
@@ -468,6 +508,7 @@ class CommentsDocGenerator
                 ];
             }
         }
+
 
         // Add default responses if none specified
         if (empty($responses)) {
@@ -496,26 +537,41 @@ class CommentsDocGenerator
      */
     private function parseSimplifiedSchema(string $schemaStr): array
     {
-        // Clean up the schema string
-        $schemaStr = trim($schemaStr, '{} ');
+        // Clean up the schema string - remove comment markers and normalize whitespace
+        $schemaStr = preg_replace('/\*\s*/', ' ', $schemaStr);
+        $schemaStr = preg_replace('/\s+/', ' ', $schemaStr);
+
+        // Only trim outer braces if this is the root level
+        if (substr($schemaStr, 0, 1) === '{' && substr($schemaStr, -1) === '}') {
+            $schemaStr = substr($schemaStr, 1, -1);
+        }
+        $schemaStr = trim($schemaStr);
+
         $parts = [];
         $start = 0;
         $braceCount = 0;
+        $bracketCount = 0;
         $inQuotes = false;
 
-        // Split on commas, but respect nested objects and quoted strings
+        // Split on commas, but respect nested objects, arrays, and quoted strings
         for ($i = 0; $i < strlen($schemaStr); $i++) {
             $char = $schemaStr[$i];
 
             if ($char === '"' && ($i === 0 || $schemaStr[$i - 1] !== '\\')) {
                 $inQuotes = !$inQuotes;
-            } elseif (!$inQuotes && $char === '{') {
-                $braceCount++;
-            } elseif (!$inQuotes && $char === '}') {
-                $braceCount--;
-            } elseif (!$inQuotes && $char === ',' && $braceCount === 0) {
-                $parts[] = substr($schemaStr, $start, $i - $start);
-                $start = $i + 1;
+            } elseif (!$inQuotes) {
+                if ($char === '{') {
+                    $braceCount++;
+                } elseif ($char === '}') {
+                    $braceCount--;
+                } elseif ($char === '[') {
+                    $bracketCount++;
+                } elseif ($char === ']') {
+                    $bracketCount--;
+                } elseif ($char === ',' && $braceCount === 0 && $bracketCount === 0) {
+                    $parts[] = substr($schemaStr, $start, $i - $start);
+                    $start = $i + 1;
+                }
             }
         }
 
@@ -541,8 +597,97 @@ class CommentsDocGenerator
         foreach ($parts as $part) {
             $part = trim($part);
 
-            // Match field with type and optional description
-            if (
+            // Check for array with object definition first (field:array=[{...}])
+            if (preg_match('/^(\w+):array=\[/', $part, $arrayMatch)) {
+                $name = $arrayMatch[1];
+                $arrayStartPos = strpos($part, '[') + 1;
+
+                // Find the matching closing bracket using proper bracket counting
+                $bracketCount = 0;
+                $braceCount = 0;
+                $inQuotes = false;
+                $arrayEndPos = -1;
+
+                for ($i = $arrayStartPos; $i < strlen($part); $i++) {
+                    $char = $part[$i];
+
+                    if ($char === '"' && ($i === $arrayStartPos || $part[$i - 1] !== '\\')) {
+                        $inQuotes = !$inQuotes;
+                    } elseif (!$inQuotes) {
+                        if ($char === '[') {
+                            $bracketCount++;
+                        } elseif ($char === ']') {
+                            if ($bracketCount === 0) {
+                                $arrayEndPos = $i;
+                                break;
+                            }
+                            $bracketCount--;
+                        } elseif ($char === '{') {
+                            $braceCount++;
+                        } elseif ($char === '}') {
+                            $braceCount--;
+                        }
+                    }
+                }
+
+                if ($arrayEndPos > $arrayStartPos) {
+                    $arrayContent = substr($part, $arrayStartPos, $arrayEndPos - $arrayStartPos);
+
+                    // Remove outer braces if present and parse the object content
+                    if (preg_match('/^\s*\{([\s\S]*)\}\s*$/', $arrayContent, $objectMatch)) {
+                        $itemsSchema = $this->parseSimplifiedSchema('{' . $objectMatch[1] . '}');
+                    } else {
+                        // Fallback for non-object array items
+                        $itemsSchema = ['type' => 'object'];
+                    }
+
+                    $properties[$name] = [
+                        'type' => 'array',
+                        'items' => $itemsSchema
+                    ];
+                }
+            } elseif (preg_match('/(\w+):\{/', $part)) {
+                // Check for nested object (field:{...})
+                // Need to find the matching closing brace
+                $colonPos = strpos($part, ':');
+                $name = substr($part, 0, $colonPos);
+                $openBracePos = strpos($part, '{', $colonPos);
+
+                // Count braces to find the matching closing brace
+                $braceCount = 0;
+                $inQuotes = false;
+                $closeBracePos = -1;
+
+                for ($i = $openBracePos; $i < strlen($part); $i++) {
+                    $char = $part[$i];
+
+                    if ($char === '"' && ($i === 0 || $part[$i - 1] !== '\\')) {
+                        $inQuotes = !$inQuotes;
+                    } elseif (!$inQuotes) {
+                        if ($char === '{') {
+                            $braceCount++;
+                        } elseif ($char === '}') {
+                            $braceCount--;
+                            if ($braceCount === 0) {
+                                $closeBracePos = $i;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if ($closeBracePos > $openBracePos) {
+                    // Extract just the content between the braces
+                    $nestedContent = substr($part, $openBracePos + 1, $closeBracePos - $openBracePos - 1);
+                    $nestedSchema = $this->parseSimplifiedSchema('{' . $nestedContent . '}');
+                    $properties[$name] = $nestedSchema;
+                } else {
+                    // If we can't find a closing brace, use the rest of the string
+                    $nestedContent = substr($part, $openBracePos);
+                    $nestedSchema = $this->parseSimplifiedSchema($nestedContent);
+                    $properties[$name] = $nestedSchema;
+                }
+            } elseif (
                 preg_match(
                     '/(\w+):(string|integer|number|boolean|array|object)(?:\[([^\]]*)\])?(?:="([^"]*)")?/',
                     $part,
@@ -565,10 +710,6 @@ class CommentsDocGenerator
                 }
 
                 $properties[$name] = $property;
-            } elseif (preg_match('/(\w+):(\{[^}]+\})/', $part, $match)) {
-                $name = $match[1];
-                $nestedSchema = $this->parseSimplifiedSchema($match[2]);
-                $properties[$name] = $nestedSchema;
             } elseif (preg_match('/(\w+):(\[[^\]]+\])/', $part, $match)) {
                 $name = $match[1];
                 $itemsSchema = $this->parseSimplifiedSchema(substr($match[2], 1, -1));

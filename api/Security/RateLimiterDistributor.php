@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Cache\CacheEngine;
-use Glueful\Logging\AuditEvent;
-use Glueful\Logging\AuditLogger;
+use Glueful\Cache\CacheStore;
+use Glueful\Helpers\CacheHelper;
 use Redis;
 
 /**
@@ -29,6 +28,9 @@ class RateLimiterDistributor
     /** @var string Lock key prefix */
     private const LOCK_PREFIX = 'lock:';
 
+    /** @var CacheStore Cache store instance */
+    private CacheStore $cache;
+
     /** @var string Node identifier */
     private string $nodeId;
 
@@ -44,26 +46,34 @@ class RateLimiterDistributor
     /**
      * Constructor
      *
+     * @param CacheStore|null $cache Cache store instance
      * @param string $nodeId Node identifier (defaults to hostname)
      * @param int $syncInterval Synchronization interval in seconds
      */
-    public function __construct(string $nodeId = '', int $syncInterval = 30)
+    public function __construct(?CacheStore $cache = null, string $nodeId = '', int $syncInterval = 30)
     {
+        // Set up cache - try provided instance or get from container
+        $this->cache = $cache;
+
+        // If no cache provided, try to get from helper
+        if ($this->cache === null) {
+            $this->cache = CacheHelper::createCacheInstance();
+            if ($this->cache === null) {
+                throw new \RuntimeException(
+                    'CacheStore is required for rate limiter distributor: Unable to create cache instance.'
+                );
+            }
+        }
+
         // Use hostname as node ID if not provided
         $this->nodeId = $nodeId ?: gethostname() ?: uniqid('node-');
         $this->syncInterval = $syncInterval;
-
-        // Initialize cache engine
-        CacheEngine::initialize(self::PREFIX, config('cache.default', 'redis'));
 
         // Attempt to connect to Redis for pub/sub if available
         $this->connectToRedis();
 
         // Register this node
         $this->registerNode();
-
-        // Log distributor initialization
-        $this->auditDistributorEvent('distributor_initialized');
     }
 
     /**
@@ -76,12 +86,12 @@ class RateLimiterDistributor
             'hostname' => gethostname() ?: '',
             'ip' => $_SERVER['SERVER_ADDR'] ?? '127.0.0.1',
             'last_seen' => time(),
-            'version' => defined('GLUEFUL_VERSION') ? GLUEFUL_VERSION : '0.0.0',
+            'version' => config('app.version_full', '1.0.0'),
         ];
 
-        // Store node data in Redis
+        // Store node data in cache
         $nodesKey = self::NODES_KEY;
-        CacheEngine::set($nodesKey . ':' . $this->nodeId, $nodeData);
+        $this->cache->set($nodesKey . ':' . $this->nodeId, $nodeData);
 
         // Try to elect primary coordinator if not already determined
         $this->tryElectPrimaryCoordinator();
@@ -113,12 +123,12 @@ class RateLimiterDistributor
                 'node_id' => $this->nodeId,
             ];
 
-            CacheEngine::set($limitsKey . ':' . $key, $limitData);
+            $this->cache->set($limitsKey . ':' . $key, $limitData);
 
             // Publish update if Redis pub/sub is available
             if ($this->redis) {
                 $this->redis->publish(
-                    self::PREFIX . 'limit_updates',
+                    'limit_updates',
                     json_encode(['action' => 'update', 'data' => $limitData])
                 );
             }
@@ -138,7 +148,7 @@ class RateLimiterDistributor
     public function getGlobalLimit(string $key): ?array
     {
         $limitsKey = self::GLOBAL_LIMITS_KEY;
-        $data = CacheEngine::get($limitsKey . ':' . $key);
+        $data = $this->cache->get($limitsKey . ':' . $key);
 
         if ($data) {
             return is_array($data) ? $data : null;
@@ -161,14 +171,14 @@ class RateLimiterDistributor
             return 0;
         }
 
-        // We can't easily list all keys with the standard CacheEngine
+        // We can't easily list all keys with the standard cache interface
         // Instead, let's use the direct Redis connection if available
         if (!$this->redis) {
             return 0;
         }
 
         $limitsKey = self::GLOBAL_LIMITS_KEY;
-        $keys = $this->redis->keys(self::PREFIX . $limitsKey . ':*');
+        $keys = $this->redis->keys($limitsKey . ':*');
 
         if (!$keys || !is_array($keys)) {
             return 0;
@@ -180,9 +190,9 @@ class RateLimiterDistributor
 
         foreach ($keys as $fullKey) {
             // Extract the key part after the prefix
-            $key = str_replace(self::PREFIX . $limitsKey . ':', '', $fullKey);
+            $key = str_replace($limitsKey . ':', '', $fullKey);
 
-            $data = CacheEngine::get($limitsKey . ':' . $key);
+            $data = $this->cache->get($limitsKey . ':' . $key);
             if (!$data || !is_array($data)) {
                 continue;
             }
@@ -200,10 +210,8 @@ class RateLimiterDistributor
         if (!empty($cleanupKeys) && $this->acquireLock('cleanup', 5)) {
             try {
                 foreach ($cleanupKeys as $key) {
-                    CacheEngine::delete($limitsKey . ':' . $key);
+                    $this->cache->delete($limitsKey . ':' . $key);
                 }
-
-                $this->auditDistributorEvent('limits_cleaned_up', ['count' => count($cleanupKeys)]);
             } finally {
                 $this->releaseLock('cleanup');
             }
@@ -238,7 +246,7 @@ class RateLimiterDistributor
                 return 0;
             }
 
-            $nodeKeys = $this->redis->keys(self::PREFIX . $nodesKey . ':*');
+            $nodeKeys = $this->redis->keys($nodesKey . ':*');
             if (!$nodeKeys || !is_array($nodeKeys)) {
                 return 0;
             }
@@ -247,22 +255,20 @@ class RateLimiterDistributor
             $now = time();
 
             foreach ($nodeKeys as $fullKey) {
-                $nodeId = str_replace(self::PREFIX . $nodesKey . ':', '', $fullKey);
-                $nodeData = CacheEngine::get($nodesKey . ':' . $nodeId);
+                $nodeId = str_replace($nodesKey . ':', '', $fullKey);
+                $nodeData = $this->cache->get($nodesKey . ':' . $nodeId);
 
                 if (!$nodeData || !is_array($nodeData) || !isset($nodeData['last_seen'])) {
                     continue;
                 }
 
                 if (($now - $nodeData['last_seen']) > $maxAgeSeconds) {
-                    CacheEngine::delete($nodesKey . ':' . $nodeId);
+                    $this->cache->delete($nodesKey . ':' . $nodeId);
                     $count++;
                 }
             }
 
             if ($count > 0) {
-                $this->auditDistributorEvent('nodes_cleaned_up', ['count' => $count]);
-
                 // Re-elect primary coordinator if needed
                 $this->tryElectPrimaryCoordinator();
             }
@@ -291,33 +297,31 @@ class RateLimiterDistributor
             if (!$this->redis) {
                 // No Redis connection, this node becomes primary
                 $this->isPrimaryCoordinator = true;
-                CacheEngine::set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
+                $this->cache->set('primary_coordinator', $this->nodeId, 300);
                 return true;
             }
 
-            $nodeKeys = $this->redis->keys(self::PREFIX . $nodesKey . ':*');
+            $nodeKeys = $this->redis->keys($nodesKey . ':*');
             if (!$nodeKeys || !is_array($nodeKeys) || count($nodeKeys) === 0) {
                 // No nodes registered yet, this node becomes primary
                 $this->isPrimaryCoordinator = true;
-                CacheEngine::set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
+                $this->cache->set('primary_coordinator', $this->nodeId, 300);
                 return true;
             }
 
             // Check if there's already a primary coordinator
-            $primaryId = CacheEngine::get('primary_coordinator');
+            $primaryId = $this->cache->get('primary_coordinator');
 
             if ($primaryId === $this->nodeId) {
                 // We're already the primary coordinator
-                CacheEngine::set('primary_coordinator', $this->nodeId, 300);
+                $this->cache->set('primary_coordinator', $this->nodeId, 300);
                 $this->isPrimaryCoordinator = true;
                 return true;
             }
 
             // Check if the primary coordinator node still exists
             if ($primaryId) {
-                $primaryNodeExists = (bool)CacheEngine::get($nodesKey . ':' . $primaryId);
+                $primaryNodeExists = (bool)$this->cache->get($nodesKey . ':' . $primaryId);
                 if ($primaryNodeExists) {
                     // There's already an active primary coordinator
                     $this->isPrimaryCoordinator = ($primaryId === $this->nodeId);
@@ -328,7 +332,7 @@ class RateLimiterDistributor
             // No active primary coordinator, elect one (oldest node by ID)
             $allNodeIds = [];
             foreach ($nodeKeys as $fullKey) {
-                $nodeId = str_replace(self::PREFIX . $nodesKey . ':', '', $fullKey);
+                $nodeId = str_replace($nodesKey . ':', '', $fullKey);
                 $allNodeIds[] = $nodeId;
             }
 
@@ -337,8 +341,7 @@ class RateLimiterDistributor
 
             $this->isPrimaryCoordinator = ($firstNodeId === $this->nodeId);
             if ($this->isPrimaryCoordinator) {
-                CacheEngine::set('primary_coordinator', $this->nodeId, 300);
-                $this->auditDistributorEvent('became_primary_coordinator');
+                $this->cache->set('primary_coordinator', $this->nodeId, 300);
             }
 
             return $this->isPrimaryCoordinator;
@@ -371,7 +374,7 @@ class RateLimiterDistributor
             return [];
         }
 
-        $nodeKeys = $this->redis->keys(self::PREFIX . $nodesKey . ':*');
+        $nodeKeys = $this->redis->keys($nodesKey . ':*');
         if (!$nodeKeys || !is_array($nodeKeys)) {
             return [];
         }
@@ -379,7 +382,7 @@ class RateLimiterDistributor
         $result = [];
         foreach ($nodeKeys as $fullKey) {
             $nodeId = str_replace(self::PREFIX . $nodesKey . ':', '', $fullKey);
-            $nodeData = CacheEngine::get($nodesKey . ':' . $nodeId);
+            $nodeData = $this->cache->get($nodesKey . ':' . $nodeId);
 
             if ($nodeData && is_array($nodeData)) {
                 $result[$nodeId] = $nodeData;
@@ -400,8 +403,8 @@ class RateLimiterDistributor
     {
         $lockKey = self::LOCK_PREFIX . $key;
         $token = bin2hex(random_bytes(8));
-        // The CacheEngine::set method only accepts key, value, and ttl
-        $acquired = CacheEngine::set(
+        // Use setNx for atomic lock acquisition
+        $acquired = $this->cache->setNx(
             $lockKey,
             $token,
             $timeout
@@ -422,7 +425,7 @@ class RateLimiterDistributor
     private function releaseLock(string $key): void
     {
         $lockKey = self::LOCK_PREFIX . $key;
-        CacheEngine::delete($lockKey);
+        $this->cache->delete($lockKey);
     }
 
     /**
@@ -448,25 +451,5 @@ class RateLimiterDistributor
         } catch (\Exception $e) {
             $this->redis = null;
         }
-    }
-
-    /**
-     * Log distributor events to audit logger
-     *
-     * @param string $action Event action
-     * @param array $context Additional context
-     */
-    private function auditDistributorEvent(string $action, array $context = []): void
-    {
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'rate_limit_distributor_' . $action,
-            AuditEvent::SEVERITY_INFO,
-            array_merge([
-                'node_id' => $this->nodeId,
-                'is_primary' => $this->isPrimaryCoordinator,
-            ], $context)
-        );
     }
 }

@@ -56,7 +56,7 @@ cp .env.example .env
 # Edit .env with your configuration
 
 # Set up database
-php glueful db:migrate
+php glueful migrate run
 ```
 
 ### Admin UI Setup

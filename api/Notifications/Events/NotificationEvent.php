@@ -7,6 +7,7 @@ namespace Glueful\Notifications\Events;
 use DateTime;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Models\Notification;
+use Symfony\Contracts\EventDispatcher\Event;
 
 /**
  * NotificationEvent
@@ -16,7 +17,7 @@ use Glueful\Notifications\Models\Notification;
  *
  * @package Glueful\Notifications\Events
  */
-abstract class NotificationEvent
+abstract class NotificationEvent extends Event
 {
     /**
      * @var Notification The notification that triggered the event

@@ -320,4 +320,131 @@ interface SchemaManager
      * @throws \RuntimeException On constraint creation failure
      */
     public function addForeignKey(array $foreignKeys): self;
+
+    /**
+     * Generate preview of schema changes
+     *
+     * Analyzes proposed changes and generates:
+     * - SQL statements that would be executed
+     * - Potential warnings and risks
+     * - Estimated execution time
+     * - Impact assessment
+     *
+     * @param string $tableName Target table name
+     * @param array $changes Array of proposed changes
+     * @return array Preview data with SQL, warnings, and metadata
+     * @throws \RuntimeException If preview cannot be generated
+     */
+    public function generateChangePreview(string $tableName, array $changes): array;
+
+    /**
+     * Export table schema in specified format
+     *
+     * Supported formats:
+     * - 'json': JSON representation with full metadata
+     * - 'sql': SQL CREATE statements
+     * - 'yaml': YAML format for configuration files
+     * - 'php': PHP array format for migrations
+     *
+     * @param string $tableName Table to export
+     * @param string $format Export format (json|sql|yaml|php)
+     * @return array Schema representation with metadata
+     * @throws \RuntimeException If table doesn't exist or export fails
+     */
+    public function exportTableSchema(string $tableName, string $format = 'json'): array;
+
+    /**
+     * Import and apply table schema
+     *
+     * Validates and applies schema definition to create or modify tables.
+     * Supports incremental updates and full table recreation.
+     *
+     * @param string $tableName Target table name
+     * @param array $schema Schema definition
+     * @param string $format Schema format
+     * @param array $options Import options (recreate, validate_only, etc.)
+     * @return array Import results with applied changes
+     * @throws \RuntimeException If import fails or validation errors
+     */
+    public function importTableSchema(
+        string $tableName,
+        array $schema,
+        string $format = 'json',
+        array $options = []
+    ): array;
+
+    /**
+     * Validate schema definition
+     *
+     * Performs comprehensive validation including:
+     * - Format compliance
+     * - Data type validation
+     * - Constraint verification
+     * - Naming convention checks
+     * - Cross-reference validation
+     *
+     * @param array $schema Schema to validate
+     * @param string $format Schema format
+     * @return array Validation results with errors and warnings
+     */
+    public function validateSchema(array $schema, string $format = 'json'): array;
+
+    /**
+     * Generate revert operations for a schema change
+     *
+     * Analyzes audit log entry and generates operations to undo changes:
+     * - Column additions -> DROP COLUMN
+     * - Column modifications -> Restore original definition
+     * - Index changes -> Reverse operations
+     * - Constraint changes -> Restore original constraints
+     *
+     * @param array $originalChange Audit log entry of the original change
+     * @return array Array of revert operations
+     * @throws \RuntimeException If revert cannot be generated
+     */
+    public function generateRevertOperations(array $originalChange): array;
+
+    /**
+     * Execute revert operations
+     *
+     * Applies revert operations with full transaction support and audit logging.
+     *
+     * @param array $revertOps Array of revert operations
+     * @return array Execution results
+     * @throws \RuntimeException If revert execution fails
+     */
+    public function executeRevert(array $revertOps): array;
+
+    /**
+     * Get complete table schema information
+     *
+     * Returns comprehensive schema data including:
+     * - Column definitions with types and constraints
+     * - Index information
+     * - Foreign key relationships
+     * - Table options and metadata
+     *
+     * @param string $tableName Table to analyze
+     * @return array Complete schema information
+     * @throws \RuntimeException If table doesn't exist
+     */
+    public function getTableSchema(string $tableName): array;
+
+    /**
+     * Convert SQL statements to engine-specific syntax
+     *
+     * Transforms generic or other database engine SQL statements
+     * to be compatible with the current database engine.
+     *
+     * Common conversions:
+     * - Data type mappings (BIGINT -> INTEGER for SQLite)
+     * - AUTO_INCREMENT syntax variations
+     * - Engine-specific features
+     * - Character set and collation handling
+     *
+     * @param string $sql Original SQL statement
+     * @return string Converted SQL statement compatible with current engine
+     * @throws \RuntimeException If conversion fails or SQL is invalid
+     */
+    public function convertSQLToEngineFormat(string $sql): string;
 }

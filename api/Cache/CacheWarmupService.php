@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Glueful\Cache;
 
-use Glueful\Cache\CacheEngine;
+use Glueful\Cache\CacheStore;
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Cache Warmup Service
@@ -16,6 +17,24 @@ use Glueful\Helpers\DatabaseConnectionTrait;
 class CacheWarmupService
 {
     use DatabaseConnectionTrait;
+
+    private CacheStore $cache;
+
+    public function __construct(?CacheStore $cache = null)
+    {
+        // Set up cache - try provided instance or get from container
+        $this->cache = $cache;
+
+        // If no cache provided, try to get from helper
+        if ($this->cache === null) {
+            $this->cache = CacheHelper::createCacheInstance();
+            if ($this->cache === null) {
+                throw new \RuntimeException(
+                    'CacheStore is required for warmup service: Unable to create cache instance.'
+                );
+            }
+        }
+    }
 
     /** @var array<string, string> Default warmup strategies mapping strategy names to method names */
     private static array $strategies = [
@@ -39,12 +58,8 @@ class CacheWarmupService
     /**
      * Warm up all critical cache data
      */
-    public static function warmupAll(array $strategies = []): array
+    public function warmupAll(array $strategies = []): array
     {
-        if (!CacheEngine::isEnabled()) {
-            return ['status' => 'disabled', 'message' => 'Cache is not enabled'];
-        }
-
         self::$stats['start_time'] = microtime(true);
         $strategies = $strategies ?: array_keys(self::$strategies);
         $results = [];
@@ -53,9 +68,7 @@ class CacheWarmupService
             if (isset(self::$strategies[$strategy])) {
                 $method = self::$strategies[$strategy];
                 try {
-                    // Dynamically call the warmup method for this strategy
-                    // Methods: warmupConfiguration, warmupPermissions, warmupRoles, warmupActiveUsers, warmupMetadata
-                    $result = call_user_func([self::class, $method]);
+                    $result = $this->$method();
                     $results[$strategy] = $result;
                     self::$stats['total_items'] += $result['items'] ?? 0;
                 } catch (\Exception $e) {
@@ -84,10 +97,10 @@ class CacheWarmupService
     /**
      * Warm up configuration data
      *
-     * @used-by self::warmupAll() Called dynamically via call_user_func
+     * @used-by self::warmupAll() Called dynamically
      * @internal This method is called dynamically through the $strategies array
      */
-    private static function warmupConfiguration(): array
+    private function warmupConfiguration(): array
     {
         $items = 0;
         $configKeys = [
@@ -104,11 +117,11 @@ class CacheWarmupService
             try {
                 $cacheKey = "config:$key";
 
-                if (CacheEngine::get($cacheKey) === null) {
+                if (!$this->cache->has($cacheKey)) {
                     // Get config value and cache it
                     $value = config($key);
                     if ($value !== null) {
-                        CacheEngine::set($cacheKey, $value, 3600); // Cache for 1 hour
+                        $this->cache->set($cacheKey, $value, 3600); // Cache for 1 hour
                         $items++;
                         self::$stats['cache_misses']++;
                     }
@@ -130,17 +143,16 @@ class CacheWarmupService
     /**
      * Warm up permissions data
      *
-     * @used-by self::warmupAll() Called dynamically via call_user_func
+     * @used-by self::warmupAll() Called dynamically
      * @internal This method is called dynamically through the $strategies array
      */
-    private static function warmupPermissions(): array
+    private function warmupPermissions(): array
     {
-        if (!self::tableExists('permissions')) {
+        if (!$this->tableExists('permissions')) {
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Permissions table not found'];
         }
 
-        $instance = new self();
-        $queryBuilder = $instance->getQueryBuilder();
+        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
@@ -151,8 +163,8 @@ class CacheWarmupService
 
             foreach ($permissions as $permission) {
                 $cacheKey = "permission:name:{$permission['name']}";
-                if (CacheEngine::get($cacheKey) === null) {
-                    CacheEngine::set($cacheKey, $permission, 1800); // Cache for 30 minutes
+                if (!$this->cache->has($cacheKey)) {
+                    $this->cache->set($cacheKey, $permission, 1800); // Cache for 30 minutes
                     $items++;
                     self::$stats['cache_misses']++;
                 } else {
@@ -162,8 +174,8 @@ class CacheWarmupService
 
             // Cache permission hierarchy
             $hierarchyKey = 'permissions:hierarchy';
-            if (CacheEngine::get($hierarchyKey) === null) {
-                CacheEngine::set($hierarchyKey, $permissions, 1800);
+            if (!$this->cache->has($hierarchyKey)) {
+                $this->cache->set($hierarchyKey, $permissions, 1800);
                 self::$stats['cache_misses']++;
             } else {
                 self::$stats['cache_hits']++;
@@ -186,17 +198,16 @@ class CacheWarmupService
     /**
      * Warm up roles data
      *
-     * @used-by self::warmupAll() Called dynamically via call_user_func
+     * @used-by self::warmupAll() Called dynamically
      * @internal This method is called dynamically through the $strategies array
      */
-    private static function warmupRoles(): array
+    private function warmupRoles(): array
     {
-        if (!self::tableExists('roles')) {
+        if (!$this->tableExists('roles')) {
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Roles table not found'];
         }
 
-        $instance = new self();
-        $queryBuilder = $instance->getQueryBuilder();
+        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
@@ -207,8 +218,8 @@ class CacheWarmupService
 
             foreach ($roles as $role) {
                 $cacheKey = "role:uuid:{$role['uuid']}";
-                if (CacheEngine::get($cacheKey) === null) {
-                    CacheEngine::set($cacheKey, $role, 1800); // Cache for 30 minutes
+                if (!$this->cache->has($cacheKey)) {
+                    $this->cache->set($cacheKey, $role, 1800); // Cache for 30 minutes
                     $items++;
                     self::$stats['cache_misses']++;
                 } else {
@@ -217,8 +228,8 @@ class CacheWarmupService
 
                 // Cache by name as well
                 $nameKey = "role:name:{$role['name']}";
-                if (CacheEngine::get($nameKey) === null) {
-                    CacheEngine::set($nameKey, $role, 1800);
+                if (!$this->cache->has($nameKey)) {
+                    $this->cache->set($nameKey, $role, 1800);
                     $items++;
                 }
             }
@@ -240,33 +251,33 @@ class CacheWarmupService
     /**
      * Warm up active users data
      *
-     * @used-by self::warmupAll() Called dynamically via call_user_func
+     * @used-by self::warmupAll() Called dynamically
      * @internal This method is called dynamically through the $strategies array
      */
-    private static function warmupActiveUsers(): array
+    private function warmupActiveUsers(): array
     {
-        if (!self::tableExists('users')) {
+        if (!$this->tableExists('users')) {
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Users table not found'];
         }
 
-        $instance = new self();
-        $queryBuilder = $instance->getQueryBuilder();
+        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
             // Cache recently active users (last 24 hours)
+            $twentyFourHoursAgo = date('Y-m-d H:i:s', strtotime('-24 hours'));
             $activeUsers = $queryBuilder->select('users', ['id', 'uuid', 'username', 'email', 'status'])
                 ->where(['status' => 'active'])
-                ->whereRaw("last_login_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)")
+                ->whereGreaterThan('last_login_at', $twentyFourHoursAgo)
                 ->limit(100) // Limit to most recent 100 active users
                 ->get();
 
             foreach ($activeUsers as $user) {
                 $cacheKey = "user:uuid:{$user['uuid']}";
-                if (CacheEngine::get($cacheKey) === null) {
+                if (!$this->cache->has($cacheKey)) {
                     // Remove sensitive data before caching
                     unset($user['password'], $user['remember_token']);
-                    CacheEngine::set($cacheKey, $user, 900); // Cache for 15 minutes
+                    $this->cache->set($cacheKey, $user, 900); // Cache for 15 minutes
                     $items++;
                     self::$stats['cache_misses']++;
                 } else {
@@ -291,10 +302,10 @@ class CacheWarmupService
     /**
      * Warm up system metadata
      *
-     * @used-by self::warmupAll() Called dynamically via call_user_func
+     * @used-by self::warmupAll() Called dynamically
      * @internal This method is called dynamically through the $strategies array
      */
-    private static function warmupMetadata(): array
+    private function warmupMetadata(): array
     {
         $items = 0;
         $metadata = [
@@ -306,8 +317,8 @@ class CacheWarmupService
         ];
 
         foreach ($metadata as $key => $value) {
-            if (CacheEngine::get($key) === null) {
-                CacheEngine::set($key, $value, 7200); // Cache for 2 hours
+            if (!$this->cache->has($key)) {
+                $this->cache->set($key, $value, 7200); // Cache for 2 hours
                 $items++;
                 self::$stats['cache_misses']++;
             } else {
@@ -327,15 +338,11 @@ class CacheWarmupService
      *
      * @api Public API method for console commands and controllers
      */
-    public static function scheduleWarmup(array $options = []): void
+    public function scheduleWarmup(array $options = []): void
     {
-        if (!CacheEngine::isEnabled()) {
-            return;
-        }
-
         $interval = $options['interval'] ?? 3600; // Default: every hour
         $strategies = $options['strategies'] ?? [];
-        $lastWarmup = CacheEngine::get('warmup:last_run') ?: 0;
+        $lastWarmup = $this->cache->get('warmup:last_run', 0);
 
         if (time() - $lastWarmup >= $interval) {
             // Run warmup in background if possible
@@ -343,9 +350,9 @@ class CacheWarmupService
                 fastcgi_finish_request();
             }
 
-            $result = self::warmupAll($strategies);
-            CacheEngine::set('warmup:last_run', time(), $interval * 2);
-            CacheEngine::set('warmup:last_result', $result, $interval * 2);
+            $result = $this->warmupAll($strategies);
+            $this->cache->set('warmup:last_run', time(), $interval * 2);
+            $this->cache->set('warmup:last_result', $result, $interval * 2);
 
             error_log("Cache warmup completed: {$result['status']} in {$result['duration']}s");
         }
@@ -354,11 +361,10 @@ class CacheWarmupService
     /**
      * Check if a database table exists
      */
-    private static function tableExists(string $tableName): bool
+    private function tableExists(string $tableName): bool
     {
         try {
-            $instance = new self();
-            $queryBuilder = $instance->getQueryBuilder();
+            $queryBuilder = $this->getQueryBuilder();
             $queryBuilder->rawQuery("SELECT 1 FROM $tableName LIMIT 1");
             return true;
         } catch (\Exception) {
@@ -381,13 +387,9 @@ class CacheWarmupService
      *
      * @api Public API method for monitoring cache warmup status
      */
-    public static function getLastWarmupResult(): ?array
+    public function getLastWarmupResult(): ?array
     {
-        if (!CacheEngine::isEnabled()) {
-            return null;
-        }
-
-        return CacheEngine::get('warmup:last_result');
+        return $this->cache->get('warmup:last_result');
     }
 
     /**
@@ -395,13 +397,9 @@ class CacheWarmupService
      *
      * @api Public API method for cache management
      */
-    public static function clearWarmupCache(): bool
+    public function clearWarmupCache(): bool
     {
-        if (!CacheEngine::isEnabled()) {
-            return false;
-        }
-
-        $keys = [
+        $patterns = [
             'config:*',
             'permission:*',
             'role:*',
@@ -410,14 +408,14 @@ class CacheWarmupService
             'warmup:*'
         ];
 
-        foreach ($keys as $pattern) {
-            // Note: deletePattern method not available in CacheEngine
-            // Pattern-based deletion would need custom implementation
-            // Variable $pattern is intentionally unused pending implementation
-            unset($pattern);
+        $success = true;
+        foreach ($patterns as $pattern) {
+            if (!$this->cache->deletePattern($pattern)) {
+                $success = false;
+            }
         }
 
-        return true; // Would return actual count if deletePattern was implemented
+        return $success;
     }
 
     /**

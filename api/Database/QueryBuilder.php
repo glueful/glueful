@@ -7,6 +7,7 @@ use PDOException;
 use Exception;
 use Glueful\Database\Driver\DatabaseDriver;
 use Glueful\Database\RawExpression;
+use Glueful\Database\PooledConnection;
 
 /**
  * Database Query Builder
@@ -48,6 +49,9 @@ class QueryBuilder
     /** @var PDO Active database connection */
     protected PDO $pdo;
 
+    /** @var PooledConnection|null Pooled connection wrapper if using connection pooling */
+    protected ?PooledConnection $pooledConnection = null;
+
     /** @var DatabaseDriver Database-specific driver implementation */
     protected DatabaseDriver $driver;
 
@@ -84,6 +88,9 @@ class QueryBuilder
     /** @var bool Enable debug mode */
     private bool $debugMode = false;  // Default: Off
 
+    /** @var bool Whether the final query has been built */
+    private bool $finalQueryBuilt = false;
+
     /** @var string|null Purpose of the current query for business context */
     private ?string $queryPurpose = null;
 
@@ -111,16 +118,41 @@ class QueryBuilder
     /**
      * Initialize query builder
      *
-     * @param PDO $pdo Active database connection
+     * Supports both traditional PDO connections and pooled connections.
+     * When a PooledConnection is provided, it automatically handles connection
+     * lifecycle management including release back to the pool.
+     *
+     * @param PDO|PooledConnection $connection Database connection
      * @param DatabaseDriver $driver Database-specific driver
      * @param QueryLogger|null $logger Query logger
      *
      */
-    public function __construct(PDO $pdo, DatabaseDriver $driver, ?QueryLogger $logger = null)
+    public function __construct($connection, DatabaseDriver $driver, ?QueryLogger $logger = null)
     {
-        $this->pdo = $pdo;
+        if ($connection instanceof PooledConnection) {
+            $this->pooledConnection = $connection;
+            $this->pdo = $connection->getPDO(); // Get underlying PDO instance
+        } elseif ($connection instanceof PDO) {
+            $this->pdo = $connection;
+        } else {
+            throw new \InvalidArgumentException('Connection must be PDO or PooledConnection instance');
+        }
+
         $this->driver = $driver;
         $this->logger = $logger ?? new QueryLogger();
+    }
+
+    /**
+     * Destructor - ensures proper cleanup of pooled connections
+     *
+     * Automatically releases pooled connections back to the pool when
+     * the QueryBuilder instance is destroyed, preventing connection leaks.
+     */
+    public function __destruct()
+    {
+        // Release pooled connection back to pool
+        // The PooledConnection destructor will handle the actual release
+        $this->pooledConnection = null;
     }
 
    /**
@@ -234,6 +266,16 @@ class QueryBuilder
     }
 
     /**
+     * Check if a transaction is currently active
+     *
+     * @return bool True if a transaction is active, false otherwise
+     */
+    public function isTransactionActive(): bool
+    {
+        return $this->transactionLevel > 0;
+    }
+
+    /**
      * Insert new database record
      *
      * Features:
@@ -262,6 +304,60 @@ class QueryBuilder
         $rowCount = $stmt->rowCount();
 
         return $rowCount;
+    }
+
+    /**
+     * Insert multiple rows in a single query for better performance
+     *
+     * @param string $table Table name
+     * @param array $rows Array of associative arrays representing rows to insert
+     * @return int Number of affected rows
+     * @throws \InvalidArgumentException If rows array is empty or invalid
+     */
+    public function insertBatch(string $table, array $rows): int
+    {
+        if (empty($rows)) {
+            throw new \InvalidArgumentException('Cannot perform batch insert with empty rows array');
+        }
+
+        // Get columns from the first row
+        $firstRow = reset($rows);
+        if (!is_array($firstRow)) {
+            throw new \InvalidArgumentException('Each row must be an associative array');
+        }
+
+        $columns = array_keys($firstRow);
+        $columnCount = count($columns);
+
+        // Validate all rows have the same columns
+        foreach ($rows as $index => $row) {
+            if (!is_array($row) || count($row) !== $columnCount || array_keys($row) !== $columns) {
+                throw new \InvalidArgumentException("Row at index {$index} has inconsistent columns");
+            }
+        }
+
+        // Build column list
+        $columnList = implode(', ', array_map([$this->driver, 'wrapIdentifier'], $columns));
+
+        // Build placeholders for all rows
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, $columnCount, '?')) . ')';
+        $allPlaceholders = implode(', ', array_fill(0, count($rows), $rowPlaceholder));
+
+        // Build the SQL query
+        $sql = "INSERT INTO {$this->driver->wrapIdentifier($table)} ($columnList) VALUES $allPlaceholders";
+
+        // Flatten all values into a single array
+        $values = [];
+        foreach ($rows as $row) {
+            foreach ($columns as $column) {
+                $values[] = $row[$column];
+            }
+        }
+
+        // Execute the query
+        $stmt = $this->prepareAndExecute($sql, $values);
+
+        return $stmt->rowCount();
     }
 
     /**
@@ -371,6 +467,8 @@ class QueryBuilder
         $this->groupBy = []; // Reset group by
         $this->having = []; // Reset having
         $this->whereRaw = []; // Reset raw where conditions
+        $this->joins = []; // Reset joins
+        $this->finalQueryBuilt = false; // Reset final query build flag
 
         $columnList = implode(", ", array_map(function ($column) {
             if ($column instanceof RawExpression) {
@@ -392,6 +490,10 @@ class QueryBuilder
             }
             if (strpos($column, '.') !== false) {
                 [$table, $col] = explode('.', $column, 2);
+                // Handle table.* specially - don't wrap the asterisk
+                if ($col === '*') {
+                    return $this->driver->wrapIdentifier($table) . ".*";
+                }
                 return $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
             }
             return $column === '*' ? '*' : $this->driver->wrapIdentifier($column);
@@ -696,6 +798,34 @@ class QueryBuilder
     }
 
     /**
+     * Add OR WHERE NULL condition to the query
+     *
+     * @param string $column Column name
+     * @return self Builder instance for chaining
+     */
+    public function orWhereNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build OR WHERE NULL clause
+        $condition = "$wrappedColumn IS NULL";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
      * Add WHERE LIKE condition to the query
      *
      * @param string $column Column name
@@ -712,6 +842,283 @@ class QueryBuilder
         }
 
         return $this->whereRaw("$wrappedColumn LIKE ?", [$pattern]);
+    }
+
+    /**
+     * Add WHERE column < value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereLessThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn < ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column > value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereGreaterThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn > ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column <= value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereLessThanOrEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn <= ?", [$value]);
+    }
+
+    /**
+     * Add WHERE column >= value condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereGreaterThanOrEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn >= ?", [$value]);
+    }
+
+    /**
+     * Add WHERE NOT EQUAL condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function whereNotEqual(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        return $this->whereRaw("$wrappedColumn != ?", [$value]);
+    }
+
+    /**
+     * Add OR WHERE NOT NULL condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @return self Builder instance for chaining
+     */
+    public function orWhereNotNull(string $column): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build OR WHERE NOT NULL clause
+        $condition = "$wrappedColumn IS NOT NULL";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add OR WHERE GREATER THAN condition to the query
+     *
+     * @param string $column Column name (supports table.column format)
+     * @param mixed $value Value to compare against
+     * @return self Builder instance for chaining
+     */
+    public function orWhereGreaterThan(string $column, $value): self
+    {
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        $this->bindings[] = $value;
+        $condition = "$wrappedColumn > ?";
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $condition;
+        } else {
+            $this->query .= " OR " . $condition;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add complex OR condition to the query
+     *
+     * Allows building complex OR conditions like "(field IS NULL OR field > value)"
+     *
+     * @param callable $callback Callback function that receives a new QueryBuilder instance
+     * @return self Builder instance for chaining
+     *
+     * @example
+     * ```php
+     * $query->whereOr(function($q) {
+     *     $q->whereNull('expires_at')->orWhereGreaterThan('expires_at', $currentTime);
+     * });
+     * ```
+     */
+    public function whereOr(callable $callback): self
+    {
+        // Create a new QueryBuilder instance for the OR group
+        $orQuery = new self($this->pdo, $this->driver, $this->logger);
+
+        // Execute the callback to build the OR conditions
+        $callback($orQuery);
+
+        // Extract the WHERE part from the built query
+        $orQueryString = $orQuery->getQueryString();
+        $pattern = '/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+GROUP\s+BY|\s+HAVING|\s+LIMIT|$)/i';
+        if (preg_match($pattern, $orQueryString, $matches)) {
+            $orCondition = trim($matches[1]);
+
+            // Add the OR condition as a group
+            if (strpos($this->query, 'WHERE') === false) {
+                $this->query .= " WHERE (" . $orCondition . ")";
+            } else {
+                $this->query .= " AND (" . $orCondition . ")";
+            }
+
+            // Merge bindings
+            $this->bindings = array_merge($this->bindings, $orQuery->getBindings());
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get current query string (for internal use)
+     *
+     * @return string Current query string
+     */
+    protected function getQueryString(): string
+    {
+        return $this->query;
+    }
+
+    /**
+     * Get current bindings (for internal use)
+     *
+     * @return array Current parameter bindings
+     */
+    protected function getBindings(): array
+    {
+        return $this->bindings;
+    }
+
+    /**
+     * Add WHERE JSON contains condition to the query
+     *
+     * Provides database-agnostic JSON searching with proper parameter binding.
+     * Uses the appropriate JSON functions based on the database driver.
+     *
+     * @param string $column JSON column name (supports table.column format)
+     * @param string $searchValue Value to search for within the JSON
+     * @param string $path JSON path (optional, defaults to searching entire JSON)
+     * @return self Builder instance for chaining
+     *
+     * @example
+     * ```php
+     * // Search for a value anywhere in JSON column
+     * $query->whereJsonContains('details', 'login_failed');
+     *
+     * // Search within a specific JSON path (MySQL only)
+     * $query->whereJsonContains('metadata', 'active', '$.status');
+     * ```
+     */
+    public function whereJsonContains(string $column, string $searchValue, ?string $path = null): self
+    {
+        // Wrap column identifier properly
+        if (strpos($column, '.') !== false) {
+            [$table, $col] = explode('.', $column, 2);
+            $wrappedColumn = $this->driver->wrapIdentifier($table) . "." . $this->driver->wrapIdentifier($col);
+        } else {
+            $wrappedColumn = $this->driver->wrapIdentifier($column);
+        }
+
+        // Build database-specific JSON search condition
+        $driverClass = get_class($this->driver);
+
+        if (strpos($driverClass, 'MySQL') !== false) {
+            // MySQL: Use JSON_CONTAINS or JSON_SEARCH
+            if ($path !== null) {
+                // Search at specific path
+                $condition = "JSON_CONTAINS($wrappedColumn, ?, '$path')";
+                return $this->whereRaw($condition, [json_encode($searchValue)]);
+            } else {
+                // Search anywhere in JSON using JSON_SEARCH
+                $condition = "JSON_SEARCH($wrappedColumn, 'one', ?) IS NOT NULL";
+                return $this->whereRaw($condition, [$searchValue]);
+            }
+        } elseif (strpos($driverClass, 'PostgreSQL') !== false) {
+            // PostgreSQL: Use jsonb operators or text casting
+            if ($path !== null) {
+                // Search at specific path using #>> operator
+                $condition = "$wrappedColumn #>> ? = ?";
+                return $this->whereRaw($condition, [$path, $searchValue]);
+            } else {
+                // Search anywhere using text casting and LIKE
+                $condition = "$wrappedColumn::text LIKE ?";
+                return $this->whereRaw($condition, ["%$searchValue%"]);
+            }
+        } else {
+            // Generic fallback: Cast to text and use LIKE
+            $condition = "CAST($wrappedColumn AS TEXT) LIKE ?";
+            return $this->whereRaw($condition, ["%$searchValue%"]);
+        }
     }
 
     /**
@@ -812,7 +1219,7 @@ class QueryBuilder
         }
 
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($this->bindings);
+        $stmt->execute($this->flattenBindings($this->bindings));
         return (int) $stmt->fetchColumn();
     }
 
@@ -855,7 +1262,7 @@ class QueryBuilder
      */
     public function paginate(int $page = 1, int $perPage = 10): array
     {
-        $timerId = $this->logger->startTiming('pagination');
+        $timerId = $this->logger->startTiming();
 
         $this->logger->logEvent("Executing paginated query", [
             'page' => $page,
@@ -993,6 +1400,36 @@ class QueryBuilder
         return $this;
     }
 
+    /**
+     * Add OR WHERE conditions to the query
+     *
+     * @param array $conditions Key-value pairs of column => value conditions
+     * @return self
+     */
+    public function orWhere(array $conditions): self
+    {
+        if (empty($conditions)) {
+            return $this;
+        }
+
+        // Add bindings
+        foreach ($conditions as $col => $value) {
+            $this->bindings[] = $value;
+        }
+
+        // Build and append OR WHERE clause
+        $whereClause = ltrim($this->buildClause('', $conditions), ' ');
+
+        // If no WHERE exists yet, start with WHERE, otherwise use OR
+        if (strpos($this->query, 'WHERE') === false) {
+            $this->query .= " WHERE " . $whereClause;
+        } else {
+            $this->query .= " OR " . $whereClause;
+        }
+
+        return $this;
+    }
+
     public function orderBy(array $orderBy): self
     {
         if (!empty($orderBy)) {
@@ -1044,6 +1481,9 @@ class QueryBuilder
      */
     public function get(): array
     {
+        // Build the final query with all components (JOINs, etc.)
+        $this->buildFinalQuery();
+
         // Use caching if enabled
         if ($this->cachingEnabled) {
             $cacheService = $this->getCacheService();
@@ -1054,7 +1494,7 @@ class QueryBuilder
                 function () {
                     // Original get() logic
                     $stmt = $this->pdo->prepare($this->query);
-                    $stmt->execute($this->bindings);
+                    $stmt->execute($this->flattenBindings($this->bindings));
                     return $stmt->fetchAll(PDO::FETCH_ASSOC);
                 },
                 $this->cacheTtl
@@ -1063,7 +1503,7 @@ class QueryBuilder
 
         // Original logic if caching is not enabled
         $stmt = $this->pdo->prepare($this->query);
-        $stmt->execute($this->bindings);
+        $stmt->execute($this->flattenBindings($this->bindings));
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -1247,6 +1687,26 @@ class QueryBuilder
     }
 
     /**
+     * Flatten bindings array to ensure no nested arrays exist
+     *
+     * @param array $bindings The bindings array to flatten
+     * @return array Flattened bindings array
+     */
+    private function flattenBindings(array $bindings): array
+    {
+        $flattened = [];
+        foreach ($bindings as $binding) {
+            if (is_array($binding)) {
+                // Convert array to JSON string to prevent array to string conversion
+                $flattened[] = json_encode($binding);
+            } else {
+                $flattened[] = $binding;
+            }
+        }
+        return $flattened;
+    }
+
+    /**
      * Centralized method for preparing and executing queries
      */
     private function prepareAndExecute(string $sql, array $params = []): \PDOStatement
@@ -1258,15 +1718,18 @@ class QueryBuilder
         $purpose = $this->queryPurpose;
         $this->queryPurpose = null;
 
+        // Flatten bindings to prevent array to string conversion warnings
+        $flattenedParams = $this->flattenBindings($params);
+
         try {
             $stmt = $this->pdo->prepare($sql);
-            $stmt->execute($params);
+            $stmt->execute($flattenedParams);
              // Log successful query with purpose
-            $this->logger->logQuery($sql, $params, $timerId, null, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, null, $purpose);
             return $stmt;
         } catch (PDOException $e) {
             // Log failed query with purpose
-            $this->logger->logQuery($sql, $params, $timerId, $e, $this->debugMode, $purpose);
+            $this->logger->logQuery($sql, $flattenedParams, $timerId, $e, $purpose);
             throw $e;
         }
     }
@@ -1484,7 +1947,7 @@ class QueryBuilder
         $timerId = $this->logger->startTiming('first');
         try {
             $stmt = $this->pdo->prepare($this->query);
-            $stmt->execute($this->bindings);
+            $stmt->execute($this->flattenBindings($this->bindings));
 
             // Log successful query
             $this->logger->logQuery($this->query, $this->bindings, $timerId);
@@ -1513,5 +1976,208 @@ class QueryBuilder
         return $this;
     }
 
-    // The isSensitiveTable method is already defined earlier in this class
+    /**
+     * Build the final SQL query with all components
+     *
+     * This method rebuilds the query to ensure all JOINs, WHERE clauses,
+     * and other components are included in the final SQL.
+     *
+     * @return void
+     */
+    private function buildFinalQuery(): void
+    {
+        if (empty($this->query) || $this->finalQueryBuilt) {
+            return; // Nothing to rebuild or already built
+        }
+
+        // Extract the base query parts
+        if (preg_match('/^SELECT (.+) FROM (.+?)(?:\s+(WHERE.+))?$/i', $this->query, $matches)) {
+            $selectClause = $matches[1];
+            $fromClause = $matches[2];
+            $whereClause = $matches[3] ?? '';
+
+            // Rebuild with JOINs
+            $sql = "SELECT $selectClause FROM $fromClause";
+
+            // Add JOIN clauses if any
+            if (!empty($this->joins)) {
+                $sql .= " " . implode(" ", $this->joins);
+            }
+
+            // Add back the WHERE clause if it exists
+            if (!empty($whereClause)) {
+                $sql .= " " . $whereClause;
+            }
+
+            $this->query = $sql;
+            $this->finalQueryBuilt = true;
+        }
+    }
+
+     /**
+   * Enhanced search with multi-column text search
+   */
+    public function search(array $searchFields, string $query, string $operator = 'OR'): self
+    {
+        if (empty($query) || empty($searchFields)) {
+            return $this;
+        }
+
+        $conditions = [];
+        $bindings = [];
+
+        foreach ($searchFields as $field) {
+            // Wrap field identifier properly
+            if (strpos($field, '.') !== false) {
+                [$table, $col] = explode('.', $field, 2);
+                $wrappedField = $this->driver->wrapIdentifier($table) . '.' . $this->driver->wrapIdentifier($col);
+            } else {
+                $wrappedField = $this->driver->wrapIdentifier($field);
+            }
+
+            $conditions[] = "{$wrappedField} LIKE ?";
+            $bindings[] = "%{$query}%";
+        }
+
+        $searchCondition = '(' . implode(" {$operator} ", $conditions) . ')';
+
+        // Always use whereRaw since we're building a raw SQL condition
+        $this->whereRaw($searchCondition, $bindings);
+
+        return $this;
+    }
+
+  /**
+   * Advanced filtering with multiple operators
+   */
+    public function advancedWhere(array $filters): self
+    {
+        foreach ($filters as $field => $condition) {
+            if (is_array($condition)) {
+                foreach ($condition as $operator => $value) {
+                    switch (strtolower($operator)) {
+                        case 'like':
+                        case 'ilike':
+                            $this->whereLike($field, $value);
+                            break;
+                        case 'in':
+                            $this->whereIn($field, (array)$value);
+                            break;
+                        case 'between':
+                            $this->whereBetween($field, $value[0], $value[1]);
+                            break;
+                        case 'gt':
+                        case '>':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' > ?', [$value]);
+                            break;
+                        case 'gte':
+                        case '>=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' >= ?', [$value]);
+                            break;
+                        case 'lt':
+                        case '<':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' < ?', [$value]);
+                            break;
+                        case 'lte':
+                        case '<=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' <= ?', [$value]);
+                            break;
+                        case 'ne':
+                        case '!=':
+                            $this->whereRaw($this->driver->wrapIdentifier($field) . ' != ?', [$value]);
+                            break;
+                        default:
+                            $this->where([$field => $value]);
+                    }
+                }
+            } else {
+                $this->where([$field => $condition]);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get the database driver instance
+     *
+     * Provides access to database-specific operations like identifier quoting
+     * and datetime formatting for repository implementations.
+     *
+     * @return DatabaseDriver The database driver instance
+     */
+    public function getDriver(): DatabaseDriver
+    {
+        return $this->driver;
+    }
+
+    /**
+     * Check if using a pooled connection
+     *
+     * @return bool True if using connection pooling
+     */
+    public function isUsingPooledConnection(): bool
+    {
+        return $this->pooledConnection !== null;
+    }
+
+    /**
+     * Get pooled connection instance
+     *
+     * @return PooledConnection|null Pooled connection or null if not using pooling
+     */
+    public function getPooledConnection(): ?PooledConnection
+    {
+        return $this->pooledConnection;
+    }
+
+    /**
+     * Get connection statistics (if using pooled connection)
+     *
+     * @return array Connection statistics or empty array
+     */
+    public function getConnectionStats(): array
+    {
+        return $this->pooledConnection ? $this->pooledConnection->getStats() : [];
+    }
+
+    /**
+     * Get raw PDO connection
+     *
+     * Provides direct access to the underlying PDO instance for cases
+     * where direct PDO methods are needed.
+     *
+     * @return PDO The PDO connection instance
+     */
+    public function getPDO(): PDO
+    {
+        return $this->pdo;
+    }
+
+    /**
+     * Force release of pooled connection
+     *
+     * Manually releases the pooled connection back to the pool.
+     * Useful for long-running processes that want to release connections early.
+     *
+     * @return void
+     */
+    public function releaseConnection(): void
+    {
+        if ($this->pooledConnection) {
+            // Check if in transaction - don't release if so
+            if ($this->transactionLevel > 0) {
+                $this->logger->logEvent("Cannot release pooled connection - transaction active", [
+                    'transaction_level' => $this->transactionLevel
+                ]);
+                return;
+            }
+
+            $this->logger->logEvent("Manually releasing pooled connection", [
+                'connection_id' => $this->pooledConnection->getId()
+            ]);
+
+            $this->pooledConnection = null;
+        }
+    }
 }

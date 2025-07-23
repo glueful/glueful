@@ -9,6 +9,8 @@ use Glueful\Notifications\Models\Notification;
 use Glueful\Notifications\Models\NotificationPreference;
 use Glueful\Notifications\Models\NotificationTemplate;
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
+use Glueful\Repository\Concerns\QueryFilterTrait;
 
 /**
  * Notification Repository
@@ -26,21 +28,30 @@ use Glueful\Helpers\Utils;
  */
 class NotificationRepository extends BaseRepository
 {
+    use QueryFilterTrait;
+
     /**
      * Initialize repository
      *
      * Sets up database connection and dependencies
      */
-    public function __construct()
+    public function __construct(?Connection $connection = null)
     {
-        // Set the table and other configuration before calling parent constructor
-        $this->table = 'notifications';
-        $this->primaryKey = 'uuid';
+        // Configure repository settings before calling parent
         $this->defaultFields = ['*'];
-        $this->containsSensitiveData = false;
 
         // Call parent constructor to set up database connection and audit logger
-        parent::__construct();
+        parent::__construct($connection);
+    }
+
+    /**
+     * Get the table name for this repository
+     *
+     * @return string The table name
+     */
+    public function getTableName(): string
+    {
+        return 'notifications';
     }
 
     /**
@@ -76,7 +87,7 @@ class NotificationRepository extends BaseRepository
             // Update existing notification using BaseRepository's update method
             // This automatically handles audit logging
             $data['id'] = $existing->getId();
-            return $this->update($data['uuid'], $data, $userId);
+            return $this->update($data['uuid'], $data);
         } else {
             // Remove the ID field if it's NULL to let the database auto-increment
             if (isset($data['id']) && $data['id'] == null) {
@@ -84,7 +95,7 @@ class NotificationRepository extends BaseRepository
             }
 
             // Create new notification using BaseRepository's create method
-            $result = $this->create($data, $userId);
+            $result = $this->create($data);
             return $result ? true : false;
         }
     }
@@ -111,6 +122,36 @@ class NotificationRepository extends BaseRepository
     }
 
     /**
+     * Execute operation with temporary table switching
+     *
+     * This method eliminates the boilerplate code for temporarily switching
+     * the repository's table and primary key for operations on related tables.
+     *
+     * @param string $tableName The table name to switch to
+     * @param string|null $primaryKey The primary key to use (null to keep current)
+     * @param callable $operation The operation to execute with the switched table
+     * @return mixed The result of the operation
+     */
+    private function withTable(string $tableName, ?string $primaryKey, callable $operation)
+    {
+        $originalTable = $this->table;
+        $originalPrimaryKey = $this->primaryKey;
+
+        try {
+            $this->table = $tableName;
+            if ($primaryKey !== null) {
+                $this->primaryKey = $primaryKey;
+            }
+
+            return $operation();
+        } finally {
+            // Always restore original values
+            $this->table = $originalTable;
+            $this->primaryKey = $originalPrimaryKey;
+        }
+    }
+
+    /**
      * Find notifications for a specific recipient
      *
      * @param string $notifiableType Recipient type
@@ -129,49 +170,13 @@ class NotificationRepository extends BaseRepository
         ?int $offset = null,
         array $filters = []
     ): array {
-        $query = $this->db->select($this->table, ['*'])
-            ->where([
-                'notifiable_type' => $notifiableType,
-                'notifiable_id' => $notifiableId
-            ]);
+        $query = $this->db->select($this->table, ['*']);
 
-        if ($onlyUnread) {
-            $query->whereNull('read_at');
-        }
+        // Apply notifiable filters using trait method
+        $this->applyNotifiableFilters($query, $notifiableType, $notifiableId, $onlyUnread ?? false);
 
-        // Apply additional filters if provided
-        foreach ($filters as $field => $value) {
-            if (is_array($value)) {
-                // Handle operators like 'gte', 'lte', etc.
-                foreach ($value as $operator => $val) {
-                    switch ($operator) {
-                        case 'gte':
-                            $query->whereRaw("{$field} >= ?", [$val]);
-                            break;
-                        case 'lte':
-                            $query->whereRaw("{$field} <= ?", [$val]);
-                            break;
-                        case 'gt':
-                            $query->whereRaw("{$field} > ?", [$val]);
-                            break;
-                        case 'lt':
-                            $query->whereRaw("{$field} < ?", [$val]);
-                            break;
-                        case 'like':
-                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
-                            break;
-                        case 'in':
-                            if (is_array($val) && !empty($val)) {
-                                $placeholders = implode(',', array_fill(0, count($val), '?'));
-                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
-                            }
-                            break;
-                    }
-                }
-            } else {
-                $query->where([$field => $value]);
-            }
-        }
+        // Apply additional filters using trait method
+        $this->applyFilters($query, $filters);
 
         // Order by creation date, newest first
         $query->orderBy(['created_at' => 'DESC']);
@@ -192,7 +197,8 @@ class NotificationRepository extends BaseRepository
 
         $notifications = [];
         foreach ($results as $row) {
-            $notifications[] = Notification::fromArray($row);
+            $notification = Notification::fromArray($row);
+            $notifications[] = $notification->toArray();
         }
 
         return $notifications;
@@ -213,7 +219,7 @@ class NotificationRepository extends BaseRepository
         $query = $this->db->select($this->table, ['*'])
             ->whereNotNull('scheduled_at')
             ->whereNull('sent_at')
-            ->whereRaw("scheduled_at <= ?", [$currentTime]);
+            ->whereLessThanOrEqual('scheduled_at', $currentTime);
 
         if ($limit !== null) {
             $query->limit($limit);
@@ -242,15 +248,7 @@ class NotificationRepository extends BaseRepository
      */
     public function savePreference(NotificationPreference $preference, ?string $userId = null): bool
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table and primary key
-            $this->table = 'notification_preferences';
-            $this->primaryKey = 'uuid';
-
+        return $this->withTable('notification_preferences', 'uuid', function () use ($preference) {
             $data = [
                 'id' => $preference->getId(),
                 'uuid' => $preference->getUuid() ?? Utils::generateNanoID(),
@@ -270,17 +268,13 @@ class NotificationRepository extends BaseRepository
 
             if ($existing) {
                 // Update existing preference
-                return $this->update($data['uuid'], $data, $userId);
+                return $this->update($data['uuid'], $data);
             } else {
                 // Create new preference
-                $result = $this->create($data, $userId);
+                $result = $this->create($data);
                 return $result ? true : false;
             }
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -291,14 +285,7 @@ class NotificationRepository extends BaseRepository
      */
     public function findPreferenceByUuid(string $uuid): ?NotificationPreference
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table
-            $this->table = 'notification_preferences';
-
+        return $this->withTable('notification_preferences', null, function () use ($uuid) {
             // Use BaseRepository's findBy method
             $data = $this->findBy('uuid', $uuid);
 
@@ -319,11 +306,7 @@ class NotificationRepository extends BaseRepository
                 $settings,
                 $data['uuid'] ?? null
             );
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -335,14 +318,7 @@ class NotificationRepository extends BaseRepository
      */
     public function findPreferencesForNotifiable(string $notifiableType, string $notifiableId): array
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table
-            $this->table = 'notification_preferences';
-
+        return $this->withTable('notification_preferences', null, function () use ($notifiableType, $notifiableId) {
             $results = $this->db->select($this->table, ['*'])
                 ->where([
                     'notifiable_type' => $notifiableType,
@@ -372,11 +348,7 @@ class NotificationRepository extends BaseRepository
             }
 
             return $preferences;
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -388,15 +360,7 @@ class NotificationRepository extends BaseRepository
      */
     public function saveTemplate(NotificationTemplate $template, ?string $userId = null): bool
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table and primary key
-            $this->table = 'notification_templates';
-            $this->primaryKey = 'uuid';
-
+        return $this->withTable('notification_templates', 'uuid', function () use ($template) {
             $data = [
                 'id' => $template->getId(),
                 'uuid' => $template->getUuid() ?? Utils::generateNanoID(),
@@ -415,17 +379,13 @@ class NotificationRepository extends BaseRepository
 
             if ($existing) {
                 // Update existing template
-                return $this->update($data['uuid'], $data, $userId);
+                return $this->update($data['uuid'], $data);
             } else {
                 // Create new template
-                $result = $this->create($data, $userId);
+                $result = $this->create($data);
                 return $result ? true : false;
             }
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -436,14 +396,7 @@ class NotificationRepository extends BaseRepository
      */
     public function findTemplateByUuid(string $uuid): ?NotificationTemplate
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table
-            $this->table = 'notification_templates';
-
+        return $this->withTable('notification_templates', null, function () use ($uuid) {
             // Use BaseRepository's findBy method
             $data = $this->findBy('uuid', $uuid);
 
@@ -462,11 +415,7 @@ class NotificationRepository extends BaseRepository
                 $parameters,
                 $data['uuid'] ?? null
             );
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -478,14 +427,7 @@ class NotificationRepository extends BaseRepository
      */
     public function findTemplates(string $notificationType, string $channel): array
     {
-        // Store original table and primary key
-        $originalTable = $this->table;
-        $originalPrimaryKey = $this->primaryKey;
-
-        try {
-            // Temporarily change table
-            $this->table = 'notification_templates';
-
+        return $this->withTable('notification_templates', null, function () use ($notificationType, $channel) {
             $results = $this->db->select($this->table, ['*'])
                 ->where([
                     'notification_type' => $notificationType,
@@ -513,11 +455,7 @@ class NotificationRepository extends BaseRepository
             }
 
             return $templates;
-        } finally {
-            // Restore original table and primary key
-            $this->table = $originalTable;
-            $this->primaryKey = $originalPrimaryKey;
-        }
+        });
     }
 
     /**
@@ -535,52 +473,27 @@ class NotificationRepository extends BaseRepository
         bool $onlyUnread = false,
         array $filters = []
     ): int {
-        $query = $this->db->select($this->table, ['COUNT(*) as count'])
-            ->where([
-                'notifiable_type' => $notifiableType,
-                'notifiable_id' => $notifiableId
-            ]);
+        // Build basic conditions
+        $conditions = [
+            'notifiable_type' => $notifiableType,
+            'notifiable_id' => $notifiableId
+        ];
 
         if ($onlyUnread) {
-            $query->whereNull('read_at');
+            $conditions['read_at'] = null;
         }
 
-        // Apply additional filters if provided
-        foreach ($filters as $field => $value) {
-            if (is_array($value)) {
-                // Handle operators like 'gte', 'lte', etc.
-                foreach ($value as $operator => $val) {
-                    switch ($operator) {
-                        case 'gte':
-                            $query->whereRaw("{$field} >= ?", [$val]);
-                            break;
-                        case 'lte':
-                            $query->whereRaw("{$field} <= ?", [$val]);
-                            break;
-                        case 'gt':
-                            $query->whereRaw("{$field} > ?", [$val]);
-                            break;
-                        case 'lt':
-                            $query->whereRaw("{$field} < ?", [$val]);
-                            break;
-                        case 'like':
-                            $query->whereRaw("{$field} LIKE ?", ["%{$val}%"]);
-                            break;
-                        case 'in':
-                            if (is_array($val) && !empty($val)) {
-                                $placeholders = implode(',', array_fill(0, count($val), '?'));
-                                $query->whereRaw("{$field} IN ({$placeholders})", $val);
-                            }
-                            break;
-                    }
-                }
-            } else {
-                $query->where([$field => $value]);
-            }
+        // For simple cases, use the count method directly
+        if (empty($filters)) {
+            return $this->db->count($this->table, $conditions);
         }
 
-        $result = $query->get();
-        return $result ? (int)$result[0]['count'] : 0;
+        // For complex filters, count the results of a select query
+        $query = $this->db->select($this->table, ['id']);
+        $query->where($conditions);
+        $this->applyFilters($query, $filters);
+
+        return count($query->get());
     }
 
     /**
@@ -612,16 +525,20 @@ class NotificationRepository extends BaseRepository
         $this->beginTransaction();
 
         try {
-            $updated = 0;
+            // Use bulk update to avoid N+1 queries while maintaining transaction safety
+            $updated = $this->db->update(
+                $this->table,
+                ['read_at' => $now],
+                [
+                    'notifiable_type' => $notifiableType,
+                    'notifiable_id' => $notifiableId,
+                    'read_at' => null  // Only update unread notifications
+                ]
+            );
 
-            // Update each notification individually to get proper audit logging
-            foreach ($unreadNotifications as $notification) {
-                $data = $notification;
-                $data['read_at'] = $now;
-
-                if ($this->update($data['uuid'], ['read_at' => $now], $userId)) {
-                    $updated++;
-                }
+            // If audit logging is critical, we can batch create audit entries
+            if ($updated > 0 && $userId) {
+                $this->logBulkNotificationUpdate($unreadNotifications, $userId, 'marked_as_read');
             }
 
             $this->commit();
@@ -646,7 +563,7 @@ class NotificationRepository extends BaseRepository
 
         // First find the notifications to delete (to ensure proper audit logging)
         $oldNotifications = $this->db->select($this->table, ['uuid'])
-            ->whereRaw("created_at < ?", [$cutoffDate])
+            ->whereLessThan('created_at', $cutoffDate)
             ->limit($limit)
             ->get();
 
@@ -658,13 +575,14 @@ class NotificationRepository extends BaseRepository
         $this->beginTransaction();
 
         try {
-            $success = true;
+            // Use bulk delete to avoid N+1 queries while maintaining transaction safety
+            $uuidsToDelete = array_column($oldNotifications, 'uuid');
+            $deletedCount = $this->bulkDelete($uuidsToDelete);
+            $success = $deletedCount > 0;
 
-            // Delete each notification individually to get proper audit logging
-            foreach ($oldNotifications as $notification) {
-                if (!$this->delete($notification['uuid'], $userId)) {
-                    $success = false;
-                }
+            // If audit logging is critical, we can batch create audit entries
+            if ($success && $userId) {
+                $this->logBulkNotificationUpdate($oldNotifications, $userId, 'deleted');
             }
 
             $this->commit();
@@ -685,6 +603,31 @@ class NotificationRepository extends BaseRepository
     public function deleteNotificationByUuid(string $uuid, ?string $userId = null): bool
     {
         // Use BaseRepository's delete method which handles audit logging
-        return $this->delete($uuid, $userId);
+        return $this->delete($uuid);
+    }
+
+    /**
+     * Log bulk notification updates for audit purposes
+     *
+     * @param array $notifications Array of notification records
+     * @param string $userId ID of user performing the action
+     * @param string $action Action performed (e.g., 'marked_as_read', 'deleted')
+     * @return void
+     */
+    private function logBulkNotificationUpdate(array $notifications, string $userId, string $action): void
+    {
+        // If audit logging is required, implement batch audit logging here
+        // For now, we'll keep it simple and just log a summary
+        $count = count($notifications);
+        $notificationIds = array_column($notifications, 'uuid');
+
+        error_log("Bulk notification {$action}: User {$userId} performed {$action} on {$count} notifications: " .
+                  implode(', ', array_slice($notificationIds, 0, 10)) .
+                  ($count > 10 ? ' and ' . ($count - 10) . ' more...' : ''));
+
+        // In a production system, you might want to:
+        // 1. Insert into an audit_logs table
+        // 2. Send to a logging service
+        // 3. Create audit trail entries in batch
     }
 }

@@ -65,7 +65,9 @@ class SessionCleaner
     public function cleanOldRevokedSessions(): void
     {
         try {
-            $cutoffDate = date('Y-m-d H:i:s', strtotime('-30 days'));
+            // Get configurable retention period, default to 30 days
+            $retentionDays = config('session.cleanup.revoked_retention_days', 30);
+            $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$retentionDays} days"));
             $affected = self::$queryBuilder->delete(
                 'auth_sessions',
                 [

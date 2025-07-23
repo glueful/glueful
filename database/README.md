@@ -26,7 +26,7 @@ database/
 ### Database Management
 ```bash
 # Run pending migrations
-php glueful db:migrate
+php glueful migrate run
 
 # Check database status
 php glueful db:status
@@ -44,7 +44,7 @@ php glueful generate:json api-definitions -d mydb -T users
 php glueful help
 
 # Show help for specific command
-php glueful help db:migrate
+php glueful help migrate run
 ```
 
 ## Database Operations

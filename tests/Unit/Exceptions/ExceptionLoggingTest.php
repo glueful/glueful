@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\Exceptions;
 
 use Tests\TestCase;
@@ -7,8 +8,8 @@ use Glueful\Exceptions\ApiException;
 use Glueful\Exceptions\ValidationException;
 use Glueful\Exceptions\AuthenticationException;
 use Glueful\Exceptions\NotFoundException;
-use Glueful\Logging\LogManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Test for Exception Logging Integration
@@ -16,14 +17,14 @@ use Psr\Log\LoggerInterface;
 class ExceptionLoggingTest extends TestCase
 {
     /**
-     * @var \PHPUnit\Framework\MockObject\MockObject|LogManagerInterface
+     * @var \PHPUnit\Framework\MockObject\MockObject&LoggerInterface
      */
-    private $mockLogManager;
+    private $mockLogger;
 
     /**
-     * @var array<string, \PHPUnit\Framework\MockObject\MockObject|LoggerInterface>
+     * @var \PHPUnit\Framework\MockObject\MockObject&EventDispatcherInterface
      */
-    private $mockLoggers = [];
+    private $mockEventDispatcher;
 
     /**
      * Set up tests
@@ -32,20 +33,15 @@ class ExceptionLoggingTest extends TestCase
     {
         parent::setUp();
 
-        // Create a mock log manager
-        $this->mockLogManager = $this->createMock(LogManagerInterface::class);
+        // Create a mock logger for testing
+        $this->mockLogger = $this->createMock(LoggerInterface::class);
 
-        // Configure the mock log manager's getLogger method
-        $this->mockLogManager->method('getLogger')
-            ->will($this->returnCallback(function($channel) {
-                if (!isset($this->mockLoggers[$channel])) {
-                    $this->mockLoggers[$channel] = $this->createMock(LoggerInterface::class);
-                }
-                return $this->mockLoggers[$channel];
-            }));
+        // Create a mock event dispatcher for testing
+        $this->mockEventDispatcher = $this->createMock(EventDispatcherInterface::class);
 
-        // Inject the mock log manager
-        ExceptionHandler::setLogManager($this->mockLogManager instanceof LogManagerInterface ? $this->mockLogManager : null);
+        // Inject the mock logger and event dispatcher
+        ExceptionHandler::setLogger($this->mockLogger);
+        ExceptionHandler::setEventDispatcher($this->mockEventDispatcher);
     }
 
     /**
@@ -53,8 +49,9 @@ class ExceptionLoggingTest extends TestCase
      */
     protected function tearDown(): void
     {
-        // Reset the log manager
-        ExceptionHandler::setLogManager(null);
+        // Reset the logger and event dispatcher
+        ExceptionHandler::setLogger(null);
+        ExceptionHandler::setEventDispatcher(null);
 
         parent::tearDown();
     }
@@ -71,9 +68,8 @@ class ExceptionLoggingTest extends TestCase
         ];
         $exception = new ValidationException($errors);
 
-        // Expect the validation logger to be called once
-        $this->mockLoggers['validation'] = $this->createMock(LoggerInterface::class);
-        $this->mockLoggers['validation']->expects($this->once())
+        // Expect the logger to be called once
+        $this->mockLogger->expects($this->once())
             ->method('error')
             ->with(
                 $this->equalTo('Validation failed'),
@@ -98,9 +94,8 @@ class ExceptionLoggingTest extends TestCase
         $message = 'Invalid credentials';
         $exception = new AuthenticationException($message);
 
-        // Expect the auth logger to be called once
-        $this->mockLoggers['auth'] = $this->createMock(LoggerInterface::class);
-        $this->mockLoggers['auth']->expects($this->once())
+        // Expect the logger to be called once
+        $this->mockLogger->expects($this->once())
             ->method('error')
             ->with(
                 $this->equalTo($message),
@@ -125,9 +120,8 @@ class ExceptionLoggingTest extends TestCase
         $resourceName = 'User';
         $exception = new NotFoundException($resourceName);
 
-        // Expect the http logger to be called once
-        $this->mockLoggers['http'] = $this->createMock(LoggerInterface::class);
-        $this->mockLoggers['http']->expects($this->once())
+        // Expect the logger to be called once
+        $this->mockLogger->expects($this->once())
             ->method('error')
             ->with(
                 $this->equalTo("$resourceName not found"),
@@ -154,9 +148,8 @@ class ExceptionLoggingTest extends TestCase
         $data = ['retryAfter' => 30];
         $exception = new ApiException($message, $statusCode, $data);
 
-        // Expect the api logger to be called once
-        $this->mockLoggers['api'] = $this->createMock(LoggerInterface::class);
-        $this->mockLoggers['api']->expects($this->once())
+        // Expect the logger to be called once
+        $this->mockLogger->expects($this->once())
             ->method('error')
             ->with(
                 $this->equalTo($message),
@@ -181,13 +174,14 @@ class ExceptionLoggingTest extends TestCase
         $message = 'Test exception';
         $exception = new ApiException($message);
 
-        // Configure the mock log manager to throw an exception
-        $this->mockLogManager = $this->createMock(LogManagerInterface::class);
-        $this->mockLogManager->method('getLogger')
+        // Configure the mock logger to throw an exception
+        /** @var \PHPUnit\Framework\MockObject\MockObject&LoggerInterface $failingLogger */
+        $failingLogger = $this->createMock(LoggerInterface::class);
+        $failingLogger->method('error')
             ->willThrowException(new \Exception('Logger failed'));
 
-        // Inject the failing log manager
-        ExceptionHandler::setLogManager($this->mockLogManager instanceof LogManagerInterface ? $this->mockLogManager : null);
+        // Inject the failing logger
+        ExceptionHandler::setLogger($failingLogger);
 
         // Capture error_log output
         $errorLogFile = tempnam(sys_get_temp_dir(), 'phpunit_');
@@ -223,9 +217,8 @@ class ExceptionLoggingTest extends TestCase
             'additional_info' => 'Custom error context'
         ];
 
-        // Expect the api logger to be called once with the custom context
-        $this->mockLoggers['api'] = $this->createMock(LoggerInterface::class);
-        $this->mockLoggers['api']->expects($this->once())
+        // Expect the logger to be called once with the custom context
+        $this->mockLogger->expects($this->once())
             ->method('error')
             ->with(
                 $this->equalTo($message),

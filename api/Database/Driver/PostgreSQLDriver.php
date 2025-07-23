@@ -75,4 +75,64 @@ class PostgreSQLDriver implements DatabaseDriver
         return "INSERT INTO {$this->wrapIdentifier($table)} ($cols) VALUES ($placeholders)" .
                " ON CONFLICT (id) DO UPDATE SET $updates";
     }
+
+    /**
+     * Get PostgreSQL table columns query
+     *
+     * Returns information_schema query to retrieve column names for a table.
+     * Uses current_schema() to work with the active schema.
+     *
+     * @param string $table Target table name
+     * @return string PostgreSQL query to get column information
+     */
+    public function getTableColumnsQuery(string $table): string
+    {
+        return "SELECT column_name FROM information_schema.columns " .
+               "WHERE table_name = ? AND table_schema = current_schema() " .
+               "ORDER BY ordinal_position";
+    }
+
+    /**
+     * Format datetime for PostgreSQL storage
+     *
+     * PostgreSQL supports timezone-aware datetime storage and prefers ISO 8601 format.
+     * This method ensures consistent datetime formatting for PostgreSQL TIMESTAMP columns.
+     *
+     * @param \DateTime|string|null $datetime Datetime to format (defaults to current time)
+     * @return string PostgreSQL-compatible datetime string
+     * @throws \InvalidArgumentException If provided datetime string is invalid
+     */
+    public function formatDateTime($datetime = null): string
+    {
+        if ($datetime === null) {
+            return date('Y-m-d H:i:s');
+        }
+
+        if ($datetime instanceof \DateTime) {
+            return $datetime->format('Y-m-d H:i:s');
+        }
+
+        if (is_string($datetime)) {
+            $parsedDate = \DateTime::createFromFormat('Y-m-d H:i:s', $datetime);
+            if ($parsedDate === false) {
+                // Try to parse as a general date string
+                try {
+                    $parsedDate = new \DateTime($datetime);
+                } catch (\Exception) {
+                    throw new \InvalidArgumentException("Invalid datetime string: {$datetime}");
+                }
+            }
+            return $parsedDate->format('Y-m-d H:i:s');
+        }
+
+        throw new \InvalidArgumentException('Datetime must be null, DateTime object, or string');
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getPingQuery(): string
+    {
+        return 'SELECT 1';
+    }
 }

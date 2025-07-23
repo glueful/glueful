@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glueful Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .admin-container {
+            background: white;
+            padding: 3rem;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+
+        .welcome-title {
+            font-size: 1.8rem;
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-subtitle {
+            color: #718096;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: #f7fafc;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-card h3 {
+            color: #2d3748;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-card p {
+            color: #718096;
+            font-size: 0.9rem;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 2rem 0;
+            padding: 1rem;
+            background: #edf2f7;
+            border-radius: 8px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.9rem;
+        }
+
+        .cta-button {
+            background: #667eea;
+            color: white;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 1rem;
+        }
+
+        .cta-button:hover {
+            background: #5a67d8;
+        }
+
+        .version {
+            margin-top: 2rem;
+            color: #a0aec0;
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 600px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .admin-container {
+                padding: 2rem;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="logo">=' Glueful</div>
+        <h1 class="welcome-title">Welcome to Admin Dashboard</h1>
+        <p class="welcome-subtitle">Manage your API framework with powerful admin tools</p>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number"></div>
+                <div class="stat-label">System Status</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">v1.0</div>
+                <div class="stat-label">Framework Version</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">=€</div>
+                <div class="stat-label">Ready to Go</div>
+            </div>
+        </div>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>= Security</h3>
+                <p>Advanced authentication, RBAC, and security monitoring</p>
+            </div>
+            <div class="feature-card">
+                <h3>=Ê Analytics</h3>
+                <p>Performance metrics, API usage, and system health</p>
+            </div>
+            <div class="feature-card">
+                <h3>=' Configuration</h3>
+                <p>System settings, cache management, and extensions</p>
+            </div>
+            <div class="feature-card">
+                <h3>=e Users</h3>
+                <p>User management, roles, and permissions administration</p>
+            </div>
+        </div>
+
+        <a href="/admin/dashboard" class="cta-button">Enter Dashboard</a>
+
+        <div class="version">
+            Glueful Admin Extension " Modern PHP API Framework
+        </div>
+    </div>
+
+    <script>
+        // Simple fade-in animation
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelector('.admin-container').style.opacity = '0';
+            document.querySelector('.admin-container').style.transform = 'translateY(20px)';
+            document.querySelector('.admin-container').style.transition = 'all 0.6s ease';
+            
+            setTimeout(() => {
+                document.querySelector('.admin-container').style.opacity = '1';
+                document.querySelector('.admin-container').style.transform = 'translateY(0)';
+            }, 100);
+        });
+
+        // Add click event to CTA button
+        document.querySelector('.cta-button').addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Simple loading effect
+            this.textContent = 'Loading Dashboard...';
+            this.style.background = '#a0aec0';
+            
+            // Simulate navigation (replace with actual dashboard route)
+            setTimeout(() => {
+                // This would typically redirect to the actual admin dashboard
+                alert('Dashboard would load here!\n\nIn a real implementation, this would navigate to your admin dashboard route.');
+                
+                // Reset button
+                this.textContent = 'Enter Dashboard';
+                this.style.background = '#667eea';
+            }, 1500);
+        });
+    </script>
+</body>
+</html>

@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Glueful\Security;
 
-use Glueful\Cache\CacheEngine;
-use Glueful\Logging\AuditEvent;
-use Glueful\Logging\AuditLogger;
+use Glueful\Cache\CacheStore;
+use Glueful\Http\RequestContext;
+use Glueful\Helpers\Utils;
+use Glueful\Helpers\CacheHelper;
 
 /**
  * Adaptive Rate Limiter
@@ -40,6 +41,9 @@ class AdaptiveRateLimiter extends RateLimiter
     /** @var array Request context information */
     private array $context = [];
 
+    /** @var RequestContext Request context service */
+    private RequestContext $requestContext;
+
     /** @var bool Whether machine learning features are enabled */
     private bool $mlEnabled = false;
 
@@ -47,15 +51,13 @@ class AdaptiveRateLimiter extends RateLimiter
     private string $trackingId = '';
 
     /** @var string Key for identifying this rate limiter */
-    protected string $key;
+    private string $limitKey;
 
-    /** @var int Maximum number of attempts allowed */
-    protected int $maxAttempts;
+    /** @var int Maximum number of attempts allowed (copy of parent private property) */
+    private int $maxAttempts;
 
-    /** @var int Time window in seconds */
-    protected int $windowSeconds;
-
-    protected string $limitKey;
+    /** @var int Time window in seconds (copy of parent private property) */
+    private int $windowSeconds;
 
     /**
      * Constructor
@@ -65,23 +67,35 @@ class AdaptiveRateLimiter extends RateLimiter
      * @param int $windowSeconds Time window in seconds
      * @param array $context Additional request context
      * @param bool $enableDistributed Whether to enable distributed rate limiting
+     * @param CacheStore|null $cache Cache driver instance
+     * @param RequestContext|null $requestContext Request context instance
      */
     public function __construct(
         string $key,
         int $maxAttempts,
         int $windowSeconds,
         array $context = [],
-        bool $enableDistributed = false
+        bool $enableDistributed = false,
+        ?CacheStore $cache = null,
+        ?RequestContext $requestContext = null
     ) {
-        parent::__construct($key, $maxAttempts, $windowSeconds);
+        // Pass cache to parent constructor
+        $cache = $cache ?? CacheHelper::createCacheInstance();
+        if ($cache === null) {
+            throw new \RuntimeException(
+                'Cache is required for AdaptiveRateLimiter. Please ensure cache is properly configured.'
+            );
+        }
+        parent::__construct($key, $maxAttempts, $windowSeconds, $cache, $requestContext);
 
-        // Store key, max attempts and window seconds locally because parent properties are private
+        // Store key and limits locally because parent properties are private
         $this->limitKey = $key;
         $this->maxAttempts = $maxAttempts;
         $this->windowSeconds = $windowSeconds;
 
         // Store request context
         $this->context = $context;
+        $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
 
         // Extract tracking ID from key
         $parts = explode(':', $key);
@@ -115,17 +129,10 @@ class AdaptiveRateLimiter extends RateLimiter
         $adjustedLimit = $this->getAdjustedLimitFromRules();
         if ($adjustedLimit < $this->maxAttempts) {
             // Create temporary rate limiter with stricter limits
-            $tempLimiter = new RateLimiter($this->key, $adjustedLimit, $this->windowSeconds);
+            $tempLimiter = new RateLimiter($this->limitKey, $adjustedLimit, $this->windowSeconds);
             $allowed = $tempLimiter->attempt();
 
             if (!$allowed) {
-                $this->logAdaptiveRateLimit('stricter_rule_applied', [
-                    'normal_limit' => $this->maxAttempts,
-                    'adjusted_limit' => $adjustedLimit,
-                    'behavior_score' => $this->behaviorScore,
-                    'rules_applied' => array_keys($this->getActiveApplicableRules()),
-                ]);
-
                 return false;
             }
         }
@@ -135,16 +142,10 @@ class AdaptiveRateLimiter extends RateLimiter
             // High suspicion score, apply stricter limits
             $progressiveLimit = (int) round($this->maxAttempts * (1 - $this->behaviorScore * 0.5));
             if ($progressiveLimit < $this->maxAttempts) {
-                $tempLimiter = new RateLimiter($this->key, $progressiveLimit, $this->windowSeconds);
+                $tempLimiter = new RateLimiter($this->limitKey, $progressiveLimit, $this->windowSeconds);
                 $allowed = $tempLimiter->attempt();
 
                 if (!$allowed) {
-                    $this->logAdaptiveRateLimit('progressive_limit_applied', [
-                        'normal_limit' => $this->maxAttempts,
-                        'progressive_limit' => $progressiveLimit,
-                        'behavior_score' => $this->behaviorScore,
-                    ]);
-
                     return false;
                 }
             }
@@ -153,8 +154,13 @@ class AdaptiveRateLimiter extends RateLimiter
         // Update distributed limits if enabled
         if ($this->distributor) {
             $key = $this->getCacheKey();
-            $currentCount = CacheEngine::zcard($key);
-            $this->distributor->updateGlobalLimit($this->key, $currentCount, $this->maxAttempts, $this->windowSeconds);
+            $currentCount = $this->cache->zcard($key);
+            $this->distributor->updateGlobalLimit(
+                $this->limitKey,
+                $currentCount,
+                $this->maxAttempts,
+                $this->windowSeconds
+            );
         }
 
         // Call the parent implementation for normal rate limiting
@@ -163,11 +169,6 @@ class AdaptiveRateLimiter extends RateLimiter
         // Update behavior profile with this attempt
         if ($allowed) {
             $this->updateBehaviorProfile();
-        } else {
-            // Log when normal rate limit is exceeded
-            $this->logAdaptiveRateLimit('normal_limit_exceeded', [
-                'behavior_score' => $this->behaviorScore,
-            ]);
         }
 
         return $allowed;
@@ -277,8 +278,8 @@ class AdaptiveRateLimiter extends RateLimiter
     private function loadRules(): void
     {
         // Try to load rules from cache first
-        $rulesKey = 'rate_limiter_rules:' . $this->key;
-        $cachedRules = CacheEngine::get($rulesKey);
+        $rulesKey = Utils::sanitizeCacheKey('rate_limiter_rules:' . $this->limitKey);
+        $cachedRules = $this->cache->get($rulesKey);
 
         if ($cachedRules) {
             $ruleData = json_decode($cachedRules, true);
@@ -308,7 +309,7 @@ class AdaptiveRateLimiter extends RateLimiter
      */
     private function getDefaultRules(): array
     {
-        $keyType = explode(':', $this->key)[0] ?? 'generic';
+        $keyType = explode(':', $this->limitKey)[0] ?? 'generic';
 
         $rules = [];
 
@@ -372,15 +373,16 @@ class AdaptiveRateLimiter extends RateLimiter
      */
     private function saveRulesToCache(): void
     {
-        $rulesKey = 'rate_limiter_rules:' . $this->key;
+        $rulesKey = Utils::sanitizeCacheKey('rate_limiter_rules:' . $this->limitKey);
         $ruleData = [];
 
         foreach ($this->rules as $rule) {
             $ruleData[] = $rule->toArray();
         }
 
-        CacheEngine::set($rulesKey, json_encode($ruleData), 3600);
+        $this->cache->set($rulesKey, json_encode($ruleData), 3600);
     }
+
 
     /**
      * Compute behavior score based on historical patterns
@@ -392,7 +394,7 @@ class AdaptiveRateLimiter extends RateLimiter
         }
 
         $behaviorKey = self::BEHAVIOR_PREFIX . $this->trackingId;
-        $behaviorData = CacheEngine::get($behaviorKey);
+        $behaviorData = $this->cache->get($behaviorKey);
 
         if (!$behaviorData) {
             // No existing behavior profile, start with neutral score
@@ -437,19 +439,6 @@ class AdaptiveRateLimiter extends RateLimiter
 
             // Apply a weighted adjustment to the behavior score
             $this->behaviorScore = $this->behaviorScore * 0.7 + $additionalScore * 0.3;
-
-            // Log the statistical adjustment
-            $auditLogger = new AuditLogger();
-            $auditLogger->audit(
-                AuditEvent::CATEGORY_SYSTEM,
-                'statistical_adjustment_applied',
-                AuditEvent::SEVERITY_INFO,
-                [
-                    'original_score' => $profile['anomaly_score'],
-                    'adjusted_score' => $this->behaviorScore,
-                    'tracking_id' => $this->trackingId
-                ]
-            );
         }
 
         // Ensure score is within valid range
@@ -466,7 +455,7 @@ class AdaptiveRateLimiter extends RateLimiter
         }
 
         $behaviorKey = self::BEHAVIOR_PREFIX . $this->trackingId;
-        $existingData = CacheEngine::get($behaviorKey);
+        $existingData = $this->cache->get($behaviorKey);
 
         $profile = [];
         if ($existingData) {
@@ -476,7 +465,7 @@ class AdaptiveRateLimiter extends RateLimiter
         // Update basic metrics
         $profile['request_count'] = ($profile['request_count'] ?? 0) + 1;
         $profile['last_seen'] = time();
-        $profile['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $profile['user_agent'] = $this->requestContext->getUserAgent();
 
         // Calculate time since last request
         $lastRequestTime = $profile['last_request_time'] ?? 0;
@@ -550,36 +539,15 @@ class AdaptiveRateLimiter extends RateLimiter
         }
 
         // Save updated profile
-        CacheEngine::set($behaviorKey, json_encode($profile), 86400); // 24 hours
+        $this->cache->set($behaviorKey, json_encode($profile), 86400); // 24 hours
 
         // Save anomaly score separately with longer TTL for historical analysis
         if (isset($profile['anomaly_score'])) {
             $anomalyKey = self::ANOMALY_PREFIX . $this->trackingId;
-            CacheEngine::set($anomalyKey, (string) $profile['anomaly_score'], 604800); // 7 days
+            $this->cache->set($anomalyKey, (string) $profile['anomaly_score'], 604800); // 7 days
         }
     }
 
-    /**
-     * Log adaptive rate limit events to audit logger
-     *
-     * @param string $action Event action
-     * @param array $context Additional context
-     */
-    private function logAdaptiveRateLimit(string $action, array $context = []): void
-    {
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_' . $action,
-            AuditEvent::SEVERITY_INFO,
-            array_merge([
-                'key' => $this->key,
-                'max_attempts' => $this->maxAttempts,
-                'window_seconds' => $this->windowSeconds,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-            ], $context)
-        );
-    }
 
     /**
      * Get cache key
@@ -606,26 +574,23 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
             'ip' => $ip,
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'user_agent' => $requestContext->getUserAgent(),
+            'request_uri' => $requestContext->getRequestUri(),
         ];
 
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_ip_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'ip' => $ip,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
-        return new self("ip:$ip", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self(
+            "ip:$ip",
+            $maxAttempts,
+            $windowSeconds,
+            $context,
+            $distributed,
+            CacheHelper::createCacheInstance(),
+            $requestContext
+        );
     }
 
     /**
@@ -643,26 +608,23 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'ip' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
+            'request_uri' => $requestContext->getRequestUri(),
         ];
 
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_user_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'user_id' => $userId,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
-        return new self("user:$userId", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self(
+            "user:$userId",
+            $maxAttempts,
+            $windowSeconds,
+            $context,
+            $distributed,
+            CacheHelper::createCacheInstance(),
+            $requestContext
+        );
     }
 
     /**
@@ -682,26 +644,22 @@ class AdaptiveRateLimiter extends RateLimiter
         int $windowSeconds,
         bool $distributed = false
     ): self {
+        $requestContext = RequestContext::fromGlobals();
         $context = [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'ip' => $requestContext->getClientIp(),
+            'user_agent' => $requestContext->getUserAgent(),
             'endpoint' => $endpoint,
         ];
 
-        $auditLogger = new AuditLogger();
-        $auditLogger->audit(
-            AuditEvent::CATEGORY_SYSTEM,
-            'adaptive_rate_limit_endpoint_created',
-            AuditEvent::SEVERITY_INFO,
-            [
-                'endpoint' => $endpoint,
-                'identifier' => $identifier,
-                'max_attempts' => $maxAttempts,
-                'window_seconds' => $windowSeconds,
-                'distributed' => $distributed,
-            ]
-        );
 
-        return new self("endpoint:$endpoint:$identifier", $maxAttempts, $windowSeconds, $context, $distributed);
+        return new self(
+            "endpoint:$endpoint:$identifier",
+            $maxAttempts,
+            $windowSeconds,
+            $context,
+            $distributed,
+            CacheHelper::createCacheInstance(),
+            $requestContext
+        );
     }
 }

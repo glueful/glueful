@@ -8,6 +8,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\DTOs\{PasswordDTO};
 use Glueful\Validation\Validator;
 use Symfony\Component\HttpFoundation\Request;
+use Glueful\Auth\Interfaces\TokenStorageInterface;
 
 /**
  * Authentication Service
@@ -30,17 +31,26 @@ class AuthenticationService
     private Validator $validator;
     private PasswordHasher $passwordHasher;
     private AuthenticationManager $authManager;
+    private TokenStorageInterface $tokenStorage;
+    private SessionCacheManager $sessionCacheManager;
 
     /**
      * Constructor
      *
-     * Initializes service dependencies.
+     * Initializes service dependencies using dependency injection with optional fallbacks.
      */
-    public function __construct()
-    {
-        $this->userRepository = new UserRepository();
-        $this->validator = new Validator();
-        $this->passwordHasher = new PasswordHasher();
+    public function __construct(
+        ?TokenStorageInterface $tokenStorage = null,
+        ?SessionCacheManager $sessionCacheManager = null,
+        ?UserRepository $userRepository = null,
+        ?Validator $validator = null,
+        ?PasswordHasher $passwordHasher = null
+    ) {
+        $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
+        $this->sessionCacheManager = $sessionCacheManager ?? container()->get(SessionCacheManager::class);
+        $this->userRepository = $userRepository ?? new UserRepository();
+        $this->validator = $validator ?? container()->get(Validator::class);
+        $this->passwordHasher = $passwordHasher ?? new PasswordHasher();
 
         // Ensure authentication system is initialized
         AuthBootstrap::initialize();
@@ -91,13 +101,15 @@ class AuthenticationService
             return null;
         }
 
-        // Process credentials based on type (username or email)
+        // Process credentials based on type (username or email) using optimized query
         $user = null;
 
         if (isset($credentials['username'])) {
             if (filter_var($credentials['username'], FILTER_VALIDATE_EMAIL)) {
+                // For email login
                 $user = $this->userRepository->findByEmail($credentials['username']);
             } else {
+                // For username login
                 $user = $this->userRepository->findByUsername($credentials['username']);
             }
         }
@@ -120,21 +132,33 @@ class AuthenticationService
             return null;
         }
 
-        // Format user data
+        // Format user data and get profile
         $userData = $this->formatUserData($user);
-        $userProfile = $this->userRepository->getProfile($userData['uuid']);
-        $userRoles = $this->userRepository->getRoles($userData['uuid']);
-
-        // Initialize roles array
-        $userData['roles'] = [];
-
-        // Add each role to the roles array
-        foreach ($userRoles as $userRole) {
-            $userData['roles'][] = $userRole['role_name'];
-        }
-
-        $userData['profile'] = $userProfile;
+        $userData['profile'] = $this->userRepository->getProfile($user['uuid']) ?? null;
+        $userData['roles'] = []; // Roles managed by RBAC extension
         $userData['last_login'] = date('Y-m-d H:i:s');
+
+        // Pass through remember_me preference from credentials
+        $userData['remember_me'] = $credentials['remember_me'] ?? false;
+
+        // Update user tracking fields in the database
+        try {
+            // Get request information for tracking
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
+            $clientIp = $request->getClientIp() ?? 'unknown';
+            $userAgent = $request->headers->get('User-Agent') ?? 'unknown';
+            $xForwardedFor = $request->headers->get('X-Forwarded-For') ?? null;
+            // Update user record with tracking information
+            $this->userRepository->update($userData['uuid'], [
+                'ip_address' => $clientIp,
+                'user_agent' => substr($userAgent, 0, 512), // Limit to field size
+                'x_forwarded_for_ip_address' => $xForwardedFor ? substr($xForwardedFor, 0, 40) : null,
+                'last_login_date' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Exception $e) {
+            // Log the error but don't fail authentication
+            error_log("Failed to update user tracking fields: " . $e->getMessage());
+        }
 
         // Add any custom provider preference from credentials
         $preferredProvider = $providerName ?? ($credentials['provider'] ?? 'jwt');
@@ -159,8 +183,8 @@ class AuthenticationService
         if (!$token) {
             return false;
         }
-        TokenManager::revokeSession($token);
-        return SessionCacheManager::destroySession($token);
+        // SessionCacheManager->destroySession() handles token revocation
+        return $this->sessionCacheManager->destroySession($token);
     }
 
     /**
@@ -177,7 +201,9 @@ class AuthenticationService
             return null;
         }
 
-        return SessionCacheManager::getSession($token);
+        // For static method, we need to get instance through container
+        $sessionCacheManager = container()->get(SessionCacheManager::class);
+        return $sessionCacheManager->getSession($token);
     }
 
     /**
@@ -257,7 +283,7 @@ class AuthenticationService
     public function refreshPermissions(string $token): ?array
     {
         // Get current session
-        $session = SessionCacheManager::getSession($token);
+        $session = $this->sessionCacheManager->getSession($token);
         if (!$session) {
             return null;
         }
@@ -268,8 +294,8 @@ class AuthenticationService
             return null;
         }
 
-        // Get fresh user roles
-        $userRoles = $this->userRepository->getRoles($userUuid);
+        // Note: Role functionality moved to RBAC extension
+        $userRoles = []; // Use RBAC extension APIs for role management
 
         // Update session with new roles
         $session['user']['roles'] = $userRoles;
@@ -298,7 +324,7 @@ class AuthenticationService
             $newToken = $tokens['access_token'];
 
             // Update session storage with new token
-            SessionCacheManager::updateSession($token, $session, $newToken, $provider);
+            $this->sessionCacheManager->updateSession($token, $session, $newToken, $provider);
 
             return [
                 'token' => $newToken,
@@ -310,7 +336,7 @@ class AuthenticationService
             $newToken = JWTService::generate($session, $tokenLifetime);
 
             // Update session storage
-            SessionCacheManager::updateSession($token, $session, $newToken);
+            $this->sessionCacheManager->updateSession($token, $session, $newToken);
 
             return [
                 'token' => $newToken,
@@ -373,7 +399,7 @@ class AuthenticationService
         // Attempt to find the user based on identifier type
         $user = $identifierType === 'email'
             ? $this->userRepository->findByEmail($identifier)
-            : $this->userRepository->findByUUID($identifier);
+            : $this->userRepository->findByUuid($identifier);
 
         // Return true if user was found and is properly formatted
         return !empty($user) && is_array($user);
@@ -414,18 +440,46 @@ class AuthenticationService
             return null;
         }
 
-        // Update session with new tokens
-        $userData['refresh_token'] = $tokens['refresh_token'];
-        SessionCacheManager::storeSession($userData, $tokens['access_token']);
+        // Update session with new tokens using TokenStorageService
+        // This ensures both database and cache are updated atomically
+        $success = $this->tokenStorage->updateSessionTokens($refreshToken, $tokens);
+
+        if (!$success) {
+            return null;
+        }
+
+        // Build OIDC-compliant user object (same as login response)
+        $oidcUser = [
+            'id' => $userData['uuid'],
+            'email' => $userData['email'] ?? null,
+            'email_verified' => !empty($userData['email_verified_at']),
+            'username' => $userData['username'] ?? null,
+            'locale' => $userData['locale'] ?? 'en-US',
+            'updated_at' => isset($userData['updated_at']) ? strtotime($userData['updated_at']) : time()
+        ];
+
+        // Add name fields if profile exists
+        if (isset($userData['profile'])) {
+            $firstName = $userData['profile']['first_name'] ?? '';
+            $lastName = $userData['profile']['last_name'] ?? '';
+
+            if ($firstName || $lastName) {
+                $oidcUser['name'] = trim($firstName . ' ' . $lastName);
+                $oidcUser['given_name'] = $firstName ?: null;
+                $oidcUser['family_name'] = $lastName ?: null;
+            }
+
+            if (!empty($userData['profile']['photo_url'])) {
+                $oidcUser['picture'] = $userData['profile']['photo_url'];
+            }
+        }
 
         return [
-            'tokens' => [
-                'access_token' => $tokens['access_token'],
-                'refresh_token' => $tokens['refresh_token'],
-                'expires_in' => $tokens['expires_in'],
-                'token_type' => 'Bearer'
-            ],
-            'user' => $userData
+            'access_token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token'],
+            'expires_in' => $tokens['expires_in'],
+            'token_type' => 'Bearer',
+            'user' => $oidcUser
         ];
     }
 
@@ -453,18 +507,19 @@ class AuthenticationService
         }
 
         $userUuid = $result[0]['user_uuid'];
-        $user = $this->userRepository->findByUUID($userUuid);
+        $user = $this->userRepository->findByUuid($userUuid);
 
         if (empty($user)) {
             return null;
         }
 
-        $userData = $this->formatUserData($user[0]);
+        $userData = $this->formatUserData($user);
         $userProfile = $this->userRepository->getProfile($userData['uuid']);
-        $userRoles = $this->userRepository->getRoles($userData['uuid']);
+        // Note: Role functionality moved to RBAC extension
+        $userRoles = []; // Use RBAC extension APIs for role management
 
         $userData['roles'] = $userRoles;
-        $userData['profile'][] = $userProfile;
+        $userData['profile'] = $userProfile;
 
         return $userData;
     }

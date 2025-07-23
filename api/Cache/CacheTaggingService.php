@@ -3,6 +3,7 @@
 namespace Glueful\Cache;
 
 use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Helpers\CacheHelper;
 
 class CacheTaggingService
 {
@@ -11,6 +12,7 @@ class CacheTaggingService
     private static array $tagMappings = [];
     private static array $keyTags = [];
     private static bool $enabled = true;
+    private static ?CacheStore $cache = null;
 
     private static array $predefinedTags = [
         'config' => ['app_config', 'database_config', 'cache_config'],
@@ -35,7 +37,15 @@ class CacheTaggingService
 
     public static function isEnabled(): bool
     {
-        return self::$enabled && CacheEngine::isEnabled();
+        return self::$enabled && self::getCacheInstance() !== null;
+    }
+
+    private static function getCacheInstance(): ?CacheStore
+    {
+        if (self::$cache === null) {
+            self::$cache = CacheHelper::createCacheInstance();
+        }
+        return self::$cache;
     }
 
     public static function tagCache(string $key, array $tags): void
@@ -90,12 +100,20 @@ class CacheTaggingService
 
         foreach ($keys as $key) {
             try {
-                if (CacheEngine::delete($key)) {
-                    $invalidated[] = $key;
-                    self::removeKeyFromTag($key, $tag);
+                $cache = self::getCacheInstance();
+                if ($cache !== null) {
+                    try {
+                        $cache->delete($key);
+                        $invalidated[] = $key;
+                    } catch (\Exception $e) {
+                        error_log("Cache delete failed for key '{$key}': " . $e->getMessage());
+                        $failed[] = $key;
+                    }
                 } else {
                     $failed[] = $key;
                 }
+
+                self::removeKeyFromTag($key, $tag);
             } catch (\Exception $e) {
                 $failed[] = $key;
                 error_log("Cache invalidation failed for key '$key': " . $e->getMessage());
@@ -221,7 +239,16 @@ class CacheTaggingService
         $cleanedTags = [];
 
         foreach (self::$keyTags as $key => $tags) {
-            if (CacheEngine::get($key) === null) {
+            $cache = self::getCacheInstance();
+            $exists = false;
+            if ($cache !== null) {
+                try {
+                    $exists = $cache->get($key) !== null;
+                } catch (\Exception $e) {
+                    error_log("Cache get failed for key '{$key}': " . $e->getMessage());
+                }
+            }
+            if (!$exists) {
                 unset(self::$keyTags[$key]);
                 $cleanedKeys[] = $key;
 
@@ -283,8 +310,17 @@ class CacheTaggingService
         }
 
         try {
-            $mappings = CacheEngine::get('_cache_tag_mappings');
-            $keyTags = CacheEngine::get('_cache_key_tags');
+            $cache = self::getCacheInstance();
+            $mappings = null;
+            $keyTags = null;
+            if ($cache !== null) {
+                try {
+                    $mappings = $cache->get('_cache_tag_mappings');
+                    $keyTags = $cache->get('_cache_key_tags');
+                } catch (\Exception $e) {
+                    error_log("Cache get failed for tag mappings: " . $e->getMessage());
+                }
+            }
 
             if ($mappings !== null) {
                 self::$tagMappings = $mappings;
@@ -303,8 +339,15 @@ class CacheTaggingService
     private static function persistTagMappings(): void
     {
         try {
-            CacheEngine::set('_cache_tag_mappings', self::$tagMappings, 3600 * 24);
-            CacheEngine::set('_cache_key_tags', self::$keyTags, 3600 * 24);
+            $cache = self::getCacheInstance();
+            if ($cache !== null) {
+                try {
+                    $cache->set('_cache_tag_mappings', self::$tagMappings, 3600 * 24);
+                    $cache->set('_cache_key_tags', self::$keyTags, 3600 * 24);
+                } catch (\Exception $e) {
+                    error_log("Cache set failed for tag mappings: " . $e->getMessage());
+                }
+            }
         } catch (\Exception $e) {
             error_log("Failed to persist cache tag mappings: " . $e->getMessage());
         }
