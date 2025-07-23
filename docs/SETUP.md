@@ -815,7 +815,6 @@ php glueful security:revoke-tokens            # Revoke auth tokens
 ```bash
 php glueful generate:key                      # Generate security key
 php glueful generate:api-definitions          # Generate API definitions
-php glueful generate:api-docs                 # Generate API documentation
 php glueful generate:controller <name>        # Generate controller
 ```
 

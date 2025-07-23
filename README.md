@@ -2,7 +2,7 @@
 
 A modern, secure, and scalable API framework designed for building robust PHP applications.
 
-![Version](https://img.shields.io/badge/version-0.24.0-blue)
+![Version](https://img.shields.io/badge/version-0.27.0-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.2-purple)](https://www.php.net/)
 ![PHP CI](https://github.com/michaeltawiahsowah/glueful/workflows/PHP%20CI/badge.svg)
@@ -12,16 +12,18 @@ A modern, secure, and scalable API framework designed for building robust PHP ap
 
 - Modern PHP architecture (PHP 8.2+)
 - Role-based access control (RBAC)
-- RESTful API endpoints with OpenAPI/Swagger documentation
-- CLI tools for database management
-- Extensible command system
+- RESTful API endpoints with comprehensive OpenAPI/Swagger documentation
+- Modern API documentation UI with dark/light theme support
+- CLI tools for database management and development server
+- Extensible command system with comprehensive console tools
 - Database migrations and schema management
-- Rate limiting capabilities
-- JWT-based authentication
+- Rate limiting capabilities with adaptive limiting
+- JWT-based authentication with dual-layer session storage
 - Comprehensive audit logging for security events
 - Performance-optimized database query logging with N+1 detection
-- File storage and management
+- File storage and management with multiple storage drivers
 - High-performance Extension System v2.0 (50x faster loading)
+- Admin dashboard SPA with real-time configuration
 - Comprehensive testing infrastructure
 
 ## Requirements
@@ -57,6 +59,11 @@ DB_USER=your_database_user
 DB_PASSWORD=your_database_password
 ```
 
+4. Generate secure keys:
+```bash
+php glueful generate:key
+```
+
 ## Database Setup
 
 ### Fresh Installation
@@ -68,18 +75,39 @@ CREATE USER 'glueful_user'@'localhost' IDENTIFIED BY 'strong_password';
 GRANT ALL PRIVILEGES ON glueful.* TO 'glueful_user'@'localhost';
 FLUSH PRIVILEGES;
 
-# Run initialization and migrations
-php glueful migrate run
+# Run migrations
+php glueful migrate:run
 ```
 
 ## CLI Commands
 
 Glueful comes with a powerful CLI tool for system management:
 
+### Development Server
+```bash
+# Start development server
+php glueful serve
+
+# Start on custom port
+php glueful serve --port=8080
+
+# Auto-open browser
+php glueful serve --open
+```
+
 ### Database Management
 ```bash
 # Run pending migrations
-php glueful migrate run
+php glueful migrate:run
+
+# Check migration status
+php glueful migrate:status
+
+# Create new migration
+php glueful migrate:create create_my_table
+
+# Rollback migrations
+php glueful migrate:rollback
 
 # Check database status
 php glueful db:status
@@ -90,59 +118,158 @@ php glueful db:reset --force
 
 ### API Documentation
 ```bash
-# Generate JSON definitions
-php glueful generate:json api-definitions -d mydb -T users
+# Generate complete OpenAPI/Swagger documentation
+php glueful generate:api-definitions
 
-# Generate API documentation
-php glueful generate:json doc
+# Generate controller from template
+php glueful generate:controller MyController
 ```
 
-### Extension Management (v2.0)
+### Extension Management
 ```bash
 # List all extensions
-php glueful extensions list
+php glueful extensions:info
 
 # List with autoload information  
-php glueful extensions list --show-autoload
+php glueful extensions:info --show-autoload
 
 # Get extension details
-php glueful extensions info MyExtension
+php glueful extensions:info MyExtension
+
+# Show extension namespaces
+php glueful extensions:info --namespaces
 
 # Enable/disable extensions
-php glueful extensions enable MyExtension
-php glueful extensions disable MyExtension
+php glueful extensions:enable MyExtension
+php glueful extensions:disable MyExtension
 
 # Create new extension
-php glueful extensions create MyExtension
+php glueful extensions:create MyExtension
+
+# Install extension
+php glueful extensions:install <url-or-archive>
 
 # Advanced management
-php glueful extensions validate-config    # Validate configuration
-php glueful extensions benchmark          # Performance testing
-php glueful extensions debug              # System diagnostics
-php glueful extensions namespaces         # View registered namespaces
+php glueful extensions:validate MyExtension  # Validate extension
+php glueful extensions:benchmark             # Performance testing
+php glueful extensions:debug                 # System diagnostics
+php glueful extensions:delete MyExtension    # Delete extension
 ```
 
 ### Cache Management
 ```bash
 # Clear all cached data
-php glueful cache clear
+php glueful cache:clear
 
 # Show cache status
-php glueful cache status
+php glueful cache:status
 
 # Get/set/delete cache items
-php glueful cache get <key>
-php glueful cache set <key> <value> [<ttl>]
-php glueful cache delete <key>
+php glueful cache:get <key>
+php glueful cache:set <key> <value> [<ttl>]
+php glueful cache:delete <key>
+
+# Purge edge cache
+php glueful cache:purge
+
+# Set cache TTL
+php glueful cache:ttl <key> <seconds>
+
+# Expire cache items
+php glueful cache:expire <key> <seconds>
 ```
 
-### Help System
+### System Management
 ```bash
 # Show all available commands
-php glueful help
+php glueful list
 
 # Show help for specific command
-php glueful help migrate run
+php glueful help migrate:run
+
+# System health check
+php glueful system:check
+
+# Memory monitoring
+php glueful system:memory
+
+# Production environment validation
+php glueful system:production
+
+# Installation wizard
+php glueful install
+```
+
+### Security Commands
+```bash
+# Security configuration check
+php glueful security:check
+
+# Generate security report
+php glueful security:report
+
+# Scan for vulnerabilities
+php glueful security:scan
+
+# Check known vulnerabilities
+php glueful security:vulnerabilities
+
+# Emergency lockdown mode
+php glueful security:lockdown
+
+# Reset user password
+php glueful security:reset-password
+
+# Revoke authentication tokens
+php glueful security:revoke-tokens
+```
+
+### Queue Management
+```bash
+# Start queue worker
+php glueful queue:work
+
+# Auto-scaling queue management
+php glueful queue:autoscale
+
+# Job scheduling system
+php glueful queue:scheduler
+```
+
+### Configuration Management
+```bash
+# Validate configuration
+php glueful config:validate
+
+# Generate config documentation
+php glueful config:generate-docs
+
+# Generate IDE support files
+php glueful config:generate-ide-support
+```
+
+### Archive System
+```bash
+# Manage data archiving
+php glueful archive:manage
+```
+
+### Notification System
+```bash
+# Process notification retries
+php glueful notifications:process-retries
+```
+
+### DI Container Management
+```bash
+# Validate container configuration
+php glueful di:container:validate
+
+# Debug container services
+php glueful di:container:debug
+
+# Compile container for production
+php glueful di:container:compile
 ```
 
 ## API Endpoints
@@ -150,46 +277,41 @@ php glueful help migrate run
 Glueful provides a comprehensive set of RESTful API endpoints:
 
 ### Authentication
-- `POST /auth/login`: User authentication
-- `POST /auth/reset-password`: Password reset
-- `GET /auth/sessions`: Get active sessions
+- `POST /auth/login`: User authentication with JWT tokens
+- `POST /auth/logout`: User logout (invalidates tokens)
+- `POST /auth/refresh-token`: Refresh JWT access token
+- `POST /auth/validate-token`: Validate current token
+- `POST /auth/forgot-password`: Initiate password reset
+- `POST /auth/reset-password`: Reset password with code
+- `POST /auth/verify-email`: Send email verification code
+- `POST /auth/verify-otp`: Verify one-time password
+- `GET /csrf-token`: Get CSRF token for forms
 
-### User Management
-- `GET /users`: List all users
-- `GET /users/{id}`: Get specific user
-- `POST /users`: Create user
-- `PUT /users/{id}`: Update user
-- `DELETE /users/{id}`: Delete user
+### Resource Management (Dynamic)
+Glueful uses a dynamic resource system for database tables:
+- `GET /{resource}`: List resources with pagination and filtering
+- `POST /{resource}`: Create new resource
+- `PUT /{resource}/{uuid}`: Update specific resource
+- `DELETE /{resource}/{uuid}`: Delete specific resource
+- `DELETE /{resource}/bulk`: Bulk delete (if enabled)
+- `PUT /{resource}/bulk`: Bulk update (if enabled)
 
-### Roles & Permissions
-- `GET /roles`: List all roles
-- `GET /roles/{id}`: Get specific role
-- `POST /roles`: Create role
-- `PUT /roles/{id}`: Update role
-- `DELETE /roles/{id}`: Delete role
-- `GET /role_permissions`: List all permissions
-- `POST /role_permissions`: Create permission
-- `PUT /role_permissions/{id}`: Update permission
-- `DELETE /role_permissions/{id}`: Delete permission
+### Health & System
+- `GET /health`: Overall system health check
+- `GET /health/database`: Database connectivity check
+- `GET /health/cache`: Cache system health check
 
-### User Profiles
-- `GET /profiles`: List all profiles
-- `GET /profiles/{id}`: Get specific profile
-- `POST /profiles`: Create profile
-- `PUT /profiles/{id}`: Update profile
-- `DELETE /profiles/{id}`: Delete profile
+### Files & Storage
+- `GET /files`: List uploaded files
+- `POST /files`: Upload file with metadata
+- `GET /files/{id}`: Get file information
+- `DELETE /files/{id}`: Delete file
 
-### File Management
-- `GET /blobs`: List all files
-- `GET /blobs/{id}`: Get specific file
-- `POST /blobs`: Upload file
-- `PUT /blobs/{id}`: Update file metadata
-- `DELETE /blobs/{id}`: Delete file
-
-### System Administration
-- `GET /migrations`: List database migrations
-- `GET /app_logs`: View application logs
-- `GET /scheduled_jobs`: List scheduled jobs
+### Extensions & Admin
+- `GET /extensions`: List installed extensions
+- `POST /extensions/{name}/enable`: Enable extension
+- `POST /extensions/{name}/disable`: Disable extension
+- Various admin endpoints via Admin extension
 
 ## Rate Limiting
 
@@ -217,35 +339,58 @@ $limiter = RateLimiter::perUser(
 
 ```env
 # Application
-APP_NAME=Glueful
+APP_NAME="Glueful"
 APP_ENV=development
-APP_DEBUG=true
-API_VERSION=1.0.0
-API_DOCS_ENABLED=true
+BASE_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8000/api/
+API_VERSION=v1
+API_VERSION_FULL=1.0.0
+API_DEBUG=true
 
 # Security
-ACCESS_TOKEN_LIFETIME=900
-REFRESH_TOKEN_LIFETIME=604800
+ACCESS_TOKEN_LIFETIME=900  # 15 minutes
+REFRESH_TOKEN_LIFETIME=604800  # 7 days
 JWT_KEY=your-secure-jwt-key-here
-AUTH_GUARD_ENABLED=true
+TOKEN_SALT=your-secure-salt-here
+JWT_ALGORITHM=HS256
 
 # Database
 DB_DRIVER=mysql
 DB_HOST=localhost
+DB_PORT=3306
 DB_DATABASE=your_database_name
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+DB_MYSQL_ROLE=primary
+
+# Cache
+CACHE_DRIVER=redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_CACHE_DB=1
+
+# CORS Configuration
+CORS_ALLOWED_ORIGINS=http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:8080
+
+# Security Headers
+CSP_HEADER=""
+HSTS_HEADER="max-age=31536000; includeSubDomains"
 
 # Feature Flags
 ENABLE_PERMISSIONS=true
+FORCE_ADVANCED_EMAIL=true
 API_DEBUG_MODE=true
 ```
 
 ### Authentication Model
-Glueful implements a comprehensive authentication system:
+Glueful implements a JWT-based authentication system with dual-layer session storage:
 
-- **Public endpoints**: Authentication endpoints (login, token refresh, etc.)
-- **Protected endpoints**: All resource and file operations require authentication
-- **Admin endpoints**: Administrative functions require admin authentication
-- **Authentication guards**: Configurable per route group using `requiresAuth` and `requiresAdminAuth` parameters
+- **Public endpoints**: Authentication, health checks, CSRF token generation
+- **Protected endpoints**: All resource operations and file management require authentication
+- **Admin endpoints**: Extension management and admin functions require admin privileges
+- **Dynamic resources**: Database table access through RESTful resource routes
+- **Session storage**: Database + cache layer for optimal performance
+- **Token management**: Access tokens (15min) and refresh tokens (7 days)
 
 ### Security Notes
 - All passwords are hashed using bcrypt
@@ -258,28 +403,87 @@ Glueful implements a comprehensive authentication system:
 
 ## Documentation
 
+### Interactive API Documentation
+- Modern RapiDoc UI available at `/docs/index.html`
+- Dark/Light theme support with system preference detection
+- Comprehensive OpenAPI schemas for all endpoints
+- Interactive "Try it out" functionality
+- Authentication testing with JWT tokens
+- Server environment selection
+
 ### Core Documentation
-- Swagger UI available at `/docs/index.html`
 - Database schema documentation in `/docs/SCHEMA.md`
 - Rate limiter documentation in `/docs/RATELIMITER.md`
 - Setup guide in `/docs/SETUP.md`
-- Middleware documentation in `/docs/MIDDLEWARE.md`
+- Validation system in `/docs/VALIDATION.md`
+- Console commands reference in `/docs/CONSOLE_COMMANDS.md`
+- Caching system guide in `/docs/CACHING_SYSTEM.md`
+- Queue system documentation in `/docs/QUEUE_SYSTEM.md`
+- Performance optimization in `/docs/PERFORMANCE_OPTIMIZATION.md`
+- Memory management guide in `/docs/MEMORY_MANAGEMENT.md`
+- Logging system documentation in `/docs/LOGGING_SYSTEM.md`
+- Event system guide in `/docs/EVENTS.md`
 
 ### Production Guides
 - **[Security Hardening Guide](/docs/SECURITY.md)** - Comprehensive security checklist and best practices
 - **[Deployment Guide](/docs/DEPLOYMENT.md)** - Docker, cloud, and traditional server deployment strategies
 - **[Error Handling Guide](/docs/ERROR_HANDLING.md)** - Server-side and client-side error handling patterns
 
-### Extension System v2.0
-- **[Extension System v2.0 Documentation](/docs/EXTENSION_SYSTEM_V2.md)** - Complete guide to the new high-performance extension system
-- **[Extension Commands Reference](/docs/EXTENSION_COMMANDS_REFERENCE.md)** - Quick reference for all extension management commands
-- **[Migration Guide v1.0 to v2.0](/docs/MIGRATION_GUIDE_V1_TO_V2.md)** - Seamless migration from legacy extension system
-- **[Performance Comparison](/docs/PERFORMANCE_COMPARISON.md)** - Detailed performance analysis and benchmarks
+### Admin Dashboard
+The built-in Admin extension provides a comprehensive SPA dashboard:
+- Real-time system monitoring and health checks
+- Database table management and querying
+- Extension management and configuration
+- User and permission management
+- API metrics and analytics
+- Automatic environment configuration generation
+
+### Extension System
+- **Extension management** via comprehensive CLI commands
+- **Dynamic loading** with PSR-4 autoloading support
+- **Dependency validation** and conflict resolution
+- **Performance benchmarking** and health monitoring
+- **Namespace management** with conflict detection
 
 ### Additional Resources
 - Feature documentation in `/docs/features/`
 - Performance optimization guides in `/docs/`
 - Extension development in `/docs/`
+
+## Development Workflow
+
+### Creating a New Feature
+```bash
+# Create migration for database changes
+php glueful migrate:create create_feature_table
+
+# Generate controller
+php glueful generate:controller FeatureController
+
+# Run migrations
+php glueful migrate:run
+
+# Generate API documentation
+php glueful generate:api-definitions
+
+# Start development server
+php glueful serve --port=8000 --open
+```
+
+### Testing and Validation
+```bash
+# Validate system configuration
+php glueful system:check
+
+# Check security configuration
+php glueful security:check
+
+# Validate DI container
+php glueful di:container:validate
+
+# Check database status
+php glueful db:status
+```
 
 ## Backup and Restore
 ```bash
@@ -288,6 +492,9 @@ mysqldump -u glueful_user -p glueful > backup_$(date +%Y%m%d).sql
 
 # Restore from backup
 mysql -u glueful_user -p glueful < backup_20240101.sql
+
+# Archive old data
+php glueful archive:manage
 ```
 
 ## License

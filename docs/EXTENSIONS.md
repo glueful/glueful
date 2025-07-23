@@ -70,7 +70,7 @@ php glueful extensions:debug            # Debug information
 extensions/
 └── MyExtension/
     ├── MyExtension.php        # Main extension class (matches directory name)
-    ├── extension.json         # Extension metadata
+    ├── manifest.json          # Extension metadata
     ├── composer.json          # Dependencies
     ├── src/
     │   ├── Controllers/       # Extension controllers
@@ -87,42 +87,31 @@ extensions/
     └── README.md             # Documentation
 ```
 
-### Configuration Schema (extensions.json)
+### Configuration Schema (manifest.json)
 
 ```json
 {
-    "schema_version": "2.0",
-    "extensions": {
-        "ExtensionName": {
-            "version": "1.0.0",
-            "enabled": true,
-            "type": "optional",
-            "description": "Extension description",
-            "author": "Author Name",
-            "license": "MIT",
-            "installPath": "extensions/ExtensionName",
-            "autoload": {
-                "psr-4": {
-                    "Glueful\\Extensions\\ExtensionName\\": "extensions/ExtensionName/src/"
-                }
-            },
-            "dependencies": {
-                "php": "^8.2",
-                "extensions": ["RequiredExtension"],
-                "packages": {
-                    "vendor/package": "^1.0"
-                }
-            },
-            "provides": {
-                "main": "extensions/ExtensionName/Extension.php",
-                "services": ["src/Providers/ServiceProvider.php"],
-                "routes": ["routes.php"],
-                "middleware": ["src/Middleware/CustomMiddleware.php"],
-                "commands": ["src/Commands/CustomCommand.php"],
-                "migrations": ["migrations/"],
-                "templates": ["templates/"]
-            }
+    "name": "ExtensionName",
+    "version": "1.0.0",
+    "type": "optional",
+    "description": "Extension description",
+    "author": "Author Name",
+    "license": "MIT",
+    "main_class": "Glueful\\Extensions\\ExtensionName",
+    "autoload": {
+        "psr-4": {
+            "Glueful\\Extensions\\ExtensionName\\": "src/"
         }
+    },
+    "dependencies": {
+        "glueful": ">=0.27.0",
+        "php": ">=8.2.0",
+        "extensions": ["RequiredExtension"]
+    },
+    "provides": {
+        "routes": ["src/routes.php"],
+        "migrations": ["migrations/"],
+        "commands": ["src/Commands/"]
     }
 }
 ```

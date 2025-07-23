@@ -128,14 +128,10 @@ Display and analyze application routes:
 
 ```bash
 # List all routes
-php glueful routes
+php glueful route
 
-# Show route details
-php glueful routes --detailed
-
-# Filter routes
-php glueful routes --method=GET
-php glueful routes --path=/api
+# Show route details (if supported)
+php glueful route --detailed
 ```
 
 ## Database Management
@@ -197,30 +193,30 @@ php glueful migrate:rollback --batch=2
 
 ```bash
 # Check database connection and status
-php glueful database:status
+php glueful db:status
 
 # Show detailed connection information
-php glueful database:status --detailed
+php glueful db:status --detailed
 ```
 
 #### Database Reset
 
 ```bash
 # Reset database (destructive operation)
-php glueful database:reset --force
+php glueful db:reset --force
 
 # Reset with confirmation
-php glueful database:reset
+php glueful db:reset
 ```
 
 #### Query Profiling
 
 ```bash
 # Profile database queries
-php glueful database:profile
+php glueful db:profile
 
 # Profile specific operations
-php glueful database:profile --operation=migration
+php glueful db:profile --operation=migration
 ```
 
 ## Cache Operations
@@ -484,13 +480,10 @@ php glueful system:check --production
 
 ```bash
 # Monitor memory usage
-php glueful system:memory-monitor
+php glueful system:memory
 
-# Set monitoring thresholds
-php glueful system:memory-monitor --warning=128M --critical=256M
-
-# Monitor specific processes
-php glueful system:memory-monitor --process=queue:work
+# Advanced memory monitoring with options
+php glueful system:memory --warning=128M --critical=256M
 ```
 
 ### Production Commands
