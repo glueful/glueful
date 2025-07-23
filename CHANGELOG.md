@@ -2,6 +2,96 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.28.0] - 2025-07-23
+
+### Added
+- Extension System v2.0 architecture
+  - Modern PSR-4 autoloading with manifest.json configuration
+  - BaseExtension architecture for improved extensibility
+  - Enhanced extension metadata and dependency management
+- Single Page Application (SPA) support for extensions
+  - Dynamic SPA configuration and routing
+  - Environment-aware asset loading for production deployment
+  - Admin panel with modern Vue.js interface
+- Comprehensive OpenAPI documentation system
+  - Modern documentation UI with interactive schemas
+  - Automated API schema generation and validation
+  - Enhanced API endpoint documentation
+- Dynamic configuration management
+  - Real-time env.json generation for SPA extensions
+  - Environment-specific configuration handling
+  - Centralized configuration validation
+- Enhanced logging infrastructure
+  - PSR-3 compliant logging with event system integration
+  - Request context and performance monitoring
+  - Configurable log levels and output formatting
+- Unified event dispatching system
+  - Complete event-driven architecture implementation
+  - Symfony EventDispatcher integration
+  - Comprehensive event listener management
+- Multi-worker queue system
+  - Symfony Process-based queue implementation
+  - Enhanced background job processing
+  - Improved queue reliability and monitoring
+- Database administration improvements
+  - Enhanced predefined queries with correct table schemas
+  - Environment-aware database query interface
+  - Improved query execution and error handling
+
+### Improved
+- Framework core modernization
+  - Complete migration to Symfony components (DependencyInjection, HttpClient, Serializer, Validator, Config, Console, Process, Lock, OptionsResolver)
+  - Enhanced dependency injection container management
+  - Improved service provider architecture
+- Admin interface production deployment
+  - Fixed asset loading paths for production environments
+  - Environment-aware routing and navigation
+  - Improved logout and authentication flows
+- Database query rate limiting
+  - Relaxed overly restrictive rate limits for better usability
+  - Improved risk assessment thresholds
+  - Enhanced error messaging and user feedback
+- API configuration management
+  - Consolidated API version configuration
+  - Removed redundant environment variables
+  - Simplified configuration maintenance
+- Extension loading and management
+  - Improved extension detection and synchronization
+  - Enhanced extension configuration access
+  - Better error handling for extension operations
+- Authentication and security
+  - Sanitized email addresses in cache keys for PSR-16 compliance
+  - Enhanced token storage and session management
+  - Improved authentication provider registration
+
+### Fixed
+- Admin panel production deployment issues
+  - Fixed asset path resolution for SPA routing
+  - Corrected environment configuration loading
+  - Resolved logout redirect paths
+- Database controller functionality
+  - Updated predefined queries to use correct table names (auth_sessions instead of sessions)
+  - Fixed query execution permissions and validation
+  - Improved error handling for database operations
+- Extension system stability
+  - Fixed extension installation and detection issues
+  - Resolved extension configuration access problems
+  - Improved extension metadata handling
+- API documentation generation
+  - Fixed OpenAPI schema parsing and validation
+  - Removed redundant response fields
+  - Improved documentation structure and organization
+- Core framework issues
+  - Fixed DI container registration for controllers and services
+  - Resolved PSR-16 cache key validation errors
+  - Improved file serving and document root handling
+
+### Documentation
+- Enhanced API documentation with OpenAPI schemas
+- Comprehensive extension development guides
+- Updated deployment and configuration documentation
+- Improved troubleshooting and debugging guides
+
 ## [0.27.0] - 2025-05-18
 
 ### Added
