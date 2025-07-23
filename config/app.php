@@ -33,7 +33,7 @@ return [
         'strategy' => env('API_VERSION_STRATEGY', 'url'), // url, header, both
         'current' => env('API_VERSION', 'v1'),
         'supported' => explode(',', env('API_SUPPORTED_VERSIONS', 'v1')),
-        'default' => env('API_DEFAULT_VERSION', 'v1'),
+        'default' => env('API_VERSION', 'v1'),
     ],
 
     // Application Paths
@@ -41,10 +41,10 @@ return [
         'base' => dirname(__DIR__),
         'api_base_directory' => dirname(__DIR__) . '/api/',
         'api_docs' => dirname(__DIR__) . '/docs/',
-        'api_docs_url' => env('BASE_URL', 'http://localhost') . '/docs',
+        'api_docs_url' => env('BASE_URL', 'http://localhost') . '/api/' . env('API_VERSION', 'v1') . '/docs/',
         'cdn' => env('BASE_URL', 'http://localhost') . '/storage/cdn/',
         'domain' => env('BASE_URL', 'http://localhost'),
-        'api_base_url' => env('API_BASE_URL', 'http://localhost/api/'),
+        'api_base_url' => env('API_BASE_URL', 'http://localhost/api/') . env('API_VERSION', 'v1'),
         'uploads' => dirname(__DIR__) . '/storage/cdn/',
         'logs' => dirname(__DIR__) . '/storage/logs/',
         'cache' => dirname(__DIR__) . '/storage/cache/',

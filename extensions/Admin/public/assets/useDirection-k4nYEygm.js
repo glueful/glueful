@@ -1,1 +1,0 @@
-import{bt as e,r,f as i}from"./index-CRsdYi2H.js";function s(t){return t==null}function c(t){const o=e({dir:r("ltr")});return i(()=>{var n;return(t==null?void 0:t.value)||((n=o.dir)==null?void 0:n.value)||"ltr"})}export{s as i,c as u};

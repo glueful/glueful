@@ -999,11 +999,11 @@ class DatabaseController extends BaseController
         // Critical permission check - raw SQL execution
         $this->requirePermission('database.query.execute', 'database');
 
-        // Very strict rate limiting for raw SQL execution
-        $this->rateLimitResource('database.query', 'execute', 3, 300);
+        // Rate limiting for raw SQL execution
+        $this->rateLimitResource('database.query', 'execute', 10, 60);
 
-        // Require very low risk behavior for SQL execution
-        $this->requireLowRiskBehavior(0.2, 'raw_sql_execution');
+        // Require low risk behavior for SQL execution
+        $this->requireLowRiskBehavior(0.7, 'raw_sql_execution');
 
         $data = RequestHelper::getRequestData();
 

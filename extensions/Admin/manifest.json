@@ -3,7 +3,7 @@
   "id": "admin",
   "name": "Admin",
   "displayName": "Admin",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Provides a comprehensive admin dashboard UI to visualize and manage the API Framework, monitor system health, and perform administrative actions through a user-friendly interface",
   "author": {
     "name": "Glueful Team",
