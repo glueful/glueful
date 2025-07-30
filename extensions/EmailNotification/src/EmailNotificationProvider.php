@@ -73,33 +73,8 @@ class EmailNotificationProvider implements NotificationExtension
 
         $transformed = [];
 
-        // Get the default mailer type (smtp, ses, etc.)
-        $defaultMailer = $coreConfig['default'] ?? 'smtp';
-
-        // Transform SMTP config if available
-        if (isset($coreConfig[$defaultMailer]) && $defaultMailer === 'smtp') {
-            $smtpConfig = $coreConfig[$defaultMailer];
-
-            // Map to EmailChannel expected structure
-            $transformed = [
-                'host' => $smtpConfig['host'] ?? '',
-                'port' => $smtpConfig['port'] ?? 587,
-                'username' => $smtpConfig['username'] ?? '',
-                'password' => $smtpConfig['password'] ?? '',
-                'encryption' => $smtpConfig['encryption'] ?? 'tls',
-                'smtp_auth' => true,
-            ];
-        }
-
-        // Copy from address configuration
-        if (isset($coreConfig['from'])) {
-            $transformed['from'] = $coreConfig['from'];
-        }
-
-        // Copy other relevant settings
-        if (isset($coreConfig['retry'])) {
-            $transformed['retry'] = $coreConfig['retry'];
-        }
+        // Use the multi-mailer configuration structure
+        $transformed = $coreConfig;
 
         return $transformed;
     }
@@ -270,7 +245,7 @@ class EmailNotificationProvider implements NotificationExtension
         return [
             'name' => 'Email Notification Channel',
             'version' => '1.0.0',
-            'description' => 'Provides email notification capabilities using SMTP/PHPMailer',
+            'description' => 'Provides email notification capabilities using Symfony Mailer',
             'author' => 'Glueful',
             'channels' => ['email'],
             'config' => $this->config
@@ -286,20 +261,20 @@ class EmailNotificationProvider implements NotificationExtension
     {
         try {
             // Check if email notification extension is enabled
-            $extensionsConfig = config('extensions');
+            $extensionsConfig = config('services.extensions');
             if (
                 empty($extensionsConfig) ||
                 !is_array($extensionsConfig) ||
-                !isset($extensionsConfig['enabled']) ||
-                !is_array($extensionsConfig['enabled']) ||
-                !in_array('EmailNotification', $extensionsConfig['enabled'])
+                !isset($extensionsConfig['defaults']['enabled']) ||
+                !is_array($extensionsConfig['defaults']['enabled']) ||
+                !in_array('EmailNotification', $extensionsConfig['defaults']['enabled'])
             ) {
                 $this->logger->error("EmailNotification extension is not enabled");
                 return false;
             }
 
-            // Check mail configuration
-            $mailConfig = config('services.mail');
+            // Use the merged configuration from the provider instead of loading fresh from config
+            $mailConfig = $this->config;
             if (empty($mailConfig) || !is_array($mailConfig)) {
                 $this->logger->error("Mail configuration is missing or invalid");
                 return false;
@@ -307,16 +282,18 @@ class EmailNotificationProvider implements NotificationExtension
 
             // Get the default mailer (smtp, ses, mailgun, etc.)
             $defaultMailer = $mailConfig['default'] ?? 'smtp';
-            // Check if the mailer configuration exists
-            if (!isset($mailConfig[$defaultMailer])) {
+
+            // Check multi-mailer configuration
+            if (!isset($mailConfig['mailers'][$defaultMailer])) {
                 $this->logger->error("Mail driver '{$defaultMailer}' configuration is missing");
                 return false;
             }
 
-            $driverConfig = $mailConfig[$defaultMailer];
+            $driverConfig = $mailConfig['mailers'][$defaultMailer];
+            $transport = $driverConfig['transport'] ?? $defaultMailer;
 
             // Check specific driver requirements
-            switch ($defaultMailer) {
+            switch ($transport) {
                 case 'smtp':
                     if (empty($driverConfig['host'])) {
                         $this->logger->error("SMTP host is not configured");
@@ -338,6 +315,20 @@ class EmailNotificationProvider implements NotificationExtension
                 case 'mailgun':
                     if (empty($driverConfig['domain']) || empty($driverConfig['secret'])) {
                         $this->logger->error("Mailgun credentials are missing");
+                        return false;
+                    }
+                    break;
+
+                case 'sendgrid':
+                    if (empty($driverConfig['key'])) {
+                        $this->logger->error("SendGrid API key is missing");
+                        return false;
+                    }
+                    break;
+
+                case 'postmark':
+                    if (empty($driverConfig['token'])) {
+                        $this->logger->error("Postmark server token is missing");
                         return false;
                     }
                     break;
@@ -410,29 +401,24 @@ class EmailNotificationProvider implements NotificationExtension
         ];
 
         try {
-            // Use QueryBuilder instead of direct SQL
-            $connection = new \Glueful\Database\Connection();
-            $queryBuilder = new \Glueful\Database\QueryBuilder(
-                $connection->getPDO(),
-                $connection->getDriver(),
-                new \Glueful\Database\QueryLogger()
-            );
+            // Use fluent QueryBuilder interface
+            $db = new \Glueful\Database\Connection();
 
             // Count total emails sent through email channel
-            $sentEmails = $queryBuilder
-                ->select('notifications')
+            $sentEmails = $db
+                ->table('notifications')
                 ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('sent_at')
-                ->count('notifications');
+                ->count();
 
             $metrics['emails_sent'] = $sentEmails;
 
             // Count failed emails (those with error data)
-            $failedEmails = $queryBuilder
-                ->select('notifications')
+            $failedEmails = $db
+                ->table('notifications')
                 ->whereJsonContains('data', 'email', '$.channels')
                 ->whereJsonContains('data', 'true', '$.error')
-                ->count('notifications');
+                ->count();
 
             $metrics['emails_failed'] = $failedEmails;
 
@@ -445,47 +431,54 @@ class EmailNotificationProvider implements NotificationExtension
             }
 
             // Get last sent email timestamp
-            $lastSentEmail = $queryBuilder
-                ->select('notifications', ['sent_at'])
+            $lastSentEmail = $db
+                ->table('notifications')
+                ->select(['sent_at'])
                 ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('sent_at')
                 ->orderBy(['sent_at' => 'DESC'])
                 ->limit(1)
-                ->first();
+                ->get();
 
-            $metrics['last_email_sent'] = $lastSentEmail ? $lastSentEmail['sent_at'] : null;
+            $metrics['last_email_sent'] = !empty($lastSentEmail) ? $lastSentEmail[0]['sent_at'] : null;
 
             // Calculate read rate
-            $readEmails = $queryBuilder
-                ->select('notifications')
+            $readEmails = $db
+                ->table('notifications')
                 ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('read_at')
-                ->count('notifications');
+                ->count();
 
             if ($metrics['emails_sent'] > 0) {
                 $metrics['read_rate'] = round(($readEmails / $metrics['emails_sent']) * 100, 2);
             }
 
             // Get most common notification types for emails
-            // We'll use a raw query for this aggregation as it's more complex
-            $commonTypes = $queryBuilder->rawQuery("
-                SELECT type, COUNT(*) as count 
-                FROM notifications 
-                WHERE JSON_CONTAINS(data, '\"email\"', '$.channels')
-                GROUP BY type
-                ORDER BY count DESC
-                LIMIT 5
-            ");
+            // Use database-agnostic aggregation query builder
+            $whereClause = new \Glueful\Database\Query\WhereClause($db->getDriver());
+            $aggregationQuery = $whereClause->buildAggregationQuery(
+                'notifications',
+                'type, COUNT(*) as count',
+                'type',
+                'count',
+                'DESC',
+                5,
+                [['data', 'email', '$.channels']]
+            );
 
-            $metrics['most_common_types'] = array_column($commonTypes, 'count', 'type');
+            $commonTypesStmt = $db->getPDO()->prepare($aggregationQuery['query']);
+            $commonTypesStmt->execute($aggregationQuery['bindings']);
+            $commonTypesResult = $commonTypesStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $metrics['most_common_types'] = array_column($commonTypesResult, 'count', 'type');
 
             // Get email queue size - scheduled emails not yet sent
-            $queueSize = $queryBuilder
-                ->select('notifications')
+            $queueSize = $db
+                ->table('notifications')
                 ->whereJsonContains('data', 'email', '$.channels')
                 ->whereNotNull('scheduled_at')
                 ->whereNull('sent_at')
-                ->count('notifications');
+                ->count();
 
             $metrics['email_queue_size'] = $queueSize;
         } catch (\Exception $e) {

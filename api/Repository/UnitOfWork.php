@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Repository;
 
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use Glueful\Exceptions\DatabaseException;
 
 /**
@@ -17,13 +17,13 @@ use Glueful\Exceptions\DatabaseException;
  */
 class UnitOfWork
 {
-    private QueryBuilder $db;
+    private Connection $db;
     private array $newEntities = [];
     private array $dirtyEntities = [];
     private array $removedEntities = [];
     private bool $isCommitting = false;
 
-    public function __construct(QueryBuilder $db)
+    public function __construct(Connection $db)
     {
         $this->db = $db;
     }
@@ -87,16 +87,23 @@ class UnitOfWork
         $this->isCommitting = true;
 
         try {
-            return $this->db->transaction(function () {
+            $pdo = $this->db->getPDO();
+            $pdo->beginTransaction();
+
+            try {
                 $results = [
                     'new' => $this->commitNewEntities(),
                     'updated' => $this->commitDirtyEntities(),
                     'removed' => $this->commitRemovedEntities()
                 ];
 
+                $pdo->commit();
                 $this->clear();
                 return $results;
-            });
+            } catch (\Exception $e) {
+                $pdo->rollBack();
+                throw $e;
+            }
         } catch (\Exception $e) {
             throw new DatabaseException('Unit of Work commit failed: ' . $e->getMessage(), 0);
         } finally {
@@ -151,7 +158,7 @@ class UnitOfWork
         $results = [];
 
         foreach ($this->newEntities as $key => $entity) {
-            $result = $this->db->insert($entity['table'], $entity['data']);
+            $result = $this->db->table($entity['table'])->insert($entity['data']);
             $results[$key] = $result;
         }
 
@@ -166,7 +173,9 @@ class UnitOfWork
         $results = [];
 
         foreach ($this->dirtyEntities as $key => $entity) {
-            $result = $this->db->update($entity['table'], $entity['data'], ['uuid' => $entity['uuid']]);
+            $result = $this->db->table($entity['table'])
+                ->where(['uuid' => $entity['uuid']])
+                ->update($entity['data']);
             $results[$key] = $result;
         }
 
@@ -181,7 +190,9 @@ class UnitOfWork
         $results = [];
 
         foreach ($this->removedEntities as $key => $entity) {
-            $result = $this->db->delete($entity['table'], ['uuid' => $entity['uuid']]);
+            $result = $this->db->table($entity['table'])
+                ->where(['uuid' => $entity['uuid']])
+                ->delete();
             $results[$key] = $result;
         }
 

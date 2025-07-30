@@ -134,12 +134,12 @@ Router::group('/admin', function () use ($container) {
         });
 
         /**
-         * @route GET /admin/db/table/size
+         * @route GET /admin/db/table/{name}/size
          * @tag Admin - Database Management
          * @summary Get database table size
          * @description Retrieves the size of the specified table in the database
          * @requiresAuth true
-         * @requestBody name:string="Table name" {required=name}
+         * @param name path string true "Table name"
          * @response 200 application/json "Table size information" {
          *   success:boolean="true",
          *   message:string="Success message",
@@ -1430,9 +1430,9 @@ Router::group('/admin', function () use ($container) {
          * @response 404 application/json "User not found"
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{uuid}', function (array $params, Request $request) use ($container) {
+        Router::get('/{uuid}', function (Request $request) use ($container) {
             $usersController = $container->get(UsersController::class);
-            return $usersController->show($params);
+            return $usersController->show($request);
         });
 
         /**
@@ -1467,8 +1467,9 @@ Router::group('/admin', function () use ($container) {
          * @response 404 application/json "User not found"
          * @response 422 application/json "Validation errors"
          */
-        Router::put('/{uuid}', function (array $params, Request $request) use ($container) {
+        Router::put('/{uuid}', function (array $params) use ($container) {
             $usersController = $container->get(UsersController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $usersController->update($params, $request);
         });
 
@@ -1537,8 +1538,9 @@ Router::group('/admin', function () use ($container) {
          * @response 404 application/json "User not found"
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{uuid}/activity', function (array $params, Request $request) use ($container) {
+        Router::get('/{uuid}/activity', function (array $params) use ($container) {
             $usersController = $container->get(UsersController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $usersController->activity($params, $request);
         });
 
@@ -1586,8 +1588,9 @@ Router::group('/admin', function () use ($container) {
          * @response 200 application/json "Sessions terminated"
          * @response 404 application/json "User not found"
          */
-        Router::delete('/{uuid}/sessions', function (array $params, Request $request) use ($container) {
+        Router::delete('/{uuid}/sessions', function (array $params) use ($container) {
             $usersController = $container->get(UsersController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $usersController->terminateSessions($params, $request);
         });
     }, requiresAdminAuth: true);

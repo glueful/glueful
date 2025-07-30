@@ -104,7 +104,7 @@ extensions/
         }
     },
     "dependencies": {
-        "glueful": ">=0.27.0",
+        "glueful": ">=0.29.0",
         "php": ">=8.2.0",
         "extensions": ["RequiredExtension"]
     },
@@ -318,7 +318,7 @@ Glueful includes these production-ready extensions:
 
 #### 4. RBAC Extension
 - **Type**: Optional extension
-- **Version**: 0.27.0
+- **Version**: 0.29.0
 - **Features**: Role-based access control system
 - **Database**: Hierarchical roles and permissions
 - **API**: RESTful endpoints for role/permission management

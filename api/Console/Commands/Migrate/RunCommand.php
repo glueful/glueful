@@ -72,8 +72,6 @@ class RunCommand extends BaseCommand
     {
         $force = $input->getOption('force');
         $dryRun = $input->getOption('dry-run') || $input->getOption('pretend');
-        $batch = $input->getOption('batch');
-        $path = $input->getOption('path');
 
         // Production safety check
         if (!$force && !$this->confirmProduction('run database migrations')) {
@@ -81,8 +79,9 @@ class RunCommand extends BaseCommand
         }
 
         try {
-            // Get pending migrations
-            $pendingMigrations = $this->migrationManager->getPendingMigrations();
+            // Get migration status efficiently (single query)
+            $status = $this->migrationManager->getMigrationStatus();
+            $pendingMigrations = $status['pending'];
 
             if (empty($pendingMigrations)) {
                 $this->info('No pending migrations found.');
@@ -90,10 +89,14 @@ class RunCommand extends BaseCommand
             }
 
             $this->info(sprintf('Found %d pending migration(s)', count($pendingMigrations)));
+            $this->line('');
+
+            // Display pending migrations table
+            $this->listPendingMigrations($pendingMigrations);
+            $this->line('');
 
             if ($dryRun) {
                 $this->warning('DRY RUN MODE - No actual migrations will be executed');
-                $this->listPendingMigrations($pendingMigrations);
                 return self::SUCCESS;
             }
 
@@ -108,9 +111,20 @@ class RunCommand extends BaseCommand
                 return self::SUCCESS;
             }
 
-            // Execute migrations with progress bar
-            $this->executeMigrationsWithProgress($pendingMigrations, (int) $batch);
+            // Execute all migrations in a single batch (pass pending migrations to avoid duplicate query)
+            $this->info('Executing migrations...');
+            $this->line('');
 
+            $result = $this->migrationManager->migrate($pendingMigrations);
+
+            // Display execution results
+            $this->displayExecutionResults($result, $pendingMigrations);
+
+            if (!empty($result['failed'])) {
+                throw new \Exception('Some migrations failed: ' . implode(', ', $result['failed']));
+            }
+
+            $this->line('');
             $this->success('All migrations executed successfully!');
             return self::SUCCESS;
         } catch (\Exception $e) {
@@ -121,39 +135,56 @@ class RunCommand extends BaseCommand
 
     private function listPendingMigrations(array $migrations): void
     {
-        $headers = ['Migration', 'File'];
+        $headers = ['Migration', 'Status'];
         $rows = [];
 
         foreach ($migrations as $migration) {
             $rows[] = [
-                $migration['name'] ?? 'Unknown',
-                $migration['file'] ?? 'Unknown'
+                basename($migration),
+                '⏳ Pending'
             ];
         }
 
         $this->table($headers, $rows);
     }
 
-    private function executeMigrationsWithProgress(array $migrations, ?int $batch): void
+    private function displayExecutionResults(array $result, array $pendingMigrations): void
     {
-        $this->progressBar(count($migrations), function ($progressBar) use ($migrations) {
-            foreach ($migrations as $migrationFile) {
-                $this->line(sprintf('Running: %s', basename($migrationFile)));
+        $headers = ['Migration', 'Status'];
+        $rows = [];
 
-                // Use the migrate method which handles single file execution
-                $result = $this->migrationManager->migrate($migrationFile);
+        foreach ($pendingMigrations as $migration) {
+            $filename = basename($migration);
 
-                if (!empty($result['applied'])) {
-                    $this->line(sprintf('✓ Completed: %s', basename($migrationFile)));
-                } elseif (!empty($result['failed'])) {
-                    throw new \Exception(sprintf(
-                        'Failed to run migration: %s',
-                        basename($migrationFile)
-                    ));
-                }
-
-                $progressBar->advance();
+            if (in_array($filename, $result['applied'])) {
+                $rows[] = [
+                    $filename,
+                    '✅ Completed'
+                ];
+            } elseif (in_array($filename, $result['failed'])) {
+                $rows[] = [
+                    $filename,
+                    '❌ Failed'
+                ];
+            } else {
+                $rows[] = [
+                    $filename,
+                    '⏸️ Skipped'
+                ];
             }
-        });
+        }
+
+        $this->table($headers, $rows);
+
+        // Display summary
+        $appliedCount = count($result['applied']);
+        $failedCount = count($result['failed']);
+
+        if ($appliedCount > 0) {
+            $this->line(sprintf('<info>✅ Successfully applied: %d migration(s)</info>', $appliedCount));
+        }
+        if ($failedCount > 0) {
+            $this->line(sprintf('<error>❌ Failed: %d migration(s)</error>', $failedCount));
+        }
     }
 }

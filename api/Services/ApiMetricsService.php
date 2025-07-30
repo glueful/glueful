@@ -3,9 +3,8 @@
 namespace Glueful\Services;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Cache\CacheStore;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Helpers\Utils;
 use Glueful\Helpers\CacheHelper;
 use Exception;
@@ -20,8 +19,8 @@ use Glueful\Exceptions\DatabaseException;
  */
 class ApiMetricsService
 {
-    private QueryBuilder $db;
-    private SchemaManager $schemaManager;
+    private Connection $db;
+    private SchemaBuilderInterface $schemaManager;
     private ?CacheStore $cache;
     private string $metricsTable = 'api_metrics';
     private string $dailyMetricsTable = 'api_metrics_daily';
@@ -36,16 +35,16 @@ class ApiMetricsService
     public function __construct(
         ?CacheStore $cache = null,
         ?Connection $connection = null,
-        ?SchemaManager $schemaManager = null
+        ?SchemaBuilderInterface $schemaManager = null
     ) {
         try {
             // Assign dependencies with sensible defaults
             $this->cache = $cache ?? CacheHelper::createCacheInstance();
             $connection = $connection ?? new Connection();
-            $this->schemaManager = $schemaManager ?? $connection->getSchemaManager();
+            $this->schemaManager = $schemaManager ?? $connection->getSchemaBuilder();
 
             // Initialize derived dependencies
-            $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+            $this->db = $connection;
 
             // Ensure metrics tables exist
             $this->ensureTablesExist();
@@ -149,7 +148,7 @@ class ApiMetricsService
             // Batch insert raw metrics
             if (!empty($rawMetricsToInsert)) {
                 try {
-                    $this->db->insertBatch($this->metricsTable, $rawMetricsToInsert);
+                    $this->db->table($this->metricsTable)->insertBatch($rawMetricsToInsert);
                 } catch (Exception $e) {
                     error_log("API Metrics ERROR: Batch insert failed: " . $e->getMessage());
                 }
@@ -232,8 +231,10 @@ class ApiMetricsService
 
             // Query each date group separately and combine results
             foreach ($dateGroups as $date => $endpointKeys) {
-                $results = $this->db->select($this->dailyMetricsTable, ['*'])
-                    ->where(['date' => $date])
+                $results = $this->db
+                    ->table($this->dailyMetricsTable)
+                    ->select(['*'])
+                    ->where('date', $date)
                     ->whereIn('endpoint_key', $endpointKeys)
                     ->get();
 
@@ -276,17 +277,17 @@ class ApiMetricsService
         }
 
         // Perform bulk operations in transaction for better performance
-        $this->db->transaction(function () use ($toUpdate, $toInsert) {
+        $this->db->query()->transaction(function () use ($toUpdate, $toInsert) {
             if (!empty($toUpdate)) {
                 foreach ($toUpdate as $update) {
                     $id = $update['id'];
                     unset($update['id']);
-                    $this->db->update($this->dailyMetricsTable, $update, ['id' => $id]);
+                    $this->db->table($this->dailyMetricsTable)->where('id', $id)->update($update);
                 }
             }
 
             if (!empty($toInsert)) {
-                $this->db->insertBatch($this->dailyMetricsTable, $toInsert);
+                $this->db->table($this->dailyMetricsTable)->insertBatch($toInsert);
             }
         });
     }
@@ -329,13 +330,12 @@ class ApiMetricsService
         // for admin visibility in the dashboard
         if ($rateLimit['count'] >= $rateLimit['limit'] * 0.8) {
             // Delete existing record for this IP and endpoint first
-            // Use hard delete (false for softDelete parameter) for metrics data
-            $this->db->delete($this->rateLimitsTable, [
-                'ip' => $ip,
-                'endpoint' => $endpoint
-            ], false);
+            $this->db->table($this->rateLimitsTable)
+                ->where('ip', $ip)
+                ->where('endpoint', $endpoint)
+                ->delete();
 
-            $this->db->insert($this->rateLimitsTable, [
+            $this->db->table($this->rateLimitsTable)->insert([
                 'uuid' => Utils::generateNanoID(),
                 'ip' => $ip,
                 'endpoint' => $endpoint,
@@ -374,15 +374,19 @@ class ApiMetricsService
             // Get the last 7 days of daily aggregates
             $sevenDaysAgo = date('Y-m-d', strtotime('-7 days'));
 
-            $dailyMetrics = $this->db->select($this->dailyMetricsTable, ['*'])
-                ->where(['date' => ['>=', $sevenDaysAgo]])
-                ->orderBy(['date' => 'ASC'])
+            $dailyMetrics = $this->db
+                ->table($this->dailyMetricsTable)
+                ->select(['*'])
+                ->where('date', '>=', $sevenDaysAgo)
+                ->orderBy('date', 'ASC')
                 ->get();
 
             // If no records from last 7 days, just get the latest records
             if (empty($dailyMetrics)) {
-                $dailyMetrics = $this->db->select($this->dailyMetricsTable, ['*'])
-                    ->orderBy(['date' => 'DESC'])
+                $dailyMetrics = $this->db
+                    ->table($this->dailyMetricsTable)
+                    ->select(['*'])
+                    ->orderBy('date', 'DESC')
                     ->limit(30)
                     ->get();
             }
@@ -477,9 +481,11 @@ class ApiMetricsService
             }
 
             // Get rate limits approaching threshold
-            $rateLimits = $this->db->select($this->rateLimitsTable, ['*'])
-                ->where(['usage_percentage' => ['>', 80]])
-                ->orderBy(['usage_percentage' => 'DESC'])
+            $rateLimits = $this->db
+                ->table($this->rateLimitsTable)
+                ->select(['*'])
+                ->where('usage_percentage', '>', 80)
+                ->orderBy('usage_percentage', 'DESC')
                 ->get();
 
             // Calculate overall stats
@@ -533,12 +539,12 @@ class ApiMetricsService
     public function resetApiMetrics(): bool
     {
         try {
-            // Clear the metrics tables (use hard delete for metrics data)
-            $this->db->delete($this->metricsTable, [], false);
+            // Clear the metrics tables
+            $this->db->table($this->metricsTable)->delete();
 
-            $this->db->delete($this->dailyMetricsTable, [], false);
+            $this->db->table($this->dailyMetricsTable)->delete();
 
-            $this->db->delete($this->rateLimitsTable, [], false);
+            $this->db->table($this->rateLimitsTable)->delete();
 
             // Clear cached metrics using the proper cache key prefix
             $this->cache?->delete($this->cacheKeyPrefix . 'pending');
@@ -558,21 +564,21 @@ class ApiMetricsService
         try {
             // Remove detailed metrics older than the TTL
             $cutoff = date('Y-m-d H:i:s', time() - $this->metricsTTL);
-            $this->db->delete($this->metricsTable, [
-                'timestamp <' => $cutoff
-            ], false); // Use hard delete
+            $this->db->table($this->metricsTable)
+                ->where('timestamp', '<', $cutoff)
+                ->delete();
 
             // Remove aggregated metrics older than their TTL
             $aggCutoff = date('Y-m-d', time() - $this->aggregatedMetricsTTL);
-            $this->db->delete($this->dailyMetricsTable, [
-                'date <' => $aggCutoff
-            ], false); // Use hard delete
+            $this->db->table($this->dailyMetricsTable)
+                ->where('date', '<', $aggCutoff)
+                ->delete();
 
             // Clean up old rate limits
             $rateLimitCutoff = date('Y-m-d H:i:s', time() - 3600); // 1 hour
-            $this->db->delete($this->rateLimitsTable, [
-                'reset_time <' => $rateLimitCutoff
-            ], false); // Use hard delete
+            $this->db->table($this->rateLimitsTable)
+                ->where('reset_time', '<', $rateLimitCutoff)
+                ->delete();
         } catch (Exception $e) {
             error_log("Error purging old API metrics: " . $e->getMessage());
         }
@@ -585,77 +591,66 @@ class ApiMetricsService
     {
         try {
             // Check and create metrics table
-            if (!$this->schemaManager->tableExists($this->metricsTable)) {
-                $this->schemaManager->createTable($this->metricsTable, [
-                    'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-                    'uuid' => 'CHAR(12) NOT NULL',
-                    'endpoint' => 'VARCHAR(255) NOT NULL',
-                    'method' => 'VARCHAR(10) NOT NULL',
-                    'response_time' => 'FLOAT NOT NULL',
-                    'status_code' => 'INT NOT NULL',
-                    'is_error' => 'TINYINT(1) NOT NULL DEFAULT 0',
-                    'timestamp' => 'DATETIME NOT NULL',
-                    'ip' => 'VARCHAR(45) NOT NULL' // IPv6 compatible
-                ])->addIndex([
-                    [
-                        'type' => 'INDEX',
-                        'column' => 'timestamp',
-                        'name' => 'idx_' . $this->metricsTable . '_timestamp'
-                    ],
-                    [
-                        'type' => 'INDEX',
-                        'column' => ['endpoint', 'method'],
-                        'name' => 'idx_' . $this->metricsTable . '_endpoint_method'
-                    ]
-                ]);
+            if (!$this->schemaManager->hasTable($this->metricsTable)) {
+                $table = $this->schemaManager->table($this->metricsTable);
+                $table->bigInteger('id')->primary()->autoIncrement();
+                $table->string('uuid', 12);
+                $table->string('endpoint', 255);
+                $table->string('method', 10);
+                $table->decimal('response_time', 10, 2);
+                $table->integer('status_code');
+                $table->boolean('is_error')->default(false);
+                $table->dateTime('timestamp');
+                $table->string('ip', 45); // IPv6 compatible
+
+                // Add indexes
+                $table->index('timestamp', 'idx_' . $this->metricsTable . '_timestamp');
+                $table->index(['endpoint', 'method'], 'idx_' . $this->metricsTable . '_endpoint_method');
+
+                $table->create();
             }
 
             // Check and create daily metrics table
-            if (!$this->schemaManager->tableExists($this->dailyMetricsTable)) {
-                $this->schemaManager->createTable($this->dailyMetricsTable, [
-                    'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-                    'uuid' => 'CHAR(12) NOT NULL',
-                    'date' => 'DATE NOT NULL',
-                    'endpoint' => 'VARCHAR(255) NOT NULL',
-                    'method' => 'VARCHAR(10) NOT NULL',
-                    'endpoint_key' => 'VARCHAR(266) NOT NULL', // endpoint|method
-                    'calls' => 'INT NOT NULL DEFAULT 0',
-                    'total_response_time' => 'FLOAT NOT NULL DEFAULT 0',
-                    'error_count' => 'INT NOT NULL DEFAULT 0',
-                    'last_called' => 'DATETIME NULL'
-                ])->addIndex([
-                    [
-                        'type' => 'UNIQUE',
-                        'column' => ['date', 'endpoint_key'],
-                        'name' => 'idx_' . $this->dailyMetricsTable . '_date_endpoint_key'
-                    ],
-                    [
-                        'type' => 'INDEX',
-                        'column' => 'date',
-                        'name' => 'idx_' . $this->dailyMetricsTable . '_date'
-                    ]
-                ]);
+            if (!$this->schemaManager->hasTable($this->dailyMetricsTable)) {
+                $table = $this->schemaManager->table($this->dailyMetricsTable);
+                $table->bigInteger('id')->primary()->autoIncrement();
+                $table->string('uuid', 12);
+                $table->date('date');
+                $table->string('endpoint', 255);
+                $table->string('method', 10);
+                $table->string('endpoint_key', 266); // endpoint|method
+                $table->integer('calls')->default(0);
+                $table->decimal('total_response_time', 15, 2)->default(0);
+                $table->integer('error_count')->default(0);
+                $table->dateTime('last_called')->nullable();
+
+                // Add indexes
+                $table->unique(['date', 'endpoint_key'], 'idx_' . $this->dailyMetricsTable . '_date_endpoint_key');
+                $table->index('date', 'idx_' . $this->dailyMetricsTable . '_date');
+
+                $table->create();
             }
 
             // Check and create rate limits table
-            if (!$this->schemaManager->tableExists($this->rateLimitsTable)) {
-                $this->schemaManager->createTable($this->rateLimitsTable, [
-                    'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-                    'uuid' => 'CHAR(12) NOT NULL',
-                    'ip' => 'VARCHAR(45) NOT NULL',
-                    'endpoint' => 'VARCHAR(255) NOT NULL',
-                    'remaining' => 'INT NOT NULL',
-                    'limit' => 'INT NOT NULL',
-                    'reset_time' => 'DATETIME NOT NULL',
-                    'usage_percentage' => 'FLOAT NOT NULL'
-                ])->addIndex([
-                    [
-                        'type' => 'UNIQUE',
-                        'column' => ['ip', 'endpoint'],
-                        'name' => 'idx_' . $this->rateLimitsTable . '_ip_endpoint'
-                    ]
-                ]);
+            if (!$this->schemaManager->hasTable($this->rateLimitsTable)) {
+                $table = $this->schemaManager->table($this->rateLimitsTable);
+                $table->bigInteger('id')->primary()->autoIncrement();
+                $table->string('uuid', 12);
+                $table->string('ip', 45);
+                $table->string('endpoint', 255);
+                $table->integer('remaining');
+                $table->integer('limit');
+                $table->dateTime('reset_time');
+                $table->decimal('usage_percentage', 5, 2);
+
+                // Add unique index
+                $table->unique(['ip', 'endpoint'], 'idx_' . $this->rateLimitsTable . '_ip_endpoint');
+
+                $table->create();
             }
+
+            // Execute all pending operations
+            $this->schemaManager->execute();
         } catch (Exception $e) {
             error_log("Error ensuring API metrics tables exist: " . $e->getMessage());
         }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Helpers;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Database\Driver\SQLiteDriver;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;

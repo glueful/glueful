@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions;
 
+// Extension dependencies are now loaded via main framework autoloader
+
 use Glueful\Extensions\BaseExtension;
 use Glueful\Extensions\EmailNotification\EmailNotificationProvider;
 use Glueful\Extensions\EmailNotification\EmailNotificationServiceProvider;
@@ -57,14 +59,19 @@ class EmailNotification extends BaseExtension
             // Get the DI container
             $container = app();
 
-            // Initialize logger
-            self::$logger = $container->get(LogManager::class);
+            // Initialize logger (make it optional)
+            try {
+                self::$logger = $container->get(LogManager::class);
+            } catch (\Exception $e) {
+                // Create a simple logger if DI service not available
+                self::$logger = new LogManager('email_notification');
+            }
 
             // Load configuration
             self::loadConfig();
 
-            // Get the provider from the container (registered by service provider)
-            self::$provider = $container->get(EmailNotificationProvider::class);
+            // Create the provider directly (don't rely on DI container registration)
+            self::$provider = new EmailNotificationProvider();
 
             if (!self::$provider->initialize(self::$config)) {
                 self::$logger->error('Failed to initialize email notification provider');
@@ -76,8 +83,6 @@ class EmailNotification extends BaseExtension
                 self::$logger->error('Error initializing EmailNotification extension: ' . $e->getMessage(), [
                     'exception' => $e
                 ]);
-            } else {
-                error_log('Error initializing EmailNotification extension: ' . $e->getMessage());
             }
         }
     }

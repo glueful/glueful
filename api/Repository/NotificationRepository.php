@@ -170,7 +170,7 @@ class NotificationRepository extends BaseRepository
         ?int $offset = null,
         array $filters = []
     ): array {
-        $query = $this->db->select($this->table, ['*']);
+        $query = $this->db->table($this->table)->select(['*']);
 
         // Apply notifiable filters using trait method
         $this->applyNotifiableFilters($query, $notifiableType, $notifiableId, $onlyUnread ?? false);
@@ -205,6 +205,55 @@ class NotificationRepository extends BaseRepository
     }
 
     /**
+     * Find notifications for a specific recipient with built-in pagination
+     *
+     * @param string $notifiableType Recipient type
+     * @param string $notifiableId Recipient ID
+     * @param bool $onlyUnread Whether to get only unread notifications
+     * @param int $page Page number (1-based)
+     * @param int $perPage Number of items per page
+     * @param array $filters Optional additional filters (type, priority, date range)
+     * @return array Paginated results with data and pagination info
+     */
+    public function findForNotifiableWithPagination(
+        string $notifiableType,
+        string $notifiableId,
+        bool $onlyUnread = false,
+        int $page = 1,
+        int $perPage = 20,
+        array $filters = []
+    ): array {
+        $query = $this->db->table($this->table)->select(['*']);
+
+        // Apply notifiable filters using trait method
+        $this->applyNotifiableFilters($query, $notifiableType, $notifiableId, $onlyUnread);
+
+        // Apply additional filters using trait method
+        $this->applyFilters($query, $filters);
+
+        // Order by creation date, newest first
+        $query->orderBy(['created_at' => 'DESC']);
+
+        // Use QueryBuilder's built-in pagination
+        $paginatedResults = $query->paginate($page, $perPage);
+
+        // Transform the data to Notification objects and remove internal id
+        $notifications = [];
+        foreach ($paginatedResults['data'] as $row) {
+            $notification = Notification::fromArray($row);
+            $notificationArray = $notification->toArray();
+            unset($notificationArray['id']); // Remove internal database ID
+            $notifications[] = $notificationArray;
+        }
+
+        // Return the paginated results with transformed data
+        // QueryBuilder's paginate() returns pagination metadata at the top level
+        return array_merge($paginatedResults, [
+            'data' => $notifications
+        ]);
+    }
+
+    /**
      * Find pending scheduled notifications ready to be sent
      *
      * @param DateTime|null $now Current time (defaults to now)
@@ -216,10 +265,11 @@ class NotificationRepository extends BaseRepository
         $now = $now ?? new DateTime();
         $currentTime = $now->format('Y-m-d H:i:s');
 
-        $query = $this->db->select($this->table, ['*'])
+        $query = $this->db->table($this->table)
+            ->select(['*'])
             ->whereNotNull('scheduled_at')
             ->whereNull('sent_at')
-            ->whereLessThanOrEqual('scheduled_at', $currentTime);
+            ->where('scheduled_at', '<=', $currentTime);
 
         if ($limit !== null) {
             $query->limit($limit);
@@ -319,7 +369,8 @@ class NotificationRepository extends BaseRepository
     public function findPreferencesForNotifiable(string $notifiableType, string $notifiableId): array
     {
         return $this->withTable('notification_preferences', null, function () use ($notifiableType, $notifiableId) {
-            $results = $this->db->select($this->table, ['*'])
+            $results = $this->db->table($this->table)
+                ->select(['*'])
                 ->where([
                     'notifiable_type' => $notifiableType,
                     'notifiable_id' => $notifiableId
@@ -428,7 +479,8 @@ class NotificationRepository extends BaseRepository
     public function findTemplates(string $notificationType, string $channel): array
     {
         return $this->withTable('notification_templates', null, function () use ($notificationType, $channel) {
-            $results = $this->db->select($this->table, ['*'])
+            $results = $this->db->table($this->table)
+                ->select(['*'])
                 ->where([
                     'notification_type' => $notificationType,
                     'channel' => $channel
@@ -485,11 +537,11 @@ class NotificationRepository extends BaseRepository
 
         // For simple cases, use the count method directly
         if (empty($filters)) {
-            return $this->db->count($this->table, $conditions);
+            return $this->db->table($this->table)->where($conditions)->count();
         }
 
         // For complex filters, count the results of a select query
-        $query = $this->db->select($this->table, ['id']);
+        $query = $this->db->table($this->table)->select(['id']);
         $query->where($conditions);
         $this->applyFilters($query, $filters);
 
@@ -509,7 +561,8 @@ class NotificationRepository extends BaseRepository
         $now = (new DateTime())->format('Y-m-d H:i:s');
 
         // Get all unread notifications for this recipient
-        $unreadNotifications = $this->db->select($this->table, ['*'])
+        $unreadNotifications = $this->db->table($this->table)
+            ->select(['*'])
             ->where([
                 'notifiable_type' => $notifiableType,
                 'notifiable_id' => $notifiableId
@@ -526,15 +579,13 @@ class NotificationRepository extends BaseRepository
 
         try {
             // Use bulk update to avoid N+1 queries while maintaining transaction safety
-            $updated = $this->db->update(
-                $this->table,
-                ['read_at' => $now],
-                [
+            $updated = $this->db->table($this->table)
+                ->where([
                     'notifiable_type' => $notifiableType,
                     'notifiable_id' => $notifiableId,
                     'read_at' => null  // Only update unread notifications
-                ]
-            );
+                ])
+                ->update(['read_at' => $now]);
 
             // If audit logging is critical, we can batch create audit entries
             if ($updated > 0 && $userId) {
@@ -562,8 +613,9 @@ class NotificationRepository extends BaseRepository
         $cutoffDate = (new DateTime())->modify("-$olderThanDays days")->format('Y-m-d H:i:s');
 
         // First find the notifications to delete (to ensure proper audit logging)
-        $oldNotifications = $this->db->select($this->table, ['uuid'])
-            ->whereLessThan('created_at', $cutoffDate)
+        $oldNotifications = $this->db->table($this->table)
+            ->select(['uuid'])
+            ->where('created_at', '<', $cutoffDate)
             ->limit($limit)
             ->get();
 

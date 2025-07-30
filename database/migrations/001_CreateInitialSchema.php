@@ -3,7 +3,7 @@
 namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Initial Database Schema Migration
@@ -44,120 +44,118 @@ class CreateInitialSchema implements MigrationInterface
      * - blobs: File storage metadata
      * - sessions: Authentication sessions
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema builder
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Users Table
-        $schema->createTable('users', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'username' => 'VARCHAR(255) NOT NULL',
-            'email' => 'VARCHAR(255) NOT NULL',
-            'password' => 'VARCHAR(100)',
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'user_agent' => 'VARCHAR(512)',
-            'ip_address' => 'VARCHAR(40)',
-            'x_forwarded_for_ip_address' => 'VARCHAR(40)',
-            'last_login_date' => 'TIMESTAMP',
-            'email_verified_at' => 'TIMESTAMP NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'username'],
-            ['type' => 'UNIQUE', 'column' => 'email']
-        ]);
+        $schema->createTable('users', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('username', 255);
+            $table->string('email', 255);
+            $table->string('password', 100)->nullable();
+            $table->string('status', 20)->default('active');
+            $table->string('user_agent', 512)->nullable();
+            $table->string('ip_address', 40)->nullable();
+            $table->string('x_forwarded_for_ip_address', 40)->nullable();
+            $table->timestamp('last_login_date')->nullable();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
 
+            // Add indexes
+            $table->unique('uuid');
+            $table->unique('username');
+            $table->unique('email');
+        });
 
         // Create Blobs Table
-        $schema->createTable('blobs', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'description' => 'TEXT',
-            'mime_type' => 'VARCHAR(127) NOT NULL',
-            'size' => 'BIGINT NOT NULL',
-            'url' => 'VARCHAR(2048) NOT NULL',
-            'storage_type' => "VARCHAR(20) NOT NULL CHECK (storage_type IN ('local', 's3'))",
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_by' => 'CHAR(12) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'created_by']
-        ])->addForeignKey([
-            [
-                'column' => 'created_by',
-                'references' => 'uuid',
-                'on' => 'users'
-            ]
-        ]);
+        $schema->createTable('blobs', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('name', 255);
+            $table->text('description')->nullable();
+            $table->string('mime_type', 127);
+            $table->bigInteger('size');
+            $table->string('url', 2048);
+            $table->string('storage_type', 20)->default('local');
+            $table->string('status', 20)->default('active');
+            $table->string('created_by', 12);
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('created_by');
+
+            // Add foreign key
+            $table->foreign('created_by')
+                ->references('uuid')
+                ->on('users');
+        });
 
         // Create Profiles Table
-        $schema->createTable('profiles', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'first_name' => 'VARCHAR(100) DEFAULT NULL',
-            'last_name' => 'VARCHAR(100) DEFAULT NULL',
-            'photo_uuid' => 'CHAR(12) DEFAULT NULL',
-            'photo_url' => 'VARCHAR(255) DEFAULT NULL',
-            'status' => "VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'deleted'))",
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'photo_uuid']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'RESTRICT'
-            ],
-            [
-                'column' => 'photo_uuid',
-                'references' => 'uuid',
-                'on' => 'blobs',
-                'onDelete' => 'SET NULL'
-            ]
-        ]);
+        $schema->createTable('profiles', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('user_uuid', 12);
+            $table->string('first_name', 100)->nullable();
+            $table->string('last_name', 100)->nullable();
+            $table->string('photo_uuid', 12)->nullable();
+            $table->string('photo_url', 255)->nullable();
+            $table->string('status', 20)->default('active');
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
 
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('user_uuid');
+            $table->index('photo_uuid');
+
+            // Add foreign keys
+            $table->foreign('user_uuid')
+                ->references('uuid')
+                ->on('users')
+                ->restrictOnDelete();
+
+            $table->foreign('photo_uuid')
+                ->references('uuid')
+                ->on('blobs')
+                ->nullOnDelete();
+        });
 
         // Create Auth Sessions Table
-        $schema->createTable('auth_sessions', [
-            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'access_token' => 'TEXT NOT NULL',
-            'refresh_token' => 'TEXT NULL',
-            'token_fingerprint' => 'TEXT NOT NULL',
-            'ip_address' => 'VARCHAR(45) NULL',
-            'user_agent' => 'TEXT NULL',
-            'last_token_refresh' => 'TIMESTAMP NULL',
-            'access_expires_at' => 'TIMESTAMP NOT NULL',
-            'refresh_expires_at' => 'TIMESTAMP NOT NULL',
-            'status' => "ENUM('active', 'revoked') DEFAULT 'active'",
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-            'provider' => "TEXT DEFAULT 'jwt'",
-            'remember_me' => 'BOOLEAN DEFAULT FALSE',
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'status']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users'
-            ]
-        ]);
+        $schema->createTable('auth_sessions', function ($table) {
+            $table->bigInteger('id')->unsigned()->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('user_uuid', 12);
+            $table->text('access_token');
+            $table->text('refresh_token')->nullable();
+            $table->text('token_fingerprint');
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->timestamp('last_token_refresh')->nullable();
+            $table->timestamp('access_expires_at');
+            $table->timestamp('refresh_expires_at');
+            $table->string('status', 20)->default('active');
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+            $table->text('provider')->default('jwt');
+            $table->boolean('remember_me')->default(false);
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('user_uuid');
+            $table->index('status');
+
+            // Add foreign key
+            $table->foreign('user_uuid')
+                ->references('uuid')
+                ->on('users');
+        });
     }
 
     /**
@@ -174,14 +172,14 @@ class CreateInitialSchema implements MigrationInterface
      * 3. Feature tables (blobs, profiles)
      * 4. Core tables (roles, users)
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('auth_sessions');
-        $schema->dropTable('blobs');
-        $schema->dropTable('profiles');
-        $schema->dropTable('users');
+        $schema->dropTableIfExists('auth_sessions');
+        $schema->dropTableIfExists('profiles');
+        $schema->dropTableIfExists('blobs');
+        $schema->dropTableIfExists('users');
     }
 
     /**

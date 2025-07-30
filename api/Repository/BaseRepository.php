@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Repository;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Repository\Traits\TransactionTrait;
 use Glueful\Helpers\Utils;
@@ -29,8 +28,8 @@ abstract class BaseRepository implements RepositoryInterface
 {
     use TransactionTrait;
 
-    /** @var QueryBuilder Database query builder instance */
-    protected QueryBuilder $db;
+    /** @var Connection Database connection instance */
+    protected Connection $db;
 
     /** @var string Name of the primary database table for this repository */
     protected string $table;
@@ -64,28 +63,16 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * Get new query builder instance
+     * Get shared database connection
      *
-     * Returns a new query builder instance for clean queries with pooled connection support.
-     * This prevents query state from persisting between operations while enabling connection
-     * pooling when available.
+     * Returns the shared connection instance for fluent query building.
+     * This ensures connection reuse and enables connection pooling.
      *
-     * @return QueryBuilder A new query builder instance
+     * @return Connection The shared database connection
      */
-    protected static function getNewQueryBuilder(): QueryBuilder
+    protected static function getSharedDb(): Connection
     {
-        $conn = self::getSharedConnection();
-
-        // Pass the PDO connection (which may be pooled) directly to QueryBuilder
-        // QueryBuilder will detect if it's a PooledConnection and handle appropriately
-        $queryBuilder = new QueryBuilder($conn->getPDO(), $conn->getDriver());
-
-        // Enable debug mode if app is in debug mode
-        if (config('app.debug')) {
-            $queryBuilder->getLogger()->configure(enableDebug: true, enableTiming: true);
-        }
-
-        return $queryBuilder;
+        return self::getSharedConnection();
     }
 
     /**
@@ -101,7 +88,7 @@ abstract class BaseRepository implements RepositoryInterface
             self::$sharedConnection = $connection;
         }
 
-        $this->db = self::getNewQueryBuilder();
+        $this->db = self::getSharedDb();
         $this->table = $this->getTableName();
     }
 
@@ -118,7 +105,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function find(string $uuid): ?array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where([$this->primaryKey => $uuid])
             ->limit(1)
             ->get();
@@ -163,7 +151,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function findAll(array $conditions = [], array $orderBy = [], ?int $limit = null, ?int $offset = null): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where($conditions);
 
         if (!empty($orderBy)) {
@@ -199,7 +188,7 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         // Execute the insert
-        $success = $this->db->insert($this->table, $data);
+        $success = $this->db->table($this->table)->insert($data);
 
         if (!$success) {
             throw DatabaseException::createFailed($this->table);
@@ -230,11 +219,9 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         // Execute the update
-        $affectedRows = $this->db->update(
-            $this->table,
-            $data,
-            [$this->primaryKey => $uuid]
-        );
+        $affectedRows = $this->db->table($this->table)
+            ->where([$this->primaryKey => $uuid])
+            ->update($data);
 
         $success = $affectedRows > 0;
 
@@ -269,10 +256,9 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         // Execute the delete
-        $affectedRows = $this->db->delete(
-            $this->table,
-            [$this->primaryKey => $uuid]
-        );
+        $affectedRows = $this->db->table($this->table)
+            ->where([$this->primaryKey => $uuid])
+            ->delete();
 
         $success = $affectedRows > 0;
 
@@ -287,7 +273,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function count(array $conditions = []): int
     {
-        return $this->db->count($this->table, $conditions);
+        return $this->db->table($this->table)->where($conditions)->count();
     }
 
     /**
@@ -309,10 +295,8 @@ abstract class BaseRepository implements RepositoryInterface
         array $fields = []
     ): array {
         // Use QueryBuilder's built-in pagination
-        $query = $this->db->select(
-            $this->table,
-            !empty($fields) ? $fields : $this->defaultFields
-        );
+        $query = $this->db->table($this->table)
+            ->select(!empty($fields) ? $fields : $this->defaultFields);
 
         // Only add conditions if they exist
         if (!empty($conditions)) {
@@ -333,7 +317,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function findWhere(array $where, array $orderBy = [], ?int $limit = null): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where($where);
 
         if (!empty($orderBy)) {
@@ -356,10 +341,8 @@ abstract class BaseRepository implements RepositoryInterface
             return [];
         }
 
-        $results = $this->db->select(
-            $this->table,
-            !empty($fields) ? $fields : $this->defaultFields
-        )
+        $results = $this->db->table($this->table)
+            ->select(!empty($fields) ? $fields : $this->defaultFields)
             ->where([$this->primaryKey => ['IN', $uuids]])
             ->get();
 
@@ -407,7 +390,7 @@ abstract class BaseRepository implements RepositoryInterface
         $this->beginTransaction();
         try {
             // Use database bulk insert for better performance
-            $success = $this->db->insertBatch($this->table, $bulkData);
+            $success = $this->db->table($this->table)->insertBatch($bulkData);
             if (!$success) {
                 throw new \RuntimeException('Bulk insert failed');
             }
@@ -434,11 +417,9 @@ abstract class BaseRepository implements RepositoryInterface
             $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
-        $affectedRows = $this->db->update(
-            $this->table,
-            $data,
-            [$this->primaryKey => ['IN', $uuids]]
-        );
+        $affectedRows = $this->db->table($this->table)
+            ->where([$this->primaryKey => ['IN', $uuids]])
+            ->update($data);
 
 
         return $affectedRows;
@@ -453,10 +434,9 @@ abstract class BaseRepository implements RepositoryInterface
             return 0;
         }
 
-        $affectedRows = $this->db->delete(
-            $this->table,
-            [$this->primaryKey => ['IN', $uuids]]
-        );
+        $affectedRows = $this->db->table($this->table)
+            ->where([$this->primaryKey => ['IN', $uuids]])
+            ->delete();
 
         // Ensure we return an integer count
         $count = is_bool($affectedRows) ? ($affectedRows ? count($uuids) : 0) : $affectedRows;
@@ -507,7 +487,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function findBy(string $field, $value, ?array $fields = null): ?array
     {
-        $query = $this->db->select($this->table, $fields ?? $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($fields ?? $this->defaultFields)
             ->where([$field => $value])
             ->limit(1)
             ->get();
@@ -525,7 +506,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function findAllBy(string $field, $value, ?array $fields = null): array
     {
-        return $this->db->select($this->table, $fields ?? $this->defaultFields)
+        return $this->db->table($this->table)
+            ->select($fields ?? $this->defaultFields)
             ->where([$field => $value])
             ->get();
     }
@@ -535,7 +517,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function beginTransaction(): void
     {
-        $this->db->beginTransaction();
+        $pdo = $this->db->getPDO();
+        $pdo->beginTransaction();
     }
 
     /**
@@ -543,7 +526,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function commit(): void
     {
-        $this->db->commit();
+        $pdo = $this->db->getPDO();
+        $pdo->commit();
     }
 
     /**
@@ -551,31 +535,17 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function rollBack(): bool
     {
-        return $this->db->rollback();
+        $pdo = $this->db->getPDO();
+        return $pdo->rollBack();
     }
 
     /**
-     * Get the query builder instance
+     * Get the database connection instance
      *
-     * @return QueryBuilder
+     * @return Connection
      */
-    public function getQueryBuilder(): QueryBuilder
+    public function getConnection(): Connection
     {
         return $this->db;
-    }
-
-    /**
-     * Create a query builder instance with the repository's table
-     * This is useful for building more complex queries
-     *
-     * @param array|null $fields Fields to retrieve
-     * @return QueryBuilder
-     */
-    public function query(?array $fields = null): QueryBuilder
-    {
-        return $this->db->select(
-            $this->table,
-            $fields ?? $this->defaultFields
-        );
     }
 }

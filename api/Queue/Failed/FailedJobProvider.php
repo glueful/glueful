@@ -3,7 +3,6 @@
 namespace Glueful\Queue\Failed;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 use Glueful\Security\SecureSerializer;
 
@@ -26,8 +25,8 @@ use Glueful\Security\SecureSerializer;
  */
 class FailedJobProvider
 {
-    /** @var QueryBuilder Database query builder */
-    private QueryBuilder $db;
+    /** @var Connection Database connection */
+    private Connection $db;
 
     /** @var string Failed jobs table name */
     private string $table;
@@ -41,23 +40,18 @@ class FailedJobProvider
     /**
      * Create failed job provider
      *
-     * @param QueryBuilder|null $queryBuilder Database query builder (optional)
+     * @param Connection|null $connection Database connection (optional)
      * @param string $table Table name for failed jobs
      * @param int $maxRetries Maximum retries allowed
      * @param int $retentionDays Days to keep failed jobs
      */
     public function __construct(
-        ?QueryBuilder $queryBuilder = null,
+        ?Connection $connection = null,
         string $table = 'queue_failed_jobs',
         int $maxRetries = 5,
         int $retentionDays = 30
     ) {
-        if ($queryBuilder) {
-            $this->db = $queryBuilder;
-        } else {
-            $connection = new Connection();
-            $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        }
+        $this->db = $connection ?? new Connection();
         $this->table = $table;
         $this->maxRetries = $maxRetries;
         $this->retentionDays = $retentionDays;
@@ -100,7 +94,7 @@ class FailedJobProvider
             $data['attempts'] = $payloadData['attempts'] ?? 1;
         }
 
-        $this->db->insert($this->table, $data);
+        $this->db->table($this->table)->insert($data);
         return $uuid;
     }
 
@@ -116,8 +110,9 @@ class FailedJobProvider
     {
         $conditions = $this->buildConditions($filters);
 
-        return $this->db->select($this->table, ['*'], $conditions)
-            ->orderBy(['failed_at' => 'DESC'])
+        $query = $this->db->table($this->table)->select(['*']);
+        $this->applyConditionsToQuery($query, $conditions);
+        return $query->orderBy('failed_at', 'DESC')
             ->limit($limit)
             ->offset($offset)
             ->get();
@@ -131,7 +126,8 @@ class FailedJobProvider
      */
     public function find(string $uuid): ?array
     {
-        $result = $this->db->select($this->table, ['*'], ['uuid' => $uuid])->first();
+        $results = $this->db->table($this->table)->select(['*'])->where('uuid', $uuid)->limit(1)->get();
+        $result = $results[0] ?? null;
         return $result ?: null;
     }
 
@@ -143,7 +139,7 @@ class FailedJobProvider
      */
     public function forget(string $uuid): bool
     {
-        $deleted = $this->db->delete($this->table, ['uuid' => $uuid]);
+        $deleted = $this->db->table($this->table)->where('uuid', $uuid)->delete();
         return $deleted > 0;
     }
 
@@ -156,7 +152,9 @@ class FailedJobProvider
     public function flush(array $filters = []): bool
     {
         $conditions = $this->buildConditions($filters);
-        return $this->db->delete($this->table, $conditions);
+        $query = $this->db->table($this->table);
+        $this->applyConditionsToQuery($query, $conditions);
+        return $query->delete() > 0;
     }
 
     /**
@@ -185,11 +183,11 @@ class FailedJobProvider
             }
 
             // Update retry count
-            $this->db->update($this->table, [
+            $this->db->table($this->table)->where('uuid', $uuid)->update([
                 'retry_count' => $failedJob['retry_count'] + 1,
                 'last_retry_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
-            ], ['uuid' => $uuid]);
+            ]);
 
             // Re-queue the job
             return $this->requeueJob($failedJob, $payloadData);
@@ -227,7 +225,9 @@ class FailedJobProvider
             'retry_count <' => $this->maxRetries
         ]);
 
-        $failedJobs = $this->db->select($this->table, ['uuid'], $conditions)->get();
+        $query = $this->db->table($this->table)->select(['uuid']);
+        $this->applyConditionsToQuery($query, $conditions);
+        $failedJobs = $query->get();
         $uuids = array_column($failedJobs, 'uuid');
 
         return $this->retryMultiple($uuids);
@@ -243,13 +243,17 @@ class FailedJobProvider
     {
         $conditions = $this->buildConditions($filters);
 
-        $total = $this->db->count($this->table, $conditions);
+        $totalQuery = $this->db->table($this->table);
+        $this->applyConditionsToQuery($totalQuery, $conditions);
+        $total = $totalQuery->count();
 
         $retryableConditions = array_merge($conditions, [
             'retryable' => 1,
             'retry_count <' => $this->maxRetries
         ]);
-        $retryable = $this->db->count($this->table, $retryableConditions);
+        $retryableQuery = $this->db->table($this->table);
+        $this->applyConditionsToQuery($retryableQuery, $retryableConditions);
+        $retryable = $retryableQuery->count();
 
         // Get failure patterns
         $patterns = $this->getFailurePatterns($conditions);
@@ -258,7 +262,9 @@ class FailedJobProvider
         $recentConditions = array_merge($conditions, [
             'failed_at >=' => date('Y-m-d H:i:s', time() - 86400)
         ]);
-        $recentFailures = $this->db->count($this->table, $recentConditions);
+        $recentQuery = $this->db->table($this->table);
+        $this->applyConditionsToQuery($recentQuery, $recentConditions);
+        $recentFailures = $recentQuery->count();
 
         return [
             'total_failed' => $total,
@@ -281,39 +287,33 @@ class FailedJobProvider
 
         try {
             // Most common exception types
-            $query = $this->db->select($this->table, [
-                'exception_class',
-                $this->db->raw('COUNT(*) as count')
-            ]);
+            $query = $this->db->table($this->table)
+                ->selectRaw('exception_class, COUNT(*) as count');
             $this->applyConditionsToQuery($query, $conditions);
-            $exceptionTypes = $query->groupBy(['exception_class'])
-                ->orderBy(['count' => 'DESC'])
+            $exceptionTypes = $query->groupBy('exception_class')
+                ->orderBy('count', 'DESC')
                 ->limit(10)
                 ->get();
             $patterns['exception_types'] = $exceptionTypes;
 
             // Most problematic job classes
-            $query = $this->db->select($this->table, [
-                'job_class',
-                $this->db->raw('COUNT(*) as count')
-            ]);
+            $query = $this->db->table($this->table)
+                ->selectRaw('job_class, COUNT(*) as count');
             $this->applyConditionsToQuery($query, $conditions);
-            $jobClasses = $query->groupBy(['job_class'])
-                ->orderBy(['count' => 'DESC'])
+            $jobClasses = $query->groupBy('job_class')
+                ->orderBy('count', 'DESC')
                 ->limit(10)
                 ->get();
             $patterns['job_classes'] = $jobClasses;
 
             // Failure trends by hour (last 7 days)
             $sevenDaysAgo = date('Y-m-d H:i:s', time() - (7 * 24 * 60 * 60));
-            $query = $this->db->select($this->table, [
-                $this->db->raw('HOUR(failed_at) as hour'),
-                $this->db->raw('COUNT(*) as count')
-            ]);
+            $query = $this->db->table($this->table)
+                ->selectRaw('HOUR(failed_at) as hour, COUNT(*) as count');
             $this->applyConditionsToQuery($query, $conditions);
-            $hourlyTrends = $query->where(['failed_at >=' => $sevenDaysAgo])
-                ->groupBy([$this->db->raw('HOUR(failed_at)')])
-                ->orderBy(['hour' => 'ASC'])
+            $hourlyTrends = $query->where('failed_at', '>=', $sevenDaysAgo)
+                ->groupBy('hour')
+                ->orderBy('hour', 'ASC')
                 ->get();
             $patterns['hourly_trends'] = $hourlyTrends;
         } catch (\Exception $e) {
@@ -334,9 +334,9 @@ class FailedJobProvider
         $days = $daysOld ?? $this->retentionDays;
         $cutoff = date('Y-m-d H:i:s', time() - ($days * 24 * 60 * 60));
 
-        return $this->db->delete($this->table, [
-            'failed_at <' => $cutoff
-        ]);
+        return $this->db->table($this->table)
+            ->where('failed_at', '<', $cutoff)
+            ->delete() > 0;
     }
 
     /**
@@ -349,9 +349,9 @@ class FailedJobProvider
     public function export(array $filters = [], string $format = 'json'): string
     {
         $conditions = $this->buildConditions($filters);
-        $failedJobs = $this->db->select($this->table, ['*'], $conditions)
-            ->orderBy(['failed_at' => 'DESC'])
-            ->get();
+        $query = $this->db->table($this->table)->select(['*']);
+        $this->applyConditionsToQuery($query, $conditions);
+        $failedJobs = $query->orderBy('failed_at', 'DESC')->get();
 
         switch ($format) {
             case 'csv':
@@ -403,29 +403,6 @@ class FailedJobProvider
         return $conditions;
     }
 
-    /**
-     * Build WHERE clause from conditions
-     *
-     * @param array $conditions Database conditions
-     * @return string WHERE clause
-     */
-    private function buildWhereClause(array $conditions): string
-    {
-        if (empty($conditions)) {
-            return '1=1';
-        }
-
-        $clauses = [];
-        foreach ($conditions as $key => $value) {
-            if (str_contains($key, ' ')) {
-                $clauses[] = $key . ' ?';
-            } else {
-                $clauses[] = $key . ' = ?';
-            }
-        }
-
-        return implode(' AND ', $clauses);
-    }
 
     /**
      * Decode job payload
@@ -507,10 +484,10 @@ class FailedJobProvider
      * Re-queue failed job
      *
      * @param array $failedJob Failed job data
-     * @param array $payloadData Decoded payload
+     * @param array $_payloadData Decoded payload
      * @return bool True if re-queued successfully
      */
-    private function requeueJob(array $failedJob, array $payloadData): bool
+    private function requeueJob(array $failedJob, array $_payloadData): bool
     {
         try {
             // This would typically use the QueueManager to re-queue
@@ -519,13 +496,13 @@ class FailedJobProvider
             // access to the QueueManager or queue driver.
 
             // For demonstration, we'll mark it as re-queued
-            $this->db->update($this->table, [
+            $this->db->table($this->table)->where('uuid', $failedJob['uuid'])->update([
                 'requeued_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
-            ], ['uuid' => $failedJob['uuid']]);
+            ]);
 
             return true;
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return false;
         }
     }
@@ -629,31 +606,9 @@ class FailedJobProvider
                 $column = $parts[0];
                 $operator = $parts[1] ?? '=';
 
-                switch ($operator) {
-                    case '>=':
-                        $query->whereGreaterThanOrEqual($column, $value);
-                        break;
-                    case '>':
-                        $query->whereGreaterThan($column, $value);
-                        break;
-                    case '<=':
-                        $query->whereLessThanOrEqual($column, $value);
-                        break;
-                    case '<':
-                        $query->whereLessThan($column, $value);
-                        break;
-                    case '!=':
-                    case '<>':
-                        $query->whereNotEqual($column, $value);
-                        break;
-                    case 'LIKE':
-                        $query->whereLike($column, $value);
-                        break;
-                    default:
-                        $query->where([$column => $value]);
-                }
+                $query->where($column, $operator, $value);
             } else {
-                $query->where([$key => $value]);
+                $query->where($key, $value);
             }
         }
     }

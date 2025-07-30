@@ -10,7 +10,6 @@ use Glueful\Interfaces\Permission\PermissionStandards;
 use Glueful\Permissions\Exceptions\PermissionException;
 use Glueful\Permissions\Exceptions\ProviderNotFoundException;
 use Glueful\Auth\AuthenticationService;
-use Glueful\Auth\TokenManager;
 
 /**
  * Permission Manager
@@ -462,16 +461,11 @@ class PermissionManager implements PermissionManagerInterface
     private function getUserUuidFromToken(string $token): ?string
     {
         try {
-            // Try to get session ID from token
-            $sessionId = TokenManager::getSessionIdFromToken($token);
-            if ($sessionId) {
-                // Get user UUID from session
-                $sessionCacheManager = $this->sessionCacheManager
-                    ?? container()->get(\Glueful\Auth\SessionCacheManager::class);
-                $session = $sessionCacheManager->getSession($sessionId);
-                if ($session && isset($session['user']['uuid'])) {
-                    return $session['user']['uuid'];
-                }
+            // Try to get session from TokenStorageService
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $sessionData = $tokenStorage->getSessionByAccessToken($token);
+            if ($sessionData && isset($sessionData['user_uuid'])) {
+                return $sessionData['user_uuid'];
             }
 
             // Fallback: try direct token validation

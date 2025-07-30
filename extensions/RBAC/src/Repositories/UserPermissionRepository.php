@@ -26,6 +26,9 @@ class UserPermissionRepository extends BaseRepository
     ];
     protected bool $hasUpdatedAt = false;
 
+    // Cache to prevent duplicate queries within a single request
+    private array $userPermissionsCache = [];
+
     public function getTableName(): string
     {
         return $this->table;
@@ -37,7 +40,7 @@ class UserPermissionRepository extends BaseRepository
             $data['uuid'] = Utils::generateNanoID();
         }
 
-        $success = $this->db->insert($this->table, $data);
+        $success = $this->db->table($this->table)->insert($data);
 
         if (!$success) {
             throw new \RuntimeException('Failed to create user permission');
@@ -54,7 +57,8 @@ class UserPermissionRepository extends BaseRepository
 
     public function findUserPermissionByUuid(string $uuid): ?UserPermission
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['uuid' => $uuid])
             ->limit(1)
             ->get();
@@ -64,17 +68,25 @@ class UserPermissionRepository extends BaseRepository
 
     public function update(string $uuid, array $data): bool
     {
-        return $this->db->update($this->table, $data, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->update($data);
     }
 
     public function delete(string $uuid): bool
     {
-        return $this->db->delete($this->table, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->delete();
     }
 
     public function findByUser(string $userUuid, array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
+        // Create cache key based on user UUID and filters
+        $cacheKey = $userUuid . '_' . md5(serialize($filters));
+
+        if (isset($this->userPermissionsCache[$cacheKey])) {
+            return $this->userPermissionsCache[$cacheKey];
+        }
+
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['user_uuid' => $userUuid]);
 
         if (isset($filters['permission_uuid'])) {
@@ -83,18 +95,27 @@ class UserPermissionRepository extends BaseRepository
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
         $query->orderBy(['created_at' => 'DESC']);
 
         $results = $query->get();
-        return array_map(fn($row) => new UserPermission($row), $results);
+        $userPermissions = array_map(fn($row) => new UserPermission($row), $results);
+
+        // Cache the result
+        $this->userPermissionsCache[$cacheKey] = $userPermissions;
+
+        return $userPermissions;
     }
 
     public function findByPermission(string $permissionUuid): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['permission_uuid' => $permissionUuid])
             ->orderBy(['created_at' => 'DESC'])
             ->get();
@@ -104,7 +125,8 @@ class UserPermissionRepository extends BaseRepository
 
     public function findUserPermission(string $userUuid, string $permissionUuid): ?UserPermission
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where([
                 'user_uuid' => $userUuid,
                 'permission_uuid' => $permissionUuid
@@ -117,7 +139,8 @@ class UserPermissionRepository extends BaseRepository
 
     public function hasUserPermission(string $userUuid, string $permissionUuid, array $resourceContext = []): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where([
                 'user_uuid' => $userUuid,
                 'permission_uuid' => $permissionUuid
@@ -125,7 +148,10 @@ class UserPermissionRepository extends BaseRepository
 
         // Check if permission is still active (not expired)
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+        $query->where(function ($q) use ($currentTime) {
+            $q->where('expires_at', '>=', $currentTime)
+              ->orWhereNull('expires_at');
+        });
 
         $results = $query->get();
 
@@ -149,12 +175,16 @@ class UserPermissionRepository extends BaseRepository
 
     public function getUserPermissions(string $userUuid, array $context = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['user_uuid' => $userUuid]);
 
         // Only get active (non-expired) permissions
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+        $query->where(function ($q) use ($currentTime) {
+            $q->where('expires_at', '>=', $currentTime)
+              ->orWhereNull('expires_at');
+        });
 
         $results = $query->get();
         $userPermissions = array_map(fn($row) => new UserPermission($row), $results);
@@ -171,22 +201,23 @@ class UserPermissionRepository extends BaseRepository
 
     public function revokeUserPermission(string $userUuid, string $permissionUuid): bool
     {
-        return $this->db->delete($this->table, [
+        return $this->db->table($this->table)->where([
             'user_uuid' => $userUuid,
             'permission_uuid' => $permissionUuid
-        ]);
+        ])->delete();
     }
 
     public function revokeAllUserPermissions(string $userUuid): bool
     {
-        return $this->db->delete($this->table, ['user_uuid' => $userUuid]);
+        return $this->db->table($this->table)->where(['user_uuid' => $userUuid])->delete();
     }
 
     public function findExpiredPermissions(): array
     {
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $results = $this->db->select($this->table, $this->defaultFields)
-            ->whereLessThan('expires_at', $currentTime)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
+            ->where('expires_at', '<', $currentTime)
             ->orderBy(['expires_at' => 'ASC'])
             ->get();
 
@@ -197,18 +228,17 @@ class UserPermissionRepository extends BaseRepository
     {
         $currentTime = $this->db->getDriver()->formatDateTime();
 
-        $expiredCount = $this->db->select($this->table, ['COUNT(*) as count'])
+        $count = $this->db->table($this->table)
             ->whereNotNull('expires_at')
-            ->whereLessThan('expires_at', $currentTime)
-            ->get();
-
-        $count = (int)($expiredCount[0]['count'] ?? 0);
+            ->where('expires_at', '<', $currentTime)
+            ->count();
 
         if ($count > 0) {
             // Create a temporary query builder for delete
-            $deleteQuery = $this->db->select($this->table, ['uuid'])
+            $deleteQuery = $this->db->table($this->table)
+                ->select(['uuid'])
                 ->whereNotNull('expires_at')
-                ->whereLessThan('expires_at', $currentTime);
+                ->where('expires_at', '<', $currentTime);
 
             $expiredUuids = array_column($deleteQuery->get(), 'uuid');
             if (!empty($expiredUuids)) {
@@ -221,7 +251,8 @@ class UserPermissionRepository extends BaseRepository
 
     public function findByGrantedBy(string $grantedByUuid): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['granted_by' => $grantedByUuid])
             ->orderBy(['created_at' => 'DESC'])
             ->get();
@@ -231,15 +262,32 @@ class UserPermissionRepository extends BaseRepository
 
     public function countUserPermissions(string $userUuid, array $filters = []): int
     {
-        $query = $this->db->select($this->table, ['COUNT(*) as count'])
+        $query = $this->db->table($this->table)
             ->where(['user_uuid' => $userUuid]);
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
-        $result = $query->get();
-        return (int)($result[0]['count'] ?? 0);
+        return $query->count();
+    }
+
+    public function countAllUserPermissions(array $filters = []): int
+    {
+        $query = $this->db->table($this->table);
+
+        if (isset($filters['active_only']) && $filters['active_only']) {
+            $currentTime = $this->db->getDriver()->formatDateTime();
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
+        }
+
+        return $query->count();
     }
 }

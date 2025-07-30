@@ -293,8 +293,9 @@ Router::group('/rbac', function () use ($container) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "Role not found"
          */
-        Router::get('/{uuid}/users', function (array $params, Request $request) use ($container) {
+        Router::get('/{uuid}/users', function (array $params) use ($container) {
             $roleController = $container->get(RoleController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $roleController->getUsers($params, $request);
         });
 
@@ -682,8 +683,9 @@ Router::group('/rbac', function () use ($container) {
          * @response 403 application/json "Permission denied"
          * @response 404 application/json "User not found"
          */
-        Router::get('/{user_uuid}/roles', function (array $params, Request $request) use ($container) {
+        Router::get('/{user_uuid}/roles', function (array $params) use ($container) {
             $userRoleController = $container->get(UserRoleController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $userRoleController->getUserRoles($params, $request);
         });
 
@@ -773,8 +775,9 @@ Router::group('/rbac', function () use ($container) {
          * }
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{user_uuid}/permissions', function (array $params, Request $request) use ($container) {
+        Router::get('/{user_uuid}/permissions', function (array $params) use ($container) {
             $permissionController = $container->get(PermissionController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $permissionController->getUserDirectPermissions($params, $request);
         });
 
@@ -805,8 +808,9 @@ Router::group('/rbac', function () use ($container) {
          * }
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{user_uuid}/effective-permissions', function (array $params, Request $request) use ($container) {
+        Router::get('/{user_uuid}/effective-permissions', function (array $params) use ($container) {
             $permissionController = $container->get(PermissionController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $permissionController->getUserEffectivePermissions($params, $request);
         });
 
@@ -847,8 +851,9 @@ Router::group('/rbac', function () use ($container) {
          * }
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{user_uuid}/access-overview', function (array $params, Request $request) use ($container) {
+        Router::get('/{user_uuid}/access-overview', function (array $params) use ($container) {
             $userRoleController = $container->get(UserRoleController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $userRoleController->getUserAccessOverview($params, $request);
         });
 
@@ -886,8 +891,9 @@ Router::group('/rbac', function () use ($container) {
          * }
          * @response 403 application/json "Permission denied"
          */
-        Router::get('/{user_uuid}/role-history', function (array $params, Request $request) use ($container) {
+        Router::get('/{user_uuid}/role-history', function (array $params) use ($container) {
             $userRoleController = $container->get(UserRoleController::class);
+            $request = \Symfony\Component\HttpFoundation\Request::createFromGlobals();
             return $userRoleController->getUserRoleHistory($params, $request);
         });
 

@@ -493,11 +493,11 @@ class AuthenticationService
      */
     private function getUserDataFromRefreshToken(string $refreshToken): ?array
     {
-        // Use existing database connection
-        $connection = new \Glueful\Database\Connection();
-        $queryBuilder = new \Glueful\Database\QueryBuilder($connection->getPDO(), $connection->getDriver());
+        // Use existing database connection with fluent interface
+        $db = new \Glueful\Database\Connection();
 
-        $result = $queryBuilder->select('auth_sessions', ['user_uuid'])
+        $result = $$db->table('auth_sessions')
+            ->select(['user_uuid'])
             ->where(['refresh_token' => $refreshToken, 'status' => 'active'])
             ->limit(1)
             ->get();

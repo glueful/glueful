@@ -3,7 +3,7 @@
 namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Queue System Database Schema Migration
@@ -43,75 +43,75 @@ class CreateQueueSystemTables implements MigrationInterface
      * - queue_failed_jobs: Failed job tracking for debugging and retry
      * - queue_batches: Batch processing for grouped operations
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
-        // Create Queue Jobs Table
-        $schema->createTable('queue_jobs', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'queue' => 'VARCHAR(255) NOT NULL DEFAULT \'default\'',
-            'payload' => 'TEXT NOT NULL',
-            'attempts' => 'INT DEFAULT 0',
-            'reserved_at' => 'TIMESTAMP NULL',
-            'available_at' => 'TIMESTAMP NOT NULL',
-            'priority' => 'INT DEFAULT 0',
-            'batch_uuid' => 'CHAR(12) NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'queue'],
-            ['type' => 'INDEX', 'column' => 'reserved_at'],
-            ['type' => 'INDEX', 'column' => 'available_at'],
-            ['type' => 'INDEX', 'column' => 'priority'],
-            ['type' => 'INDEX', 'column' => 'batch_uuid'],
-            ['type' => 'INDEX', 'column' => ['queue', 'reserved_at'], 'name' => 'idx_queue_reserved'],
-            ['type' => 'INDEX', 'column' => ['queue', 'available_at'], 'name' => 'idx_queue_available'],
-            ['type' => 'INDEX', 'column' => ['priority', 'available_at'], 'name' => 'idx_priority_available']
-        ]);
+        // Create Queue Jobs Table with auto-execute
+        $schema->createTable('queue_jobs', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12)->unique();
+            $table->string('queue', 255)->default('default');
+            $table->text('payload');
+            $table->integer('attempts')->default(0);
+            $table->timestamp('reserved_at')->nullable();
+            $table->timestamp('available_at');
+            $table->integer('priority')->default(0);
+            $table->string('batch_uuid', 12)->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
 
-        // Create Failed Jobs Table
-        $schema->createTable('queue_failed_jobs', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'connection' => 'VARCHAR(255) NOT NULL',
-            'queue' => 'VARCHAR(255) NOT NULL',
-            'payload' => 'TEXT NOT NULL',
-            'exception' => 'TEXT NOT NULL',
-            'batch_uuid' => 'CHAR(12) NULL',
-            'failed_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'connection'],
-            ['type' => 'INDEX', 'column' => 'queue'],
-            ['type' => 'INDEX', 'column' => 'batch_uuid'],
-            ['type' => 'INDEX', 'column' => 'failed_at'],
-            ['type' => 'INDEX', 'column' => ['connection', 'queue'], 'name' => 'idx_failed_connection_queue']
-        ]);
+            // Add indexes
+            $table->index('queue');
+            $table->index('reserved_at');
+            $table->index('available_at');
+            $table->index('priority');
+            $table->index('batch_uuid');
+            $table->index(['queue', 'reserved_at'], 'idx_queue_reserved');
+            $table->index(['queue', 'available_at'], 'idx_queue_available');
+            $table->index(['priority', 'available_at'], 'idx_priority_available');
+        });
 
-        // Create Queue Batches Table
-        $schema->createTable('queue_batches', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'total_jobs' => 'INT NOT NULL DEFAULT 0',
-            'pending_jobs' => 'INT NOT NULL DEFAULT 0',
-            'processed_jobs' => 'INT NOT NULL DEFAULT 0',
-            'failed_jobs' => 'INT NOT NULL DEFAULT 0',
-            'cancelled_at' => 'TIMESTAMP NULL',
-            'finished_at' => 'TIMESTAMP NULL',
-            'options' => 'JSON NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'name'],
-            ['type' => 'INDEX', 'column' => 'cancelled_at'],
-            ['type' => 'INDEX', 'column' => 'finished_at'],
-            ['type' => 'INDEX', 'column' => 'created_at'],
-            ['type' => 'INDEX', 'column' => ['pending_jobs', 'created_at'], 'name' => 'idx_batch_pending']
-        ]);
+        // Create Failed Jobs Table with auto-execute
+        $schema->createTable('queue_failed_jobs', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12)->unique();
+            $table->string('connection', 255);
+            $table->string('queue', 255);
+            $table->text('payload');
+            $table->text('exception');
+            $table->string('batch_uuid', 12)->nullable();
+            $table->timestamp('failed_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->index('connection');
+            $table->index('queue');
+            $table->index('batch_uuid');
+            $table->index('failed_at');
+            $table->index(['connection', 'queue'], 'idx_failed_connection_queue');
+        });
+
+        // Create Queue Batches Table with auto-execute
+        $schema->createTable('queue_batches', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12)->unique();
+            $table->string('name', 255);
+            $table->integer('total_jobs')->default(0);
+            $table->integer('pending_jobs')->default(0);
+            $table->integer('processed_jobs')->default(0);
+            $table->integer('failed_jobs')->default(0);
+            $table->timestamp('cancelled_at')->nullable();
+            $table->timestamp('finished_at')->nullable();
+            $table->json('options')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->index('name');
+            $table->index('cancelled_at');
+            $table->index('finished_at');
+            $table->index('created_at');
+            $table->index(['pending_jobs', 'created_at'], 'idx_batch_pending');
+        });
     }
 
     /**
@@ -122,13 +122,13 @@ class CreateQueueSystemTables implements MigrationInterface
      * - Safe to drop in any order
      * - Cleans up all queue data
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('queue_batches');
-        $schema->dropTable('queue_failed_jobs');
-        $schema->dropTable('queue_jobs');
+        $schema->dropTableIfExists('queue_batches');
+        $schema->dropTableIfExists('queue_failed_jobs');
+        $schema->dropTableIfExists('queue_jobs');
     }
 
     /**

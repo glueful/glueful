@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Repository\Concerns;
 
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Query\Interfaces\QueryBuilderInterface;
 
 /**
  * Query Filter Trait
@@ -31,7 +31,7 @@ trait QueryFilterTrait
      * QueryBuilder instance. Supports both simple value filters and complex
      * operator-based filters.
      *
-     * @param QueryBuilder $query The query builder instance to apply filters to
+     * @param QueryBuilderInterface $query The query builder instance to apply filters to
      * @param array $filters Associative array of filters to apply
      * @return void
      *
@@ -46,7 +46,7 @@ trait QueryFilterTrait
      * $this->applyFilters($query, $filters);
      * ```
      */
-    protected function applyFilters(QueryBuilder $query, array $filters): void
+    protected function applyFilters(QueryBuilderInterface $query, array $filters): void
     {
         foreach ($filters as $field => $value) {
             if (is_array($value)) {
@@ -64,29 +64,29 @@ trait QueryFilterTrait
     /**
      * Apply a specific operator filter to the query
      *
-     * @param QueryBuilder $query The query builder instance
+     * @param QueryBuilderInterface $query The query builder instance
      * @param string $field The field name to filter on
      * @param string $operator The operator to apply
      * @param mixed $value The value to filter with
      * @return void
      */
-    private function applyOperatorFilter(QueryBuilder $query, string $field, string $operator, $value): void
+    private function applyOperatorFilter(QueryBuilderInterface $query, string $field, string $operator, $value): void
     {
         switch ($operator) {
             case 'gte':
-                $query->whereGreaterThanOrEqual($field, $value);
+                $query->where($field, '>=', $value);
                 break;
             case 'lte':
-                $query->whereLessThanOrEqual($field, $value);
+                $query->where($field, '<=', $value);
                 break;
             case 'gt':
-                $query->whereGreaterThan($field, $value);
+                $query->where($field, '>', $value);
                 break;
             case 'lt':
-                $query->whereLessThan($field, $value);
+                $query->where($field, '<', $value);
                 break;
             case 'like':
-                $query->whereLike($field, "%{$value}%");
+                $query->where($field, 'LIKE', "%{$value}%");
                 break;
             case 'in':
                 if (is_array($value) && !empty($value)) {
@@ -100,7 +100,7 @@ trait QueryFilterTrait
                 break;
             case 'ne':
             case 'not_equal':
-                $query->whereNotEqual($field, $value);
+                $query->where($field, '!=', $value);
                 break;
             case 'null':
                 $query->whereNull($field);
@@ -126,14 +126,14 @@ trait QueryFilterTrait
      * Common pattern for filtering by notifiable type and ID with optional
      * read status filtering.
      *
-     * @param QueryBuilder $query The query builder instance
+     * @param QueryBuilderInterface $query The query builder instance
      * @param string $notifiableType The notifiable type to filter by
      * @param string $notifiableId The notifiable ID to filter by
      * @param bool $onlyUnread Whether to filter only unread notifications
      * @return void
      */
     protected function applyNotifiableFilters(
-        QueryBuilder $query,
+        QueryBuilderInterface $query,
         string $notifiableType,
         string $notifiableId,
         bool $onlyUnread = false

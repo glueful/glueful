@@ -344,8 +344,8 @@ Glueful follows semantic versioning (MAJOR.MINOR.PATCH):
 
 If you need help with contributing:
 
-- Join our [Discord community](https://discord.gg/glueful)
-- Post questions with the "contributing" tag on [our forum](https://forum.glueful.com)
 - Check existing GitHub issues for similar questions
+- Open a new issue with the "question" label for general contributing questions
+- Review the documentation at https://glueful.com
 
 Thank you for contributing to Glueful!

@@ -24,6 +24,12 @@ class RoleService
     private RoleRepository $roleRepository;
     private UserRoleRepository $userRoleRepository;
 
+    /**
+     * Cache for user roles to prevent duplicate queries
+     * Format: ['userUuid:scopeHash' => roles]
+     */
+    private array $userRolesCache = [];
+
     public function __construct(RoleRepository $roleRepository, UserRoleRepository $userRoleRepository)
     {
         $this->roleRepository = $roleRepository;
@@ -51,7 +57,7 @@ class RoleService
 
         // Validate parent role if specified
         if (!empty($data['parent_uuid'])) {
-            $parentRole = $this->roleRepository->findByUuid($data['parent_uuid']);
+            $parentRole = $this->roleRepository->findRoleByUuid($data['parent_uuid']);
             if (!$parentRole) {
                 throw new \InvalidArgumentException('Parent role not found');
             }
@@ -80,7 +86,7 @@ class RoleService
      */
     public function updateRole(string $uuid, array $data, string $updatedBy = null): bool
     {
-        $role = $this->roleRepository->findByUuid($uuid);
+        $role = $this->roleRepository->findRoleByUuid($uuid);
         if (!$role) {
             throw new \InvalidArgumentException('Role not found');
         }
@@ -114,7 +120,7 @@ class RoleService
             if ($data['parent_uuid'] !== $role->getParentUuid()) {
                 // Validate new parent
                 if (!empty($data['parent_uuid'])) {
-                    $parentRole = $this->roleRepository->findByUuid($data['parent_uuid']);
+                    $parentRole = $this->roleRepository->findRoleByUuid($data['parent_uuid']);
                     if (!$parentRole) {
                         throw new \InvalidArgumentException('Parent role not found');
                     }
@@ -147,7 +153,7 @@ class RoleService
      */
     public function deleteRole(string $uuid, bool $force = false): bool
     {
-        $role = $this->roleRepository->findByUuid($uuid);
+        $role = $this->roleRepository->findRoleByUuid($uuid);
         if (!$role) {
             throw new \InvalidArgumentException('Role not found');
         }
@@ -193,7 +199,7 @@ class RoleService
      */
     public function assignRoleToUser(string $userUuid, string $roleUuid, array $options = []): bool
     {
-        $role = $this->roleRepository->findByUuid($roleUuid);
+        $role = $this->roleRepository->findRoleByUuid($roleUuid);
         if (!$role) {
             throw new \InvalidArgumentException('Role not found');
         }
@@ -209,6 +215,12 @@ class RoleService
         }
 
         $assignment = $this->userRoleRepository->assignRole($userUuid, $roleUuid, $options);
+
+        // Invalidate cache for this user
+        if ($assignment !== null) {
+            $this->invalidateUserRolesCache($userUuid);
+        }
+
         return $assignment !== null;
     }
 
@@ -217,7 +229,14 @@ class RoleService
      */
     public function revokeRoleFromUser(string $userUuid, string $roleUuid): bool
     {
-        return $this->userRoleRepository->revokeRole($userUuid, $roleUuid);
+        $result = $this->userRoleRepository->revokeRole($userUuid, $roleUuid);
+
+        // Invalidate cache for this user
+        if ($result) {
+            $this->invalidateUserRolesCache($userUuid);
+        }
+
+        return $result;
     }
 
     /**
@@ -242,18 +261,46 @@ class RoleService
      */
     public function getUserRoles(string $userUuid, array $scope = []): array
     {
+        // Create cache key based on user UUID and scope
+        $scopeHash = md5(serialize($scope));
+        $cacheKey = "{$userUuid}:{$scopeHash}";
+
+        // Return cached result if available
+        if (isset($this->userRolesCache[$cacheKey])) {
+            return $this->userRolesCache[$cacheKey];
+        }
+
         $userRoles = $this->userRoleRepository->getUserRoles($userUuid, $scope);
         $roles = [];
 
+        // Extract role UUIDs for batch fetching
+        $roleUuids = [];
         foreach ($userRoles as $userRole) {
-            $role = $this->roleRepository->findByUuid($userRole->getRoleUuid());
-            if ($role) {
+            $roleUuids[] = $userRole->getRoleUuid();
+        }
+
+        // Batch fetch roles to avoid N+1 queries
+        $rolesMap = [];
+        if (!empty($roleUuids)) {
+            $fetchedRoles = $this->roleRepository->findByUuids($roleUuids);
+            foreach ($fetchedRoles as $role) {
+                $rolesMap[$role->getUuid()] = $role;
+            }
+        }
+
+        // Build final result with role and assignment data
+        foreach ($userRoles as $userRole) {
+            $roleUuid = $userRole->getRoleUuid();
+            if (isset($rolesMap[$roleUuid])) {
                 $roles[] = [
-                    'role' => $role,
-                    'assignment' => $userRole
+                    'role' => $rolesMap[$roleUuid]->toArray(),
+                    'assignment' => $userRole->toArray()
                 ];
             }
         }
+
+        // Cache the result
+        $this->userRolesCache[$cacheKey] = $roles;
 
         return $roles;
     }
@@ -263,7 +310,7 @@ class RoleService
      */
     public function userHasRole(string $userUuid, string $roleSlug, array $scope = []): bool
     {
-        $role = $this->roleRepository->findBySlug($roleSlug);
+        $role = $this->roleRepository->findRoleBySlug($roleSlug);
         if (!$role) {
             return false;
         }
@@ -291,7 +338,7 @@ class RoleService
 
     private function updateChildRoleLevels(string $parentUuid): void
     {
-        $parentRole = $this->roleRepository->findByUuid($parentUuid);
+        $parentRole = $this->roleRepository->findRoleByUuid($parentUuid);
         if (!$parentRole) {
             return;
         }
@@ -387,5 +434,31 @@ class RoleService
         }
 
         return $result;
+    }
+
+    /**
+     * Invalidate cached user roles for a specific user
+     */
+    private function invalidateUserRolesCache(string $userUuid): void
+    {
+        // Remove all cache entries for this user (different scopes)
+        $keysToRemove = [];
+        foreach (array_keys($this->userRolesCache) as $cacheKey) {
+            if (str_starts_with($cacheKey, $userUuid . ':')) {
+                $keysToRemove[] = $cacheKey;
+            }
+        }
+
+        foreach ($keysToRemove as $key) {
+            unset($this->userRolesCache[$key]);
+        }
+    }
+
+    /**
+     * Clear all cached user roles
+     */
+    public function clearUserRolesCache(): void
+    {
+        $this->userRolesCache = [];
     }
 }

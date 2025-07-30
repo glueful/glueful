@@ -33,8 +33,8 @@ class ArchiveServiceProvider implements ServiceProviderInterface
         $container->register(ArchiveServiceInterface::class)
             ->setFactory([$this, 'createArchiveService'])
             ->setArguments([
-                new Reference(\Glueful\Database\QueryBuilder::class),
-                new Reference(\Glueful\Database\Schema\SchemaManager::class),
+                new Reference('database'), // Use the registered service key, not the class name
+                new Reference(\Glueful\Database\Schema\Interfaces\SchemaBuilderInterface::class),
                 new Reference(\Glueful\Security\RandomStringGenerator::class),
                 '%archive.config%'
             ])
@@ -75,14 +75,14 @@ class ArchiveServiceProvider implements ServiceProviderInterface
      * Factory method for creating ArchiveService
      */
     public static function createArchiveService(
-        $queryBuilder,
-        $schemaManager,
+        $connection,
+        $schemaBuilder,
         $randomStringGenerator,
         $config
     ): ArchiveService {
         return new ArchiveService(
-            $queryBuilder,
-            $schemaManager,
+            $connection,
+            $schemaBuilder,
             $randomStringGenerator,
             $config
         );

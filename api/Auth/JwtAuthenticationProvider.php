@@ -33,7 +33,6 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
         try {
             // Extract token from Authorization header
             $token = $this->extractTokenFromRequest($request);
-
             if (!$token) {
                 $this->lastError = 'No authentication token provided';
                 return null;
@@ -42,18 +41,29 @@ class JwtAuthenticationProvider implements AuthenticationProviderInterface
             // Validate token and get session data using TokenStorageService
             $tokenStorage = new TokenStorageService();
             $sessionData = $tokenStorage->getSessionByAccessToken($token);
-
             if (!$sessionData) {
                 $this->lastError = 'Invalid or expired authentication token';
                 return null;
             }
 
+            // Decode JWT token to get the full user data
+            $payload = JWTService::decode($token);
+            if (!$payload) {
+                $this->lastError = 'Invalid JWT token payload';
+                return null;
+            }
+
+            // Use the JWT payload as user data since it contains all user information
+            $userData = $payload;
+            $userData['session_uuid'] = $sessionData['uuid'];
+            $userData['provider'] = $sessionData['provider'] ?? 'jwt';
+
             // Store authentication info in request attributes for middleware
             $request->attributes->set('authenticated', true);
-            $request->attributes->set('user_id', $sessionData['uuid'] ?? null);
-            $request->attributes->set('user_data', $sessionData);
+            $request->attributes->set('user_id', $userData['uuid'] ?? null);
+            $request->attributes->set('user_data', $userData);
 
-            return $sessionData;
+            return $userData;
         } catch (\Throwable $e) {
             $this->lastError = 'Authentication error: ' . $e->getMessage();
             return null;

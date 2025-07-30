@@ -2,8 +2,8 @@
 
 namespace Glueful\Services\Archive;
 
-use Glueful\Database\QueryBuilder;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Connection;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Security\RandomStringGenerator;
 use Glueful\Services\Archive\DTOs\ArchiveResult;
 use Glueful\Services\Archive\DTOs\ArchiveSearchQuery;
@@ -35,13 +35,18 @@ class ArchiveService implements ArchiveServiceInterface
     private array $config;
     private FileManager $fileManager;
 
+    private Connection $db;
+
     public function __construct(
-        private QueryBuilder $queryBuilder,
-        private SchemaManager $schemaManager,
-        private RandomStringGenerator $randomGenerator,
+        ?Connection $connection = null,
+        private ?SchemaBuilderInterface $schemaManager = null,
+        private ?RandomStringGenerator $randomGenerator = null,
         array $config = [],
         ?FileManager $fileManager = null
     ) {
+        $this->db = $connection ?? new Connection();
+        $this->schemaManager = $this->schemaManager ?? $this->db->getSchemaBuilder();
+        $this->randomGenerator = $this->randomGenerator ?? new RandomStringGenerator();
         $this->fileManager = $fileManager ?? container()->get(FileManager::class);
         $this->config = array_merge([
             'storage_path' => config('archive.storage.path'),
@@ -138,10 +143,10 @@ class ArchiveService implements ArchiveServiceInterface
         $schema = $this->schemaManager->getTableColumns($table);
 
         do {
-            $chunk = $this->queryBuilder
-                ->select($table, ['*'])
-                ->where(['created_at', '<', $cutoffDate->format('Y-m-d H:i:s')])
-                ->orderBy(['created_at' => 'ASC'])
+            $chunk = $this->db->table($table)
+                ->select(['*'])
+                ->where('created_at', '<', $cutoffDate->format('Y-m-d H:i:s'))
+                ->orderBy('created_at', 'ASC')
                 ->limit($chunkSize)
                 ->offset($offset)
                 ->get();
@@ -281,33 +286,33 @@ class ArchiveService implements ArchiveServiceInterface
     {
         try {
             // Get current table stats from information_schema
-            $tableInfo = $this->queryBuilder
-                ->select('information_schema.tables')
-                ->where(['table_schema' => $this->getDatabaseName()])
-                ->where(['table_name' => $table])
+            $tableInfo = $this->db->table('information_schema.tables')
+                ->select(['*'])
+                ->where('table_schema', $this->getDatabaseName())
+                ->where('table_name', $table)
                 ->first();
 
             if ($tableInfo) {
-                $rowCount = $this->queryBuilder
-                    ->count($table);
+                $rowCount = $this->db->table($table)->count();
 
                 $sizeBytes = ($tableInfo['data_length'] ?? 0) + ($tableInfo['index_length'] ?? 0);
 
                 // Update or insert table stats
-                $existing = $this->queryBuilder
-                    ->select('archive_table_stats')
-                    ->where(['table_name' => $table])
+                $existing = $this->db->table('archive_table_stats')
+                    ->select(['*'])
+                    ->where('table_name', $table)
                     ->first();
 
                 if ($existing) {
-                    $this->queryBuilder
-                        ->update('archive_table_stats', [
+                    $this->db->table('archive_table_stats')
+                        ->where('table_name', $table)
+                        ->update([
                             'current_size_bytes' => $sizeBytes,
                             'current_row_count' => $rowCount,
                             'updated_at' => date('Y-m-d H:i:s')
-                        ], ['table_name' => $table]);
+                        ]);
                 } else {
-                    $this->queryBuilder->insert('archive_table_stats', [
+                    $this->db->table('archive_table_stats')->insert([
                         'table_name' => $table,
                         'current_size_bytes' => $sizeBytes,
                         'current_row_count' => $rowCount
@@ -321,9 +326,9 @@ class ArchiveService implements ArchiveServiceInterface
 
     public function getTableStats(string $table): ?TableArchiveStats
     {
-        $stats = $this->queryBuilder
-            ->select('archive_table_stats')
-            ->where(['table_name' => $table])
+        $stats = $this->db->table('archive_table_stats')
+            ->select(['*'])
+            ->where('table_name', $table)
             ->first();
 
         if (!$stats) {
@@ -421,10 +426,11 @@ class ArchiveService implements ArchiveServiceInterface
             }
 
             // Delete from database (cascade will handle search indexes)
-            $result = $this->queryBuilder
-                ->delete('archive_registry', ['uuid' => $archiveUuid]);
+            $result = $this->db->table('archive_registry')
+                ->where('uuid', $archiveUuid)
+                ->delete();
 
-            return $result;
+            return $result > 0;
         } catch (\Exception $e) {
             error_log("Failed to delete archive {$archiveUuid}: " . $e->getMessage());
             return false;
@@ -433,24 +439,16 @@ class ArchiveService implements ArchiveServiceInterface
 
     public function getArchiveSummary(): ArchiveSummary
     {
-        $totalArchives = $this->queryBuilder
-            ->count('archive_registry');
+        $totalArchives = $this->db->table('archive_registry')->count();
 
-        $totals = $this->queryBuilder
-            ->select('archive_registry', [
-                $this->queryBuilder->raw('SUM(record_count) as total_records'),
-                $this->queryBuilder->raw('SUM(file_size) as total_size')
-            ])
+        $totals = $this->db->table('archive_registry')
+            ->selectRaw('SUM(record_count) as total_records, SUM(file_size) as total_size')
             ->first();
 
-        $tableBreakdown = $this->queryBuilder
-            ->select('archive_registry', [
-                'table_name',
-                $this->queryBuilder->raw('COUNT(*) as count'),
-                $this->queryBuilder->raw('SUM(record_count) as records'),
-                $this->queryBuilder->raw('SUM(file_size) as size')
-            ])
-            ->groupBy(['table_name'])
+        $tableBreakdown = $this->db->table('archive_registry')
+            ->select(['table_name'])
+            ->selectRaw('COUNT(*) as count, SUM(record_count) as records, SUM(file_size) as size')
+            ->groupBy('table_name')
             ->get();
 
         $breakdown = [];
@@ -462,11 +460,8 @@ class ArchiveService implements ArchiveServiceInterface
             ];
         }
 
-        $dates = $this->queryBuilder
-            ->select('archive_registry', [
-                $this->queryBuilder->raw('MIN(created_at) as oldest'),
-                $this->queryBuilder->raw('MAX(created_at) as newest')
-            ])
+        $dates = $this->db->table('archive_registry')
+            ->selectRaw('MIN(created_at) as oldest, MAX(created_at) as newest')
             ->first();
 
         return new ArchiveSummary(
@@ -481,9 +476,9 @@ class ArchiveService implements ArchiveServiceInterface
 
     public function getTablesNeedingArchival(): array
     {
-        $tables = $this->queryBuilder
-            ->select('archive_table_stats')
-            ->where(['auto_archive_enabled' => true])
+        $tables = $this->db->table('archive_table_stats')
+            ->select(['*'])
+            ->where('auto_archive_enabled', true)
             ->get();
 
         $needingArchival = [];
@@ -498,10 +493,10 @@ class ArchiveService implements ArchiveServiceInterface
 
     public function getTableArchives(string $table): array
     {
-        return $this->queryBuilder
-            ->select('archive_registry')
-            ->where(['table_name' => $table])
-            ->orderBy(['created_at' => 'DESC'])
+        return $this->db->table('archive_registry')
+            ->select(['*'])
+            ->where('table_name', $table)
+            ->orderBy('created_at', 'DESC')
             ->get();
     }
 
@@ -519,35 +514,41 @@ class ArchiveService implements ArchiveServiceInterface
 
     private function getEarliestRecord(string $table, \DateTime $cutoffDate): string
     {
-        $earliest = $this->queryBuilder
-            ->select($table, ['MIN(created_at) as earliest'])
-            ->where(['created_at', '<', $cutoffDate->format('Y-m-d H:i:s')])
+        $earliest = $this->db->table($table)
+            ->selectRaw('MIN(created_at) as earliest')
+            ->where('created_at', '<', $cutoffDate->format('Y-m-d H:i:s'))
             ->first();
 
         return $earliest['earliest'] ?? $cutoffDate->format('Y-m-d H:i:s');
     }
 
-    private function deleteArchivedData(string $table, \DateTime $cutoffDate): bool
+    private function deleteArchivedData(string $table, \DateTime $cutoffDate): int
     {
-        return $this->queryBuilder->delete($table, ['created_at', '<', $cutoffDate->format('Y-m-d H:i:s')]);
+        return $this->db->table($table)
+            ->where('created_at', '<', $cutoffDate->format('Y-m-d H:i:s'))
+            ->delete();
     }
 
     private function registerArchive(array $data): void
     {
-        $this->queryBuilder->insert('archive_registry', $data);
+        $this->db->table('archive_registry')->insert($data);
     }
 
     private function updateArchiveStatus(string $uuid, string $status): void
     {
-        $this->queryBuilder->update('archive_registry', ['status' => $status], ['uuid' => $uuid]);
+        $this->db->table('archive_registry')
+            ->where('uuid', $uuid)
+            ->update(['status' => $status]);
     }
 
     private function updateTableStats(string $table): void
     {
-        $this->queryBuilder->update('archive_table_stats', [
+        $this->db->table('archive_table_stats')
+            ->where('table_name', $table)
+            ->update([
                 'last_archive_date' => date('Y-m-d'),
                 'updated_at' => date('Y-m-d H:i:s')
-            ], ['table_name' => $table]);
+            ]);
     }
 
     private function cleanupFailedArchive(string $archiveUuid): void
@@ -558,7 +559,9 @@ class ArchiveService implements ArchiveServiceInterface
                 unlink($archive['file_path']);
             }
 
-            $this->queryBuilder->delete('archive_registry', ['uuid' => $archiveUuid]);
+            $this->db->table('archive_registry')
+                ->where('uuid', $archiveUuid)
+                ->delete();
         } catch (\Exception $e) {
             error_log("Failed to cleanup archive {$archiveUuid}: " . $e->getMessage());
         }
@@ -566,9 +569,9 @@ class ArchiveService implements ArchiveServiceInterface
 
     private function getArchiveRecord(string $archiveUuid): ?array
     {
-        return $this->queryBuilder
-            ->select('archive_registry')
-            ->where(['uuid' => $archiveUuid])
+        return $this->db->table('archive_registry')
+            ->select(['*'])
+            ->where('uuid', $archiveUuid)
             ->first();
     }
 
@@ -597,18 +600,18 @@ class ArchiveService implements ArchiveServiceInterface
     {
         // Implementation for finding relevant archives based on search query
         // This is a simplified version - full implementation would be more complex
-        $archiveQuery = $this->queryBuilder->select('archive_registry ar');
+        $archiveQuery = $this->db->table('archive_registry as ar')->select(['ar.*']);
 
         if (!empty($query->tables)) {
-            $archiveQuery->whereIn('ar.table_name', $query->tables);
+            $archiveQuery->whereIn('table_name', $query->tables);
         }
 
         if ($query->startDate) {
-            $archiveQuery->where(['ar.period_end', '>=', $query->startDate->format('Y-m-d H:i:s')]);
+            $archiveQuery->where('period_end', '>=', $query->startDate->format('Y-m-d H:i:s'));
         }
 
         if ($query->endDate) {
-            $archiveQuery->where(['ar.period_start', '<=', $query->endDate->format('Y-m-d H:i:s')]);
+            $archiveQuery->where('period_start', '<=', $query->endDate->format('Y-m-d H:i:s'));
         }
 
         return $archiveQuery->get();
@@ -884,7 +887,7 @@ class ArchiveService implements ArchiveServiceInterface
 
         try {
             // Use insertBatch for efficient bulk insert
-            $result = $this->queryBuilder->insertBatch('archive_search_index', $indexEntries);
+            $result = $this->db->table('archive_search_index')->insertBatch($indexEntries);
             return $result > 0;
         } catch (\Exception $e) {
             error_log("Failed to insert batch search indexes: " . $e->getMessage());

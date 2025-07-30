@@ -3,7 +3,6 @@
 namespace Glueful\Cron;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 
 class LogCleaner
 {
@@ -15,12 +14,10 @@ class LogCleaner
     ];
 
     private Connection $connection;
-    private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
         $this->connection = new Connection();
-        $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
     }
 
     public function cleanFileSystemLogs(int $retentionDays): void
@@ -55,11 +52,11 @@ class LogCleaner
             // Clean app_logs table if it exists
             $cutoffDate = date('Y-m-d H:i:s', time() - ($retentionDays * 24 * 60 * 60));
 
-            $affected = $this->queryBuilder->delete('app_logs', [
-                'created_at < ?' => $cutoffDate
-            ], false);
+            $affected = $this->connection->table('app_logs')
+                ->where('created_at', '<', $cutoffDate)
+                ->delete();
 
-            $this->stats['deleted_db_logs'] = $affected ? 1 : 0;
+            $this->stats['deleted_db_logs'] = $affected;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean database logs: " . $e->getMessage();
         }
@@ -71,12 +68,12 @@ class LogCleaner
             // Clean audit_logs table if it exists
             $cutoffDate = date('Y-m-d H:i:s', time() - ($retentionDays * 24 * 60 * 60));
 
-            $affected = $this->queryBuilder->delete('audit_logs', [
-                'created_at < ?' => $cutoffDate
-            ], false);
+            $affected = $this->connection->table('audit_logs')
+                ->where('created_at', '<', $cutoffDate)
+                ->delete();
 
             if ($affected) {
-                $this->stats['deleted_db_logs']++;
+                $this->stats['deleted_db_logs'] += $affected;
             }
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean audit logs: " . $e->getMessage();

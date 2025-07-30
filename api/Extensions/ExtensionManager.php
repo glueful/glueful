@@ -99,6 +99,11 @@ class ExtensionManager
                 throw new ExtensionException("Failed to install extension files");
             }
 
+            // Handle composer dependencies if present
+            if (!$this->installExtensionDependencies($extensionPath, $manifest)) {
+                throw new ExtensionException("Failed to install extension dependencies");
+            }
+
             // Add to configuration
             $this->config->addExtension($extensionName, [
                 'enabled' => $options['auto_enable'] ?? false,
@@ -127,6 +132,104 @@ class ExtensionManager
                 'success' => false,
                 'error' => $e->getMessage()
             ];
+        }
+    }
+
+    /**
+     * Install extension dependencies based on manifest and composer.json
+     *
+     * @param string $extensionPath Extension directory path
+     * @param array $manifest Extension manifest data
+     * @return bool Success status
+     */
+    public function installExtensionDependencies(string $extensionPath, array $manifest): bool
+    {
+        $manifestPath = $extensionPath . '/manifest.json';
+        $composerJsonPath = $extensionPath . '/composer.json';
+
+        // Check if extension has composer dependencies in manifest
+        if (!isset($manifest['dependencies']['composer']) || empty($manifest['dependencies']['composer'])) {
+            $this->debugLog("No composer dependencies found in manifest");
+            return true;
+        }
+
+        // Validate that composer.json exists
+        if (!file_exists($composerJsonPath)) {
+            throw new ExtensionException("Extension composer.json not found: {$composerJsonPath}");
+        }
+
+        // Validate that composer.json matches manifest dependencies
+        if (!$this->validateComposerDependencies($composerJsonPath, $manifest)) {
+            throw new ExtensionException("Composer dependencies don't match manifest for extension");
+        }
+
+        // Install composer dependencies
+        if (!$this->runComposerInstall($extensionPath)) {
+            throw new ExtensionException("Failed to install composer dependencies for extension");
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate that composer.json dependencies match manifest dependencies
+     *
+     * @param string $composerJsonPath Path to composer.json
+     * @param array $manifest Extension manifest data
+     * @return bool Validation success
+     */
+    private function validateComposerDependencies(string $composerJsonPath, array $manifest): bool
+    {
+        $composerConfig = json_decode(file_get_contents($composerJsonPath), true);
+        $manifestDeps = $manifest['dependencies']['composer'] ?? [];
+        $composerDeps = $composerConfig['require'] ?? [];
+
+        // Check that all manifest dependencies are in composer.json
+        foreach ($manifestDeps as $package => $version) {
+            if (!isset($composerDeps[$package])) {
+                $this->debugLog("Missing dependency in composer.json: {$package}");
+                return false;
+            }
+
+            // Optional: Validate version constraints match
+            if ($composerDeps[$package] !== $version) {
+                $this->debugLog(
+                    "Version mismatch for dependency {$package}: " .
+                    "manifest={$version}, composer={$composerDeps[$package]}"
+                );
+                // Log as warning but don't fail - version constraint variations are acceptable
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Run composer install in extension directory
+     *
+     * @param string $path Extension directory path
+     * @return bool Success status
+     */
+    private function runComposerInstall(string $path): bool
+    {
+        $currentDir = getcwd();
+
+        try {
+            chdir($path);
+
+            $output = [];
+            $returnCode = 0;
+            exec('composer install --no-dev --optimize-autoloader 2>&1', $output, $returnCode);
+
+            if ($returnCode !== 0) {
+                $this->debugLog("Composer install failed with return code {$returnCode}: " . implode("\n", $output));
+                return false;
+            }
+
+            $this->debugLog("Composer install completed successfully");
+            return true;
+        } finally {
+            chdir($currentDir);
         }
     }
 
@@ -807,8 +910,27 @@ class ExtensionManager
             }
         }
 
+        // Note: Extension initialization moved to initializeLoadedExtensions()
+        // to be called after DI container is fully ready
+
         // Service providers are now loaded during container compilation
         // $this->loadExtensionServiceProviders();
+    }
+
+    /**
+     * Initialize all loaded extensions (call after DI container is ready)
+     *
+     * @return void
+     */
+    public function initializeLoadedExtensions(): void
+    {
+        $enabledExtensions = $this->config->getEnabledExtensions();
+
+        foreach ($enabledExtensions as $extensionName) {
+            if ($this->loader->isLoaded($extensionName)) {
+                $this->loader->initializeExtension($extensionName);
+            }
+        }
     }
 
     /**

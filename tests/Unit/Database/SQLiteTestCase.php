@@ -4,7 +4,6 @@ namespace Tests\Unit\Database;
 
 use Tests\TestCase;
 use Tests\Unit\Database\Mocks\MockSQLiteConnection;
-use Glueful\Database\QueryBuilder;
 
 /**
  * Base test case for database tests using SQLite in-memory database
@@ -14,8 +13,8 @@ class SQLiteTestCase extends TestCase
     /** @var MockSQLiteConnection */
     protected MockSQLiteConnection $connection;
 
-    /** @var QueryBuilder */
-    protected QueryBuilder $db;
+    /** @var MockSQLiteConnection */
+    protected MockSQLiteConnection $db;
 
     /**
      * Set up the test environment
@@ -27,13 +26,8 @@ class SQLiteTestCase extends TestCase
         // Create SQLite in-memory database
         $this->connection = new MockSQLiteConnection();
 
-        // Create query builder with soft deletes disabled for testing
-        $pdo = $this->connection->getPDO();
-        $driver = $this->connection->getDriver();
-        $this->db = new QueryBuilder($pdo, $driver);
-
-        // Disable soft deletes for testing
-        $this->setPrivateProperty($this->db, 'softDeletes', false);
+        // Use connection directly with the new fluent interface
+        $this->db = $this->connection;
 
         // Create test tables
         $this->connection->createTestTables();

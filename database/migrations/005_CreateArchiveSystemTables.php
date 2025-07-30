@@ -3,7 +3,7 @@
 namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Archive System Database Migration
@@ -43,83 +43,83 @@ class CreateArchiveSystemTables implements MigrationInterface
      * - archive_search_index: Search indexes for archived data
      * - archive_table_stats: Table growth and archive scheduling
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Archive Registry Table
-        $schema->createTable('archive_registry', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'table_name' => 'VARCHAR(64) NOT NULL',
-            'archive_date' => 'DATE NOT NULL',
-            'period_start' => 'DATETIME NOT NULL',
-            'period_end' => 'DATETIME NOT NULL',
-            'record_count' => 'INT UNSIGNED NOT NULL',
-            'file_path' => 'VARCHAR(500) NOT NULL',
-            'file_size' => 'BIGINT UNSIGNED NOT NULL',
-            'compression_type' => "ENUM('gzip', 'bzip2', 'lz4') DEFAULT 'gzip'",
-            'encryption_enabled' => 'BOOLEAN DEFAULT TRUE',
-            'checksum_sha256' => 'CHAR(64) NOT NULL',
-            'status' => "ENUM('creating', 'completed', 'verified', 'corrupted', 'failed') DEFAULT 'creating'",
-            'metadata' => 'JSON',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'table_name'],
-            ['type' => 'INDEX', 'column' => 'archive_date'],
-            ['type' => 'INDEX', 'column' => 'status'],
-            ['type' => 'INDEX', 'column' => 'table_name'],
-            ['type' => 'INDEX', 'column' => 'archive_date'],
-            ['type' => 'INDEX', 'column' => 'period_start'],
-            ['type' => 'INDEX', 'column' => 'period_end']
-        ]);
+        $schema->createTable('archive_registry', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('table_name', 64);
+            $table->date('archive_date');
+            $table->dateTime('period_start');
+            $table->dateTime('period_end');
+            $table->integer('record_count')->unsigned();
+            $table->string('file_path', 500);
+            $table->bigInteger('file_size')->unsigned();
+            $table->enum('compression_type', ['gzip', 'bzip2', 'lz4'], 'gzip');
+            $table->boolean('encryption_enabled')->default(true);
+            $table->string('checksum_sha256', 64);
+            $table->enum('status', ['creating', 'completed', 'verified', 'corrupted', 'failed'], 'creating');
+            $table->json('metadata')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('table_name');
+            $table->index('archive_date');
+            $table->index('status');
+            $table->index('period_start');
+            $table->index('period_end');
+        });
 
         // Create Archive Search Index Table
-        $schema->createTable('archive_search_index', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'archive_uuid' => 'CHAR(12) NOT NULL',
-            'entity_type' => 'VARCHAR(50) NOT NULL',
-            'entity_value' => 'VARCHAR(255) NOT NULL',
-            'record_count' => 'INT UNSIGNED NOT NULL',
-            'first_occurrence' => 'DATETIME NOT NULL',
-            'last_occurrence' => 'DATETIME NOT NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'archive_uuid'],
-            ['type' => 'INDEX', 'column' => 'entity_type'],
-            ['type' => 'INDEX', 'column' => 'entity_value'],
-            ['type' => 'INDEX', 'column' => 'first_occurrence'],
-            ['type' => 'INDEX', 'column' => 'last_occurrence']
-        ])->addForeignKey([
-            [
-                'column' => 'archive_uuid',
-                'references' => 'uuid',
-                'on' => 'archive_registry',
-                'onDelete' => 'CASCADE'
-            ]
-        ]);
+        $schema->createTable('archive_search_index', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('archive_uuid', 12);
+            $table->string('entity_type', 50);
+            $table->string('entity_value', 255);
+            $table->integer('record_count')->unsigned();
+            $table->dateTime('first_occurrence');
+            $table->dateTime('last_occurrence');
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->index('archive_uuid');
+            $table->index('entity_type');
+            $table->index('entity_value');
+            $table->index('first_occurrence');
+            $table->index('last_occurrence');
+
+            // Add foreign key
+            $table->foreign('archive_uuid')
+                ->references('uuid')
+                ->on('archive_registry')
+                ->cascadeOnDelete();
+        });
 
         // Create Archive Table Stats Table
-        $schema->createTable('archive_table_stats', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'table_name' => 'VARCHAR(64) NOT NULL',
-            'current_size_bytes' => 'BIGINT UNSIGNED NOT NULL DEFAULT 0',
-            'current_row_count' => 'INT UNSIGNED NOT NULL DEFAULT 0',
-            'last_archive_date' => 'DATE NULL',
-            'next_archive_date' => 'DATE NULL',
-            'archive_threshold_rows' => 'INT UNSIGNED NOT NULL DEFAULT 100000',
-            'archive_threshold_days' => 'INT UNSIGNED NOT NULL DEFAULT 30',
-            'auto_archive_enabled' => 'BOOLEAN DEFAULT TRUE',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'table_name'],
-            ['type' => 'INDEX', 'column' => 'last_archive_date'],
-            ['type' => 'INDEX', 'column' => 'next_archive_date'],
-            ['type' => 'INDEX', 'column' => 'auto_archive_enabled']
-        ]);
+        $schema->createTable('archive_table_stats', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('table_name', 64);
+            $table->bigInteger('current_size_bytes')->unsigned()->default(0);
+            $table->integer('current_row_count')->unsigned()->default(0);
+            $table->date('last_archive_date')->nullable();
+            $table->date('next_archive_date')->nullable();
+            $table->integer('archive_threshold_rows')->unsigned()->default(100000);
+            $table->integer('archive_threshold_days')->unsigned()->default(30);
+            $table->boolean('auto_archive_enabled')->default(true);
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('table_name');
+            $table->index('last_archive_date');
+            $table->index('next_archive_date');
+            $table->index('auto_archive_enabled');
+        });
     }
 
     /**
@@ -128,13 +128,13 @@ class CreateArchiveSystemTables implements MigrationInterface
      * Drops all archive system tables in correct order
      * to maintain referential integrity
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('archive_search_index');
-        $schema->dropTable('archive_table_stats');
-        $schema->dropTable('archive_registry');
+        $schema->dropTableIfExists('archive_search_index');
+        $schema->dropTableIfExists('archive_table_stats');
+        $schema->dropTableIfExists('archive_registry');
     }
 
     /**

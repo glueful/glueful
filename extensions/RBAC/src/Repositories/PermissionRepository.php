@@ -26,6 +26,12 @@ class PermissionRepository extends BaseRepository
     ];
     protected bool $hasUpdatedAt = false;
 
+    // Cache to prevent duplicate permission lookups within a single request
+    private array $permissionsCache = [];
+
+    // Static cache to prevent duplicate queries across all instances within a single request
+    private static array $globalPermissionsCache = [];
+
     public function getTableName(): string
     {
         return $this->table;
@@ -37,7 +43,7 @@ class PermissionRepository extends BaseRepository
             $data['uuid'] = Utils::generateNanoID();
         }
 
-        $success = $this->db->insert($this->table, $data);
+        $success = $this->db->table($this->table)->insert($data);
 
         if (!$success) {
             throw new \RuntimeException('Failed to create permission');
@@ -54,19 +60,52 @@ class PermissionRepository extends BaseRepository
 
     public function findPermissionByUuid(string $uuid): ?Permission
     {
+        // Check static cache first (works across all instances)
+        if (isset(self::$globalPermissionsCache['uuid_' . $uuid])) {
+            return self::$globalPermissionsCache['uuid_' . $uuid];
+        }
+
+        // Check instance cache
+        if (isset($this->permissionsCache['uuid_' . $uuid])) {
+            return $this->permissionsCache['uuid_' . $uuid];
+        }
+
         $result = $this->findRecordByUuid($uuid, $this->defaultFields);
-        return $result ? new Permission($result) : null;
+        $permission = $result ? new Permission($result) : null;
+
+        // Cache the result in both caches (including null results)
+        $this->permissionsCache['uuid_' . $uuid] = $permission;
+        self::$globalPermissionsCache['uuid_' . $uuid] = $permission;
+
+        return $permission;
     }
 
     public function findPermissionBySlug(string $slug): ?Permission
     {
+        // Check static cache first (works across all instances)
+        if (isset(self::$globalPermissionsCache['slug_' . $slug])) {
+            return self::$globalPermissionsCache['slug_' . $slug];
+        }
+
+        // Check instance cache
+        if (isset($this->permissionsCache['slug_' . $slug])) {
+            return $this->permissionsCache['slug_' . $slug];
+        }
+
         $result = $this->findBySlug($slug, $this->defaultFields);
-        return $result ? new Permission($result) : null;
+        $permission = $result ? new Permission($result) : null;
+
+        // Cache the result in both caches (including null results to prevent re-querying non-existent permissions)
+        $this->permissionsCache['slug_' . $slug] = $permission;
+        self::$globalPermissionsCache['slug_' . $slug] = $permission;
+
+        return $permission;
     }
 
     public function findByName(string $name): ?Permission
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['name' => $name])
             ->limit(1)
             ->get();
@@ -76,17 +115,17 @@ class PermissionRepository extends BaseRepository
 
     public function update(string $uuid, array $data): bool
     {
-        return $this->db->update($this->table, $data, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->update($data);
     }
 
     public function delete(string $uuid): bool
     {
-        return $this->db->delete($this->table, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->delete();
     }
 
     public function findAllPermissions(array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields);
+        $query = $this->db->table($this->table)->select($this->defaultFields);
 
         if (isset($filters['category'])) {
             $query->where(['category' => $filters['category']]);
@@ -108,7 +147,8 @@ class PermissionRepository extends BaseRepository
 
     public function findByCategory(string $category): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['category' => $category])
             ->orderBy(['name' => 'ASC'])
             ->get();
@@ -118,7 +158,8 @@ class PermissionRepository extends BaseRepository
 
     public function findByResourceType(string $resourceType): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['resource_type' => $resourceType])
             ->orderBy(['category' => 'ASC', 'name' => 'ASC'])
             ->get();
@@ -133,8 +174,10 @@ class PermissionRepository extends BaseRepository
 
     public function getCategories(): array
     {
-        $results = $this->db->select($this->table, ['DISTINCT category'])
-            ->where(['category' => ['!=', null]])
+        $results = $this->db->table($this->table)
+            ->select(['category'])
+            ->distinct()
+            ->whereNotNull('category')
             ->orderBy(['category' => 'ASC'])
             ->get();
 
@@ -143,8 +186,10 @@ class PermissionRepository extends BaseRepository
 
     public function getResourceTypes(): array
     {
-        $results = $this->db->select($this->table, ['DISTINCT resource_type'])
-            ->where(['resource_type' => ['!=', null]])
+        $results = $this->db->table($this->table)
+            ->select(['resource_type'])
+            ->distinct()
+            ->whereNotNull('resource_type')
             ->orderBy(['resource_type' => 'ASC'])
             ->get();
 
@@ -153,7 +198,8 @@ class PermissionRepository extends BaseRepository
 
     public function permissionExists(string $name, ?string $excludeUuid = null): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where(['name' => $name])
             ->limit(1);
 
@@ -167,7 +213,8 @@ class PermissionRepository extends BaseRepository
 
     public function slugExists(string $slug, ?string $excludeUuid = null): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where(['slug' => $slug])
             ->limit(1);
 
@@ -181,7 +228,7 @@ class PermissionRepository extends BaseRepository
 
     public function countPermissions(array $filters = []): int
     {
-        $query = $this->db->select($this->table, ['COUNT(*) as count']);
+        $query = $this->db->table($this->table);
 
         if (isset($filters['category'])) {
             $query->where(['category' => $filters['category']]);
@@ -195,22 +242,19 @@ class PermissionRepository extends BaseRepository
             $query->where(['is_system' => $filters['is_system']]);
         }
 
-        $result = $query->get();
-        return (int)($result[0]['count'] ?? 0);
+        return $query->count();
     }
 
     public function searchPermissions(string $searchTerm, array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields);
+        $query = $this->db->table($this->table)->select($this->defaultFields);
 
         // Add search conditions
-        $query->where([
-            'name' => ['LIKE', '%' . $searchTerm . '%'],
-            'OR' => [
-                'description' => ['LIKE', '%' . $searchTerm . '%'],
-                'slug' => ['LIKE', '%' . $searchTerm . '%']
-            ]
-        ]);
+        $query->where(function ($q) use ($searchTerm) {
+            $q->where('name', 'LIKE', '%' . $searchTerm . '%')
+              ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
+              ->orWhere('slug', 'LIKE', '%' . $searchTerm . '%');
+        });
 
         // Apply additional filters
         if (isset($filters['category'])) {
@@ -256,14 +300,13 @@ class PermissionRepository extends BaseRepository
             $searchTerm = $filters['search'];
 
             // Use the query method for more complex search
-            $query = $this->query()
-                ->where([
-                    'name' => ['LIKE', '%' . $searchTerm . '%'],
-                    'OR' => [
-                        'description' => ['LIKE', '%' . $searchTerm . '%'],
-                        'slug' => ['LIKE', '%' . $searchTerm . '%']
-                    ]
-                ]);
+            $query = $this->db->table($this->table)
+                ->select($this->defaultFields)
+                ->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('slug', 'LIKE', '%' . $searchTerm . '%');
+                });
 
             // Add other conditions to the search query
             if (!empty($conditions)) {
@@ -286,7 +329,8 @@ class PermissionRepository extends BaseRepository
 
     public function getUsersWithPermission(string $permissionUuid): array
     {
-        $results = $this->db->select('user_permissions', ['user_uuid'])
+        $results = $this->db->table('user_permissions')
+            ->select(['user_uuid'])
             ->where(['permission_uuid' => $permissionUuid])
             ->get();
 
@@ -305,13 +349,54 @@ class PermissionRepository extends BaseRepository
             return [];
         }
 
-        $results = $this->db->select($this->table, $this->defaultFields)
-            ->whereIn('uuid', $uuids)
+        $permissions = [];
+        $uncachedUuids = [];
+
+        // First, check cache for each UUID
+        foreach ($uuids as $uuid) {
+            if (isset(self::$globalPermissionsCache['uuid_' . $uuid])) {
+                $permission = self::$globalPermissionsCache['uuid_' . $uuid];
+                if ($permission !== null) {
+                    $permissions[] = $permission;
+                }
+            } else {
+                $uncachedUuids[] = $uuid;
+            }
+        }
+
+        // If all permissions were found in cache, return them
+        if (empty($uncachedUuids)) {
+            return $permissions;
+        }
+
+        // Fetch uncached permissions from database
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
+            ->whereIn('uuid', $uncachedUuids)
             ->get();
 
-        $permissions = [];
+        // Process results and add to cache
         foreach ($results as $row) {
-            $permissions[] = new Permission($row);
+            $permission = new Permission($row);
+            $permissions[] = $permission;
+
+            // Cache in both instance and global cache
+            $this->permissionsCache['uuid_' . $permission->getUuid()] = $permission;
+            self::$globalPermissionsCache['uuid_' . $permission->getUuid()] = $permission;
+        }
+
+        // Mark non-existent UUIDs as null in cache to prevent re-querying
+        foreach ($uncachedUuids as $uuid) {
+            $found = false;
+            foreach ($results as $row) {
+                if ($row['uuid'] === $uuid) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                self::$globalPermissionsCache['uuid_' . $uuid] = null;
+            }
         }
 
         return $permissions;

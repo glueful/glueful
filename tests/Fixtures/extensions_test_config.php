@@ -1,7 +1,9 @@
 <?php
+
 /**
  * Test extensions configuration
  */
+
 return [
     // List of enabled extensions
     'enabled' => [

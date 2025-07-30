@@ -13,11 +13,35 @@ declare(strict_types=1);
 return [
     /**
      * Extension Templates Configuration
+     * Note: Primary template configuration is in config/services.php
+     * This contains extension-specific template settings only
      */
     'templates' => [
-        'path' => __DIR__ . '/../templates',
-        'cache_enabled' => true,
-        'default_layout' => 'layout',
+        // Extension's default templates directory
+        'extension_path' => __DIR__ . '/Templates/html',
+
+        // Extension-specific template mappings
+        'extension_mappings' => [
+            // Built-in template mappings for this extension
+            'verification' => 'verification',
+            'password-reset' => 'password-reset',
+            'welcome' => 'welcome',
+            'alert' => 'alert',
+            'default' => 'default',
+        ],
+
+        // Template processing options
+        'processing' => [
+            'minify_html' => env('MAIL_MINIFY_HTML', false),
+            'inline_css' => env('MAIL_INLINE_CSS', true),
+            'auto_text_version' => true,
+        ],
+
+        // Extension-specific variables (merged with global)
+        'extension_variables' => [
+            'extension_version' => '1.0.0',
+            'powered_by' => 'Glueful EmailNotification Extension',
+        ],
     ],
 
     /**
@@ -32,13 +56,16 @@ return [
 
     /**
      * Queue Integration (Extension Feature)
+     * Integrates with framework's built-in queue system
      */
     'queue' => [
         'enabled' => env('MAIL_QUEUE_ENABLED', true),
         'connection' => env('MAIL_QUEUE_CONNECTION', 'default'),
-        'queue' => env('MAIL_QUEUE_NAME', 'emails'),
+        'queue_name' => env('MAIL_QUEUE_NAME', 'emails'),
         'retry_after' => env('MAIL_QUEUE_RETRY_AFTER', 90),
         'max_attempts' => env('MAIL_QUEUE_MAX_ATTEMPTS', 3),
+        'priority' => env('MAIL_QUEUE_PRIORITY', 5),
+        'timeout' => env('MAIL_QUEUE_TIMEOUT', 120),
     ],
 
     /**

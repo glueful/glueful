@@ -6,11 +6,11 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Extensions\ExtensionManager;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 class MetricsController extends BaseController
 {
-    private SchemaManager $schemaManager;
+    private SchemaBuilderInterface $schemaManager;
 
     public function __construct(
         ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
@@ -19,7 +19,7 @@ class MetricsController extends BaseController
     ) {
         parent::__construct($repositoryFactory, $authManager, $request);
         $connection = $this->getConnection();
-        $this->schemaManager = $connection->getSchemaManager();
+        $this->schemaManager = $connection->getSchemaBuilder();
     }
 
     /**
@@ -204,7 +204,7 @@ class MetricsController extends BaseController
                 $totalSize = 0;
                 foreach ($databaseTables as $table) {
                     $tableSize = $this->schemaManager->getTableSize($table);
-                    $totalSize += $tableSize['size_bytes'] ?? 0;
+                    $totalSize += $tableSize; // getTableSize now returns int directly
                 }
                 $dbMetrics['total_size'] = $this->formatBytes($totalSize);
                 $dbMetrics['table_names'] = $databaseTables;

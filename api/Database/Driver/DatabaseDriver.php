@@ -126,4 +126,14 @@ interface DatabaseDriver
      * @return string Lightweight SQL query for connectivity testing
      */
     public function getPingQuery(): string;
+
+    /**
+     * Get the driver name identifier
+     *
+     * Returns a consistent string identifier for the database driver type.
+     * Used for database-specific logic and feature detection.
+     *
+     * @return string Driver name ('mysql', 'pgsql', 'sqlite')
+     */
+    public function getDriverName(): string;
 }

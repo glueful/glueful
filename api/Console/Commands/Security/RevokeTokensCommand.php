@@ -4,7 +4,7 @@ namespace Glueful\Console\Commands\Security;
 
 use Glueful\Console\Commands\Security\BaseSecurityCommand;
 use Glueful\Cache\CacheStore;
-use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Database\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -25,7 +25,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 class RevokeTokensCommand extends BaseSecurityCommand
 {
-    use DatabaseConnectionTrait;
+    private Connection $db;
 
     protected function configure(): void
     {
@@ -73,6 +73,8 @@ class RevokeTokensCommand extends BaseSecurityCommand
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        // Initialize database connection
+        $this->db = new Connection();
         $user = $input->getOption('user');
         $all = $input->getOption('all');
         $type = $input->getOption('type');
@@ -103,7 +105,6 @@ class RevokeTokensCommand extends BaseSecurityCommand
 
         try {
             // Import required classes (following original pattern)
-            $queryBuilder = $this->getQueryBuilder();
             $cacheStore = $this->getService(CacheStore::class);
             $tokenManager = \Glueful\Auth\TokenManager::class;
 
@@ -112,10 +113,9 @@ class RevokeTokensCommand extends BaseSecurityCommand
 
             // Step 1: Get all active sessions from database
             $this->info('📊 Retrieving all active sessions...');
-            $sessionsQuery = $queryBuilder->select(
-                'auth_sessions',
-                ['access_token', 'refresh_token', 'user_uuid', 'uuid']
-            )->where(['status' => 'active']);
+            $sessionsQuery = $this->db->table('auth_sessions')
+                ->select(['access_token', 'refresh_token', 'user_uuid', 'uuid'])
+                ->where('status', 'active');
 
             if ($user) {
                 // Find user UUID first
@@ -125,12 +125,12 @@ class RevokeTokensCommand extends BaseSecurityCommand
                     $this->error("User not found: {$user}");
                     return self::FAILURE;
                 }
-                $sessionsQuery->where(['user_uuid' => $userData['uuid']]);
+                $sessionsQuery->where('user_uuid', $userData['uuid']);
             }
 
             if ($olderThan) {
                 $timestamp = strtotime("-{$olderThan}");
-                $sessionsQuery->where(['created_at' => ['<', date('Y-m-d H:i:s', $timestamp)]]);
+                $sessionsQuery->where('created_at', '<', date('Y-m-d H:i:s', $timestamp));
             }
 
             $activeSessions = $sessionsQuery->get();

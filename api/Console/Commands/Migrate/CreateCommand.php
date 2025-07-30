@@ -156,8 +156,10 @@ class CreateCommand extends BaseCommand
         return <<<PHP
 <?php
 
+namespace Glueful\\Database\\Migrations;
+
 use Glueful\\Database\\Migrations\\MigrationInterface;
-use Glueful\\Database\\Schema\\SchemaManager;
+use Glueful\\Database\\Schema\\Interfaces\\SchemaBuilderInterface;
 
 /**
  * {$className} Migration
@@ -172,32 +174,56 @@ class {$className} implements MigrationInterface
     /**
      * Execute the migration
      *
-     * @param SchemaManager \$schema Database schema manager
+     * @param SchemaBuilderInterface \$schema Database schema builder
      */
-    public function up(SchemaManager \$schema): void
+    public function up(SchemaBuilderInterface \$schema): void
     {
-        // Add your migration logic here
-        // Example:
-        // \$schema->createTable('table_name', [
-        //     'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-        //     'name' => 'VARCHAR(255) NOT NULL',
-        //     'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        //     'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        // ])->addIndex([
-        //     ['type' => 'UNIQUE', 'column' => 'name']
-        // ]);
+        // Create table with fluent interface
+        \$schema->createTable('table_name', function (\$table) {
+            // Primary key
+            \$table->bigInteger('id')->primary()->autoIncrement();
+            
+            // Common columns
+            \$table->string('uuid', 12)->unique();
+            \$table->string('name', 255);
+            \$table->text('description')->nullable();
+            \$table->boolean('is_active')->default(true);
+            \$table->integer('sort_order')->default(0);
+            
+            // JSON columns
+            \$table->json('metadata')->nullable();
+            
+            // Timestamps
+            \$table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            \$table->timestamp('updated_at')->nullable();
+            
+            // Indexes
+            \$table->index('name');
+            \$table->index('is_active');
+            \$table->index(['is_active', 'sort_order']);
+        });
+
+        // Or create table with foreign keys
+        // \$schema->table('child_table')
+        //     ->id()
+        //     ->foreignId('parent_id')->constrained('parent_table')->cascadeOnDelete()
+        //     ->string('title')
+        //     ->timestamps()
+        //     ->create();
     }
 
     /**
      * Reverse the migration
      *
-     * @param SchemaManager \$schema Database schema manager
+     * @param SchemaBuilderInterface \$schema Database schema builder
      */
-    public function down(SchemaManager \$schema): void
+    public function down(SchemaBuilderInterface \$schema): void
     {
-        // Add your rollback logic here
-        // Example:
-        // \$schema->dropTable('table_name');
+        // Drop table
+        \$schema->dropTable('table_name');
+        
+        // Or use dropIfExists for safety
+        // \$schema->dropIfExists('table_name');
     }
 
     /**

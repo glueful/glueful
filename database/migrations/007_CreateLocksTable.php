@@ -3,7 +3,7 @@
 namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Create Locks Table Migration
@@ -29,18 +29,20 @@ class CreateLocksTable implements MigrationInterface
      * - Index on expiration for cleanup operations
      * - Index on token for ownership verification
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
-        $schema->createTable('locks', [
-            'key_id' => 'VARCHAR(255) PRIMARY KEY',
-            'token' => 'VARCHAR(255) NOT NULL',
-            'expiration' => 'INT UNSIGNED NOT NULL'
-        ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'expiration'],
-            ['type' => 'INDEX', 'column' => 'token']
-        ]);
+        // Create Locks Table with auto-execute
+        $schema->createTable('locks', function ($table) {
+            $table->string('key_id', 255)->primary();
+            $table->string('token', 255);
+            $table->integer('expiration')->unsigned();
+
+            // Add indexes
+            $table->index('expiration');
+            $table->index('token');
+        });
     }
 
     /**
@@ -48,11 +50,11 @@ class CreateLocksTable implements MigrationInterface
      *
      * Drops the locks table.
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('locks');
+        $schema->dropTableIfExists('locks');
     }
 
     /**

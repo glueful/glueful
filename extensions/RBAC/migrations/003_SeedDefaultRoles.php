@@ -3,10 +3,9 @@
 namespace Glueful\Extensions\RBAC\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Helpers\Utils;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Interfaces\Permission\PermissionStandards;
 
 /**
@@ -35,16 +34,15 @@ use Glueful\Interfaces\Permission\PermissionStandards;
  */
 class SeedDefaultRoles implements MigrationInterface
 {
-    /** @var QueryBuilder Database interaction instance */
-    private QueryBuilder $db;
+    /** @var Connection Database interaction instance */
+    private Connection $db;
 
     /**
      * Execute the migration
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = new Connection();
 
         // Define role data
         $roleData = [
@@ -86,13 +84,13 @@ class SeedDefaultRoles implements MigrationInterface
         $roleUuids = [];
         foreach ($roleData as $slug => $role) {
             // Check if role already exists using WHERE clause
-            $existingRole = $this->db->select('roles', ['uuid'])->where(['slug' => $role['slug']])->get();
+            $existingRole = $this->db->table('roles')->select(['uuid'])->where('slug', $role['slug'])->get();
             if (!empty($existingRole)) {
                 $roleUuids[$slug] = $existingRole[0]['uuid'];
             } else {
                 $role['uuid'] = Utils::generateNanoID();
                 $roleUuids[$slug] = $role['uuid'];
-                $roleId = $this->db->insert('roles', $role);
+                $roleId = $this->db->table('roles')->insert($role);
                 if (!$roleId) {
                     throw new \RuntimeException('Failed to create role: ' . $role['name']);
                 }
@@ -197,8 +195,9 @@ class SeedDefaultRoles implements MigrationInterface
         $permissionUuids = [];
         foreach ($permissionData as $key => $permission) {
             // Check if permission already exists using WHERE clause
-            $existingPermission = $this->db->select('permissions', ['uuid'])
-                ->where(['slug' => $permission['slug']])
+            $existingPermission = $this->db->table('permissions')
+                ->select(['uuid'])
+                ->where('slug', $permission['slug'])
                 ->get();
             if (!empty($existingPermission)) {
                 $permissionUuids[$key] = $existingPermission[0]['uuid'];
@@ -206,7 +205,7 @@ class SeedDefaultRoles implements MigrationInterface
                 $permission['uuid'] = Utils::generateNanoID();
                 $permission['is_system'] = 1;
                 $permissionUuids[$key] = $permission['uuid'];
-                $permissionId = $this->db->insert('permissions', $permission);
+                $permissionId = $this->db->table('permissions')->insert($permission);
                 if (!$permissionId) {
                     throw new \RuntimeException('Failed to create permission: ' . $permission['name']);
                 }
@@ -257,7 +256,7 @@ class SeedDefaultRoles implements MigrationInterface
         // Check existing assignments in bulk
         $existingPairs = [];
         if (!empty($assignments)) {
-            $existing = $this->db->select('role_permissions', ['role_uuid', 'permission_uuid'])->get();
+            $existing = $this->db->table('role_permissions')->select(['role_uuid', 'permission_uuid'])->get();
             foreach ($existing as $row) {
                 $existingPairs[$row['role_uuid'] . '|' . $row['permission_uuid']] = true;
             }
@@ -278,21 +277,20 @@ class SeedDefaultRoles implements MigrationInterface
 
         // Bulk insert new assignments
         if (!empty($newAssignments)) {
-            $this->db->insertBatch('role_permissions', $newAssignments);
+            $this->db->table('role_permissions')->insertBatch($newAssignments);
         }
     }
 
     /**
      * Reverse the migration
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = new Connection();
 
         // Delete all system roles and permissions (will cascade to role_permissions)
-        $this->db->delete('permissions', ['is_system' => 1]);
-        $this->db->delete('roles', ['is_system' => 1]);
+        $this->db->table('permissions')->where('is_system', 1)->delete();
+        $this->db->table('roles')->where('is_system', 1)->delete();
     }
 
     /**
@@ -312,9 +310,10 @@ class SeedDefaultRoles implements MigrationInterface
     private function verifyCorePermissions(): void
     {
         foreach (PermissionStandards::CORE_PERMISSIONS as $corePermission) {
-            $results = $this->db
-                ->select('permissions', ['uuid'])
-                ->where(['slug' => $corePermission, 'is_system' => 1])
+            $results = $this->db->table('permissions')
+                ->select(['uuid'])
+                ->where('slug', $corePermission)
+                ->where('is_system', 1)
                 ->get();
 
             if (empty($results)) {

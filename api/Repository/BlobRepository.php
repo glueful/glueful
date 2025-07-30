@@ -104,7 +104,8 @@ class BlobRepository extends BaseRepository
             $fields = $this->defaultBlobFields;
         }
 
-        $query = $this->db->select($this->getTableName(), $fields)
+        $query = $this->db->table($this->getTableName())
+            ->select($fields)
             ->where(['uuid' => $uuid])
             ->where(['status' => ['!=', 'deleted']])
             ->limit(1)
@@ -253,7 +254,8 @@ class BlobRepository extends BaseRepository
         array $orderBy = ['created_at' => 'desc'],
         ?int $limit = null
     ): array {
-        $query = $this->db->select($this->getTableName(), $this->defaultFields)
+        $query = $this->db->table($this->getTableName())
+            ->select($this->defaultFields)
             ->whereLike('mime_type', $pattern);
 
         if ($activeOnly) {
@@ -288,15 +290,16 @@ class BlobRepository extends BaseRepository
         }
 
         // Get total count and size
-        $stats = $this->db->select($this->getTableName(), [
-            'COUNT(*) as total_files',
-            'SUM(size) as total_size',
-            'AVG(size) as average_size',
-            'MAX(size) as largest_file',
-            'MIN(size) as smallest_file'
-        ])
-        ->where($conditions)
-        ->get();
+        $stats = $this->db->table($this->getTableName())
+            ->select([
+                'COUNT(*) as total_files',
+                'SUM(size) as total_size',
+                'AVG(size) as average_size',
+                'MAX(size) as largest_file',
+                'MIN(size) as smallest_file'
+            ])
+            ->where($conditions)
+            ->get();
 
         $result = $stats[0] ?? [
             'total_files' => 0,
@@ -330,7 +333,8 @@ class BlobRepository extends BaseRepository
     {
         $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$olderThanDays} days"));
 
-        $query = $this->db->select($this->getTableName(), $this->defaultFields)
+        $query = $this->db->table($this->getTableName())
+            ->select($this->defaultFields)
             ->where(['status' => 'deleted'])
             ->where(['updated_at' => ['<', $cutoffDate]])
             ->orderBy(['updated_at' => 'asc']);

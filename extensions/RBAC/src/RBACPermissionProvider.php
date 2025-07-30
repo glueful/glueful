@@ -42,6 +42,7 @@ class RBACPermissionProvider implements PermissionProviderInterface
         'max_hierarchy_depth' => 10
     ];
     private array $permissionCache = [];
+    private array $userRolesCache = [];
     private string $cachePrefix = 'rbac:';
     private bool $cacheEnabled = true;
 
@@ -347,6 +348,17 @@ class RBACPermissionProvider implements PermissionProviderInterface
         // Clear memory cache
         unset($this->permissionCache[$userUuid]);
 
+        // Clear user roles cache
+        $keysToRemove = [];
+        foreach (array_keys($this->userRolesCache) as $cacheKey) {
+            if (str_starts_with($cacheKey, $userUuid . ':')) {
+                $keysToRemove[] = $cacheKey;
+            }
+        }
+        foreach ($keysToRemove as $key) {
+            unset($this->userRolesCache[$key]);
+        }
+
         // Clear distributed cache if enabled
         if ($this->cacheEnabled) {
             try {
@@ -477,15 +489,43 @@ class RBACPermissionProvider implements PermissionProviderInterface
 
     public function getUserRoles(string $userUuid, array $scope = []): array
     {
+        // Create cache key based on user UUID and scope
+        $scopeHash = md5(serialize($scope));
+        $cacheKey = "{$userUuid}:{$scopeHash}";
+
+        // Return cached result if available
+        if (isset($this->userRolesCache[$cacheKey])) {
+            return $this->userRolesCache[$cacheKey];
+        }
+
         $userRoles = $this->getUserRoleRepository()->getUserRoles($userUuid, $scope);
         $roles = [];
 
+        // Extract role UUIDs first
+        $roleUuids = [];
         foreach ($userRoles as $userRole) {
-            $role = $this->getRoleRepository()->findRoleByUuid($userRole->getRoleUuid());
-            if ($role) {
-                $roles[] = $role;
+            $roleUuids[] = $userRole->getRoleUuid();
+        }
+
+        // Batch fetch roles to avoid N+1 queries
+        if (!empty($roleUuids)) {
+            $rolesMap = [];
+            $fetchedRoles = $this->getRoleRepository()->findByUuids($roleUuids);
+            foreach ($fetchedRoles as $role) {
+                $rolesMap[$role->getUuid()] = $role;
+            }
+
+            // Build final result in original order
+            foreach ($userRoles as $userRole) {
+                $roleUuid = $userRole->getRoleUuid();
+                if (isset($rolesMap[$roleUuid])) {
+                    $roles[] = $rolesMap[$roleUuid];
+                }
             }
         }
+
+        // Cache the result
+        $this->userRolesCache[$cacheKey] = $roles;
 
         return $roles;
     }

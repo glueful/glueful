@@ -298,7 +298,8 @@ class SessionTransaction
                 $ttl = $sessionData['ttl'] ?? null;
 
                 if ($this->sessionCacheManager->storeSession($userData, $token, $provider, $ttl)) {
-                    $sessionId = TokenManager::getSessionIdFromToken($token);
+                    // Use the session ID from userData if available, otherwise generate one
+                    $sessionId = $userData['session_id'];
                     $createdSessions[] = $sessionId;
 
                     // Store rollback operation

@@ -5,7 +5,6 @@ namespace Glueful\Scheduler;
 use Cron\CronExpression;
 use DateTime;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 use Glueful\Lock\LockManagerInterface;
 use Symfony\Component\Lock\Exception\LockConflictedException;
@@ -67,8 +66,8 @@ class JobScheduler
     /** @var array List of registered jobs and their schedules */
     protected array $jobs = [];
 
-    /** @var QueryBuilder Database query builder */
-    protected QueryBuilder $db;
+    /** @var Connection Database connection */
+    protected Connection $db;
 
     /** @var LockManagerInterface Lock manager for preventing concurrent executions */
     protected LockManagerInterface $lockManager;
@@ -78,8 +77,7 @@ class JobScheduler
      */
     public function __construct(?LockManagerInterface $lockManager = null)
     {
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = new Connection();
 
         // Get lock manager from container if not provided
         if ($lockManager) {
@@ -109,51 +107,67 @@ class JobScheduler
     {
         try {
             $connection = new Connection();
-            $schema = $connection->getSchemaManager();
+            $schema = $connection->getSchemaBuilder();
 
             // Create Scheduled Jobs Table
-            $schema->createTable('scheduled_jobs', [
-                'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-                'uuid' => 'CHAR(12) NOT NULL',
-                'name' => 'VARCHAR(255) NOT NULL',
-                'schedule' => 'VARCHAR(100) NOT NULL',
-                'handler_class' => 'VARCHAR(255) NOT NULL',
-                'parameters' => 'JSON',
-                'is_enabled' => 'TINYINT(1) DEFAULT 1',
-                'last_run' => 'DATETIME NULL',
-                'next_run' => 'DATETIME NULL',
-                'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-                'updated_at' => 'DATETIME NULL'
-            ])->addIndex([
-                ['type' => 'INDEX', 'column' => 'name', 'table' => 'scheduled_jobs'],
-                ['type' => 'INDEX', 'column' => 'next_run', 'table' => 'scheduled_jobs'],
-                ['type' => 'INDEX', 'column' => 'is_enabled', 'table' => 'scheduled_jobs']
-            ]);
+            if (!$schema->hasTable('scheduled_jobs')) {
+                $table = $schema->table('scheduled_jobs');
+
+                // Define columns
+                $table->bigInteger('id')->primary()->autoIncrement();
+                $table->string('uuid', 12);
+                $table->string('name', 255);
+                $table->string('schedule', 100);
+                $table->string('handler_class', 255);
+                $table->json('parameters')->nullable();
+                $table->boolean('is_enabled')->default(true);
+                $table->dateTime('last_run')->nullable();
+                $table->dateTime('next_run')->nullable();
+                $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+                $table->dateTime('updated_at')->nullable();
+
+                // Add indexes
+                $table->index('name');
+                $table->index('next_run');
+                $table->index('is_enabled');
+
+                // Create the table
+                $table->create();
+            }
 
             // Create Job Executions Table
-            $schema->createTable('job_executions', [
-                'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-                'uuid' => 'CHAR(12) NOT NULL',
-                'job_uuid' => 'CHAR(12) NOT NULL',
-                'status' => "ENUM('success', 'failure', 'running') NOT NULL",
-                'started_at' => 'DATETIME NOT NULL',
-                'completed_at' => 'DATETIME NULL',
-                'result' => 'TEXT NULL',
-                'error_message' => 'TEXT NULL',
-                'execution_time' => 'FLOAT NULL',
-                'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-            ])->addIndex([
-                ['type' => 'INDEX', 'column' => 'job_uuid', 'table' => 'job_executions'],
-                ['type' => 'INDEX', 'column' => 'status', 'table' => 'job_executions'],
-                ['type' => 'INDEX', 'column' => 'started_at', 'table' => 'job_executions'],
-                ['type' => 'FOREIGN KEY',
-                    'column' => 'job_uuid',
-                    'table' => 'job_executions',
-                    'references' => 'uuid',
-                    'on' => 'scheduled_jobs',
-                    'onDelete' => 'CASCADE'
-                ]
-            ]);
+            if (!$schema->hasTable('job_executions')) {
+                $table = $schema->table('job_executions');
+
+                // Define columns
+                $table->bigInteger('id')->primary()->autoIncrement();
+                $table->string('uuid', 12);
+                $table->string('job_uuid', 12);
+                $table->string('status', 20); // Will use CHECK constraint in some databases
+                $table->dateTime('started_at');
+                $table->dateTime('completed_at')->nullable();
+                $table->text('result')->nullable();
+                $table->text('error_message')->nullable();
+                $table->decimal('execution_time', 10, 2)->nullable();
+                $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+                // Add indexes
+                $table->index('job_uuid');
+                $table->index('status');
+                $table->index('started_at');
+
+                // Add foreign key
+                $table->foreign('job_uuid')
+                    ->references('uuid')
+                    ->on('scheduled_jobs')
+                    ->cascadeOnDelete();
+
+                // Create the table
+                $table->create();
+            }
+
+            // Execute all pending operations
+            $schema->execute();
         } catch (\Exception $e) {
             $this->log("Failed to ensure table existence: " . $e->getMessage(), 'error');
         }
@@ -200,7 +214,7 @@ class JobScheduler
         $nextRunTime = $cronExpression->getNextRunDate()->format('Y-m-d H:i:s');
 
         // Insert job into database
-        $this->db->insert('scheduled_jobs', [
+        $this->db->table('scheduled_jobs')->insert([
             'uuid' => $uuid,
             'name' => $name,
             'schedule' => $schedule,
@@ -231,9 +245,10 @@ class JobScheduler
     protected function loadJobsFromDatabase(): void
     {
         try {
-            $dbJobs = $this->db->select('scheduled_jobs', ['*'])
-                ->where(['is_enabled' => 1])
-                ->orderBy(['name' => 'ASC'])
+            $dbJobs = $this->db->table('scheduled_jobs')
+                ->select(['*'])
+                ->where('is_enabled', 1)
+                ->orderBy('name', 'ASC')
                 ->get();
 
             foreach ($dbJobs as $job) {
@@ -281,7 +296,7 @@ class JobScheduler
 
             // Insert execution record
             $executionId = Utils::generateNanoID();
-            $this->db->insert('job_executions', [
+            $this->db->table('job_executions')->insert([
                 'uuid' => $executionId,
                 'job_uuid' => $jobUuid,
                 'status' => $success ? 'success' : 'failure',
@@ -292,20 +307,24 @@ class JobScheduler
             ]);
 
             // Update job's last_run and next_run
-            $job = $this->db->select('scheduled_jobs', ['schedule'])
-                ->where(['uuid' => $jobUuid])
+            $jobs = $this->db->table('scheduled_jobs')
+                ->select(['schedule'])
+                ->where('uuid', $jobUuid)
                 ->limit(1)
                 ->get();
 
-            if ($job) {
+            if (!empty($jobs)) {
+                $job = $jobs[0];
                 $cronExpression = new CronExpression($job['schedule']);
                 $nextRunTime = $cronExpression->getNextRunDate()->format('Y-m-d H:i:s');
 
-                $this->db->upsert('scheduled_jobs', [
-                    'last_run' => $now,
-                    'next_run' => $nextRunTime,
-                    'updated_at' => $now
-                ], ['uuid' => $jobUuid]);
+                $this->db->table('scheduled_jobs')
+                    ->where('uuid', $jobUuid)
+                    ->update([
+                        'last_run' => $now,
+                        'next_run' => $nextRunTime,
+                        'updated_at' => $now
+                    ]);
             }
         } catch (\Exception $e) {
             error_log("Failed to record job execution: " . $e->getMessage());
@@ -544,11 +563,10 @@ class JobScheduler
     {
         $now = date('Y-m-d H:i:s');
 
-        return $this->db->select('scheduled_jobs', ['*'])
-            ->where([
-                'is_enabled' => 1,
-                'next_run <= ?' => $now
-            ])
+        return $this->db->table('scheduled_jobs')
+            ->select(['*'])
+            ->where('is_enabled', 1)
+            ->where('next_run', '<=', $now)
             ->get();
     }
 

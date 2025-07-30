@@ -39,12 +39,6 @@ class EmailVerification
     /** @var int Cooldown period in minutes after max attempts */
     private const COOLDOWN_MINUTES = 30;
 
-    /** @var int Maximum verification requests per day */
-    private const MAX_DAILY_REQUESTS = 10;
-
-    /** @var string Cache prefix for daily request tracking */
-    private const REQUESTS_PREFIX = 'email_verification_requests:';
-
     /** @var NotificationService Notification service instance */
     private NotificationService $notificationService;
 
@@ -125,25 +119,6 @@ class EmailVerification
                 ];
             }
 
-            if ($this->isRateLimited($email)) {
-                error_log("Rate limit exceeded for email: $email");
-                return [
-                    'success' => false,
-                    'message' => 'Too many failed attempts. Please try again later.',
-                    'error_code' => 'rate_limited'
-                ];
-            }
-
-            // Increment daily request counter
-            if (!$this->incrementDailyRequests($email)) {
-                error_log("Daily limit exceeded for email: $email");
-                return [
-                    'success' => false,
-                    'message' => 'Daily verification limit reached. Please try again tomorrow.',
-                    'error_code' => 'daily_limit_exceeded'
-                ];
-            }
-
             // Store OTP in Redis before sending email
             $hashedOTP = OTP::hashOTP($otp);
             $stored = $this->storeOTP($email, $hashedOTP);
@@ -203,26 +178,11 @@ class EmailVerification
                 [
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
-                    'app_name' => config('app.name', 'Glueful'),
-                    'current_year' => date('Y'),
-                    'message' => 'Your verification code is: ' . $otp, // Add a message for templates that use it
-                    'subject' => 'Verify your email address', // Update subject to match recent edits
-                    'title' => 'Email Verification', // Fixed title explicitly for header
-                    'template_data' => [  // Explicitly provide template data in the correct format
-                        'otp' => $otp,
-                        'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
-                        'app_name' => config('app.name', 'Glueful'),
-                        'current_year' => date('Y'),
-                        'subject' => 'Verify your email address', // Update subject to match recent edits
-                        'title' => 'Email Verification'    // Add title to template data
-                    ],
-                    'type' => 'email_verification', // Explicitly set the notification type
-                    'template_name' => 'verification' // Set template name directly in data as well
+                    'template_name' => 'verification',
+                    'subject' => 'Verify your email address',
+                    'title' => 'Email Verification',
                 ],
-                [
-                    'channels' => ['email'],
-                    'template_name' => 'verification'
-                ]
+                ['channels' => ['email']]
             );
 
             // Parse the result using the NotificationResultParser
@@ -348,7 +308,6 @@ class EmailVerification
 
         if ($isValid) {
             // Clear rate limiting on success
-            $this->clearAttempts($email);
             $this->cache->delete($key);
 
             // Update email_verified_at timestamp if user exists
@@ -403,37 +362,6 @@ class EmailVerification
         if ($attempts >= self::MAX_ATTEMPTS) {
             error_log("Account temporary locked for email: $email");
         }
-    }
-
-    /**
-     * Reset failed attempts counter
-     *
-     * @param string $email User email
-     */
-    private function clearAttempts(string $email): void
-    {
-        $this->cache->delete(self::ATTEMPTS_PREFIX . $this->sanitizeEmailForCacheKey($email));
-    }
-
-    /**
-     * Track daily verification requests
-     *
-     * @param string $email User email
-     * @return bool False if daily limit exceeded
-     */
-    private function incrementDailyRequests(string $email): bool
-    {
-        $key = self::REQUESTS_PREFIX . $this->sanitizeEmailForCacheKey($email) . ':' . date('Y-m-d');
-        $requests = (int)($this->cache->get($key) ?? 0) + 1;
-
-        if ($requests > self::MAX_DAILY_REQUESTS) {
-            return false;
-        }
-
-        // Set expiry to end of day
-        $endOfDay = strtotime('tomorrow') - time();
-        $this->cache->set($key, $requests, $endOfDay);
-        return true;
     }
 
     /**
@@ -557,27 +485,11 @@ class EmailVerification
                     'name' => $userProfile['first_name'] ?? '',
                     'otp' => $otp,
                     'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
-                    'app_name' => config('app.name', 'Glueful'),
-                    'current_year' => date('Y'),
-                    'message' => 'Your password reset code is: ' . $otp,
-                    'subject' => 'Password reset requested', // Update subject to match recent edits
-                    'title' => 'Password reset requested for', // Fixed title explicitly for header
-                    'template_data' => [  // Explicitly provide template data in the correct format
-                        'name' => $userProfile['first_name'] ?? '',
-                        'otp' => $otp,
-                        'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
-                        'app_name' => config('app.name', 'Glueful'),
-                        'current_year' => date('Y'),
-                        'subject' => 'Password reset requested', // Update subject to match recent edits
-                        'title' => 'Password reset requested for', // Fixed title explicitly for header
-                    ],
-                    'type' => 'password_reset', // Explicitly set the notification type
-                    'template_name' => 'password-reset' // Set template name directly in data as well
+                    'subject' => 'Password reset requested',
+                    'title' => 'Password reset requested for',
+                    'template_name' => 'password-reset',
                 ],
-                [
-                    'channels' => ['email'],
-                    'template_name' => 'password-reset'
-                ]
+                ['channels' => ['email']]
             );
 
             // Use the NotificationResultParser to handle the result

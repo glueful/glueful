@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Database\Migrations;
 
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Migration Interface
@@ -25,10 +25,10 @@ interface MigrationInterface
      * - Adding/updating data
      * - Adding constraints/indexes
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema builder
      * @throws \PDOException If migration fails
      */
-    public function up(SchemaManager $schema): void;
+    public function up(SchemaBuilderInterface $schema): void;
 
     /**
      * Revert migration changes
@@ -38,10 +38,10 @@ interface MigrationInterface
      * - Removing added data
      * - Removing constraints/indexes
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema builder
      * @throws \PDOException If rollback fails
      */
-    public function down(SchemaManager $schema): void;
+    public function down(SchemaBuilderInterface $schema): void;
 
     /**
      * Get migration description

@@ -9,7 +9,6 @@ use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
 use Glueful\Validation\Constraints\Unique;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 
 /**
  * Unique validator
@@ -20,7 +19,7 @@ use Glueful\Database\QueryBuilder;
 class UniqueValidator extends ConstraintValidator
 {
     /** @var Connection Database connection */
-    private Connection $connection;
+    private Connection $db;
 
     /**
      * Constructor
@@ -29,7 +28,7 @@ class UniqueValidator extends ConstraintValidator
      */
     public function __construct(Connection $connection)
     {
-        $this->connection = $connection;
+        $this->db = $connection;
     }
 
     /**
@@ -51,26 +50,26 @@ class UniqueValidator extends ConstraintValidator
 
         $column = $constraint->column ?: $this->context->getPropertyName();
 
-        // Create fresh query builder instance
-        $queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
-
-        // Build base query
-        $query = $queryBuilder->select($constraint->table, ['COUNT(*) as count'])
-            ->where([$column => $value]);
+        // Build base query using fluent interface
+        $query = $this->db->table($constraint->table)
+            ->selectRaw('COUNT(*) as count')
+            ->where($column, $value);
 
         // Add ignore condition if specified
         if ($constraint->ignoreId && $constraint->ignoreValue !== null) {
-            $query->whereNotEqual($constraint->ignoreId, $constraint->ignoreValue);
+            $query->where($constraint->ignoreId, '!=', $constraint->ignoreValue);
         }
 
         // Add additional conditions
         if (!empty($constraint->conditions)) {
-            $query->where($constraint->conditions);
+            foreach ($constraint->conditions as $condColumn => $condValue) {
+                $query->where($condColumn, $condValue);
+            }
         }
 
         try {
-            $result = $query->get();
-            $count = $result[0]['count'] ?? 0;
+            $result = $query->first();
+            $count = $result['count'] ?? 0;
 
             if ($count > 0) {
                 $this->context->buildViolation($constraint->message)

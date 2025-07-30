@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\SocialLogin\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Social Accounts Migration
@@ -37,33 +37,32 @@ class CreateSocialAccountsTable implements MigrationInterface
      * Table created:
      * - social_accounts: Social login provider accounts linked to users
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Social Accounts Table
-        $schema->createTable('social_accounts', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'provider' => 'VARCHAR(50) NOT NULL',
-            'social_id' => 'VARCHAR(255) NOT NULL',
-            'profile_data' => 'TEXT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'UNIQUE', 'column' => 'provider'],
-            ['type' => 'UNIQUE', 'column' => 'social_id'],
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'CASCADE'
-            ]
-        ]);
+        $schema->createTable('social_accounts', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('user_uuid', 12);
+            $table->string('provider', 50);
+            $table->string('social_id', 255);
+            $table->text('profile_data')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('user_uuid');
+            $table->unique(['provider', 'social_id']); // Composite unique constraint
+
+            // Add foreign key
+            $table->foreign('user_uuid')
+                ->references('uuid')
+                ->on('users')
+                ->cascadeOnDelete();
+        });
     }
 
     /**
@@ -73,11 +72,11 @@ class CreateSocialAccountsTable implements MigrationInterface
      * - Respects foreign key constraints
      * - Completely cleans up all data
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('social_accounts');
+        $schema->dropTableIfExists('social_accounts');
     }
 
     /**

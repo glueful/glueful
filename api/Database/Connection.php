@@ -7,13 +7,15 @@ use Glueful\Database\Driver\MySQLDriver;
 use Glueful\Database\Driver\PostgreSQLDriver;
 use Glueful\Database\Driver\SQLiteDriver;
 use Glueful\Database\Driver\DatabaseDriver;
-use Glueful\Database\Schema\SchemaManager;
-use Glueful\Database\Schema\MySQLSchemaManager;
-use Glueful\Database\Schema\PostgreSQLSchemaManager;
-use Glueful\Database\Schema\SQLiteSchemaManager;
+use Glueful\Database\QueryBuilder;
+use Glueful\Database\Schema\Builders\SchemaBuilder;
+use Glueful\Database\Schema\Generators\MySQLSqlGenerator;
+use Glueful\Database\Schema\Generators\PostgreSQLSqlGenerator;
+use Glueful\Database\Schema\Generators\SQLiteSqlGenerator;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
+use Glueful\Database\Schema\Interfaces\SqlGeneratorInterface;
 use Glueful\Database\ConnectionPoolManager;
 use Glueful\Database\PooledConnection;
-use Glueful\Exceptions\DatabaseException;
 use Glueful\Exceptions\BusinessLogicException;
 
 /**
@@ -51,8 +53,8 @@ class Connection implements DatabaseInterface
     /** @var DatabaseDriver Database-specific driver instance */
     protected DatabaseDriver $driver;
 
-    /** @var SchemaManager|null Schema manager instance (initialized lazily) */
-    protected ?SchemaManager $schemaManager = null;
+    /** @var SchemaBuilderInterface|null Schema builder instance (initialized lazily) */
+    protected ?SchemaBuilderInterface $schemaBuilder = null;
 
     /** @var string Current database engine */
     protected string $engine;
@@ -95,6 +97,12 @@ class Connection implements DatabaseInterface
         }
 
         $this->driver = $this->resolveDriver($this->engine);
+
+        // Initialize PDO connection only if pooling is disabled
+        if (!($this->config['pooling']['enabled'] ?? false)) {
+            $this->pdo = $this->createPDOConnection($this->engine);
+        }
+
         // Note: Schema manager is initialized lazily when first accessed
     }
 
@@ -241,21 +249,21 @@ class Connection implements DatabaseInterface
     }
 
     /**
-     * Factory method for schema manager resolution
+     * Factory method for SQL generator resolution
      *
-     * Creates database-specific schema manager instance.
-     * Integrates with driver capabilities.
+     * Creates database-specific SQL generator instance.
+     * Used by the fluent schema builder.
      *
      * @param string $engine Target database engine
-     * @return SchemaManager Initialized schema manager
+     * @return SqlGeneratorInterface Initialized SQL generator
      * @throws \Glueful\Exceptions\BusinessLogicException For unsupported engines
      */
-    private function resolveSchemaManager(string $engine): SchemaManager
+    private function resolveSqlGenerator(string $engine): SqlGeneratorInterface
     {
         return match ($engine) {
-            'mysql' => new MySQLSchemaManager($this->getPDO()),
-            'pgsql' => new PostgreSQLSchemaManager($this->getPDO()),
-            'sqlite' => new SQLiteSchemaManager($this->getPDO()),
+            'mysql' => new MySQLSqlGenerator(),
+            'pgsql' => new PostgreSQLSqlGenerator(),
+            'sqlite' => new SQLiteSqlGenerator(),
             default => throw BusinessLogicException::operationNotAllowed(
                 'database_connection',
                 "Unsupported database engine: {$engine}"
@@ -264,20 +272,33 @@ class Connection implements DatabaseInterface
     }
 
     /**
-     * Access active schema manager instance
+     * Access fluent schema builder instance
      *
-     * Initializes schema manager lazily on first access to ensure
-     * PDO connection is available.
+     * Initializes schema builder lazily on first access to ensure
+     * PDO connection is available. Returns the new fluent schema builder.
      *
-     * @return SchemaManager Current schema manager
-     * @throws \Glueful\Exceptions\DatabaseException If schema manager initialization fails
+     * @return SchemaBuilderInterface Fluent schema builder
+     * @throws \Glueful\Exceptions\DatabaseException If schema builder initialization fails
      */
-    public function getSchemaManager(): SchemaManager
+    public function getSchemaBuilder(): SchemaBuilderInterface
     {
-        if (!isset($this->schemaManager)) {
-            $this->schemaManager = $this->resolveSchemaManager($this->engine);
+        if (!isset($this->schemaBuilder)) {
+            $sqlGenerator = $this->resolveSqlGenerator($this->engine);
+            $this->schemaBuilder = new SchemaBuilder($this, $sqlGenerator);
         }
-        return $this->schemaManager;
+        return $this->schemaBuilder;
+    }
+
+    /**
+     * Access active schema manager instance (legacy compatibility)
+     *
+     * @deprecated Use getSchemaBuilder() for the new fluent API
+     * @return SchemaBuilderInterface Current schema builder
+     * @throws \Glueful\Exceptions\DatabaseException If schema builder initialization fails
+     */
+    public function getSchemaManager(): SchemaBuilderInterface
+    {
+        return $this->getSchemaBuilder();
     }
 
 
@@ -347,12 +368,7 @@ class Connection implements DatabaseInterface
      */
     public function getDriverName(): string
     {
-        return match (true) {
-            $this->driver instanceof MySQLDriver => 'mysql',
-            $this->driver instanceof PostgreSQLDriver => 'pgsql',
-            $this->driver instanceof SQLiteDriver => 'sqlite',
-            default => 'unknown'
-        };
+        return $this->driver->getDriverName();
     }
 
     /**
@@ -363,6 +379,104 @@ class Connection implements DatabaseInterface
     public static function getPoolManager(): ?ConnectionPoolManager
     {
         return self::$poolManager;
+    }
+
+    /**
+     * Create a new QueryBuilder instance for the specified table
+     *
+     * @param string $table The table name to query
+     * @return QueryBuilder Configured QueryBuilder instance
+     */
+    public function table(string $table): QueryBuilder
+    {
+        return $this->createQueryBuilder()->from($table);
+    }
+
+    /**
+     * Create a new QueryBuilder instance
+     *
+     * @return QueryBuilder Configured QueryBuilder instance
+     */
+    public function query(): QueryBuilder
+    {
+        return $this->createQueryBuilder();
+    }
+
+    /**
+     * Create a properly configured QueryBuilder with all dependencies
+     *
+     * @return QueryBuilder Fully configured QueryBuilder instance
+     */
+    private function createQueryBuilder(): QueryBuilder
+    {
+        // Create shared dependencies
+        $parameterBinder = new \Glueful\Database\Execution\ParameterBinder();
+        $queryLogger = new \Glueful\Database\QueryLogger();
+
+        // Create all the component dependencies with proper constructors
+        $state = new \Glueful\Database\Query\QueryState();
+        $whereClause = new \Glueful\Database\Query\WhereClause($this->driver);
+        $selectBuilder = new \Glueful\Database\Query\SelectBuilder($this->driver, $state);
+        $joinClause = new \Glueful\Database\Query\JoinClause($this->driver);
+        $queryModifiers = new \Glueful\Database\Query\QueryModifiers($this->driver);
+
+        // QueryExecutor needs PDO, ParameterBinder, and QueryLogger
+        $queryExecutor = new \Glueful\Database\Execution\QueryExecutor(
+            $this->getPDO(),  // Use getPDO() to leverage connection pooling
+            $parameterBinder,
+            $queryLogger
+        );
+
+        $resultProcessor = new \Glueful\Database\Execution\ResultProcessor();
+        $queryValidator = new \Glueful\Database\Features\QueryValidator();
+        $queryPurpose = new \Glueful\Database\Features\QueryPurpose();
+
+        // Create builders with proper constructors - need to check actual constructors
+        $insertBuilder = new \Glueful\Database\Query\InsertBuilder($this->driver, $queryExecutor);
+        $updateBuilder = new \Glueful\Database\Query\UpdateBuilder($this->driver, $queryExecutor);
+        $deleteBuilder = new \Glueful\Database\Query\DeleteBuilder($this->driver, $queryExecutor);
+
+        // SoftDeleteHandler needs PDO, driver, and UpdateBuilder
+        $softDeleteHandler = new \Glueful\Database\Features\SoftDeleteHandler(
+            $this->getPDO(),  // Use getPDO() to leverage connection pooling
+            $this->driver,
+            $updateBuilder
+        );
+
+        // SavepointManager for TransactionManager
+        $savepointManager = new \Glueful\Database\Transaction\SavepointManager($this->getPDO());
+
+        // TransactionManager needs PDO, SavepointManager, and QueryLogger
+        $transactionManager = new \Glueful\Database\Transaction\TransactionManager(
+            $this->getPDO(),  // Use getPDO() to leverage connection pooling
+            $savepointManager,
+            $queryLogger
+        );
+
+        // PaginationBuilder needs executor and logger
+        $paginationBuilder = new \Glueful\Database\Features\PaginationBuilder(
+            $queryExecutor,
+            $queryLogger
+        );
+
+        // Create and return the QueryBuilder with all dependencies
+        return new QueryBuilder(
+            $state,
+            $whereClause,
+            $selectBuilder,
+            $insertBuilder,
+            $updateBuilder,
+            $deleteBuilder,
+            $joinClause,
+            $queryModifiers,
+            $transactionManager,
+            $queryExecutor,
+            $resultProcessor,
+            $paginationBuilder,
+            $softDeleteHandler,
+            $queryValidator,
+            $queryPurpose
+        );
     }
 
     /**

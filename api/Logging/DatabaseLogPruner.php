@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Glueful\Logging;
 
-use Glueful\Database\QueryBuilder;
 use Glueful\Database\Connection;
 
 /**
@@ -13,7 +12,7 @@ use Glueful\Database\Connection;
  */
 class DatabaseLogPruner
 {
-    private QueryBuilder $db;
+    private Connection $db;
     private int $maxAgeInDays;
     private int $maxRecords;
 
@@ -25,7 +24,7 @@ class DatabaseLogPruner
         $this->maxRecords = $maxRecords;
 
         $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $this->db = $connection;
     }
 
     /**
@@ -49,11 +48,9 @@ class DatabaseLogPruner
     {
         $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$this->maxAgeInDays} days"));
 
-        return $this->db->delete(
-            'app_logs',
-            ['created_at <' => $cutoffDate],
-            false
-        );
+        return $this->db->table('app_logs')
+            ->where('created_at', '<', $cutoffDate)
+            ->delete();
     }
 
     /**
@@ -61,17 +58,17 @@ class DatabaseLogPruner
      */
     private function pruneByQuantity(): mixed
     {
-        // Get total count using the correct query pattern
-        $totalRecords = $this->db->select('app_logs', [''])
-        ->count('app_logs', ['id']);
+        // Get total count using fluent interface
+        $totalRecords = $this->db->table('app_logs')->count();
 
         if ($totalRecords <= $this->maxRecords) {
             return 0;
         }
 
         // Find ID threshold for deletion
-        $threshold = $this->db->select('app_logs', ['id'])
-            ->orderBy(['id' => 'DESC'])
+        $threshold = $this->db->table('app_logs')
+            ->select(['id'])
+            ->orderBy('id', 'DESC')
             ->limit(1)
             ->offset($this->maxRecords)
             ->get()[0] ?? null;
@@ -80,10 +77,8 @@ class DatabaseLogPruner
             return 0;
         }
 
-            return $this->db->delete(
-                'app_logs',
-                ['id <' => $threshold['id']],
-                false
-            );
+        return $this->db->table('app_logs')
+            ->where('id', '<', $threshold['id'])
+            ->delete();
     }
 }

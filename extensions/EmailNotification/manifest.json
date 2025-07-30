@@ -3,8 +3,8 @@
   "id": "email-notification",
   "name": "EmailNotification",
   "displayName": "Email Notification",
-  "version": "0.21.0",
-  "description": "Provides email notification capabilities using SMTP/PHPMailer",
+  "version": "1.0.0",
+  "description": "Provides email notification capabilities using Symfony Mailer",
   "author": {
     "name": "Glueful Team",
     "email": "dev@glueful.com",
@@ -20,15 +20,12 @@
     }
   },
   "categories": ["notifications", "communication"],
-  "keywords": ["email", "smtp", "notifications", "phpmailer"],
+  "keywords": ["email", "smtp", "notifications", "symfony-mailer"],
   "engines": {
-    "glueful": ">=0.27.0",
+    "glueful": ">=0.29.0",
     "php": ">=8.2.0"
   },
   "dependencies": {
-    "composer": {
-      "phpmailer/phpmailer": "^6.8"
-    },
     "extensions": []
   },
   "provides": {

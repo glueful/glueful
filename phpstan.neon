@@ -4,8 +4,6 @@ parameters:
         - api
     treatPhpDocTypesAsCertain: false
     ignoreErrors:
-        - '#Instanceof between .* and Glueful\\Database\\RawExpression will always evaluate to false\.#'
-        - '#Call to function array_key_exists\(\) with .* will always evaluate to false\.#'
         - '#Instanceof between mixed and Monolog\\Handler\\AbstractProcessingHandler will always evaluate to false\.#'
 
         # TimThumb.php specific issues

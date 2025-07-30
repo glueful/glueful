@@ -19,7 +19,7 @@ The SocialLogin extension provides enterprise-grade OAuth authentication for the
 ## Requirements
 
 - PHP 8.2 or higher
-- Glueful Framework 0.27.0 or higher
+- Glueful Framework 0.29.0 or higher
 - cURL PHP extension
 - OpenSSL PHP extension (for Apple Sign In)
 

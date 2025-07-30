@@ -4,8 +4,7 @@ namespace Glueful\Queue\Monitoring;
 
 use Glueful\Queue\Contracts\JobInterface;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Worker Monitor
@@ -26,11 +25,11 @@ use Glueful\Database\Schema\SchemaManager;
  */
 class WorkerMonitor
 {
-    /** @var QueryBuilder Database query builder */
-    private QueryBuilder $db;
+    /** @var Connection Database connection */
+    private Connection $db;
 
-    /** @var SchemaManager Schema manager for table operations */
-    private SchemaManager $schema;
+    /** @var SchemaBuilderInterface Schema builder for table operations */
+    private SchemaBuilderInterface $schema;
 
     /** @var string Workers table name */
     private string $workersTable = 'queue_workers';
@@ -44,22 +43,13 @@ class WorkerMonitor
     /**
      * Create worker monitor instance
      *
-     * @param QueryBuilder|null $queryBuilder Database query builder (optional)
+     * @param Connection|null $connection Database connection (optional)
      * @param bool $enabled Whether monitoring is enabled
      */
-    public function __construct(?QueryBuilder $queryBuilder = null, bool $enabled = true)
+    public function __construct(?Connection $connection = null, bool $enabled = true)
     {
-        if ($queryBuilder) {
-            $this->db = $queryBuilder;
-            // Try to get schema manager from connection if available
-            // For now, we'll create a new connection to get the schema manager
-            $connection = new Connection();
-            $this->schema = $connection->getSchemaManager();
-        } else {
-            $connection = new Connection();
-            $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            $this->schema = $connection->getSchemaManager();
-        }
+        $this->db = $connection ?? new Connection();
+        $this->schema = $this->db->getSchemaBuilder();
         $this->enabled = $enabled;
     }
 
@@ -99,7 +89,7 @@ class WorkerMonitor
             'updated_at' => date('Y-m-d H:i:s')
         ]);
 
-        $this->db->insert($this->workersTable, $data);
+        $this->db->table($this->workersTable)->insert($data);
     }
 
     /**
@@ -129,11 +119,9 @@ class WorkerMonitor
                 'updated_at' => date('Y-m-d H:i:s')
             ];
 
-            $this->db->update(
-                $this->workersTable,
-                $updateData,
-                ['uuid' => $workerUuid]
-            );
+            $this->db->table($this->workersTable)
+                ->where('uuid', $workerUuid)
+                ->update($updateData);
         } catch (\Exception) {
             // Intentionally silent - heartbeat failures shouldn't disrupt worker operation
         }
@@ -162,11 +150,9 @@ class WorkerMonitor
             'updated_at' => date('Y-m-d H:i:s')
         ];
 
-        $this->db->update(
-            $this->workersTable,
-            $updateData,
-            ['uuid' => $workerUuid]
-        );
+        $this->db->table($this->workersTable)
+            ->where('uuid', $workerUuid)
+            ->update($updateData);
     }
 
     /**
@@ -197,7 +183,7 @@ class WorkerMonitor
             'updated_at' => date('Y-m-d H:i:s')
         ];
 
-        $this->db->insert($this->metricsTable, $data);
+        $this->db->table($this->metricsTable)->insert($data);
     }
 
     /**
@@ -221,11 +207,9 @@ class WorkerMonitor
             'updated_at' => date('Y-m-d H:i:s')
         ];
 
-        $this->db->update(
-            $this->metricsTable,
-            $updateData,
-            ['job_uuid' => $job->getUuid()]
-        );
+        $this->db->table($this->metricsTable)
+            ->where('job_uuid', $job->getUuid())
+            ->update($updateData);
     }
 
     /**
@@ -252,11 +236,9 @@ class WorkerMonitor
             'updated_at' => date('Y-m-d H:i:s')
         ];
 
-        $this->db->update(
-            $this->metricsTable,
-            $updateData,
-            ['job_uuid' => $job->getUuid()]
-        );
+        $this->db->table($this->metricsTable)
+            ->where('job_uuid', $job->getUuid())
+            ->update($updateData);
     }
 
     /**
@@ -273,10 +255,11 @@ class WorkerMonitor
         // Consider workers active if they've been seen in the last 2 minutes
         $cutoff = date('Y-m-d H:i:s', time() - 120);
 
-        return $this->db->select($this->workersTable, ['*'], [
-            'status' => 'active',
-            'last_seen >=' => $cutoff
-        ])->get();
+        return $this->db->table($this->workersTable)
+            ->select(['*'])
+            ->where('status', 'active')
+            ->where('last_seen', '>=', $cutoff)
+            ->get();
     }
 
     /**
@@ -291,12 +274,11 @@ class WorkerMonitor
             return [];
         }
 
-        $conditions = [];
+        $query = $this->db->table($this->workersTable)->select(['*']);
         if ($workerUuid) {
-            $conditions['uuid'] = $workerUuid;
+            $query->where('uuid', $workerUuid);
         }
-
-        $workers = $this->db->select($this->workersTable, ['*'], $conditions)->get();
+        $workers = $query->get();
 
         $stats = [];
         foreach ($workers as $worker) {
@@ -333,28 +315,27 @@ class WorkerMonitor
             return [];
         }
 
-        $conditions = [];
+        $limit = $filters['limit'] ?? 100;
+
+        $query = $this->db->table($this->metricsTable)->select(['*']);
 
         if (isset($filters['queue'])) {
-            $conditions['queue'] = $filters['queue'];
+            $query->where('queue', $filters['queue']);
         }
 
         if (isset($filters['status'])) {
-            $conditions['status'] = $filters['status'];
+            $query->where('status', $filters['status']);
         }
 
         if (isset($filters['from_date'])) {
-            $conditions['created_at >='] = $filters['from_date'];
+            $query->where('created_at', '>=', $filters['from_date']);
         }
 
         if (isset($filters['to_date'])) {
-            $conditions['created_at <='] = $filters['to_date'];
+            $query->where('created_at', '<=', $filters['to_date']);
         }
 
-        $limit = $filters['limit'] ?? 100;
-
-        return $this->db->select($this->metricsTable, ['*'], $conditions)
-            ->orderBy(['created_at' => 'DESC'])
+        return $query->orderBy('created_at', 'DESC')
             ->limit($limit)
             ->get();
     }
@@ -371,34 +352,40 @@ class WorkerMonitor
             return [];
         }
 
-        $conditions = [];
-        if ($queue) {
-            $conditions['queue'] = $queue;
-        }
-
         // Get basic stats
-        $totalJobs = $this->db->count($this->metricsTable, $conditions);
+        $totalQuery = $this->db->table($this->metricsTable);
+        if ($queue) {
+            $totalQuery->where('queue', $queue);
+        }
+        $totalJobs = $totalQuery->count();
 
-        $completedConditions = array_merge($conditions, ['status' => 'completed']);
-        $completedJobs = $this->db->count($this->metricsTable, $completedConditions);
+        $completedQuery = $this->db->table($this->metricsTable)
+            ->where('status', 'completed');
+        if ($queue) {
+            $completedQuery->where('queue', $queue);
+        }
+        $completedJobs = $completedQuery->count();
 
-        $failedConditions = array_merge($conditions, ['status' => 'failed']);
-        $failedJobs = $this->db->count($this->metricsTable, $failedConditions);
+        $failedQuery = $this->db->table($this->metricsTable)
+            ->where('status', 'failed');
+        if ($queue) {
+            $failedQuery->where('queue', $queue);
+        }
+        $failedJobs = $failedQuery->count();
 
         // Get average processing time for completed jobs
         $avgProcessingTime = 0;
         if ($completedJobs > 0) {
-            $query = $this->db->select($this->metricsTable, [
-                $this->db->raw('AVG(processing_time) as avg_time')
-            ], [
-                'status' => 'completed'
-            ]);
+            $query = $this->db->table($this->metricsTable)
+                ->selectRaw('AVG(processing_time) as avg_time')
+                ->where('status', 'completed');
 
             if ($queue) {
-                $query->where(['queue' => $queue]);
+                $query->where('queue', $queue);
             }
 
-            $result = $query->first();
+            $results = $query->get();
+            $result = $results[0] ?? null;
             $avgProcessingTime = $result['avg_time'] ?? 0;
         }
 
@@ -427,10 +414,10 @@ class WorkerMonitor
 
         $cutoff = date('Y-m-d H:i:s', time() - ($daysOld * 24 * 60 * 60));
 
-        return $this->db->delete($this->workersTable, [
-            'status' => 'stopped',
-            'updated_at <' => $cutoff
-        ]);
+        return $this->db->table($this->workersTable)
+            ->where('status', 'stopped')
+            ->where('updated_at', '<', $cutoff)
+            ->delete() > 0;
     }
 
     /**
@@ -447,9 +434,9 @@ class WorkerMonitor
 
         $cutoff = date('Y-m-d H:i:s', time() - ($daysOld * 24 * 60 * 60));
 
-        return $this->db->delete($this->metricsTable, [
-            'created_at <' => $cutoff
-        ]);
+        return $this->db->table($this->metricsTable)
+            ->where('created_at', '<', $cutoff)
+            ->delete() > 0;
     }
 
     /**
@@ -460,9 +447,12 @@ class WorkerMonitor
      */
     private function getWorkerMemoryPeak(string $workerUuid): int
     {
-        $worker = $this->db->select($this->workersTable, ['memory_peak'], [
-            'uuid' => $workerUuid
-        ])->first();
+        $results = $this->db->table($this->workersTable)
+            ->select(['memory_peak'])
+            ->where('uuid', $workerUuid)
+            ->limit(1)
+            ->get();
+        $worker = $results[0] ?? null;
 
         return (int) ($worker['memory_peak'] ?? 0);
     }
@@ -476,7 +466,7 @@ class WorkerMonitor
     private function tableExists(string $tableName): bool
     {
         try {
-            $this->db->select($tableName, ['1'])->limit(1)->first();
+            $this->db->table($tableName)->selectRaw('1')->limit(1)->get();
             return true;
         } catch (\Exception) {
             return false;
@@ -490,34 +480,44 @@ class WorkerMonitor
      */
     private function createWorkersTable(): void
     {
-        $this->schema->createTable($this->workersTable, [
-            'id' => 'INT AUTO_INCREMENT PRIMARY KEY',
-            'uuid' => 'VARCHAR(255) NOT NULL',
-            'connection' => 'VARCHAR(255) NOT NULL',
-            'queue' => 'VARCHAR(255) NOT NULL',
-            'pid' => 'INT NOT NULL',
-            'hostname' => 'VARCHAR(255) NOT NULL',
-            'started_at' => 'TIMESTAMP NULL',
-            'stopped_at' => 'TIMESTAMP NULL',
-            'last_seen' => 'TIMESTAMP NULL',
-            'jobs_processed' => 'INT DEFAULT 0',
-            'jobs_failed' => 'INT DEFAULT 0',
-            'memory_usage' => 'BIGINT DEFAULT 0',
-            'memory_peak' => 'BIGINT DEFAULT 0',
-            'total_runtime' => 'INT DEFAULT 0',
-            'final_jobs_processed' => 'INT DEFAULT 0',
-            'final_jobs_failed' => 'INT DEFAULT 0',
-            'final_memory_peak' => 'BIGINT DEFAULT 0',
-            'status' => 'ENUM(\'active\', \'stopped\') DEFAULT \'active\'',
-            'options' => 'TEXT',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'status', 'name' => 'idx_status'],
-            ['type' => 'INDEX', 'column' => 'last_seen', 'name' => 'idx_last_seen'],
-            ['type' => 'INDEX', 'column' => ['connection', 'queue'], 'name' => 'idx_connection_queue']
-        ]);
+        if (!$this->schema->hasTable($this->workersTable)) {
+            $table = $this->schema->table($this->workersTable);
+
+            // Define columns
+            $table->integer('id')->primary()->autoIncrement();
+            $table->string('uuid', 255);
+            $table->string('connection', 255);
+            $table->string('queue', 255);
+            $table->integer('pid');
+            $table->string('hostname', 255);
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('stopped_at')->nullable();
+            $table->timestamp('last_seen')->nullable();
+            $table->integer('jobs_processed')->default(0);
+            $table->integer('jobs_failed')->default(0);
+            $table->bigInteger('memory_usage')->default(0);
+            $table->bigInteger('memory_peak')->default(0);
+            $table->integer('total_runtime')->default(0);
+            $table->integer('final_jobs_processed')->default(0);
+            $table->integer('final_jobs_failed')->default(0);
+            $table->bigInteger('final_memory_peak')->default(0);
+            $table->string('status', 20)->default('active'); // ENUM replacement
+            $table->text('options')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('status', 'idx_status');
+            $table->index('last_seen', 'idx_last_seen');
+            $table->index(['connection', 'queue'], 'idx_connection_queue');
+
+            // Create the table
+            $table->create();
+
+            // Execute the operation
+            $this->schema->execute();
+        }
     }
 
     /**
@@ -527,28 +527,38 @@ class WorkerMonitor
      */
     private function createMetricsTable(): void
     {
-        $this->schema->createTable($this->metricsTable, [
-            'id' => 'INT AUTO_INCREMENT PRIMARY KEY',
-            'job_uuid' => 'VARCHAR(255) NOT NULL',
-            'job_class' => 'VARCHAR(255) NOT NULL',
-            'queue' => 'VARCHAR(255) NOT NULL',
-            'started_at' => 'TIMESTAMP NULL',
-            'completed_at' => 'TIMESTAMP NULL',
-            'failed_at' => 'TIMESTAMP NULL',
-            'processing_time' => 'DECIMAL(10, 4) DEFAULT 0',
-            'memory_used' => 'BIGINT DEFAULT 0',
-            'status' => 'ENUM(\'processing\', \'completed\', \'failed\') DEFAULT \'processing\'',
-            'attempts' => 'INT DEFAULT 1',
-            'error_message' => 'TEXT',
-            'error_trace' => 'TEXT',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'job_uuid', 'name' => 'idx_job_uuid'],
-            ['type' => 'INDEX', 'column' => 'status', 'name' => 'idx_status'],
-            ['type' => 'INDEX', 'column' => 'queue', 'name' => 'idx_queue'],
-            ['type' => 'INDEX', 'column' => 'created_at', 'name' => 'idx_created_at']
-        ]);
+        if (!$this->schema->hasTable($this->metricsTable)) {
+            $table = $this->schema->table($this->metricsTable);
+
+            // Define columns
+            $table->integer('id')->primary()->autoIncrement();
+            $table->string('job_uuid', 255);
+            $table->string('job_class', 255);
+            $table->string('queue', 255);
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamp('failed_at')->nullable();
+            $table->decimal('processing_time', 10, 4)->default(0);
+            $table->bigInteger('memory_used')->default(0);
+            $table->string('status', 20)->default('processing'); // ENUM replacement
+            $table->integer('attempts')->default(1);
+            $table->text('error_message')->nullable();
+            $table->text('error_trace')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('job_uuid', 'idx_job_uuid');
+            $table->index('status', 'idx_status');
+            $table->index('queue', 'idx_queue');
+            $table->index('created_at', 'idx_created_at');
+
+            // Create the table
+            $table->create();
+
+            // Execute the operation
+            $this->schema->execute();
+        }
     }
 
     /**

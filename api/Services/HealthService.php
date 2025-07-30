@@ -3,7 +3,7 @@
 namespace Glueful\Services;
 
 use Glueful\Cache\CacheStore;
-use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Database\Connection;
 use Glueful\Helpers\CacheHelper;
 
 /**
@@ -15,18 +15,19 @@ use Glueful\Helpers\CacheHelper;
  */
 class HealthService
 {
-    use DatabaseConnectionTrait;
-
     /** @var self|null Singleton instance */
     private static ?self $instance = null;
 
     /** @var CacheStore|null Cache driver instance */
     private ?CacheStore $cache = null;
 
+    /** @var Connection|null Database connection instance */
+    private ?Connection $connection = null;
+
     /**
      * Constructor
      */
-    public function __construct(?CacheStore $cache = null)
+    public function __construct(?CacheStore $cache = null, ?Connection $connection = null)
     {
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
         if ($this->cache === null) {
@@ -34,6 +35,8 @@ class HealthService
                 'CacheStore is required for HealthService: Unable to create cache instance.'
             );
         }
+
+        $this->connection = $connection ?? new Connection();
     }
 
     /**
@@ -53,24 +56,21 @@ class HealthService
     }
 
     /**
-     * Perform database health check using trait's shared connection
+     * Perform database health check using fluent QueryBuilder
      */
     private function performDatabaseCheck(): array
     {
         try {
-            $connection = $this->getConnection();
-            $queryBuilder = $this->getQueryBuilder();
-
             // Test 1: Basic connectivity with QueryBuilder raw query
-            $testResult = $queryBuilder->rawQuery('SELECT 1 as test');
+            $testResult = $this->connection->query()->executeRawFirst('SELECT 1 as test');
 
             // Test 2: Check if migrations table exists and is accessible
-            $migrationCount = $queryBuilder->count('migrations');
+            $migrationCount = $this->connection->table('migrations')->count();
 
             return [
                 'status' => 'ok',
                 'message' => 'Database connection and QueryBuilder operational',
-                'driver' => $connection->getDriverName(),
+                'driver' => $this->connection->getDriverName(),
                 'migrations_applied' => $migrationCount,
                 'connectivity_test' => !empty($testResult)
             ];

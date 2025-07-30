@@ -3,7 +3,7 @@
 namespace Glueful\Extensions\RBAC\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * RBAC Permissions Tables Migration
@@ -26,140 +26,138 @@ class CreatePermissionsTables implements MigrationInterface
     /**
      * Execute the migration
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Permissions Table
-        $schema->createTable('permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(100) NOT NULL',
-            'slug' => 'VARCHAR(100) NOT NULL',
-            'description' => 'TEXT',
-            'category' => 'VARCHAR(50)',
-            'resource_type' => 'VARCHAR(100)',
-            'is_system' => 'BOOLEAN DEFAULT FALSE',
-            'metadata' => 'JSON',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'name'],
-            ['type' => 'UNIQUE', 'column' => 'slug'],
-            ['type' => 'INDEX', 'column' => 'category'],
-            ['type' => 'INDEX', 'column' => 'resource_type']
-        ]);
+        $schema->createTable('permissions', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('name', 100);
+            $table->string('slug', 100);
+            $table->text('description')->nullable();
+            $table->string('category', 50)->nullable();
+            $table->string('resource_type', 100)->nullable();
+            $table->boolean('is_system')->default(false);
+            $table->json('metadata')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->unique('name');
+            $table->unique('slug');
+            $table->index('category');
+            $table->index('resource_type');
+        });
 
         // Create Role Permissions Table
-        $schema->createTable('role_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL',
-            'permission_uuid' => 'CHAR(12) NOT NULL',
-            'resource_filter' => 'JSON',
-            'constraints' => 'JSON',
-            'granted_by' => 'CHAR(12)',
-            'expires_at' => 'TIMESTAMP NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid'],
-            ['type' => 'INDEX', 'column' => 'permission_uuid'],
-            ['type' => 'INDEX', 'column' => 'expires_at'],
-            ['type' => 'INDEX', 'column' => 'granted_by']
-        ])->addForeignKey([
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'permission_uuid',
-                'references' => 'uuid',
-                'on' => 'permissions',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'granted_by',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'SET NULL'
-            ]
-        ]);
+        $schema->createTable('role_permissions', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('role_uuid', 12);
+            $table->string('permission_uuid', 12);
+            $table->json('resource_filter')->nullable();
+            $table->json('constraints')->nullable();
+            $table->string('granted_by', 12)->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('role_uuid');
+            $table->index('permission_uuid');
+            $table->index('expires_at');
+            $table->index('granted_by');
+
+            // Add foreign keys
+            $table->foreign('role_uuid')
+                ->references('uuid')
+                ->on('roles')
+                ->cascadeOnDelete();
+
+            $table->foreign('permission_uuid')
+                ->references('uuid')
+                ->on('permissions')
+                ->cascadeOnDelete();
+
+            $table->foreign('granted_by')
+                ->references('uuid')
+                ->on('users')
+                ->nullOnDelete();
+        });
 
         // Create User Permissions Table
-        $schema->createTable('user_permissions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'permission_uuid' => 'CHAR(12) NOT NULL',
-            'resource_filter' => 'JSON',
-            'constraints' => 'JSON',
-            'granted_by' => 'CHAR(12)',
-            'expires_at' => 'TIMESTAMP NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'permission_uuid'],
-            ['type' => 'INDEX', 'column' => 'expires_at'],
-            ['type' => 'INDEX', 'column' => 'granted_by']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'permission_uuid',
-                'references' => 'uuid',
-                'on' => 'permissions',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'granted_by',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'SET NULL'
-            ]
-        ]);
+        $schema->createTable('user_permissions', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('user_uuid', 12);
+            $table->string('permission_uuid', 12);
+            $table->json('resource_filter')->nullable();
+            $table->json('constraints')->nullable();
+            $table->string('granted_by', 12)->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('user_uuid');
+            $table->index('permission_uuid');
+            $table->index('expires_at');
+            $table->index('granted_by');
+
+            // Add foreign keys
+            $table->foreign('user_uuid')
+                ->references('uuid')
+                ->on('users')
+                ->cascadeOnDelete();
+
+            $table->foreign('permission_uuid')
+                ->references('uuid')
+                ->on('permissions')
+                ->cascadeOnDelete();
+
+            $table->foreign('granted_by')
+                ->references('uuid')
+                ->on('users')
+                ->nullOnDelete();
+        });
 
         // Create Permission Audit Table
-        $schema->createTable('permission_audit', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'action' => "ENUM('GRANTED', 'REVOKED', 'MODIFIED', 'EXPIRED') NOT NULL",
-            'subject_type' => "ENUM('user', 'role') NOT NULL",
-            'subject_uuid' => 'CHAR(12) NOT NULL',
-            'permission_uuid' => 'CHAR(12) NOT NULL',
-            'target_uuid' => 'CHAR(12)',
-            'old_data' => 'JSON',
-            'new_data' => 'JSON',
-            'reason' => 'TEXT',
-            'performed_by' => 'CHAR(12)',
-            'ip_address' => 'VARCHAR(45)',
-            'user_agent' => 'TEXT',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'subject_type'],
-            ['type' => 'INDEX', 'column' => 'subject_uuid'],
-            ['type' => 'INDEX', 'column' => 'permission_uuid'],
-            ['type' => 'INDEX', 'column' => 'target_uuid'],
-            ['type' => 'INDEX', 'column' => 'performed_by'],
-            ['type' => 'INDEX', 'column' => 'created_at']
-        ]);
+        $schema->createTable('permission_audit', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->enum('action', ['GRANTED', 'REVOKED', 'MODIFIED', 'EXPIRED']);
+            $table->enum('subject_type', ['user', 'role']);
+            $table->string('subject_uuid', 12);
+            $table->string('permission_uuid', 12);
+            $table->string('target_uuid', 12)->nullable();
+            $table->json('old_data')->nullable();
+            $table->json('new_data')->nullable();
+            $table->text('reason')->nullable();
+            $table->string('performed_by', 12)->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('subject_type');
+            $table->index('subject_uuid');
+            $table->index('permission_uuid');
+            $table->index('target_uuid');
+            $table->index('performed_by');
+            $table->index('created_at');
+        });
     }
 
     /**
      * Reverse the migration
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('permission_audit');
-        $schema->dropTable('user_permissions');
-        $schema->dropTable('role_permissions');
-        $schema->dropTable('permissions');
+        $schema->dropTableIfExists('permission_audit');
+        $schema->dropTableIfExists('user_permissions');
+        $schema->dropTableIfExists('role_permissions');
+        $schema->dropTableIfExists('permissions');
     }
 
     /**

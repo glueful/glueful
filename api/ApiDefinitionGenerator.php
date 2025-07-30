@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Glueful;
 
-use Glueful\Helpers\Utils;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Services\FileFinder;
 
 /**
@@ -22,8 +20,8 @@ class ApiDefinitionGenerator
     private bool $runFromConsole;
     private array $generatedFiles = [];
     private string $dbResource;
-    private SchemaManager $schema;
-    private QueryBuilder $db;
+    private SchemaBuilderInterface $schema;
+    private Connection $db;
 
     /**
      * Constructor
@@ -39,11 +37,10 @@ class ApiDefinitionGenerator
         $this->log("Starting JSON Definition Generator...");
         $this->dbResource = $this->getDatabaseRole();
 
-        $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        $this->schema = $connection->getSchemaManager();
+        $this->db = new Connection();
+        $this->schema = $this->db->getSchemaBuilder();
 
-        $dir = config('app.paths.json_definitions');
+        $dir = config('app.paths.database_json_definitions');
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
@@ -117,11 +114,7 @@ class ApiDefinitionGenerator
             $this->generateTableDefinition($specificDatabase, $tableName);
         }
 
-        if (\config('security.permissions_enabled') === true) {
-            $this->setupAdministratorRole();
-        }
-
-        $this->log("Step 3: Starting API docs generation...");
+        $this->log("Starting API docs generation...");
         $this->generateApiDocs($forceGenerate);
     }
 
@@ -135,7 +128,7 @@ class ApiDefinitionGenerator
      */
     private function generateTableDefinition(string $dbResource, string $tableName): void
     {
-        $filename = \config('app.paths.json_definitions') . "$dbResource.$tableName.json";
+        $filename = \config('app.paths.database_json_definitions') . "$dbResource.$tableName.json";
 
         if (isset($this->generatedFiles[$filename])) {
             return;
@@ -186,40 +179,6 @@ class ApiDefinitionGenerator
     }
 
     /**
-     * Create permissions configuration file
-     *
-     * Generates JSON definition for permissions table.
-     *
-     * @param string $dbResource Database identifier
-     */
-    private function createPermissionsConfig(string $dbResource): void
-    {
-        $config = [
-            'table' => [
-                'name' => 'permissions',
-                'fields' => [
-                    ['name' => 'id'],
-                    ['name' => 'uuid'],
-                    ['name' => 'role_uuid'],
-                    ['name' => 'model'],
-                    ['name' => 'permissions'],
-                    ['name' => 'created_at'],
-                    ['name' => 'updated_at']
-                ]
-            ],
-            'access' => [
-                'mode' => 'rw'
-            ]
-        ];
-
-        $path = config('app.paths.json_definitions') . "$dbResource.permissions.json";
-        file_put_contents(
-            $path,
-            json_encode($config, JSON_PRETTY_PRINT)
-        );
-    }
-
-    /**
      * Generate API documentation
      *
      * Creates OpenAPI/Swagger documentation from JSON definitions.
@@ -231,7 +190,7 @@ class ApiDefinitionGenerator
         $this->log("Generating API Documentation...");
 
         $docGenerator = new DocGenerator();
-        $definitionsPath = config('app.paths.json_definitions');
+        $definitionsPath = config('app.paths.database_json_definitions');
         $definitionsDocPath = config('app.paths.api_docs') . 'api-doc-json-definitions/';
 
         // Process API doc definition files using FileFinder
@@ -355,14 +314,6 @@ class ApiDefinitionGenerator
         }
     }
 
-    // private function log(string $message): void {
-    //     if ($this->runFromConsole) {
-    //         fwrite(STDOUT, $message . PHP_EOL);
-    //     } else {
-    //         echo $message . "<br/>";
-    //     }
-    // }
-
     /**
      * Generate JSON definitions for all tables in database
      *
@@ -379,7 +330,6 @@ class ApiDefinitionGenerator
             $tables = $this->schema->getTables();
 
             foreach ($tables as $table) {
-                // Get column information using SchemaManager
                 $columns = $this->schema->getTableColumns($table);
 
                 $fields = [];
@@ -415,7 +365,7 @@ class ApiDefinitionGenerator
 
     private function generateTableDefinitionFromColumns(string $dbResource, string $tableName, array $columns): void
     {
-        $filename = \config('app.paths.json_definitions') . "$dbResource.$tableName.json";
+        $filename = \config('app.paths.database_json_definitions') . "$dbResource.$tableName.json";
 
         if (isset($this->generatedFiles[$filename])) {
             return;
@@ -447,133 +397,5 @@ class ApiDefinitionGenerator
 
         $this->generatedFiles[$filename] = true;
         $this->log("Generated: $dbResource.$tableName.json");
-    }
-
-    /**
-     * Set up administrator role and permissions
-     *
-     * Creates or updates administrator role with full permissions.
-     */
-    private function setupAdministratorRole(): void
-    {
-        $this->log("--- Creating Superuser Role ---");
-
-        $roleUuid = $this->getOrCreateAdminRole();
-    }
-
-    /**
-     * Get or create administrator role
-     *
-     * @return string Role ID as a string
-     * @throws \Exception On database errors
-     */
-    private function getOrCreateAdminRole(): string
-    {
-        try {
-            // Create both roles and permissions configurations if they don't exist
-            if (!file_exists(config('app.paths.json_definitions') . "{$this->dbResource}.roles.json")) {
-                $this->createRolesConfig($this->dbResource);
-            }
-            if (!file_exists(config('app.paths.json_definitions') . "{$this->dbResource}.permissions.json")) {
-                $this->createPermissionsConfig($this->dbResource);
-            }
-
-           // Get admin role using QueryBuilder
-            $adminRole = $this->db
-            ->select('roles', ['uuid'])
-            ->where(['name' => 'superuser'])
-            ->limit(1)
-            ->get();
-
-            $roleUuid = $adminRole[0]['uuid'] ?? null;
-
-            if (!$roleUuid) {
-                $roleUuid = $this->createAdminRole();
-                $this->log("--- Superuser role created ---");
-            } else {
-                $this->log("--- Superuser role already exists ---");
-            }
-
-            return $roleUuid;
-        } catch (\Exception $e) {
-            $this->log("Error in getOrCreateAdminRole: " . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
-     * Create roles configuration file
-     *
-     * @param string $dbResource Database identifier
-     */
-    private function createRolesConfig(string $dbResource): void
-    {
-        $config = [
-            'table' => [
-                'name' => 'roles',
-                'fields' => [
-                    ['name' => 'id'],
-                    ['name' => 'uuid'],
-                    ['name' => 'name'],
-                    ['name' => 'description'],
-                    ['name' => 'created_at'],
-                    ['name' => 'updated_at']
-                ]
-            ],
-            'access' => [
-                'mode' => 'rw'
-            ]
-        ];
-
-        $path = config('app.paths.json_definitions') . "$dbResource.roles.json";
-        file_put_contents(
-            $path,
-            json_encode($config, JSON_PRETTY_PRINT)
-        );
-
-        $this->log("Created roles configuration: $path");
-    }
-
-    /**
-     * Create administrator role in database
-     *
-     * @return string|int New role ID
-     */
-    private function createAdminRole(): string|int
-    {
-        try {
-            // Generate UUID for new role
-            $roleUuid = Utils::generateNanoID();
-
-            // Insert role using SchemaManager
-            $result = $this->db->insert(
-                'roles',
-                [
-                    'uuid' => $roleUuid,
-                    'name' => 'superuser',
-                    'description' => 'Full system access',
-                    'status' => 'active'
-                ]
-            ) > 0;
-
-            if (!$result) {
-                throw new \RuntimeException('Failed to create administrator role');
-            }
-
-            // Get the role ID using the UUID
-            $roleData = $this->db->select(
-                'roles',
-                ['uuid'],
-            )->where(['uuid' => $roleUuid])->get();
-
-            if (empty($roleData)) {
-                throw new \RuntimeException('Failed to retrieve role ID');
-            }
-
-            return $roleData[0]['id'];
-        } catch (\Exception $e) {
-            $this->log("Failed to create admin role: " . $e->getMessage());
-            throw $e;
-        }
     }
 }

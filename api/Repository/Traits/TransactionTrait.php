@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Glueful\Repository\Traits;
 
 use Glueful\Exceptions\DatabaseException;
+use Glueful\Database\Connection;
 
 /**
  * Transaction management trait for repositories
  *
  * Provides consistent transaction handling patterns across all repositories.
  * Ensures proper transaction boundaries and error handling.
+ *
+ * This trait expects the using class to have a property:
+ * @property Connection $db Database connection instance
  *
  * @package Glueful\Repository\Traits
  */
@@ -28,14 +32,15 @@ trait TransactionTrait
      */
     protected function executeInTransaction(callable $operation)
     {
-        $this->db->beginTransaction();
+        $pdo = $this->db->getPDO();
+        $pdo->beginTransaction();
 
         try {
             $result = $operation();
-            $this->db->commit();
+            $pdo->commit();
             return $result;
         } catch (\Exception $e) {
-            $this->db->rollBack();
+            $pdo->rollBack();
 
             // Re-throw as DatabaseException for consistency
             if ($e instanceof DatabaseException) {
@@ -90,7 +95,7 @@ trait TransactionTrait
     protected function executeWithConditionalTransaction(callable $operation, bool $forceNewTransaction = false)
     {
         // Check if a transaction is already active
-        $transactionActive = $this->db->isTransactionActive();
+        $transactionActive = $this->db->getPDO()->inTransaction();
 
         if ($transactionActive && !$forceNewTransaction) {
             // Already in a transaction, just execute the operation
@@ -108,7 +113,7 @@ trait TransactionTrait
      */
     protected function isInTransaction(): bool
     {
-        return $this->db->isTransactionActive();
+        return $this->db->getPDO()->inTransaction();
     }
 
     /**

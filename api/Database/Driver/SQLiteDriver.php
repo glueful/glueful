@@ -135,4 +135,12 @@ class SQLiteDriver implements DatabaseDriver
     {
         return 'SELECT 1';
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getDriverName(): string
+    {
+        return 'sqlite';
+    }
 }

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Auth;
 
-use Glueful\Cache\CacheStore;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Helpers\Utils;
 use Glueful\Http\RequestContext;
 
@@ -28,35 +26,33 @@ use Glueful\Http\RequestContext;
  */
 class TokenManager
 {
-    private const TOKEN_PREFIX = 'token:';
     private const DEFAULT_TTL = 3600; // 1 hour
     private static ?int $ttl = null;
-    private static ?CacheStore $cache = null;
+    private static ?Connection $db = null;
 
     /**
      * Initialize token manager
      *
-     * Sets up caching and loads configuration.
+     * Loads configuration.
      */
-    public static function initialize(?CacheStore $cache = null): void
+    public static function initialize(): void
     {
-        self::$cache = $cache ?? app(CacheStore::class);
-
         // Cast the config value to int
         self::$ttl = (int)config('session.access_token_lifetime', self::DEFAULT_TTL);
     }
 
+
     /**
-     * Get cache instance
+     * Get database connection instance
      *
-     * @return CacheStore
+     * @return Connection
      */
-    private static function getCache(): CacheStore
+    private static function getDb(): Connection
     {
-        if (self::$cache === null) {
-            self::initialize();
+        if (self::$db === null) {
+            self::$db = new Connection();
         }
-        return self::$cache;
+        return self::$db;
     }
 
     /**
@@ -110,57 +106,8 @@ class TokenManager
             'expires_in' => $accessTokenLifetime
         ];
     }
-    /**
-     * Store token-session mapping
-     *
-     * Creates mapping between token and session ID.
-     *
-     * @param string $token Authentication token
-     * @param string $sessionId Session identifier
-     * @return bool Success status
-     */
-    public static function mapTokenToSession(string $token, string $sessionId): bool
-    {
-        $cache = self::getCache();
 
-        // Skip audit logging for token mapping - this is internal implementation detail
 
-        return $cache->set(
-            self::TOKEN_PREFIX . $token,
-            $sessionId,
-            self::$ttl
-        );
-    }
-
-    /**
-     * Get session ID from token
-     *
-     * Retrieves the session ID associated with a token.
-     *
-     * @param string $token Authentication token
-     * @return string|null Session ID or null if not found
-     */
-    public static function getSessionIdFromToken(string $token): ?string
-    {
-        $cache = self::getCache();
-        return $cache->get(self::TOKEN_PREFIX . $token);
-    }
-
-    /**
-     * Remove token mapping
-     *
-     * Deletes the token-session mapping.
-     *
-     * @param string $token Authentication token
-     * @return bool Success status
-     */
-    public static function removeTokenMapping(string $token, ?RequestContext $requestContext = null): bool
-    {
-        $cache = self::getCache();
-        $requestContext = $requestContext ?? RequestContext::fromGlobals();
-
-        return $cache->delete(self::TOKEN_PREFIX . $token);
-    }
 
     /**
      * Validate access token
@@ -246,9 +193,9 @@ class TokenManager
 
         // If no explicit provider but we have stored provider in session
         if (!$tokens) {
-            $connection = new Connection();
-            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            $result = $queryBuilder->select('auth_sessions', ['provider'])
+            $db = self::getDb();
+            $result = $db->table('auth_sessions')
+                ->select(['provider'])
                 ->where(['refresh_token' => $refreshToken])
                 ->get();
 
@@ -266,9 +213,9 @@ class TokenManager
         // Default to standard JWT token generation for backward compatibility
         if (!$tokens) {
             // Get remember_me status from the session to determine token lifetime
-            $connection = new Connection();
-            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            $sessionResult = $queryBuilder->select('auth_sessions', ['remember_me'])
+            $db = self::getDb();
+            $sessionResult = $db->table('auth_sessions')
+                ->select(['remember_me'])
                 ->where(['refresh_token' => $refreshToken])
                 ->get();
             $rememberMe = !empty($sessionResult[0]['remember_me']);
@@ -296,10 +243,10 @@ class TokenManager
      */
     private static function getSessionFromRefreshToken(string $refreshToken): ?array
     {
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $db = self::getDb();
 
-        $result = $queryBuilder->select('auth_sessions', ['user_uuid', 'access_token', 'created_at'])
+        $result = $db->table('auth_sessions')
+            ->select(['user_uuid', 'access_token', 'created_at'])
             ->where(['refresh_token' => $refreshToken, 'status' => 'active'])
             ->get();
 
@@ -471,77 +418,7 @@ class TokenManager
         ];
     }
 
-    /**
-     * Store session in database
-     *
-     * Persists session for refresh token operations.
-     * Supports storing the authentication provider used.
-     *
-     * @param string $userUuid User identifier
-     * @param array $tokens Token data
-     * @param int|null $refreshTokenLifetime Optional refresh token lifetime
-     * @return int Number of rows affected
-     */
-    public static function storeSession(
-        string $userUuid,
-        array $tokens,
-        ?int $refreshTokenLifetime = null,
-        ?RequestContext $requestContext = null
-    ): int {
-        $requestContext = $requestContext ?? RequestContext::fromGlobals();
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        $uuid = Utils::generateNanoID();
 
-        // Use provided refresh token lifetime or fall back to config
-        $refreshTokenLifetime = $refreshTokenLifetime ??
-            (int)config('session.refresh_token_lifetime', 7 * 24 * 3600);
-
-        $result = $queryBuilder->insert('auth_sessions', [
-            'uuid' => $uuid,
-            'user_uuid' => $userUuid,
-            'access_token' => $tokens['access_token'],
-            'refresh_token' => $tokens['refresh_token'],
-            'token_fingerprint' => $tokens['token_fingerprint'],
-            'access_expires_at' => date('Y-m-d H:i:s', time() + (int)config('session.access_token_lifetime', 3600)),
-            'refresh_expires_at' => date('Y-m-d H:i:s', time() + $refreshTokenLifetime),
-            'status' => 'active',
-            'ip_address' => $requestContext->getClientIp(),
-            'user_agent' => $requestContext->getUserAgent(),
-            'last_token_refresh' => date('Y-m-d H:i:s'),
-            'provider' => $tokens['provider'] ?? 'jwt', // Store the provider used
-        ]);
-
-        // Skip session creation audit log as login success is already logged
-        // This reduces duplicate audit entries during login
-
-        return $result;
-    }
-
-    /**
-     * Revoke session
-     *
-     * Invalidates session tokens.
-     *
-     * @param string $token Access token to revoke
-     * @return int Number of rows affected
-     */
-    public static function revokeSession(string $token, ?RequestContext $requestContext = null): int
-    {
-        $requestContext = $requestContext ?? RequestContext::fromGlobals();
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-
-
-        $result = $queryBuilder->update(
-            'auth_sessions',
-            ['status' => 'revoked'],
-            ['access_token' => $token]
-        );
-
-
-        return $result;
-    }
 
     /**
      * Check if token is revoked
@@ -553,10 +430,10 @@ class TokenManager
      */
     public static function isTokenRevoked(string $token): bool
     {
-        $connection = new Connection();
-        $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
+        $db = self::getDb();
 
-        $result = $queryBuilder->select('auth_sessions', ['status'])
+        $result = $db->table('auth_sessions')
+            ->select(['status'])
             ->where(['access_token' => $token])
             ->get();
 
