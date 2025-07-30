@@ -67,9 +67,14 @@ sudo apt install php8.2 php8.2-mysql php8.2-redis php8.2-mbstring \
 For a rapid development setup:
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/glueful/glueful.git
+# 1. Clone repository or create a new project
+# Option 1: Clone repository
+git clone https://github.com/glueful/glueful.git my-api
 cd glueful
+
+# Option 2: Create a new project using Composer
+composer create-project glueful/glueful my-api
+cd my-api
 
 # 2. Install dependencies
 composer install
@@ -101,9 +106,13 @@ php glueful serve
 ### 1. Clone and Install Dependencies
 
 ```bash
-# Clone the repository
+# Option 1: Clone the repository
 git clone https://github.com/glueful/glueful.git
 cd glueful
+
+# Option 2: Create a new project using Composer
+composer create-project glueful/glueful my-api
+cd my-api
 
 # Install PHP dependencies
 composer install
