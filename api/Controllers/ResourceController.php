@@ -88,7 +88,7 @@ class ResourceController extends BaseController
         // Parse query parameters for repository
         $page = max(1, (int)($queryParams['page'] ?? 1));
         $perPage = min(100, max(1, (int)($queryParams['per_page'] ?? 25)));
-        $sort = $queryParams['sort'] ?? 'created_at';
+        $sort = $queryParams['sort'] ?? 'id'; // Default sort by ID
         $order = strtolower($queryParams['order'] ?? 'desc');
         $order = in_array($order, ['asc', 'desc']) ? $order : 'desc';
         $fields = $this->parseFields($queryParams['fields'] ?? '');
@@ -112,7 +112,6 @@ class ResourceController extends BaseController
 
         // Apply optional field-level permissions
         $result = $this->applyFieldPermissions($result, $table, 'read');
-        error_log("ResourceController: Retrieved {$table} list with conditions: " . json_encode($result));
 
         $data = $result['data'] ?? [];
         $meta = $result;

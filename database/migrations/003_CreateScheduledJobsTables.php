@@ -1,7 +1,9 @@
 <?php
 
+namespace Glueful\Database\Migrations;
+
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Create Scheduled Jobs Tables Migration
@@ -30,53 +32,56 @@ class CreateScheduledJobsTables implements MigrationInterface
      * - Proper indexing
      * - Status tracking fields
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Scheduled Jobs Table
-        $schema->createTable('scheduled_jobs', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'schedule' => 'VARCHAR(100) NOT NULL',
-            'handler_class' => 'VARCHAR(255) NOT NULL',
-            'parameters' => 'JSON',
-            'is_enabled' => 'TINYINT(1) DEFAULT 1',
-            'last_run' => 'DATETIME NULL',
-            'next_run' => 'DATETIME NULL',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'DATETIME NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'name'],
-            ['type' => 'INDEX', 'column' => 'next_run'],
-            ['type' => 'INDEX', 'column' => 'is_enabled']
-        ]);
+        $schema->createTable('scheduled_jobs', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('name', 255);
+            $table->string('schedule', 100);
+            $table->string('handler_class', 255);
+            $table->json('parameters')->nullable();
+            $table->boolean('is_enabled')->default(true);
+            $table->timestamp('last_run')->nullable();
+            $table->timestamp('next_run')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('name');
+            $table->index('next_run');
+            $table->index('is_enabled');
+        });
 
         // Create Job Executions Table
-        $schema->createTable('job_executions', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'job_uuid' => 'CHAR(12) NOT NULL',
-            'status' => "ENUM('success', 'failure', 'running') NOT NULL",
-            'started_at' => 'DATETIME NOT NULL',
-            'completed_at' => 'DATETIME NULL',
-            'result' => 'TEXT NULL',
-            'error_message' => 'TEXT NULL',
-            'execution_time' => 'FLOAT NULL',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'INDEX', 'column' => 'job_uuid'],
-            ['type' => 'INDEX', 'column' => 'status'],
-            ['type' => 'INDEX', 'column' => 'started_at']
-        ])->addForeignKey([
-            [
-                'column' => 'job_uuid',
-                'references' => 'uuid',
-                'on' => 'scheduled_jobs',
-            ]
-        ]);
+        $schema->createTable('job_executions', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('job_uuid', 12);
+            $table->enum('status', ['success', 'failure', 'running']);
+            $table->timestamp('started_at');
+            $table->timestamp('completed_at')->nullable();
+            $table->text('result')->nullable();
+            $table->text('error_message')->nullable();
+            $table->float('execution_time')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('job_uuid');
+            $table->index('status');
+            $table->index('started_at');
+
+            // Add foreign key
+            $table->foreign('job_uuid')
+                ->references('uuid')
+                ->on('scheduled_jobs')
+                ->cascadeOnDelete();
+        });
     }
 
     /**
@@ -84,13 +89,13 @@ class CreateScheduledJobsTables implements MigrationInterface
      *
      * Drops tables in correct order to respect foreign key constraints
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
         // Drop in reverse order to respect foreign key constraints
-        $schema->dropTable('job_executions');
-        $schema->dropTable('scheduled_jobs');
+        $schema->dropTableIfExists('job_executions');
+        $schema->dropTableIfExists('scheduled_jobs');
     }
 
     /**

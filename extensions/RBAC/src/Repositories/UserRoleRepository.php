@@ -26,6 +26,12 @@ class UserRoleRepository extends BaseRepository
     ];
     protected bool $hasUpdatedAt = false;
 
+    // Cache to prevent duplicate queries within a single request
+    private array $userRolesCache = [];
+
+    // Static cache to prevent duplicate queries across all instances within a single request
+    private static array $globalUserRolesCache = [];
+
     public function getTableName(): string
     {
         return $this->table;
@@ -37,7 +43,7 @@ class UserRoleRepository extends BaseRepository
             $data['uuid'] = Utils::generateNanoID();
         }
 
-        $success = $this->db->insert($this->table, $data);
+        $success = $this->db->table($this->table)->insert($data);
 
         if (!$success) {
             throw new \RuntimeException('Failed to create user role');
@@ -54,7 +60,8 @@ class UserRoleRepository extends BaseRepository
 
     public function findUserRoleByUuid(string $uuid): ?UserRole
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['uuid' => $uuid])
             ->limit(1)
             ->get();
@@ -64,17 +71,18 @@ class UserRoleRepository extends BaseRepository
 
     public function update(string $uuid, array $data): bool
     {
-        return $this->db->update($this->table, $data, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->update($data);
     }
 
     public function delete(string $uuid): bool
     {
-        return $this->db->delete($this->table, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->delete();
     }
 
     public function findByUser(string $userUuid, array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['user_uuid' => $userUuid]);
 
         if (isset($filters['role_uuid'])) {
@@ -83,7 +91,10 @@ class UserRoleRepository extends BaseRepository
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
         $query->orderBy(['created_at' => 'DESC']);
@@ -94,7 +105,8 @@ class UserRoleRepository extends BaseRepository
 
     public function findByRole(string $roleUuid): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['role_uuid' => $roleUuid])
             ->orderBy(['created_at' => 'DESC'])
             ->get();
@@ -104,7 +116,8 @@ class UserRoleRepository extends BaseRepository
 
     public function findUserRole(string $userUuid, string $roleUuid): ?UserRole
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where([
                 'user_uuid' => $userUuid,
                 'role_uuid' => $roleUuid
@@ -117,7 +130,8 @@ class UserRoleRepository extends BaseRepository
 
     public function hasUserRole(string $userUuid, string $roleUuid, array $scope = []): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where([
                 'user_uuid' => $userUuid,
                 'role_uuid' => $roleUuid
@@ -125,7 +139,10 @@ class UserRoleRepository extends BaseRepository
 
         // Check if role is still active (not expired)
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+        $query->where(function ($q) use ($currentTime) {
+            $q->where('expires_at', '>=', $currentTime)
+              ->orWhereNull('expires_at');
+        });
 
         $results = $query->get();
 
@@ -149,12 +166,28 @@ class UserRoleRepository extends BaseRepository
 
     public function getUserRoles(string $userUuid, array $scope = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields)
-            ->where(['user_uuid' => $userUuid]);
+        // Create cache key based on user UUID and scope
+        $cacheKey = $userUuid . '_' . md5(serialize($scope));
+
+        // Check static cache first (works across all instances)
+        if (isset(self::$globalUserRolesCache[$cacheKey])) {
+            return self::$globalUserRolesCache[$cacheKey];
+        }
+
+        if (isset($this->userRolesCache[$cacheKey])) {
+            return $this->userRolesCache[$cacheKey];
+        }
 
         // Only get active (non-expired) roles
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
+            ->where('user_uuid', '=', $userUuid)
+            ->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
 
         $results = $query->get();
         $userRoles = array_map(fn($row) => new UserRole($row), $results);
@@ -166,7 +199,13 @@ class UserRoleRepository extends BaseRepository
             });
         }
 
-        return array_values($userRoles);
+        $userRoles = array_values($userRoles);
+
+        // Cache the result in both caches
+        $this->userRolesCache[$cacheKey] = $userRoles;
+        self::$globalUserRolesCache[$cacheKey] = $userRoles;
+
+        return $userRoles;
     }
 
     public function getUserRoleUuids(string $userUuid, array $scope = []): array
@@ -198,23 +237,24 @@ class UserRoleRepository extends BaseRepository
 
     public function revokeRole(string $userUuid, string $roleUuid): bool
     {
-        return $this->db->delete($this->table, [
+        return $this->db->table($this->table)->where([
             'user_uuid' => $userUuid,
             'role_uuid' => $roleUuid
-        ]);
+        ])->delete();
     }
 
     public function revokeAllUserRoles(string $userUuid): bool
     {
-        return $this->db->delete($this->table, ['user_uuid' => $userUuid]);
+        return $this->db->table($this->table)->where(['user_uuid' => $userUuid])->delete();
     }
 
     public function findExpiredRoles(): array
     {
         $currentTime = $this->db->getDriver()->formatDateTime();
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->whereNotNull('expires_at')
-            ->whereLessThan('expires_at', $currentTime)
+            ->where('expires_at', '<', $currentTime)
             ->orderBy(['expires_at' => 'ASC'])
             ->get();
 
@@ -225,18 +265,17 @@ class UserRoleRepository extends BaseRepository
     {
         $currentTime = $this->db->getDriver()->formatDateTime();
 
-        $expiredCount = $this->db->select($this->table, ['COUNT(*) as count'])
+        $count = $this->db->table($this->table)
             ->whereNotNull('expires_at')
-            ->whereLessThan('expires_at', $currentTime)
-            ->get();
-
-        $count = (int)($expiredCount[0]['count'] ?? 0);
+            ->where('expires_at', '<', $currentTime)
+            ->count();
 
         if ($count > 0) {
             // Get expired role UUIDs and delete them individually
-            $deleteQuery = $this->db->select($this->table, ['uuid'])
+            $deleteQuery = $this->db->table($this->table)
+                ->select(['uuid'])
                 ->whereNotNull('expires_at')
-                ->whereLessThan('expires_at', $currentTime);
+                ->where('expires_at', '<', $currentTime);
 
             $expiredUuids = array_column($deleteQuery->get(), 'uuid');
             if (!empty($expiredUuids)) {
@@ -249,7 +288,8 @@ class UserRoleRepository extends BaseRepository
 
     public function findByGrantedBy(string $grantedByUuid): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['granted_by' => $grantedByUuid])
             ->orderBy(['created_at' => 'DESC'])
             ->get();
@@ -259,12 +299,17 @@ class UserRoleRepository extends BaseRepository
 
     public function getUsersWithRole(string $roleUuid, array $filters = []): array
     {
-        $query = $this->db->select($this->table, ['DISTINCT user_uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['user_uuid'])
+            ->distinct()
             ->where(['role_uuid' => $roleUuid]);
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
         $results = $query->get();
@@ -273,21 +318,23 @@ class UserRoleRepository extends BaseRepository
 
     public function countUserRoles(string $userUuid, array $filters = []): int
     {
-        $query = $this->db->select($this->table, ['COUNT(*) as count'])
+        $query = $this->db->table($this->table)
             ->where(['user_uuid' => $userUuid]);
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
-        $result = $query->get();
-        return (int)($result[0]['count'] ?? 0);
+        return $query->count();
     }
 
     public function findRoleAssignments(array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields);
+        $query = $this->db->table($this->table)->select($this->defaultFields);
 
         if (isset($filters['role_uuid'])) {
             $query->where(['role_uuid' => $filters['role_uuid']]);
@@ -299,7 +346,10 @@ class UserRoleRepository extends BaseRepository
 
         if (isset($filters['active_only']) && $filters['active_only']) {
             $currentTime = $this->db->getDriver()->formatDateTime();
-            $query->whereGreaterThanOrEqual('expires_at', $currentTime)->orWhereNull('expires_at');
+            $query->where(function ($q) use ($currentTime) {
+                $q->where('expires_at', '>=', $currentTime)
+                  ->orWhereNull('expires_at');
+            });
         }
 
         $query->orderBy(['created_at' => 'DESC']);
@@ -324,7 +374,8 @@ class UserRoleRepository extends BaseRepository
         int $perPage = 25
     ): array {
         // Start with base query
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['user_uuid' => $userUuid]);
 
         // Apply filters
@@ -375,7 +426,8 @@ class UserRoleRepository extends BaseRepository
         $rolesMap = [];
         if (!empty($roleUuids)) {
             $roleUuids = array_unique($roleUuids); // Remove duplicates
-            $roles = $this->db->select('roles', ['uuid', 'name', 'slug', 'description'])
+            $roles = $this->db->table('roles')
+                ->select(['uuid', 'name', 'slug', 'description'])
                 ->whereIn('uuid', $roleUuids)
                 ->get();
 
@@ -408,9 +460,19 @@ class UserRoleRepository extends BaseRepository
             ];
         }
 
+        // Extract pagination metadata from the flat result structure
+        $pagination = $result;
+        unset($pagination['data']);
+
         return [
             'data' => $transformedData,
-            'pagination' => $result['pagination']
+            'current_page' => $result['current_page'],
+            'per_page' => $result['per_page'],
+            'total' => $result['total'],
+            'last_page' => $result['last_page'],
+            'has_more' => $result['has_more'],
+            'from' => $result['from'],
+            'to' => $result['to']
         ];
     }
 
@@ -427,7 +489,8 @@ class UserRoleRepository extends BaseRepository
             return [];
         }
 
-        $query = $this->db->select($this->table, $this->defaultFields)
+        $query = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->whereIn('user_uuid', $userUuids);
 
         // Apply scope filters if provided

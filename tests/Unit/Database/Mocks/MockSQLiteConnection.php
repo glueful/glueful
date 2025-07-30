@@ -1,10 +1,12 @@
 <?php
+
 namespace Tests\Unit\Database\Mocks;
 
 use PDO;
 use Glueful\Database\Connection;
 use Glueful\Database\Driver\SQLiteDriver;
-use Glueful\Database\Schema\SQLiteSchemaManager;
+use Glueful\Database\Schema\Builders\SchemaBuilder;
+use Glueful\Database\Schema\Generators\SQLiteSqlGenerator;
 
 /**
  * Mock SQLite Connection for Testing
@@ -29,8 +31,9 @@ class MockSQLiteConnection extends Connection
         // Set SQLite driver
         $this->driver = new SQLiteDriver($this->pdo);
 
-        // Set SQLite schema manager
-        $this->schemaManager = new SQLiteSchemaManager($this->pdo);
+        // Set SQLite schema builder
+        $sqlGenerator = new SQLiteSqlGenerator();
+        $this->schemaBuilder = new SchemaBuilder($this, $sqlGenerator);
     }
 
     /**
@@ -38,29 +41,33 @@ class MockSQLiteConnection extends Connection
      */
     public function createTestTables(): void
     {
+        // Drop tables first if they exist
+        $this->pdo->exec('DROP TABLE IF EXISTS posts');
+        $this->pdo->exec('DROP TABLE IF EXISTS users');
+
         // Create users table
-        $this->schemaManager->createTable('users', [
-            'id' => 'INTEGER PRIMARY KEY AUTOINCREMENT',
-            'username' => 'TEXT NOT NULL',
-            'email' => 'TEXT NOT NULL',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'DATETIME NULL'
-        ]);
+        $this->schemaBuilder->createTable('users', function ($table) {
+            $table->integer('id')->primary()->autoIncrement();
+            $table->string('username', 255);
+            $table->string('email', 255);
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
+        });
 
         // Create posts table with foreign key
-        $this->schemaManager->createTable('posts', [
-            'id' => 'INTEGER PRIMARY KEY AUTOINCREMENT',
-            'user_id' => 'INTEGER NOT NULL',
-            'title' => 'TEXT NOT NULL',
-            'content' => 'TEXT NOT NULL',
-            'created_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP',
-            'deleted_at' => 'DATETIME NULL'
-        ])->addForeignKey([
-            'column' => 'user_id',
-            'references' => 'id',
-            'on' => 'users',
-            'onDelete' => 'CASCADE'
-        ]);
+        $this->schemaBuilder->createTable('posts', function ($table) {
+            $table->integer('id')->primary()->autoIncrement();
+            $table->integer('user_id');
+            $table->string('title', 255);
+            $table->text('content');
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
+
+            $table->foreign('user_id')
+                ->references('id')
+                ->on('users')
+                ->cascadeOnDelete();
+        });
     }
 
     /**

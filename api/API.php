@@ -60,6 +60,10 @@ class API
         $extensionManager = container()->get(ExtensionManager::class);
         $extensionManager->loadEnabledExtensions();
 
+        // Initialize extensions now that DI container is ready
+        self::getLogger()->debug("Initializing extensions...");
+        $extensionManager->initializeLoadedExtensions();
+
         // Load extension routes from enabled extensions
         self::getLogger()->debug("Loading extension routes...");
         try {

@@ -6,7 +6,7 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\RequestHelper;
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use Glueful\Database\Migrations\MigrationManager;
 use Glueful\Repository\RepositoryFactory;
 use Glueful\Auth\AuthenticationManager;
@@ -14,11 +14,11 @@ use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 class MigrationsController extends BaseController
 {
-    private QueryBuilder $queryBuilder;
+    private Connection $db;
     private MigrationManager $migrationManager;
 
     public function __construct(
-        ?QueryBuilder $queryBuilder = null,
+        ?Connection $connection = null,
         ?MigrationManager $migrationManager = null,
         ?RepositoryFactory $repositoryFactory = null,
         ?AuthenticationManager $authManager = null,
@@ -27,7 +27,7 @@ class MigrationsController extends BaseController
         parent::__construct($repositoryFactory, $authManager, $request);
 
         // Initialize dependencies with dependency injection
-        $this->queryBuilder = $queryBuilder ?? $this->getQueryBuilder();
+        $this->db = $connection ?? new Connection();
         $this->migrationManager = $migrationManager ?? new MigrationManager();
     }
 
@@ -56,16 +56,17 @@ class MigrationsController extends BaseController
             function () use ($page, $perPage) {
 
                 // Get migrations from schema manager
-                $results = $this->queryBuilder->select('migrations', [
-                    'migrations.id',
-                    'migrations.migration',
-                    'migrations.batch',
-                    'migrations.applied_at',
-                    'migrations.checksum',
-                    'migrations.description'
-                ])
-                ->orderBy(['applied_at' => 'DESC'])
-                ->paginate($page, $perPage);
+                $results = $this->db->table('migrations')
+                    ->select([
+                        'migrations.id',
+                        'migrations.migration',
+                        'migrations.batch',
+                        'migrations.applied_at',
+                        'migrations.checksum',
+                        'migrations.description'
+                    ])
+                    ->orderBy('applied_at', 'DESC')
+                    ->paginate($page, $perPage);
 
                 $data =  $results['data'] ?? [];
                 $meta = $results;

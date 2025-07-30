@@ -20,7 +20,7 @@ The Admin extension provides a comprehensive administrative dashboard and manage
 ## Requirements
 
 - PHP 8.2 or higher
-- Glueful Framework 0.27.0 or higher
+- Glueful Framework 0.29.0 or higher
 - Admin user privileges for most operations
 
 ## Installation

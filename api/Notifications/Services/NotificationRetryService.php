@@ -6,7 +6,6 @@ namespace Glueful\Notifications\Services;
 
 use DateTime;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Models\Notification;
@@ -25,9 +24,9 @@ use Glueful\Repository\NotificationRepository;
 class NotificationRetryService
 {
     /**
-     * @var QueryBuilder|null Database query builder
+     * @var Connection|null Database connection
      */
-    private ?QueryBuilder $queryBuilder;
+    private ?Connection $connection;
 
     /**
      * @var LogManager|null Logger instance
@@ -58,7 +57,7 @@ class NotificationRetryService
     ) {
         $this->logger = $logger;
         $this->notificationRepository = $notificationRepository ?? new NotificationRepository();
-        $this->queryBuilder = null; // Lazy initialization
+        $this->connection = null; // Lazy initialization
         $this->config = $config;
     }
 
@@ -69,12 +68,8 @@ class NotificationRetryService
      */
     private function initDatabase(): void
     {
-        if ($this->queryBuilder === null) {
-            $connection = new Connection();
-            $this->queryBuilder = new QueryBuilder(
-                $connection->getPDO(),
-                $connection->getDriver()
-            );
+        if ($this->connection === null) {
+            $this->connection = new Connection();
         }
     }
 
@@ -123,18 +118,15 @@ class NotificationRetryService
             $this->ensureRetryQueueTableExists();
 
             // Check if this notification is already in the retry queue
-            $existingEntry = $this->queryBuilder->select(
-                'notification_retry_queue',
-                ['id'],
-                [
-                    'notification_id' => $notification->getId(),
-                    'channel' => $channel
-                ]
-            )->get();
+            $existingEntry = $this->connection->table('notification_retry_queue')
+                ->select(['id'])
+                ->where('notification_id', $notification->getId())
+                ->where('channel', $channel)
+                ->get();
 
             if (empty($existingEntry)) {
                 // Insert new record
-                $this->queryBuilder->insert('notification_retry_queue', [
+                $this->connection->table('notification_retry_queue')->insert([
                     'notification_id' => $notification->getId(),
                     'notifiable_type' => $notifiable->getNotifiableType(),
                     'notifiable_id' => $notifiable->getNotifiableId(),
@@ -144,21 +136,14 @@ class NotificationRetryService
                     'created_at' => (new DateTime())->format('Y-m-d H:i:s')
                 ]);
             } else {
-                // Update existing record using upsert
-                $this->queryBuilder->upsert(
-                    'notification_retry_queue',
-                    [[
-                        'id' => $existingEntry[0]['id'],
-                        'notification_id' => $notification->getId(),
-                        'notifiable_type' => $notifiable->getNotifiableType(),
-                        'notifiable_id' => $notifiable->getNotifiableId(),
-                        'channel' => $channel,
+                // Update existing record
+                $this->connection->table('notification_retry_queue')
+                    ->where('id', $existingEntry[0]['id'])
+                    ->update([
                         'retry_count' => $retryCount,
                         'retry_at' => $nextRetryTime->format('Y-m-d H:i:s'),
                         'updated_at' => (new DateTime())->format('Y-m-d H:i:s')
-                    ]],
-                    ['retry_count', 'retry_at', 'updated_at']
-                );
+                    ]);
             }
 
             // Log retry information
@@ -218,45 +203,34 @@ class NotificationRetryService
     {
         try {
             $connection = new Connection();
-            $schema = $connection->getSchemaManager();
+            $schema = $connection->getSchemaBuilder();
 
             // Check if table exists first
-            $tables = $schema->getTables();
-            if (!in_array('notification_retry_queue', $tables)) {
-                // Create table using SchemaManager
-                $schema->createTable('notification_retry_queue', [
-                    'id' => ['type' => 'INT', 'auto_increment' => true, 'primary' => true],
-                    'notification_id' => ['type' => 'VARCHAR(255)', 'null' => false],
-                    'notifiable_type' => ['type' => 'VARCHAR(100)', 'null' => false],
-                    'notifiable_id' => ['type' => 'VARCHAR(255)', 'null' => false],
-                    'channel' => ['type' => 'VARCHAR(50)', 'null' => false],
-                    'retry_count' => ['type' => 'INT', 'null' => false, 'default' => 1],
-                    'retry_at' => ['type' => 'TIMESTAMP', 'null' => false],
-                    'created_at' => ['type' => 'TIMESTAMP', 'null' => false, 'default' => 'CURRENT_TIMESTAMP'],
-                    'updated_at' => ['type' => 'TIMESTAMP', 'null' => true, 'on_update' => 'CURRENT_TIMESTAMP']
-                ]);
+            if (!$schema->hasTable('notification_retry_queue')) {
+                $table = $schema->table('notification_retry_queue');
+
+                // Define columns
+                $table->integer('id')->primary()->autoIncrement();
+                $table->string('notification_id', 255);
+                $table->string('notifiable_type', 100);
+                $table->string('notifiable_id', 255);
+                $table->string('channel', 50);
+                $table->integer('retry_count')->default(1);
+                $table->timestamp('retry_at');
+                $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+                $table->timestamp('updated_at')->nullable();
 
                 // Add indexes
-                $schema->addIndex([
-                    'type' => 'UNIQUE',
-                    'columns' => ['notification_id', 'channel'],
-                    'table' => 'notification_retry_queue'
-                ]);
+                $table->unique(['notification_id', 'channel']);
+                $table->index('retry_at');
+                $table->index('notification_id');
+                $table->index(['notifiable_type', 'notifiable_id']);
 
-                $schema->addIndex([
-                    'columns' => ['retry_at'],
-                    'table' => 'notification_retry_queue'
-                ]);
+                // Create the table
+                $table->create();
 
-                $schema->addIndex([
-                    'columns' => ['notification_id'],
-                    'table' => 'notification_retry_queue'
-                ]);
-
-                $schema->addIndex([
-                    'columns' => ['notifiable_type', 'notifiable_id'],
-                    'table' => 'notification_retry_queue'
-                ]);
+                // Execute the operation
+                $schema->execute();
             }
         } catch (\Throwable $e) {
             if ($this->logger) {
@@ -280,16 +254,13 @@ class NotificationRetryService
         $now = (new DateTime())->format('Y-m-d H:i:s');
 
         // Get due retries
-        $dueRetries = $this->queryBuilder->select(
-            'notification_retry_queue',
-            ['*'],
-            [
-                'retry_at <= ?' => $now
-            ]
-        )
-        ->orderBy(['retry_count' => 'ASC', 'retry_at' => 'ASC'])
-        ->limit($limit)
-        ->get();
+        $dueRetries = $this->connection->table('notification_retry_queue')
+            ->select(['*'])
+            ->where('retry_at', '<=', $now)
+            ->orderBy('retry_count', 'ASC')
+            ->orderBy('retry_at', 'ASC')
+            ->limit($limit)
+            ->get();
 
         $results = [
             'processed' => 0,
@@ -309,7 +280,7 @@ class NotificationRetryService
             $notification = $this->notificationRepository->findByUuId($retry['notification_id']);
             if (!$notification) {
                 // Remove from queue if notification doesn't exist anymore
-                $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
+                $this->connection->table('notification_retry_queue')->where('id', $retry['id'])->delete();
                 $results['removed']++;
                 continue;
             }
@@ -322,7 +293,7 @@ class NotificationRetryService
 
             if (!$notifiable) {
                 // Remove from queue if notifiable can't be created
-                $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
+                $this->connection->table('notification_retry_queue')->where('id', $retry['id'])->delete();
                 $results['removed']++;
                 continue;
             }
@@ -338,7 +309,7 @@ class NotificationRetryService
                 // Mark as sent and remove from retry queue
                 $notification->markAsSent();
                 $this->notificationRepository->save($notification);
-                $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
+                $this->connection->table('notification_retry_queue')->where('id', $retry['id'])->delete();
                 $results['successful']++;
 
                 if ($this->logger) {
@@ -354,7 +325,7 @@ class NotificationRetryService
 
                 if ($retry['retry_count'] >= $maxRetries) {
                     // Max retries reached, remove from queue
-                    $this->queryBuilder->delete('notification_retry_queue', ['id' => $retry['id']]);
+                    $this->connection->table('notification_retry_queue')->where('id', $retry['id'])->delete();
                     $results['removed']++;
 
                     if ($this->logger) {

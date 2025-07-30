@@ -4,6 +4,8 @@ namespace Glueful\Console\Commands\Generate;
 
 use Glueful\Console\BaseCommand;
 use Glueful\ApiDefinitionGenerator;
+use Glueful\Services\FileFinder;
+use Glueful\Services\FileManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -31,6 +33,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 class ApiDefinitionsCommand extends BaseCommand
 {
+    private ?FileFinder $fileFinder = null;
+    private ?FileManager $fileManager = null;
+
     protected function configure(): void
     {
         $this->setDescription(
@@ -62,6 +67,12 @@ class ApiDefinitionsCommand extends BaseCommand
                  'f',
                  InputOption::VALUE_NONE,
                  'Force generation of new definitions, even if manual files exist'
+             )
+             ->addOption(
+                 'clean',
+                 'c',
+                 InputOption::VALUE_NONE,
+                 'Clean all existing JSON definitions before generating new ones'
              );
     }
 
@@ -70,6 +81,7 @@ class ApiDefinitionsCommand extends BaseCommand
         $database = $input->getOption('database');
         $table = $input->getOption('table');
         $force = $input->getOption('force');
+        $clean = $input->getOption('clean');
 
         // Validate table option requires database
         if ($table && !$database) {
@@ -79,6 +91,12 @@ class ApiDefinitionsCommand extends BaseCommand
         }
 
         try {
+            // Clean existing definitions if requested
+            if ($clean) {
+                $this->cleanDefinitionDirectories();
+                $this->line(''); // Add blank line for visual separation
+            }
+
             $this->info('Initializing API Definition Generator...');
             $generator = new ApiDefinitionGenerator(true);
 
@@ -118,6 +136,7 @@ class ApiDefinitionsCommand extends BaseCommand
         }
 
         $scope[] = ['Force Overwrite', $force ? 'Yes' : 'No'];
+        $scope[] = ['Clean Before Generate', $this->input->getOption('clean') ? 'Yes' : 'No'];
 
         $this->table(['Property', 'Value'], $scope);
     }
@@ -178,9 +197,106 @@ class ApiDefinitionsCommand extends BaseCommand
         // Build documentation URL dynamically from configuration
         $apiBaseUrl = rtrim(config('app.paths.api_base_url'), '/');
         $apiVersion = config('app.api_version');
-        $docsUrlWithApi = $apiBaseUrl . '/' . $apiVersion . '/docs';
+        $docsUrlWithApi = $apiBaseUrl . '/' . '/docs';
 
         $this->line("3. Visit the API documentation with api explorer at {$docsUrlWithApi}");
         $this->line('4. Test your API endpoints');
+    }
+
+    /**
+     * Get FileFinder service instance
+     *
+     * @return FileFinder
+     */
+    private function getFileFinder(): FileFinder
+    {
+        if ($this->fileFinder === null) {
+            $this->fileFinder = $this->getService(FileFinder::class);
+        }
+        return $this->fileFinder;
+    }
+
+    /**
+     * Get FileManager service instance
+     *
+     * @return FileManager
+     */
+    private function getFileManager(): FileManager
+    {
+        if ($this->fileManager === null) {
+            $this->fileManager = $this->getService(FileManager::class);
+        }
+        return $this->fileManager;
+    }
+
+    /**
+     * Clean all JSON definition directories
+     *
+     * Removes all JSON files from both api-json-definitions and api-doc-json-definitions
+     * directories, including subdirectories in api-doc-json-definitions.
+     *
+     * @return void
+     */
+    private function cleanDefinitionDirectories(): void
+    {
+        $fileManager = $this->getFileManager();
+        $fileFinder = $this->getFileFinder();
+
+        // Temporarily disable file extension restrictions for directory removal
+        $originalAllowedExtensions = $fileManager->getConfig('allowed_extensions');
+        $fileManager->setConfig('allowed_extensions', null);
+
+        try {
+            $jsonDefinitionsPath = config('app.paths.database_json_definitions');
+            $apiDocDefinitionsPath = config('app.paths.api_docs') . 'api-doc-json-definitions';
+
+            // Clean api-json-definitions directory (just .json files)
+            if ($fileManager->exists($jsonDefinitionsPath)) {
+                $this->info("Cleaning JSON definitions from: {$jsonDefinitionsPath}");
+
+                $finder = $fileFinder->createFinder();
+                $jsonFiles = $finder->files()->in($jsonDefinitionsPath)->name('*.json');
+
+                $count = 0;
+                foreach ($jsonFiles as $file) {
+                    $fileManager->remove($file->getPathname());
+                    $count++;
+                }
+
+                $this->line("Removed {$count} JSON files from {$jsonDefinitionsPath}");
+            }
+
+            // Clean api-doc-json-definitions directory (including subdirectories)
+            if ($fileManager->exists($apiDocDefinitionsPath)) {
+                $this->info("Cleaning API doc definitions from: {$apiDocDefinitionsPath}");
+
+                // First, find and remove all subdirectories
+                $finder = $fileFinder->createFinder();
+                $directories = $finder->directories()->in($apiDocDefinitionsPath)->depth(0);
+
+                $dirCount = 0;
+                foreach ($directories as $directory) {
+                    $fileManager->remove($directory->getPathname());
+                    $dirCount++;
+                }
+
+                // Then, remove any remaining JSON files in the root
+                $finder = $fileFinder->createFinder();
+                $jsonFiles = $finder->files()->in($apiDocDefinitionsPath)->name('*.json')->depth(0);
+
+                $fileCount = 0;
+                foreach ($jsonFiles as $file) {
+                    $fileManager->remove($file->getPathname());
+                    $fileCount++;
+                }
+
+                $this->line("Removed {$dirCount} directories and {$fileCount} files from {$apiDocDefinitionsPath}");
+            }
+
+            $this->success('Definition directories cleaned successfully!');
+        } finally {
+            // Restore original file extension restrictions
+            $fileManager->setConfig('allowed_extensions', $originalAllowedExtensions);
+        }
     }
 }

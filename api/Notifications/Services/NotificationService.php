@@ -380,6 +380,33 @@ class NotificationService implements ConfigurableInterface
     }
 
     /**
+     * Get notifications with built-in pagination
+     *
+     * @param Notifiable $notifiable Recipient
+     * @param bool $onlyUnread Whether to get only unread notifications
+     * @param int $page Page number (1-based)
+     * @param int $perPage Number of items per page
+     * @param array $filters Optional additional filters
+     * @return array Paginated results with data and pagination info
+     */
+    public function getNotificationsWithPagination(
+        Notifiable $notifiable,
+        bool $onlyUnread = false,
+        int $page = 1,
+        int $perPage = 20,
+        array $filters = []
+    ): array {
+        return $this->repository->findForNotifiableWithPagination(
+            $notifiable->getNotifiableType(),
+            $notifiable->getNotifiableId(),
+            $onlyUnread,
+            $page,
+            $perPage,
+            $filters
+        );
+    }
+
+    /**
      * Count total notifications for a user with optional filters
      *
      * @param Notifiable $notifiable Recipient

@@ -40,12 +40,11 @@ class EmailFormatter
      */
     public function __construct(array $templates = [], array $options = [])
     {
-        $this->defaultOptions = array_merge($this->defaultOptions, $options);
+        // Load template configuration from services
+        $this->loadTemplateConfiguration();
 
-        // Set default templates path if not provided
-        if ($this->defaultOptions['templates_path'] === null) {
-            $this->defaultOptions['templates_path'] = __DIR__ . '/Templates/html';
-        }
+        // Merge provided options with loaded config
+        $this->defaultOptions = array_merge($this->defaultOptions, $options);
 
         // Register default templates
         $this->registerDefaultTemplates();
@@ -54,6 +53,57 @@ class EmailFormatter
         foreach ($templates as $name => $template) {
             $this->registerTemplate($name, $template);
         }
+    }
+
+    /**
+     * Load template configuration from services.php
+     */
+    protected function loadTemplateConfiguration(): void
+    {
+        // Get mail configuration
+        $mailConfig = config('services.mail', []);
+        $templateConfig = $mailConfig['templates'] ?? [];
+
+        // Get extension configuration
+        $extensionConfig = require __DIR__ . '/config.php';
+        $extensionTemplates = $extensionConfig['templates'] ?? [];
+
+        // Set primary template path
+        if (!empty($templateConfig['path'])) {
+            $this->defaultOptions['templates_path'] = $templateConfig['path'];
+        } elseif (!empty($extensionTemplates['extension_path'])) {
+            $this->defaultOptions['templates_path'] = $extensionTemplates['extension_path'];
+        } else {
+            $this->defaultOptions['templates_path'] = __DIR__ . '/Templates/html';
+        }
+
+        // Store additional paths for fallback
+        $this->defaultOptions['custom_paths'] = $templateConfig['custom_paths'] ?? [];
+
+        // Store template mappings (merge framework and extension mappings)
+        $this->defaultOptions['template_mappings'] = array_merge(
+            $extensionTemplates['extension_mappings'] ?? [],
+            $templateConfig['mappings'] ?? []
+        );
+
+        // Store global variables (merge framework and extension variables)
+        $this->defaultOptions['global_variables'] = array_merge(
+            $extensionTemplates['extension_variables'] ?? [],
+            $templateConfig['global_variables'] ?? []
+        );
+
+        // Store other config options
+        $this->defaultOptions['default_layout'] = $templateConfig['default_layout'] ?? 'layout';
+        $this->defaultOptions['partials_directory'] = $templateConfig['partials_directory'] ?? 'partials';
+        $this->defaultOptions['extension'] = $templateConfig['extension'] ?? '.html';
+        $this->defaultOptions['cache_enabled'] = $templateConfig['cache_enabled'] ?? true;
+        $this->defaultOptions['cache_path'] = $templateConfig['cache_path'] ?? null;
+
+        // Processing options from extension config
+        $processingOptions = $extensionTemplates['processing'] ?? [];
+        $this->defaultOptions['minify_html'] = $processingOptions['minify_html'] ?? false;
+        $this->defaultOptions['inline_css'] = $processingOptions['inline_css'] ?? true;
+        $this->defaultOptions['auto_text_version'] = $processingOptions['auto_text_version'] ?? true;
     }
 
     /**
@@ -137,6 +187,12 @@ class EmailFormatter
      */
     public function getTemplate(string $type, string $name = 'default')
     {
+        // Check template mappings first
+        $mappings = $this->defaultOptions['template_mappings'] ?? [];
+        if (isset($mappings[$name])) {
+            $name = $mappings[$name];
+        }
+
         // First try to find a template specific to this notification type
         $typedTemplateName = $type . '.' . $name;
 
@@ -162,6 +218,8 @@ class EmailFormatter
      */
     protected function renderTemplate($template, array $data): string
     {
+        // Merge global variables with template data
+        $data = array_merge($this->defaultOptions['global_variables'] ?? [], $data);
 
         // If template is a file path, load the file
         if (is_string($template) && file_exists($template)) {

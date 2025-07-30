@@ -3,7 +3,6 @@
 namespace Glueful\Cron;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 
 // @schedule:  0 0 * * *
 // This job runs Daily at midnight
@@ -18,27 +17,21 @@ class SessionCleaner
     ];
 
     private static Connection $connection;
-    private static QueryBuilder $queryBuilder;
 
     public function __construct()
     {
         self::$connection = new Connection();
-        self::$queryBuilder = new QueryBuilder(self::$connection->getPDO(), self::$connection->getDriver());
     }
 
     public function cleanExpiredAccessTokens(): void
     {
         try {
-            $affected = self::$queryBuilder->delete(
-                'auth_sessions',
-                [
-                    'status' => 'active',
-                    'access_expires_at <' => date('Y-m-d H:i:s')
-                ],
-                false // Use soft delete if enabled
-            );
+            $affected = self::$connection->table('auth_sessions')
+                ->where('status', 'active')
+                ->where('access_expires_at', '<', date('Y-m-d H:i:s'))
+                ->delete();
 
-            $this->stats['expired_access'] = $affected ? 1 : 0;
+            $this->stats['expired_access'] = $affected;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired access tokens: " . $e->getMessage();
         }
@@ -47,16 +40,12 @@ class SessionCleaner
     public function cleanExpiredRefreshTokens(): void
     {
         try {
-            $affected = self::$queryBuilder->delete(
-                'auth_sessions',
-                [
-                    'status' => 'active',
-                    'refresh_expires_at <' => date('Y-m-d H:i:s')
-                ],
-                false // Use real delete instead of soft delete for cleanup
-            );
+            $affected = self::$connection->table('auth_sessions')
+                ->where('status', 'active')
+                ->where('refresh_expires_at', '<', date('Y-m-d H:i:s'))
+                ->delete();
 
-            $this->stats['expired_refresh'] = $affected ? 1 : 0;
+            $this->stats['expired_refresh'] = $affected;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean expired refresh tokens: " . $e->getMessage();
         }
@@ -68,16 +57,12 @@ class SessionCleaner
             // Get configurable retention period, default to 30 days
             $retentionDays = config('session.cleanup.revoked_retention_days', 30);
             $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$retentionDays} days"));
-            $affected = self::$queryBuilder->delete(
-                'auth_sessions',
-                [
-                   'status' => 'revoked',
-                    'updated_at <' => $cutoffDate
-                ],
-                false // Use real delete instead of soft delete for cleanup
-            );
+            $affected = self::$connection->table('auth_sessions')
+                ->where('status', 'revoked')
+                ->where('updated_at', '<', $cutoffDate)
+                ->delete();
 
-            $this->stats['old_revoked'] = $affected ? 1 : 0;
+            $this->stats['old_revoked'] = $affected;
         } catch (\Exception $e) {
             $this->stats['errors'][] = "Failed to clean old revoked sessions: " . $e->getMessage();
         }

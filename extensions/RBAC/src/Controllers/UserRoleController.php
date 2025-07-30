@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Extensions\RBAC\Services\RoleService;
 use Glueful\Extensions\RBAC\Services\PermissionAssignmentService;
 use Glueful\Extensions\RBAC\Repositories\UserRoleRepository;
-use Glueful\Helpers\DatabaseConnectionTrait;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -22,8 +21,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class UserRoleController
 {
-    use DatabaseConnectionTrait;
-
     private RoleService $roleService;
     private PermissionAssignmentService $permissionService;
     private UserRoleRepository $userRoleRepository;
@@ -50,9 +47,11 @@ class UserRoleController
     {
         try {
             $userUuid = $params['user_uuid'] ?? '';
-            $scope = $request->query->get('scope', []);
-            if (is_string($scope)) {
+            $scope = $request->query->get('scope', '');
+            if (is_string($scope) && !empty($scope)) {
                 $scope = json_decode($scope, true) ?? [];
+            } else {
+                $scope = [];
             }
 
             $roles = $this->roleService->getUserRoles($userUuid, $scope);
@@ -261,9 +260,11 @@ class UserRoleController
     {
         try {
             $userUuid = $params['user_uuid'] ?? '';
-            $scope = $request->query->get('scope', []);
-            if (is_string($scope)) {
+            $scope = $request->query->get('scope', '');
+            if (is_string($scope) && !empty($scope)) {
                 $scope = json_decode($scope, true) ?? [];
+            } else {
+                $scope = [];
             }
 
             $overview = [
@@ -304,11 +305,11 @@ class UserRoleController
             }
 
             $history = $this->userRoleRepository->getUserRoleHistoryPaginated($userUuid, $filters, $page, $perPage);
-             $historyData = $history['data'];
-            $meta = $historyData;
-             unset($meta['data']);
+            $historyData = $history['data'];
+            $meta = $history;
+            unset($meta['data']);
 
-            return Response::success($history, 'User role history retrieved successfully');
+            return Response::successWithMeta($historyData, $meta, 'User role history retrieved successfully');
         } catch (\Exception $e) {
             return Response::serverError($e->getMessage());
         }
@@ -434,40 +435,27 @@ class UserRoleController
         try {
             $stats = [];
 
-            // Use count() method for total assignments
-            $stats['total_assignments'] = $this->getQueryBuilder()->count('user_roles');
+            // Get all user roles to calculate statistics
+            $allUserRoles = $this->userRoleRepository->findRoleAssignments();
+            $stats['total_assignments'] = count($allUserRoles);
 
-            $currentTime = date('Y-m-d H:i:s');
-            
-            // For active assignments, we need to count records where expires_at is null OR expires_at > current time
-            // Since we can't use complex OR conditions with count() directly, we'll fetch and count manually
-            $activeAssignments = $this->getQueryBuilder()
-                ->select('user_roles', ['user_uuid', 'expires_at'])
-                ->get();
-            
+            // Calculate active and expired assignments
             $activeCount = 0;
-            foreach ($activeAssignments as $assignment) {
-                // Check if assignment is active (no expiry or expiry is in the future)
-                if (empty($assignment['expires_at']) || $assignment['expires_at'] > $currentTime) {
+            $expiredCount = 0;
+            $uniqueUsers = [];
+
+            foreach ($allUserRoles as $userRole) {
+                $uniqueUsers[$userRole->getUserUuid()] = true;
+
+                if ($userRole->isExpired()) {
+                    $expiredCount++;
+                } else {
                     $activeCount++;
                 }
             }
+
             $stats['active_assignments'] = $activeCount;
-
-            // For expired assignments - count those with expires_at in the past
-            $expiredCount = 0;
-            foreach ($activeAssignments as $assignment) {
-                if (!empty($assignment['expires_at']) && $assignment['expires_at'] <= $currentTime) {
-                    $expiredCount++;
-                }
-            }
             $stats['expired_assignments'] = $expiredCount;
-
-            // For users with roles - count distinct user_uuid
-            $usersWithRoles = $this->getQueryBuilder()
-                ->select('user_roles', ['user_uuid'])
-                ->get();
-            $uniqueUsers = array_unique(array_column($usersWithRoles, 'user_uuid'));
             $stats['users_with_roles'] = count($uniqueUsers);
 
             return Response::success($stats, 'User role statistics retrieved successfully');

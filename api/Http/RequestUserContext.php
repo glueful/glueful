@@ -104,7 +104,6 @@ class RequestUserContext
         try {
             // Extract token once per request
             $this->token = TokenManager::extractTokenFromRequest();
-
             if ($this->token) {
                 // Get optimized session data with context-aware caching
                 $context = [
@@ -114,13 +113,23 @@ class RequestUserContext
                 ];
                 $sessionCacheManager = app(SessionCacheManager::class);
                 $this->sessionData = $sessionCacheManager->getOptimizedSession($this->token, $context);
+                if ($this->sessionData) {
+                    // If session has complete user data, use it
+                    if (isset($this->sessionData['user']) && isset($this->sessionData['user']['username'])) {
+                        $this->user = User::fromArray($this->sessionData['user']);
+                    } else {
+                        // Extract user data from JWT token
+                        $userData = $this->extractUserDataFromToken($this->token);
+                        if ($userData) {
+                            $this->user = User::fromArray($userData);
+                        }
+                    }
 
-                if ($this->sessionData && isset($this->sessionData['user'])) {
-                    $this->user = User::fromArray($this->sessionData['user']);
-                    $this->isAuthenticated = true;
-
-                    // Pre-cache user capabilities with enhanced permission data
-                    $this->loadUserCapabilities();
+                    if ($this->user) {
+                        $this->isAuthenticated = true;
+                        // Pre-cache user capabilities with enhanced permission data
+                        $this->loadUserCapabilities();
+                    }
                 }
             }
         } catch (\Exception $e) {
@@ -453,7 +462,7 @@ class RequestUserContext
     public function getAuditContext(): array
     {
         $user = $this->getUser();
-
+        error_log("Generating audit context for user: " . json_encode($user));
         return array_merge($this->requestMetadata, [
             'user_uuid' => $user?->uuid,
             'session_id' => $this->sessionData['session_id'] ?? null,
@@ -511,13 +520,61 @@ class RequestUserContext
     }
 
     /**
+     * Extract user data from JWT token
+     *
+     * @param string $token JWT token
+     * @return array|null User data or null if extraction fails
+     */
+    private function extractUserDataFromToken(string $token): ?array
+    {
+        try {
+            $jwtPayload = \Glueful\Auth\JWTService::decode($token);
+            if (!$jwtPayload) {
+                return null;
+            }
+
+            // Map JWT payload to User model fields
+            return [
+                'uuid' => $jwtPayload['uuid'],
+                'id' => $jwtPayload['id'] ?? $jwtPayload['uuid'],
+                'username' => $jwtPayload['username'],
+                'email' => $jwtPayload['email'],
+                'email_verified' => !empty($jwtPayload['email_verified_at']),
+                'locale' => 'en-US', // Default locale
+                'name' => isset($jwtPayload['profile'])
+                    ? trim(($jwtPayload['profile']['first_name'] ?? '') . ' ' .
+                            ($jwtPayload['profile']['last_name'] ?? ''))
+                    : null,
+                'given_name' => $jwtPayload['profile']['first_name'] ?? null,
+                'family_name' => $jwtPayload['profile']['last_name'] ?? null,
+                'picture' => $jwtPayload['profile']['photo_url'] ?? null,
+                'status' => $jwtPayload['status'] ?? 'active',
+                'last_login' => $jwtPayload['last_login'] ?? null,
+                'updated_at' => isset($jwtPayload['created_at']) ? strtotime($jwtPayload['created_at']) : time(),
+                'remember_me' => $jwtPayload['remember_me'] ?? false,
+                'created_at' => $jwtPayload['created_at'] ?? null,
+                'profile' => $jwtPayload['profile'] ?? [],
+                'roles' => $jwtPayload['roles'] ?? []
+            ];
+        } catch (\Exception $e) {
+            error_log("Failed to extract user data from token: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Generate unique request ID
      *
      * @return string Request ID
      */
     private static function generateRequestId(): string
     {
-        return $_SERVER['HTTP_X_REQUEST_ID'] ?? uniqid('req_', true);
+        static $requestId = null;
+
+        if ($requestId === null) {
+            $requestId = $_SERVER['HTTP_X_REQUEST_ID'] ?? uniqid('req_', true);
+        }
+        return $requestId;
     }
 
     /**

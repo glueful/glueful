@@ -8,7 +8,6 @@ use Glueful\Auth\Interfaces\TokenStorageInterface;
 use Glueful\Cache\CacheStore;
 use Glueful\Helpers\CacheHelper;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Http\RequestContext;
 use Glueful\Helpers\Utils;
 use Glueful\Events\Auth\SessionCreatedEvent;
@@ -23,8 +22,7 @@ use Glueful\Events\Event;
  */
 class TokenStorageService implements TokenStorageInterface
 {
-    private Connection $connection;
-    private QueryBuilder $queryBuilder;
+    private Connection $db;
     private ?CacheStore $cache;
 
     private bool $useTransactions;
@@ -34,18 +32,17 @@ class TokenStorageService implements TokenStorageInterface
 
     public function __construct(
         ?CacheStore $cache = null,
-        ?Connection $connection = null,
+        ?Connection $db = null,
         ?RequestContext $requestContext = null,
         bool $useTransactions = true
     ) {
         // Assign dependencies with sensible defaults
         $this->cache = $cache ?? CacheHelper::createCacheInstance();
-        $this->connection = $connection ?? new Connection();
+        $this->db = $db ?? new Connection();
         $this->requestContext = $requestContext ?? RequestContext::fromGlobals();
         $this->useTransactions = $useTransactions;
 
-        // Initialize derived dependencies
-        $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
+        // Initialize cache TTL
         $this->cacheDefaultTtl = (int)config('session.access_token_lifetime', 900);
     }
 
@@ -57,7 +54,7 @@ class TokenStorageService implements TokenStorageInterface
     {
         try {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->beginTransaction();
+                $this->db->getPDO()->beginTransaction();
             }
 
             // Calculate expiration times
@@ -101,7 +98,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             if ($this->useTransactions) {
-                $this->connection->getPDO()->commit();
+                $this->db->getPDO()->commit();
             }
 
             // Dispatch session created event
@@ -115,7 +112,7 @@ class TokenStorageService implements TokenStorageInterface
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->rollBack();
+                $this->db->getPDO()->rollBack();
             }
 
             return false;
@@ -129,7 +126,7 @@ class TokenStorageService implements TokenStorageInterface
     {
         try {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->beginTransaction();
+                $this->db->getPDO()->beginTransaction();
             }
 
             // Get existing session data
@@ -157,11 +154,9 @@ class TokenStorageService implements TokenStorageInterface
                 'token_fingerprint' => hash('sha256', $newTokens['access_token'])
             ];
 
-            $success = $this->queryBuilder->update(
-                $this->sessionTable,
-                $updateData,
-                ['refresh_token' => $sessionIdentifier, 'status' => 'active']
-            );
+            $success = $this->db->table($this->sessionTable)
+                ->where(['refresh_token' => $sessionIdentifier, 'status' => 'active'])
+                ->update($updateData);
 
             if (!$success) {
                 throw new \Exception('Failed to update session in database');
@@ -173,13 +168,13 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             if ($this->useTransactions) {
-                $this->connection->getPDO()->commit();
+                $this->db->getPDO()->commit();
             }
 
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->rollBack();
+                $this->db->getPDO()->rollBack();
             }
 
             return false;
@@ -202,10 +197,11 @@ class TokenStorageService implements TokenStorageInterface
 
         // Fallback to database with expiration check
         $now = date('Y-m-d H:i:s');
-        $result = $this->queryBuilder
-            ->select($this->sessionTable, ['*'])
+
+        $result = $this->db->table($this->sessionTable)
+            ->select(['*'])
             ->where(['access_token' => $accessToken, 'status' => 'active'])
-            ->whereGreaterThan('access_expires_at', $now)
+            ->where('access_expires_at', '>', $now)
             ->get();
 
         if (empty($result)) {
@@ -213,7 +209,6 @@ class TokenStorageService implements TokenStorageInterface
         }
 
         $session = $result[0];
-
         // Store in cache for future requests
         if ($this->cache !== null && $session) {
             $this->cacheSessionData($session, $accessToken);
@@ -237,8 +232,8 @@ class TokenStorageService implements TokenStorageInterface
         }
 
         // Fallback to database
-        $result = $this->queryBuilder
-            ->select($this->sessionTable, ['*'])
+        $result = $this->db->table($this->sessionTable)
+            ->select(['*'])
             ->where(['refresh_token' => $refreshToken, 'status' => 'active'])
             ->get();
 
@@ -263,7 +258,7 @@ class TokenStorageService implements TokenStorageInterface
     {
         try {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->beginTransaction();
+                $this->db->getPDO()->beginTransaction();
             }
 
             // Get session for cleanup
@@ -275,13 +270,9 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             // Update database status
-            $success = $this->queryBuilder->update(
-                $this->sessionTable,
-                [
-                    'status' => 'revoked'
-                ],
-                ['uuid' => $session['uuid']]
-            );
+            $success = $this->db->table($this->sessionTable)
+                ->where(['uuid' => $session['uuid']])
+                ->update(['status' => 'revoked']);
 
             if (!$success) {
                 throw new \Exception('Failed to revoke session in database');
@@ -293,7 +284,7 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             if ($this->useTransactions) {
-                $this->connection->getPDO()->commit();
+                $this->db->getPDO()->commit();
             }
 
             // Dispatch session destroyed event
@@ -311,7 +302,7 @@ class TokenStorageService implements TokenStorageInterface
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->rollBack();
+                $this->db->getPDO()->rollBack();
             }
 
             return false;
@@ -325,24 +316,22 @@ class TokenStorageService implements TokenStorageInterface
     {
         try {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->beginTransaction();
+                $this->db->getPDO()->beginTransaction();
             }
 
             // Get all active sessions for user
-            $sessions = $this->queryBuilder
-                ->select($this->sessionTable, ['*'])
+            $sessions = $this->db->table($this->sessionTable)
+                ->select(['*'])
                 ->where(['user_uuid' => $userUuid, 'status' => 'active'])
                 ->get();
 
             // Update all sessions to revoked
-            $success = $this->queryBuilder->update(
-                $this->sessionTable,
-                [
+            $success = $this->db->table($this->sessionTable)
+                ->where(['user_uuid' => $userUuid, 'status' => 'active'])
+                ->update([
                     'status' => 'revoked',
                     'revoked_at' => date('Y-m-d H:i:s')
-                ],
-                ['user_uuid' => $userUuid, 'status' => 'active']
-            );
+                ]);
 
             if (!$success) {
                 throw new \Exception('Failed to revoke user sessions in database');
@@ -356,13 +345,13 @@ class TokenStorageService implements TokenStorageInterface
             }
 
             if ($this->useTransactions) {
-                $this->connection->getPDO()->commit();
+                $this->db->getPDO()->commit();
             }
 
             return true;
         } catch (\Exception $e) {
             if ($this->useTransactions) {
-                $this->connection->getPDO()->rollBack();
+                $this->db->getPDO()->rollBack();
             }
 
             return false;
@@ -379,22 +368,22 @@ class TokenStorageService implements TokenStorageInterface
 
         try {
             // Get expired sessions for cache cleanup using QueryBuilder
-            $expiredSessions = $this->queryBuilder
-                ->select($this->sessionTable, ['*'])
-                ->whereLessThan('refresh_expires_at', $now)
+            $expiredSessions = $this->db->table($this->sessionTable)
+                ->select(['*'])
+                ->where('refresh_expires_at', '<', $now)
                 ->where(['status' => 'active'])
                 ->get();
 
             // Update expired sessions using bulk update to avoid N+1 queries
             if (!empty($expiredSessions)) {
                 // Use raw SQL for efficient bulk update with IN clause
-                $sessionIds = array_column($expiredSessions, 'session_id');
+                $sessionIds = array_column($expiredSessions, 'uuid');
                 $placeholders = str_repeat('?,', count($sessionIds) - 1) . '?';
                 $sql = "UPDATE {$this->sessionTable} SET status = 'expired', expired_at = ? " .
-                       "WHERE session_id IN ({$placeholders})";
+                       "WHERE uuid IN ({$placeholders})";
                 $params = array_merge([$now], $sessionIds);
 
-                $stmt = $this->connection->getPDO()->prepare($sql);
+                $stmt = $this->db->getPDO()->prepare($sql);
                 $success = $stmt->execute($params);
             } else {
                 $success = true; // No sessions to update
@@ -476,7 +465,7 @@ class TokenStorageService implements TokenStorageInterface
         try {
             $start = microtime(true);
             // Use a simple count query on the sessions table to test connectivity
-            $this->queryBuilder->count($this->sessionTable, []);
+            $this->db->table($this->sessionTable)->count();
             $health['database'] = [
                 'status' => 'healthy',
                 'response_time' => round((microtime(true) - $start) * 1000, 2)
@@ -521,7 +510,7 @@ class TokenStorageService implements TokenStorageInterface
 
     private function storeSessionInDatabase(array $sessionData): bool
     {
-        $result = $this->queryBuilder->insert($this->sessionTable, $sessionData);
+        $result = $this->db->table($this->sessionTable)->insert($sessionData);
         return $result > 0;
     }
 
@@ -582,7 +571,7 @@ class TokenStorageService implements TokenStorageInterface
             return;
         }
 
-        $canonicalKey = "session_data:{$session['session_id']}";
+        $canonicalKey = "session_data:{$session['uuid']}";
         $sessionDataJson = json_encode($session);
         $refreshTtl = (int)config('session.refresh_token_lifetime', 604800);
         $maxTtl = max($this->cacheDefaultTtl, $refreshTtl);
@@ -635,16 +624,16 @@ class TokenStorageService implements TokenStorageInterface
         }
 
         // Also clear the canonical session data
-        if (isset($session['session_id'])) {
-            $this->cache->delete("session_data:{$session['session_id']}");
+        if (isset($session['uuid'])) {
+            $this->cache->delete("session_data:{$session['uuid']}");
         }
     }
 
     private function getSessionFromDatabase(string $sessionIdentifier): ?array
     {
         // Try refresh token first
-        $result = $this->queryBuilder
-            ->select($this->sessionTable, ['*'])
+        $result = $this->db->table($this->sessionTable)
+            ->select(['*'])
             ->where(['refresh_token' => $sessionIdentifier, 'status' => 'active'])
             ->get();
 
@@ -653,8 +642,8 @@ class TokenStorageService implements TokenStorageInterface
         }
 
         // Try access token
-        $result = $this->queryBuilder
-            ->select($this->sessionTable, ['*'])
+        $result = $this->db->table($this->sessionTable)
+            ->select(['*'])
             ->where(['access_token' => $sessionIdentifier, 'status' => 'active'])
             ->get();
 

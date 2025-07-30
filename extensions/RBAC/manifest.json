@@ -3,7 +3,7 @@
   "id": "rbac",
   "name": "RBAC",
   "displayName": "Role-Based Access Control",
-  "version": "0.27.0",
+  "version": "0.27.1",
   "description": "Modern, flexible role-based access control system with hierarchical roles, permissions, and audit trails",
   "author": {
     "name": "Glueful Team",
@@ -22,7 +22,7 @@
   "categories": ["authentication", "authorization", "security"],
   "keywords": ["rbac", "roles", "permissions", "security", "access-control"],
   "engines": {
-    "glueful": ">=0.27.0",
+    "glueful": ">=0.29.0",
     "php": ">=8.2.0"
   },
   "dependencies": {

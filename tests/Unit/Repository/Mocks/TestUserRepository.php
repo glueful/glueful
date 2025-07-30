@@ -2,88 +2,58 @@
 
 namespace Tests\Unit\Repository\Mocks;
 
-use Glueful\Repository\UserRepository;
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use Glueful\Validation\Validator;
 use Tests\Unit\Repository\Mocks\MockUserConnection;
 
 /**
  * Test User Repository
  *
- * Extends the real UserRepository but allows dependency injection
- * for easier testing. Provides proper implementation for test mocks.
+ * Standalone test repository that completely bypasses BaseRepository
+ * to avoid any shared connection interference from other tests.
  */
-class TestUserRepository extends UserRepository
+class TestUserRepository
 {
-    /**
-     * @var QueryBuilder The injected query builder
-     */
-    protected QueryBuilder $testDb;
+    /** @var Connection The test database connection */
+    private Connection $testConnection;
 
-    /**
-     * @var Validator The injected validator
-     */
-    protected Validator $testValidator;
+    /** @var Validator|null The validator instance */
+    private ?Validator $testValidator;
 
-    /**
-     * @var array Standard user fields to retrieve
-     */
+    /** @var string Table name */
+    private string $table;
+
+    /** @var string Primary key field */
+    private string $primaryKey;
+
+    /** @var array Default fields to retrieve */
+    private array $defaultFields;
+
+    /** @var array Standard user fields to retrieve */
     private array $userFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
 
     /**
      * Constructor with dependency injection support
      *
-     * @param QueryBuilder|null $queryBuilder Optional query builder to inject
+     * @param Connection|null $connection Optional connection to inject
      * @param Validator|null $validator Optional validator to inject
      */
-    public function __construct(?QueryBuilder $queryBuilder = null, ?Validator $validator = null)
+    public function __construct(?Connection $connection = null, ?Validator $validator = null)
     {
-        // Initialize required properties without calling parent constructor
+        // Initialize properties
         $this->table = 'users';
         $this->primaryKey = 'uuid';
         $this->defaultFields = ['uuid', 'username', 'email', 'password', 'status', 'created_at'];
 
-
-        if ($queryBuilder || $validator) {
-            // Use reflection to set the properties in the parent class
-            $reflection = new \ReflectionClass(UserRepository::class);
-            $baseReflection = new \ReflectionClass(get_parent_class($reflection->getName()));
-
-            if ($queryBuilder) {
-                $this->testDb = $queryBuilder;
-                // Set the db property (QueryBuilder)
-                $dbProperty = $baseReflection->getProperty('db');
-                $dbProperty->setAccessible(true);
-                $dbProperty->setValue($this, $queryBuilder);
-            }
-
-            if ($validator) {
-                $this->testValidator = $validator;
-                $validatorProperty = $reflection->getProperty('validator');
-                $validatorProperty->setAccessible(true);
-                $validatorProperty->setValue($this, $validator);
-            }
+        // Set the connection - ALWAYS use our test connection
+        if ($connection) {
+            $this->testConnection = $connection;
         } else {
-            $connection = new MockUserConnection();
-            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-            $validator = new Validator();
-
-            $this->testDb = $queryBuilder;
-            $this->testValidator = $validator;
-
-            // Use reflection to set properties
-            $reflection = new \ReflectionClass(UserRepository::class);
-            $baseReflection = new \ReflectionClass(get_parent_class($reflection->getName()));
-
-            // Set the db property (QueryBuilder)
-            $dbProperty = $baseReflection->getProperty('db');
-            $dbProperty->setAccessible(true);
-            $dbProperty->setValue($this, $queryBuilder);
-
-            $validatorProperty = $reflection->getProperty('validator');
-            $validatorProperty->setAccessible(true);
-            $validatorProperty->setValue($this, $validator);
+            $this->testConnection = new MockUserConnection();
         }
+
+        // Set validator if provided
+        $this->testValidator = $validator;
     }
 
     /**
@@ -111,12 +81,10 @@ class TestUserRepository extends UserRepository
             $userData['uuid'] = \Glueful\Helpers\Utils::generateNanoID();
         }
 
-        // In the test version, insert method returns int in real code but might return bool in tests
-        // We ensure we're always returning the UUID string or null as required by the method signature
-        $result = $this->testDb->insert('users', $userData);
+        // Use the test connection to insert data
+        $result = $this->testConnection->table('users')->insert($userData);
 
         // The actual method returns the UUID if successful, throws exception otherwise
-        // The insert method may return int (row count) or bool depending on implementation
         if ($result === false || $result === 0) {
             throw new \RuntimeException('Failed to create user');
         }
@@ -135,14 +103,15 @@ class TestUserRepository extends UserRepository
         // In the real implementation, validation happens first and can return an error array
         // We'll mimic that behavior for testing
 
-        // Query database for user
-        $query = $this->testDb->select('users', $this->userFields)
-            ->where(['email' => $email])
+        // Query database for user using test connection
+        $result = $this->testConnection->table('users')
+            ->select($this->userFields)
+            ->where('email', '=', $email)
             ->limit(1)
             ->get();
 
-        if (!empty($query)) {
-            return $query[0];
+        if (!empty($result)) {
+            return $result[0];
         }
 
         return null;
@@ -156,14 +125,15 @@ class TestUserRepository extends UserRepository
      */
     public function findByUsername(string $username): ?array
     {
-        // Query database for user
-        $query = $this->testDb->select('users', $this->userFields)
-            ->where(['username' => $username])
+        // Query database for user using test connection
+        $result = $this->testConnection->table('users')
+            ->select($this->userFields)
+            ->where('username', '=', $username)
             ->limit(1)
             ->get();
 
-        if (!empty($query)) {
-            return $query[0];
+        if (!empty($result)) {
+            return $result[0];
         }
 
         return null;
@@ -177,45 +147,17 @@ class TestUserRepository extends UserRepository
      */
     public function findByUuid(string $uuid, ?array $fields = null): ?array
     {
-        // Use BaseRepository's findRecordByUuid equivalent logic
-        return $this->findBy('uuid', $uuid, $fields ?? $this->userFields);
-    }
+        // Query database using test connection
+        $result = $this->testConnection->table('users')
+            ->select($fields ?? $this->userFields)
+            ->where('uuid', '=', $uuid)
+            ->limit(1)
+            ->get();
 
+        if (!empty($result)) {
+            return $result[0];
+        }
 
-    private function setupUserTables(\PDO $pdo): void
-    {
-        // Create users table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid TEXT NOT NULL UNIQUE,
-            username TEXT NOT NULL UNIQUE,
-            email TEXT NOT NULL UNIQUE,
-            password TEXT NOT NULL,
-            first_name TEXT NULL,
-            last_name TEXT NULL,
-            status TEXT DEFAULT 'active',
-            email_verified INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NULL
-        )");
-
-        // Create user_roles table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS user_roles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            role_id INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, role_id)
-        )");
-
-        // Create roles table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS roles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL UNIQUE,
-            description TEXT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NULL
-        )");
+        return null;
     }
 }

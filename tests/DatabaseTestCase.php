@@ -3,7 +3,6 @@
 namespace Tests;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 
 /**
  * Base TestCase for database-related tests
@@ -15,8 +14,8 @@ abstract class DatabaseTestCase extends TestCase
     /** @var Connection */
     protected Connection $connection;
 
-    /** @var QueryBuilder */
-    protected QueryBuilder $db;
+    /** @var Connection */
+    protected Connection $db;
 
     /**
      * Setup test environment before each test
@@ -27,7 +26,7 @@ abstract class DatabaseTestCase extends TestCase
 
         // Create a new database connection for testing using our mock
         $this->connection = new \Tests\Mocks\MockConnection();
-        $this->db = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
+        $this->db = $this->connection;
 
         // Run migrations to set up the test database schema
         $this->runMigrations();

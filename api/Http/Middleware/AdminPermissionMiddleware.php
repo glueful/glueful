@@ -9,7 +9,6 @@ use Glueful\Permissions\Exceptions\PermissionException;
 use Glueful\Permissions\Exceptions\ProviderNotFoundException;
 use Glueful\Interfaces\Permission\PermissionStandards;
 use Glueful\Auth\AuthenticationService;
-use Glueful\Auth\TokenManager;
 use Glueful\Repository\UserRepository;
 use Glueful\Exceptions\SecurityException;
 use Glueful\Exceptions\AuthenticationException;
@@ -298,13 +297,11 @@ class AdminPermissionMiddleware implements MiddlewareInterface
     private function getUserUuidFromToken(string $token): ?string
     {
         try {
-            $sessionId = TokenManager::getSessionIdFromToken($token);
-            if ($sessionId) {
-                $sessionCacheManager = container()->get(\Glueful\Auth\SessionCacheManager::class);
-                $session = $sessionCacheManager->getSession($sessionId);
-                if ($session && isset($session['user']['uuid'])) {
-                    return $session['user']['uuid'];
-                }
+            // Try to get session from TokenStorageService
+            $tokenStorage = new \Glueful\Auth\TokenStorageService();
+            $sessionData = $tokenStorage->getSessionByAccessToken($token);
+            if ($sessionData && isset($sessionData['user_uuid'])) {
+                return $sessionData['user_uuid'];
             }
 
             $user = AuthenticationService::validateAccessToken($token);

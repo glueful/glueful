@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * Tests for the new Response API
- * 
+ *
  * Verifies that all Response methods create proper Symfony JsonResponse objects
  * with the correct status codes, headers, and content structure.
  */
@@ -23,15 +23,15 @@ class ResponseTest extends TestCase
     {
         $data = ['user' => 'John Doe', 'email' => 'john@example.com'];
         $message = 'User retrieved successfully';
-        
+
         $response = Response::success($data, $message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(200, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -48,15 +48,15 @@ class ResponseTest extends TestCase
         $message = 'An error occurred';
         $statusCode = 400;
         $details = ['field' => 'Invalid value'];
-        
+
         $response = Response::error($message, $statusCode, $details);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals($statusCode, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -74,15 +74,15 @@ class ResponseTest extends TestCase
     {
         $data = ['id' => 123, 'name' => 'New User'];
         $message = 'User created successfully';
-        
+
         $response = Response::created($data, $message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(201, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -97,15 +97,15 @@ class ResponseTest extends TestCase
     public function testNotFoundResponse(): void
     {
         $message = 'User not found';
-        
+
         $response = Response::notFound($message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(404, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -121,15 +121,15 @@ class ResponseTest extends TestCase
     public function testForbiddenResponse(): void
     {
         $message = 'Access denied';
-        
+
         $response = Response::forbidden($message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(403, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -145,15 +145,15 @@ class ResponseTest extends TestCase
     public function testUnauthorizedResponse(): void
     {
         $message = 'Authentication required';
-        
+
         $response = Response::unauthorized($message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(401, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -173,15 +173,15 @@ class ResponseTest extends TestCase
             'name' => ['The name field is required'],
             'email' => ['The email must be valid']
         ];
-        
+
         $response = Response::validation($errors, $message);
-        
+
         // Assert it's a JsonResponse
         $this->assertInstanceOf(JsonResponse::class, $response);
-        
+
         // Assert status code
         $this->assertEquals(422, $response->getStatusCode());
-        
+
         // Assert content structure
         $content = json_decode($response->getContent(), true);
         $this->assertIsArray($content);
@@ -212,10 +212,10 @@ class ResponseTest extends TestCase
     public function testResponseHeaders(): void
     {
         $response = Response::success(['test' => 'data']);
-        
+
         // Assert Content-Type header
         $this->assertEquals('application/json', $response->headers->get('Content-Type'));
-        
+
         // Assert that response is properly formatted JSON
         $this->assertJson($response->getContent());
     }
@@ -226,9 +226,9 @@ class ResponseTest extends TestCase
     public function testCustomStatusCodes(): void
     {
         $response = Response::error('Custom error', 418, ['teapot' => true]);
-        
+
         $this->assertEquals(418, $response->getStatusCode());
-        
+
         $content = json_decode($response->getContent(), true);
         $this->assertEquals(418, $content['error']['code']);
     }
@@ -249,13 +249,13 @@ class ResponseTest extends TestCase
 
         foreach ($responses as $response) {
             $content = json_decode($response->getContent(), true);
-            
+
             // All responses should have these basic fields
             $this->assertArrayHasKey('success', $content);
             $this->assertArrayHasKey('message', $content);
             $this->assertIsBool($content['success']);
             $this->assertIsString($content['message']);
-            
+
             // Error responses should have an error object with code
             if (!$content['success']) {
                 $this->assertArrayHasKey('error', $content);
@@ -272,9 +272,9 @@ class ResponseTest extends TestCase
     {
         $errors = ['field' => ['error message']];
         $response = Response::validation($errors, 'Validation failed');
-        
+
         $content = json_decode($response->getContent(), true);
-        
+
         // Should have 'error.details' field containing errors
         $this->assertArrayHasKey('error', $content);
         $this->assertArrayHasKey('details', $content['error']);

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Database;
 
 use PDO;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Database\Driver\DatabaseDriver;
 
 /**
@@ -34,11 +34,18 @@ interface DatabaseInterface
     public function getPDO(): PDO;
 
     /**
-     * Get the schema manager for the current database
+     * Get the schema builder for the current database
      *
-     * @return SchemaManager The schema manager instance
+     * @return SchemaBuilderInterface The schema builder instance
      */
-    public function getSchemaManager(): SchemaManager;
+    public function getSchemaManager(): SchemaBuilderInterface;
+
+    /**
+     * Get the fluent schema builder for the current database
+     *
+     * @return SchemaBuilderInterface The schema builder instance
+     */
+    public function getSchemaBuilder(): SchemaBuilderInterface;
 
     /**
      * Get the database driver instance

@@ -2,7 +2,7 @@
 
 A modern, secure, and scalable API framework designed for building robust PHP applications.
 
-![Version](https://img.shields.io/badge/version-0.27.0-blue)
+![Version](https://img.shields.io/badge/version-0.29.0-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.2-purple)](https://www.php.net/)
 ![PHP CI](https://github.com/michaeltawiahsowah/glueful/workflows/PHP%20CI/badge.svg)

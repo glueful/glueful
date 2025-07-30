@@ -10,20 +10,20 @@
 namespace Tests\Fixtures;
 
 use Glueful\Auth\PasswordHasher;
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 
 class UserFixtures
 {
     /**
      * Load user fixtures into the database
      */
-    public static function load(QueryBuilder $db)
+    public static function load(Connection $db)
     {
         // Create test users
         $passwordHasher = new PasswordHasher();
 
         // Admin user
-        $db->insert('users', [
+        $db->table('users')->insert([
             'uuid' => '12345678-1234-1234-1234-123456789abc',
             'username' => 'admin',
             'email' => 'admin@example.com',
@@ -34,7 +34,7 @@ class UserFixtures
         ]);
 
         // Regular user
-        $db->insert('users', [
+        $db->table('users')->insert([
             'uuid' => '87654321-4321-4321-4321-cba987654321',
             'username' => 'user',
             'email' => 'user@example.com',
@@ -45,7 +45,7 @@ class UserFixtures
         ]);
 
         // Inactive user
-        $db->insert('users', [
+        $db->table('users')->insert([
             'uuid' => 'abcdef12-5678-90ab-cdef-123456789abc',
             'username' => 'inactive',
             'email' => 'inactive@example.com',

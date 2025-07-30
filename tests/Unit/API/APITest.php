@@ -1,4 +1,5 @@
 <?php
+
 namespace Tests\Unit\API;
 
 use Tests\TestCase;
@@ -106,7 +107,7 @@ class APITest extends TestCase
             ->with('API initialization failed', $this->anything());
 
         // Create a subclass of API to intercept the initialization
-        $mockedAPI = new class($this->mockLogger) extends API {
+        $mockedAPI = new class ($this->mockLogger) extends API {
             private $testLogger;
 
             public function __construct($logger)

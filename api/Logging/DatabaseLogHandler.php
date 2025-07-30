@@ -8,8 +8,7 @@ use Monolog\LogRecord;
 use Monolog\Level;
 use Monolog\Handler\AbstractProcessingHandler;
 use Glueful\Helpers\Utils;
-use Glueful\Database\Schema\SchemaManager;
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Database\Connection;
 
 /**
@@ -29,15 +28,15 @@ use Glueful\Database\Connection;
  */
 class DatabaseLogHandler extends AbstractProcessingHandler
 {
-    private SchemaManager $schema;
-    private QueryBuilder $db;
+    private SchemaBuilderInterface $schema;
+    private Connection $db;
     protected string $table = 'app_logs';
 
     /**
      * Initialize database log handler
      *
      * Sets up the handler with specified log level and establishes
-     * database connection through SchemaManagerFactory.
+     * database connection through SchemaBuilder.
      *
      * @param array $options Minimum logging level (defaults to DEBUG)
      */
@@ -45,8 +44,8 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     {
         parent::__construct($options['level'] ?? Level::Debug);
         $connection = new Connection();
-        $this->schema = $connection->getSchemaManager();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver(), null);
+        $this->schema = $connection->getSchemaBuilder();
+        $this->db = $connection;
 
         // Ensure logs table exists
         if (isset($options['table'])) {
@@ -85,8 +84,8 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     protected function write(LogRecord $record): void
     {
         try {
-            // Insert log entry using SchemaManager
-            $this->db->insert($this->table, [
+            // Insert log entry using fluent QueryBuilder
+            $this->db->table($this->table)->insert([
                 'uuid' => Utils::generateNanoID(),
                 'channel' => $record->channel,
                 'level' => $record->level->name,
@@ -105,22 +104,32 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     private function ensureLogsTable(): void
     {
-        $this->schema->createTable($this->table, [
-            'id' => 'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'level' => "ENUM('Debug', 'Info', 'Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency') NOT NULL",
-            'message' => 'TEXT NOT NULL',
-            'context' => 'JSON NULL',
-            'exec_time' => 'FLOAT NULL',
-            'batch_uuid' => 'CHAR(12) NULL',
-            'channel' => 'VARCHAR(255) NOT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'batch_uuid'],
-            ['type' => 'INDEX', 'column' => 'level'],
-            ['type' => 'INDEX', 'column' => 'channel'],
-            ['type' => 'INDEX', 'column' => 'created_at']
-        ]);
+        if (!$this->schema->hasTable($this->table)) {
+            $table = $this->schema->table($this->table);
+
+            // Define columns
+            $table->bigInteger('id')->unsigned()->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('level', 20); // ENUM replacement for better compatibility
+            $table->text('message');
+            $table->json('context')->nullable();
+            $table->decimal('exec_time', 10, 4)->nullable();
+            $table->string('batch_uuid', 12)->nullable();
+            $table->string('channel', 255);
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('batch_uuid');
+            $table->index('level');
+            $table->index('channel');
+            $table->index('created_at');
+
+            // Create the table
+            $table->create();
+
+            // Execute the operation
+            $this->schema->execute();
+        }
     }
 }

@@ -101,7 +101,8 @@ class AuthenticationManager
      */
     public function authenticate(Request $request): ?array
     {
-        return $this->authenticateWith($this->defaultProvider, $request);
+        $result = $this->authenticateWith($this->defaultProvider, $request);
+        return $result;
     }
 
     /**

@@ -23,8 +23,8 @@ class CoreServiceProvider implements ServiceProviderInterface
             ->setFactory([new Reference('database'), 'createQueryBuilder'])
             ->setPublic(true);
 
-        $container->register(\Glueful\Database\Schema\SchemaManager::class)
-            ->setFactory([new Reference('database'), 'getSchemaManager'])
+        $container->register(\Glueful\Database\Schema\Interfaces\SchemaBuilderInterface::class)
+            ->setFactory([new Reference('database'), 'getSchemaBuilder'])
             ->setPublic(true);
 
         // Cache services
@@ -112,7 +112,7 @@ class CoreServiceProvider implements ServiceProviderInterface
             ->setArguments([
                 new Reference('cache.store'),
                 new Reference('database'),
-                new Reference(\Glueful\Database\Schema\SchemaManager::class)
+                new Reference(\Glueful\Database\Schema\Interfaces\SchemaBuilderInterface::class)
             ])
             ->setPublic(true);
 
@@ -208,9 +208,9 @@ class CoreServiceProvider implements ServiceProviderInterface
     /**
      * Factory method for creating token manager
      */
-    public static function createTokenManager(\Glueful\Cache\CacheStore $cache): \Glueful\Auth\TokenManager
+    public static function createTokenManager(): \Glueful\Auth\TokenManager
     {
-        \Glueful\Auth\TokenManager::initialize($cache);
+        \Glueful\Auth\TokenManager::initialize();
         return new \Glueful\Auth\TokenManager();
     }
 }

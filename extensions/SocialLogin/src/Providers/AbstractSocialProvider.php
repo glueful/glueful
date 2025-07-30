@@ -277,17 +277,12 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         // This is a simplified implementation
         // In a real system, you would query the social_accounts table
 
-        $connection = new \Glueful\Database\Connection();
-        $db = new \Glueful\Database\QueryBuilder(
-            $connection->getPDO(),
-            $connection->getDriver()
-        );
+        $db = new \Glueful\Database\Connection();
 
-        $result = $db->select('social_accounts', ['user_uuid'])
-            ->where([
-                'provider' => $provider,
-                'social_id' => $socialId
-            ])
+        $result = $db->table('social_accounts')
+            ->select(['user_uuid'])
+            ->where('provider', $provider)
+            ->where('social_id', $socialId)
             ->limit(1)
             ->get();
 
@@ -317,41 +312,29 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         // Implementation depends on database schema
         // This is a simplified implementation
 
-        $connection = new \Glueful\Database\Connection();
-        $db = new \Glueful\Database\QueryBuilder(
-            $connection->getPDO(),
-            $connection->getDriver()
-        );
+        $db = new \Glueful\Database\Connection();
 
         // Check if the link already exists
-        $existing = $db->select('social_accounts')
-            ->where([
-                'user_uuid' => $userUuid,
-                'provider' => $provider,
-                'social_id' => $socialId
-            ])
+        $existing = $db->table('social_accounts')
+            ->select(['*'])
+            ->where('user_uuid', $userUuid)
+            ->where('provider', $provider)
+            ->where('social_id', $socialId)
             ->limit(1)
             ->get();
 
         if (!empty($existing)) {
-            // Already linked, update the data using upsert instead of update
-            return $db->upsert(
-                'social_accounts',
-                [
-                    [
-                        'uuid' => $existing[0]['uuid'] ?? Utils::generateNanoID(),
-                        'user_uuid' => $userUuid,
-                        'provider' => $provider,
-                        'profile_data' => json_encode($userData),
-                        'updated_at' => date('Y-m-d H:i:s')
-                    ]
-                ],
-                ['profile_data', 'updated_at']
-            ) > 0;
+            // Already linked, update the data
+            return $db->table('social_accounts')
+                ->where('uuid', $existing[0]['uuid'])
+                ->update([
+                    'profile_data' => json_encode($userData),
+                    'updated_at' => date('Y-m-d H:i:s')
+                ]) > 0;
         }
 
         // Create new link - convert integer result to boolean by comparing with zero
-        $result = $db->insert('social_accounts', [
+        $result = $db->table('social_accounts')->insert([
             'uuid' => Utils::generateNanoID(),
             'user_uuid' => $userUuid,
             'provider' => $provider,

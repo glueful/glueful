@@ -78,10 +78,10 @@ class ConnectionTest extends TestCase
         $connection = new MockSQLiteConnection();
 
         // Get schema manager
-        $schemaManager = $connection->getSchemaManager();
+        $schemaBuilder = $connection->getSchemaBuilder();
 
-        // Assert schema manager is returned
-        $this->assertInstanceOf(\Glueful\Database\Schema\SchemaManager::class, $schemaManager);
+        // Assert schema builder is returned
+        $this->assertInstanceOf(\Glueful\Database\Schema\Interfaces\SchemaBuilderInterface::class, $schemaBuilder);
     }
 
     /**

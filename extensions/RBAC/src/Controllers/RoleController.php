@@ -8,7 +8,6 @@ use Glueful\Http\Response;
 use Glueful\Extensions\RBAC\Services\RoleService;
 use Glueful\Extensions\RBAC\Repositories\RoleRepository;
 use Glueful\Exceptions\NotFoundException;
-use Glueful\Helpers\DatabaseConnectionTrait;
 use Glueful\Constants\ErrorCodes;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -23,8 +22,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class RoleController
 {
-    use DatabaseConnectionTrait;
-
     private RoleService $roleService;
     private RoleRepository $roleRepository;
 
@@ -309,27 +306,26 @@ class RoleController
         try {
             $stats = [];
 
-            $stats['total_roles'] = $this->getQueryBuilder()->count('roles', ['deleted_at' => null]);
-            $stats['active_roles'] = $this->getQueryBuilder()->count('roles', [
+            // Use repository methods for role counts
+            $stats['total_roles'] = $this->roleRepository->countRoles(['exclude_deleted' => true]);
+            $stats['active_roles'] = $this->roleRepository->countRoles([
                 'status' => 'active',
-                'deleted_at' => null
+                'exclude_deleted' => true
             ]);
-            $stats['system_roles'] = $this->getQueryBuilder()->count('roles', [
-                'is_system' => true,
-                'deleted_at' => null
+            $stats['system_roles'] = $this->roleRepository->countRoles([
+                'is_system' => 1,
+                'exclude_deleted' => true
             ]);
 
-            // Get roles by level using database-agnostic methods
-            $rolesByLevel = $this->getQueryBuilder()
-                ->select('roles', ['level'])
-                ->where(['deleted_at' => null])
-                ->groupBy(['level'])
-                ->get();
+            // Get all roles to calculate by_level statistics
+            $allRoles = $this->roleRepository->findAllRoles(['exclude_deleted' => true]);
             $stats['by_level'] = [];
-            foreach ($rolesByLevel as $stat) {
-                $level = $stat['level'];
-                $stats['by_level'][$level] = $this->getQueryBuilder()
-                    ->count('roles', ['level' => $level, 'deleted_at' => null]);
+            foreach ($allRoles as $role) {
+                $level = $role->getLevel();
+                if (!isset($stats['by_level'][$level])) {
+                    $stats['by_level'][$level] = 0;
+                }
+                $stats['by_level'][$level]++;
             }
 
             return Response::success($stats, 'Role statistics retrieved successfully');

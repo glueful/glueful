@@ -8,8 +8,7 @@ use Glueful\Queue\Contracts\DriverInfo;
 use Glueful\Queue\Contracts\HealthStatus;
 use Glueful\Queue\Jobs\DatabaseJob;
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Helpers\Utils;
 
 /**
@@ -37,11 +36,11 @@ use Glueful\Helpers\Utils;
  */
 class DatabaseQueue implements QueueDriverInterface
 {
-    /** @var QueryBuilder Database query builder */
-    private QueryBuilder $db;
+    /** @var Connection Database connection */
+    private Connection $db;
 
-    /** @var SchemaManager Schema manager for table creation */
-    private SchemaManager $schema;
+    /** @var SchemaBuilderInterface Schema builder for table creation */
+    private SchemaBuilderInterface $schema;
 
     /** @var string Queue jobs table name */
     private string $table;
@@ -52,8 +51,6 @@ class DatabaseQueue implements QueueDriverInterface
     /** @var int Seconds before job retry */
     private int $retryAfter;
 
-    /** @var Connection Database connection */
-    private Connection $connection;
 
     /**
      * Get driver information
@@ -88,9 +85,8 @@ class DatabaseQueue implements QueueDriverInterface
      */
     public function initialize(array $config): void
     {
-        $this->connection = new Connection();
-        $this->db = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
-        $this->schema = $this->connection->getSchemaManager();
+        $this->db = new Connection();
+        $this->schema = $this->db->getSchemaBuilder();
         $this->table = config('queue.connections.database.table') ?? 'queue_jobs';
         $this->failedTable = config('queue.connections.database.failed_table') ?? 'queue_failed_jobs';
         $this->retryAfter = config('queue.connections.database.retry_after') ?? 90;
@@ -110,11 +106,11 @@ class DatabaseQueue implements QueueDriverInterface
 
         try {
             // Test database connection
-            $this->db->rawQuery("SELECT 1");
+            $this->db->query()->selectRaw("1")->get();
 
             // Check if queue table exists using database-agnostic approach
             try {
-                $this->db->rawQuery("SELECT 1 FROM {$this->table} LIMIT 1");
+                $this->db->table($this->table)->selectRaw("1")->limit(1)->get();
                 $tableExists = true;
             } catch (\Exception $e) {
                 $tableExists = false;
@@ -129,13 +125,11 @@ class DatabaseQueue implements QueueDriverInterface
             }
 
             // Get queue statistics
-            $stats = $this->db->rawQuery(
-                "SELECT 
-                    COUNT(*) as total_jobs,
-                    COUNT(CASE WHEN reserved_at IS NULL THEN 1 END) as pending_jobs,
-                    COUNT(CASE WHEN reserved_at IS NOT NULL THEN 1 END) as reserved_jobs
-                FROM {$this->table}"
-            );
+            $stats = $this->db->query()->selectRaw(
+                "COUNT(*) as total_jobs,
+                 COUNT(CASE WHEN reserved_at IS NULL THEN 1 END) as pending_jobs,
+                 COUNT(CASE WHEN reserved_at IS NOT NULL THEN 1 END) as reserved_jobs"
+            )->from($this->table)->get();
 
             $responseTime = (microtime(true) - $startTime) * 1000;
 
@@ -209,7 +203,7 @@ class DatabaseQueue implements QueueDriverInterface
             $availableAt->add(new \DateInterval("PT{$delay}S"));
         }
 
-        $this->db->insert($this->table, [
+        $this->db->table($this->table)->insert([
             'uuid' => $uuid,
             'queue' => $queue ?? 'default',
             'payload' => json_encode([
@@ -243,29 +237,31 @@ class DatabaseQueue implements QueueDriverInterface
         $queue = $queue ?? 'default';
 
         // Use transaction for atomic operation
-        return $this->db->transaction(function () use ($queue) {
+        return $this->db->query()->transaction(function () use ($queue) {
             // Clean up expired reserved jobs
             $this->releaseExpiredJobs($queue);
 
-            // Get next available job using QueryBuilder
-            $job = $this->db->select($this->table, ['*'], [
-                'queue' => $queue
-            ])
-            ->whereNull('reserved_at')
-            ->whereLessThanOrEqual('available_at', date('Y-m-d H:i:s'))
-            ->orderBy(['priority' => 'DESC', 'available_at' => 'ASC'])
-            ->limit(1)
-            ->first();
+            // Get next available job using fluent QueryBuilder
+            $jobs = $this->db->table($this->table)
+                ->select(['*'])
+                ->where('queue', $queue)
+                ->whereNull('reserved_at')
+                ->where('available_at', '<=', date('Y-m-d H:i:s'))
+                ->orderBy('priority', 'DESC')
+                ->orderBy('available_at', 'ASC')
+                ->limit(1)
+                ->get();
 
+            $job = $jobs[0] ?? null;
             if (empty($job)) {
                 return null;
             }
 
             // Mark job as reserved
-            $this->db->update($this->table, [
+            $this->db->table($this->table)->where('uuid', $job['uuid'])->update([
                 'reserved_at' => date('Y-m-d H:i:s'),
                 'attempts' => $job['attempts'] + 1
-            ], ['uuid' => $job['uuid']]);
+            ]);
 
             return new DatabaseJob($this, $job, $queue);
         });
@@ -283,14 +279,11 @@ class DatabaseQueue implements QueueDriverInterface
             ->sub(new \DateInterval("PT{$this->retryAfter}S"))
             ->format('Y-m-d H:i:s');
 
-        // Use rawQuery for complex WHERE conditions in UPDATE
-        $this->db->rawQuery(
-            "UPDATE {$this->table} 
-            SET reserved_at = NULL 
-            WHERE queue = ? 
-            AND reserved_at < ?",
-            [$queue, $expiredTime]
-        );
+        // Update expired reserved jobs using fluent interface
+        $this->db->table($this->table)
+            ->where('queue', $queue)
+            ->where('reserved_at', '<', $expiredTime)
+            ->update(['reserved_at' => null]);
     }
 
     /**
@@ -311,10 +304,10 @@ class DatabaseQueue implements QueueDriverInterface
             $availableAt->add(new \DateInterval("PT{$delay}S"));
         }
 
-        $this->db->update($this->table, [
+        $this->db->table($this->table)->where('uuid', $job->getUuid())->update([
             'reserved_at' => null,
             'available_at' => $availableAt->format('Y-m-d H:i:s')
-        ], ['uuid' => $job->getUuid()]);
+        ]);
     }
 
     /**
@@ -329,7 +322,7 @@ class DatabaseQueue implements QueueDriverInterface
             throw new \InvalidArgumentException('Job must be a DatabaseJob instance');
         }
 
-        $this->db->delete($this->table, ['uuid' => $job->getUuid()]);
+        $this->db->table($this->table)->where('uuid', $job->getUuid())->delete();
     }
 
     /**
@@ -340,12 +333,12 @@ class DatabaseQueue implements QueueDriverInterface
      */
     public function size(?string $queue = null): int
     {
-        $conditions = [];
+        $query = $this->db->table($this->table);
         if ($queue !== null) {
-            $conditions['queue'] = $queue;
+            $query->where('queue', $queue);
         }
 
-        $result = $this->db->count($this->table, $conditions);
+        $result = $query->count();
         return (int) $result;
     }
 
@@ -395,7 +388,7 @@ class DatabaseQueue implements QueueDriverInterface
 
         // Use batch insert for performance
         if (!empty($rows)) {
-            $this->db->insertBatch($this->table, $rows);
+            $this->db->table($this->table)->insertBatch($rows);
         }
 
         return $uuids;
@@ -409,16 +402,20 @@ class DatabaseQueue implements QueueDriverInterface
      */
     public function purge(?string $queue = null): int
     {
-        $conditions = [];
+        $query = $this->db->table($this->table);
         if ($queue !== null) {
-            $conditions['queue'] = $queue;
+            $query->where('queue', $queue);
         }
 
         // Get count before deletion
-        $count = $this->db->count($this->table, $conditions);
+        $count = $query->count();
 
         // Delete all matching jobs
-        $this->db->delete($this->table, $conditions);
+        $deleteQuery = $this->db->table($this->table);
+        if ($queue !== null) {
+            $deleteQuery->where('queue', $queue);
+        }
+        $deleteQuery->delete();
 
         return (int) $count;
     }
@@ -436,24 +433,20 @@ class DatabaseQueue implements QueueDriverInterface
             $conditions['queue'] = $queue;
         }
 
-        // Build SQL conditions
-        $whereClause = '';
-        $params = [];
+        // Get various counts using fluent query builder for better performance
+        $currentTime = date('Y-m-d H:i:s');
+        $query = $this->db->query()->selectRaw(
+            "COUNT(*) as total,
+             COUNT(CASE WHEN reserved_at IS NULL THEN 1 END) as pending,
+             COUNT(CASE WHEN reserved_at IS NOT NULL THEN 1 END) as reserved,
+             COUNT(CASE WHEN reserved_at IS NULL AND available_at > '$currentTime' THEN 1 END) as delayed"
+        )->from($this->table);
+
         if ($queue !== null) {
-            $whereClause = 'WHERE queue = ?';
-            $params = [$queue];
+            $query->where('queue', $queue);
         }
 
-        // Get various counts using raw SQL for better performance
-        $stats = $this->db->rawQuery(
-            "SELECT 
-                COUNT(*) as total,
-                COUNT(CASE WHEN reserved_at IS NULL THEN 1 END) as pending,
-                COUNT(CASE WHEN reserved_at IS NOT NULL THEN 1 END) as reserved,
-                COUNT(CASE WHEN reserved_at IS NULL AND available_at > ? THEN 1 END) as delayed
-            FROM {$this->table} {$whereClause}",
-            array_merge([date('Y-m-d H:i:s')], $params)
-        );
+        $stats = $query->get();
 
         $total = (int) ($stats[0]['total'] ?? 0);
         $pending = (int) ($stats[0]['pending'] ?? 0);
@@ -461,11 +454,11 @@ class DatabaseQueue implements QueueDriverInterface
         $delayed = (int) ($stats[0]['delayed'] ?? 0);
 
         // Get failed job count
-        $failedConditions = [];
+        $failedQuery = $this->db->table($this->failedTable);
         if ($queue !== null) {
-            $failedConditions['queue'] = $queue;
+            $failedQuery->where('queue', $queue);
         }
-        $failed = $this->db->count($this->failedTable, $failedConditions);
+        $failed = $failedQuery->count();
 
         return [
             'total' => $total,
@@ -484,9 +477,11 @@ class DatabaseQueue implements QueueDriverInterface
      */
     private function getQueueList(): array
     {
-        $result = $this->db->rawQuery(
-            "SELECT DISTINCT queue FROM {$this->table} ORDER BY queue"
-        );
+        $result = $this->db->table($this->table)
+            ->select(['queue'])
+            ->distinct()
+            ->orderBy('queue')
+            ->get();
 
         return array_column($result, 'queue');
     }
@@ -551,9 +546,9 @@ class DatabaseQueue implements QueueDriverInterface
      */
     public function fail(JobInterface $job, \Exception $exception): void
     {
-        $this->db->transaction(function () use ($job, $exception) {
+        $this->db->query()->transaction(function () use ($job, $exception) {
             // Move to failed jobs table
-            $this->db->insert($this->failedTable, [
+            $this->db->table($this->failedTable)->insert([
                 'uuid' => Utils::generateNanoID(),
                 'connection' => 'database',
                 'queue' => $job->getQueue(),
@@ -578,40 +573,57 @@ class DatabaseQueue implements QueueDriverInterface
     private function ensureQueueTables(): void
     {
         // Create main queue jobs table
-        $this->schema->createTable($this->table, [
-            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(21) NOT NULL',
-            'queue' => 'VARCHAR(100) NOT NULL',
-            'payload' => 'LONGTEXT NOT NULL',
-            'attempts' => 'INTEGER DEFAULT 0',
-            'reserved_at' => 'INTEGER NULL',
-            'available_at' => 'INTEGER NOT NULL',
-            'created_at' => 'INTEGER NOT NULL',
-            'priority' => 'INTEGER DEFAULT 0',
-            'batch_id' => 'CHAR(21) NULL'
-        ], [
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => ['queue', 'reserved_at', 'available_at', 'priority']],
-            ['type' => 'INDEX', 'column' => 'batch_id']
-        ]);
+        if (!$this->schema->hasTable($this->table)) {
+            $table = $this->schema->table($this->table);
+
+            // Define columns
+            $table->integer('id')->primary()->autoIncrement();
+            $table->string('uuid', 21);
+            $table->string('queue', 100);
+            $table->text('payload');
+            $table->integer('attempts')->default(0);
+            $table->integer('reserved_at')->nullable();
+            $table->integer('available_at');
+            $table->integer('created_at');
+            $table->integer('priority')->default(0);
+            $table->string('batch_id', 21)->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index(['queue', 'reserved_at', 'available_at', 'priority']);
+            $table->index('batch_id');
+
+            // Create the table
+            $table->create();
+        }
 
         // Create failed jobs table
-        $this->schema->createTable($this->failedTable, [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'connection' => 'VARCHAR(255) NOT NULL',
-            'queue' => 'VARCHAR(255) NOT NULL',
-            'payload' => 'TEXT NOT NULL',
-            'exception' => 'TEXT NOT NULL',
-            'batch_uuid' => 'CHAR(12) NULL',
-            'failed_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ], [
-           ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'connection'],
-            ['type' => 'INDEX', 'column' => 'queue'],
-            ['type' => 'INDEX', 'column' => 'batch_uuid'],
-            ['type' => 'INDEX', 'column' => 'failed_at'],
-            ['type' => 'INDEX', 'column' => ['connection', 'queue'], 'name' => 'idx_failed_connection_queue']
-        ]);
+        if (!$this->schema->hasTable($this->failedTable)) {
+            $table = $this->schema->table($this->failedTable);
+
+            // Define columns
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('connection', 255);
+            $table->string('queue', 255);
+            $table->text('payload');
+            $table->text('exception');
+            $table->string('batch_uuid', 12)->nullable();
+            $table->timestamp('failed_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('connection');
+            $table->index('queue');
+            $table->index('batch_uuid');
+            $table->index('failed_at');
+            $table->index(['connection', 'queue'], 'idx_failed_connection_queue');
+
+            // Create the table
+            $table->create();
+        }
+
+        // Execute all pending operations
+        $this->schema->execute();
     }
 }

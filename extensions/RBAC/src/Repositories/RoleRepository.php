@@ -26,6 +26,12 @@ class RoleRepository extends BaseRepository
         'created_at', 'updated_at', 'deleted_at'
     ];
 
+    // Cache to prevent duplicate role lookups within a single request
+    private array $rolesCache = [];
+
+    // Static cache to prevent duplicate queries across all instances within a single request
+    private static array $globalRolesCache = [];
+
     public function getTableName(): string
     {
         return $this->table;
@@ -37,7 +43,7 @@ class RoleRepository extends BaseRepository
             $data['uuid'] = Utils::generateNanoID();
         }
 
-        $success = $this->db->insert($this->table, $data);
+        $success = $this->db->table($this->table)->insert($data);
 
         if (!$success) {
             throw new \RuntimeException('Failed to create role');
@@ -54,8 +60,24 @@ class RoleRepository extends BaseRepository
 
     public function findRoleByUuid(string $uuid): ?Role
     {
+        // Check static cache first (works across all instances)
+        if (isset(self::$globalRolesCache[$uuid])) {
+            return self::$globalRolesCache[$uuid];
+        }
+
+        // Check cache first
+        if (isset($this->rolesCache[$uuid])) {
+            return $this->rolesCache[$uuid];
+        }
+
         $result = $this->findRecordByUuid($uuid, $this->defaultFields);
-        return $result ? new Role($result) : null;
+        $role = $result ? new Role($result) : null;
+
+        // Cache the result in both caches (including null results to prevent re-querying non-existent roles)
+        $this->rolesCache[$uuid] = $role;
+        self::$globalRolesCache[$uuid] = $role;
+
+        return $role;
     }
 
     public function findRoleBySlug(string $slug): ?Role
@@ -66,7 +88,8 @@ class RoleRepository extends BaseRepository
 
     public function findByName(string $name): ?Role
     {
-        $result = $this->db->select($this->table, $this->defaultFields)
+        $result = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['name' => $name])
             ->limit(1)
             ->get();
@@ -80,12 +103,12 @@ class RoleRepository extends BaseRepository
             $data['updated_at'] = $this->db->getDriver()->formatDateTime();
         }
 
-        return $this->db->update($this->table, $data, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->update($data);
     }
 
     public function delete(string $uuid): bool
     {
-        return $this->db->delete($this->table, ['uuid' => $uuid]);
+        return $this->db->table($this->table)->where(['uuid' => $uuid])->delete();
     }
 
     public function softDeleteRole(string $uuid): bool
@@ -95,7 +118,7 @@ class RoleRepository extends BaseRepository
 
     public function findAllRoles(array $filters = []): array
     {
-        $query = $this->db->select($this->table, $this->defaultFields);
+        $query = $this->db->table($this->table)->select($this->defaultFields);
 
         if (isset($filters['status'])) {
             $query->where(['status' => $filters['status']]);
@@ -110,7 +133,7 @@ class RoleRepository extends BaseRepository
         }
 
         if (isset($filters['exclude_deleted']) && $filters['exclude_deleted']) {
-            $query->where(['deleted_at' => null]);
+            $query->whereNull('deleted_at');
         }
 
         $query->orderBy(['level' => 'DESC', 'name' => 'ASC']);
@@ -121,7 +144,8 @@ class RoleRepository extends BaseRepository
 
     public function findByLevel(int $level): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['level' => $level])
             ->orderBy(['name' => 'ASC'])
             ->get();
@@ -131,7 +155,8 @@ class RoleRepository extends BaseRepository
 
     public function findChildren(string $parentUuid): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['parent_uuid' => $parentUuid])
             ->orderBy(['level' => 'ASC', 'name' => 'ASC'])
             ->get();
@@ -141,7 +166,8 @@ class RoleRepository extends BaseRepository
 
     public function findRootRoles(): array
     {
-        $results = $this->db->select($this->table, $this->defaultFields)
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
             ->where(['parent_uuid' => null])
             ->orderBy(['level' => 'DESC', 'name' => 'ASC'])
             ->get();
@@ -179,7 +205,8 @@ class RoleRepository extends BaseRepository
 
     public function roleExists(string $name, ?string $excludeUuid = null): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where(['name' => $name])
             ->limit(1);
 
@@ -193,7 +220,8 @@ class RoleRepository extends BaseRepository
 
     public function slugExists(string $slug, ?string $excludeUuid = null): bool
     {
-        $query = $this->db->select($this->table, ['uuid'])
+        $query = $this->db->table($this->table)
+            ->select(['uuid'])
             ->where(['slug' => $slug])
             ->limit(1);
 
@@ -207,7 +235,7 @@ class RoleRepository extends BaseRepository
 
     public function countRoles(array $filters = []): int
     {
-        $query = $this->db->select($this->table, ['COUNT(*) as count']);
+        $query = $this->db->table($this->table);
 
         if (isset($filters['status'])) {
             $query->where(['status' => $filters['status']]);
@@ -218,11 +246,10 @@ class RoleRepository extends BaseRepository
         }
 
         if (isset($filters['exclude_deleted']) && $filters['exclude_deleted']) {
-            $query->where(['deleted_at' => null]);
+            $query->whereNull('deleted_at');
         }
 
-        $result = $query->get();
-        return (int)($result[0]['count'] ?? 0);
+        return $query->count();
     }
 
     public function findAllPaginated(array $filters = [], int $page = 1, int $perPage = 25): array
@@ -230,7 +257,7 @@ class RoleRepository extends BaseRepository
         // Build conditions array for the base paginate method
         $conditions = [];
 
-        // Apply filters  
+        // Apply filters
         $excludeDeleted = isset($filters['exclude_deleted']) && $filters['exclude_deleted'];
 
         if (isset($filters['status']) && !empty($filters['status'])) {
@@ -250,7 +277,7 @@ class RoleRepository extends BaseRepository
         }
 
         // Build query using QueryBuilder to handle NULL conditions properly
-        $query = $this->db->select($this->table, $this->defaultFields);
+        $query = $this->db->table($this->table)->select($this->defaultFields);
 
         // Apply deleted_at filter using whereNull
         if ($excludeDeleted) {
@@ -265,19 +292,17 @@ class RoleRepository extends BaseRepository
         // Handle search separately since it needs LIKE queries
         if (isset($filters['search']) && !empty($filters['search'])) {
             $searchTerm = $filters['search'];
-            $query->where([
-                'name' => ['LIKE', '%' . $searchTerm . '%'],
-                'OR' => [
-                    'description' => ['LIKE', '%' . $searchTerm . '%'],
-                    'slug' => ['LIKE', '%' . $searchTerm . '%']
-                ]
-            ]);
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'LIKE', '%' . $searchTerm . '%')
+                  ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
+                  ->orWhere('slug', 'LIKE', '%' . $searchTerm . '%');
+            });
         }
 
         $query->orderBy(['level' => 'DESC', 'name' => 'ASC']);
 
         $result = $query->paginate($page, $perPage);
-        
+
         // Convert Role objects to arrays
         if (!empty($result['data'])) {
             $roles = [];
@@ -287,15 +312,15 @@ class RoleRepository extends BaseRepository
             }
             $result['data'] = $roles;
         }
-        
+
         return $result;
     }
 
     public function getUsersWithRolePaginated(string $roleUuid, int $page = 1, int $perPage = 25): array
     {
         // Build query to get users with this role
-        $query = $this->getQueryBuilder()
-            ->select('user_roles', ['user_uuid', 'scope', 'granted_by', 'expires_at', 'created_at'])
+        $query = $this->db->table('user_roles')
+            ->select(['user_uuid', 'scope', 'granted_by', 'expires_at', 'created_at'])
             ->where(['role_uuid' => $roleUuid]);
 
         // Use the QueryBuilder's built-in pagination
@@ -308,8 +333,8 @@ class RoleRepository extends BaseRepository
 
     public function getUsersWithRole(string $roleUuid): array
     {
-        $results = $this->getQueryBuilder()
-            ->select('user_roles', ['user_uuid'])
+        $results = $this->db->table('user_roles')
+            ->select(['user_uuid'])
             ->where(['role_uuid' => $roleUuid])
             ->get();
 
@@ -328,14 +353,55 @@ class RoleRepository extends BaseRepository
             return [];
         }
 
-        $results = $this->db->select($this->table, $this->defaultFields)
-            ->whereIn('uuid', $uuids)
+        $roles = [];
+        $uncachedUuids = [];
+
+        // First, check cache for each UUID
+        foreach ($uuids as $uuid) {
+            if (isset(self::$globalRolesCache[$uuid])) {
+                $role = self::$globalRolesCache[$uuid];
+                if ($role !== null) {
+                    $roles[] = $role;
+                }
+            } else {
+                $uncachedUuids[] = $uuid;
+            }
+        }
+
+        // If all roles were found in cache, return them
+        if (empty($uncachedUuids)) {
+            return $roles;
+        }
+
+        // Fetch uncached roles from database
+        $results = $this->db->table($this->table)
+            ->select($this->defaultFields)
+            ->whereIn('uuid', $uncachedUuids)
             ->whereNull('deleted_at')
             ->get();
 
-        $roles = [];
+        // Process results and add to cache
         foreach ($results as $row) {
-            $roles[] = new Role($row);
+            $role = new Role($row);
+            $roles[] = $role;
+
+            // Cache in both instance and global cache
+            $this->rolesCache[$role->getUuid()] = $role;
+            self::$globalRolesCache[$role->getUuid()] = $role;
+        }
+
+        // Mark non-existent UUIDs as null in cache to prevent re-querying
+        foreach ($uncachedUuids as $uuid) {
+            $found = false;
+            foreach ($results as $row) {
+                if ($row['uuid'] === $uuid) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                self::$globalRolesCache[$uuid] = null;
+            }
         }
 
         return $roles;

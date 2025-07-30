@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Cache;
 
 use Glueful\Cache\CacheStore;
-use Glueful\Helpers\DatabaseConnectionTrait;
+use Glueful\Database\Connection;
 use Glueful\Helpers\CacheHelper;
 
 /**
@@ -16,11 +16,10 @@ use Glueful\Helpers\CacheHelper;
  */
 class CacheWarmupService
 {
-    use DatabaseConnectionTrait;
-
     private CacheStore $cache;
+    private Connection $db;
 
-    public function __construct(?CacheStore $cache = null)
+    public function __construct(?CacheStore $cache = null, ?Connection $connection = null)
     {
         // Set up cache - try provided instance or get from container
         $this->cache = $cache;
@@ -34,6 +33,9 @@ class CacheWarmupService
                 );
             }
         }
+
+        // Set up database connection
+        $this->db = $connection ?? new Connection();
     }
 
     /** @var array<string, string> Default warmup strategies mapping strategy names to method names */
@@ -152,13 +154,13 @@ class CacheWarmupService
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Permissions table not found'];
         }
 
-        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
             // Cache all permissions
-            $permissions = $queryBuilder->select('permissions', ['id', 'name', 'description'])
-                ->where(['status' => 'active'])
+            $permissions = $this->db->table('permissions')
+                ->select(['id', 'name', 'description'])
+                ->where('status', 'active')
                 ->get();
 
             foreach ($permissions as $permission) {
@@ -207,13 +209,13 @@ class CacheWarmupService
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Roles table not found'];
         }
 
-        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
             // Cache all roles
-            $roles = $queryBuilder->select('roles', ['id', 'uuid', 'name', 'description'])
-                ->where(['status' => 'active'])
+            $roles = $this->db->table('roles')
+                ->select(['id', 'uuid', 'name', 'description'])
+                ->where('status', 'active')
                 ->get();
 
             foreach ($roles as $role) {
@@ -260,15 +262,15 @@ class CacheWarmupService
             return ['status' => 'skipped', 'items' => 0, 'message' => 'Users table not found'];
         }
 
-        $queryBuilder = $this->getQueryBuilder();
         $items = 0;
 
         try {
             // Cache recently active users (last 24 hours)
             $twentyFourHoursAgo = date('Y-m-d H:i:s', strtotime('-24 hours'));
-            $activeUsers = $queryBuilder->select('users', ['id', 'uuid', 'username', 'email', 'status'])
-                ->where(['status' => 'active'])
-                ->whereGreaterThan('last_login_at', $twentyFourHoursAgo)
+            $activeUsers = $this->db->table('users')
+                ->select(['id', 'uuid', 'username', 'email', 'status'])
+                ->where('status', 'active')
+                ->where('last_login_at', '>', $twentyFourHoursAgo)
                 ->limit(100) // Limit to most recent 100 active users
                 ->get();
 
@@ -364,8 +366,7 @@ class CacheWarmupService
     private function tableExists(string $tableName): bool
     {
         try {
-            $queryBuilder = $this->getQueryBuilder();
-            $queryBuilder->rawQuery("SELECT 1 FROM $tableName LIMIT 1");
+            $this->db->table($tableName)->selectRaw('1')->limit(1)->get();
             return true;
         } catch (\Exception) {
             return false;

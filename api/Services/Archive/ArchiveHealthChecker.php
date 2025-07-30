@@ -2,7 +2,7 @@
 
 namespace Glueful\Services\Archive;
 
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use Glueful\Services\Archive\DTOs\HealthCheckResult;
 
 /**
@@ -22,10 +22,13 @@ class ArchiveHealthChecker
     private string $archivePath;
     private array $config;
 
+    private Connection $db;
+
     public function __construct(
-        private QueryBuilder $queryBuilder,
+        ?Connection $connection = null,
         array $config = []
     ) {
+        $this->db = $connection ?? new Connection();
         $this->config = array_merge([
             'storage_path' => config('archive.storage.path'),
             'disk_space_threshold' => config('archive.monitoring.disk_space_threshold_percent', 85),
@@ -121,11 +124,11 @@ class ArchiveHealthChecker
         $corrupted = [];
 
         try {
-            $archives = $this->queryBuilder
-                ->select('archive_registry', ['uuid', 'file_path', 'checksum_sha256'])
-                ->where(['status', '!=', 'deleted'])
+            $archives = $this->db->table('archive_registry')
+                ->select(['uuid', 'file_path', 'checksum_sha256'])
+                ->where('status', '!=', 'deleted')
                 ->limit(100) // Check latest 100 archives
-                ->orderBy(['created_at' => 'DESC'])
+                ->orderBy('created_at', 'DESC')
                 ->get();
 
             foreach ($archives as $archive) {
@@ -138,11 +141,9 @@ class ArchiveHealthChecker
                     $corrupted[] = $archive['uuid'];
 
                     // Update status in database
-                    $this->queryBuilder->update(
-                        'archive_registry',
-                        ['status' => 'corrupted'],
-                        ['uuid' => $archive['uuid']]
-                    );
+                    $this->db->table('archive_registry')
+                        ->where('uuid', $archive['uuid'])
+                        ->update(['status' => 'corrupted']);
                 }
             }
         } catch (\Exception $e) {
@@ -166,11 +167,9 @@ class ArchiveHealthChecker
         // Get archive-specific usage
         $archiveSize = 0;
         try {
-            $result = $this->queryBuilder
-                ->select('archive_registry', [
-                    $this->queryBuilder->raw('SUM(file_size) as total_size')
-                ])
-                ->where(['status', '!=', 'deleted'])
+            $result = $this->db->table('archive_registry')
+                ->selectRaw('SUM(file_size) as total_size')
+                ->where('status', '!=', 'deleted')
                 ->first();
 
             $archiveSize = $result['total_size'] ?? 0;
@@ -198,9 +197,9 @@ class ArchiveHealthChecker
         $missing = [];
 
         try {
-            $archives = $this->queryBuilder
-                ->select('archive_registry', ['uuid', 'file_path'])
-                ->where(['status', '!=', 'deleted'])
+            $archives = $this->db->table('archive_registry')
+                ->select(['uuid', 'file_path'])
+                ->where('status', '!=', 'deleted')
                 ->get();
 
             foreach ($archives as $archive) {
@@ -208,11 +207,9 @@ class ArchiveHealthChecker
                     $missing[] = $archive['uuid'];
 
                     // Update status in database
-                    $this->queryBuilder->update(
-                        'archive_registry',
-                        ['status' => 'missing'],
-                        ['uuid' => $archive['uuid']]
-                    );
+                    $this->db->table('archive_registry')
+                        ->where('uuid', $archive['uuid'])
+                        ->update(['status' => 'missing']);
                 }
             }
         } catch (\Exception $e) {
@@ -230,7 +227,9 @@ class ArchiveHealthChecker
     private function checkFailedArchives(): int
     {
         try {
-            return $this->queryBuilder->count('archive_registry', ['status' => 'failed']);
+            return $this->db->table('archive_registry')
+                ->where('status', 'failed')
+                ->count();
         } catch (\Exception $e) {
             error_log("Error counting failed archives: " . $e->getMessage());
             return 0;
@@ -246,29 +245,29 @@ class ArchiveHealthChecker
     {
         try {
             // Get counts for different time periods separately to avoid database-specific date functions
-            $lastWeek = $this->queryBuilder->count('archive_registry', [
-                ['created_at', '>', date('Y-m-d H:i:s', strtotime('-7 days'))],
-                ['status', '!=', 'deleted']
-            ]);
+            $lastWeek = $this->db->table('archive_registry')
+                ->where('created_at', '>', date('Y-m-d H:i:s', strtotime('-7 days')))
+                ->where('status', '!=', 'deleted')
+                ->count();
 
-            $lastMonth = $this->queryBuilder->count('archive_registry', [
-                ['created_at', '>', date('Y-m-d H:i:s', strtotime('-30 days'))],
-                ['status', '!=', 'deleted']
-            ]);
+            $lastMonth = $this->db->table('archive_registry')
+                ->where('created_at', '>', date('Y-m-d H:i:s', strtotime('-30 days')))
+                ->where('status', '!=', 'deleted')
+                ->count();
 
-            $lastQuarter = $this->queryBuilder->count('archive_registry', [
-                ['created_at', '>', date('Y-m-d H:i:s', strtotime('-90 days'))],
-                ['status', '!=', 'deleted']
-            ]);
+            $lastQuarter = $this->db->table('archive_registry')
+                ->where('created_at', '>', date('Y-m-d H:i:s', strtotime('-90 days')))
+                ->where('status', '!=', 'deleted')
+                ->count();
 
-            $lastYear = $this->queryBuilder->count('archive_registry', [
-                ['created_at', '>', date('Y-m-d H:i:s', strtotime('-365 days'))],
-                ['status', '!=', 'deleted']
-            ]);
+            $lastYear = $this->db->table('archive_registry')
+                ->where('created_at', '>', date('Y-m-d H:i:s', strtotime('-365 days')))
+                ->where('status', '!=', 'deleted')
+                ->count();
 
-            $total = $this->queryBuilder->count('archive_registry', [
-                ['status', '!=', 'deleted']
-            ]);
+            $total = $this->db->table('archive_registry')
+                ->where('status', '!=', 'deleted')
+                ->count();
 
             return [
                 'last_week' => $lastWeek,
@@ -304,11 +303,11 @@ class ArchiveHealthChecker
                 $complianceYears = $policy['compliance_period_years'] ?? 7;
                 $cutoffDate = date('Y-m-d', strtotime("-{$complianceYears} years"));
 
-                $count = $this->queryBuilder->count('archive_registry', [
-                    'table_name' => $table,
-                    ['created_at', '<', $cutoffDate],
-                    'status' => 'completed'
-                ]);
+                $count = $this->db->table('archive_registry')
+                    ->where('table_name', $table)
+                    ->where('created_at', '<', $cutoffDate)
+                    ->where('status', 'completed')
+                    ->count();
 
                 $staleCount += $count;
             }

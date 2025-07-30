@@ -138,7 +138,8 @@ class UserRepository extends BaseRepository
     public function getProfile(string $uuid): ?array
     {
         // Create a query but use a different table than the default one
-        $query = $this->db->select('profiles', $this->userProfileFields)
+        $query = $this->db->table('profiles')
+            ->select($this->userProfileFields)
             ->where(['user_uuid' => $uuid])
             ->limit(1)
             ->get();
@@ -165,7 +166,8 @@ class UserRepository extends BaseRepository
         }
 
         // Fetch all profiles in a single query
-        $profiles = $this->db->select('profiles', $this->userProfileFields)
+        $profiles = $this->db->table('profiles')
+            ->select($this->userProfileFields)
             ->whereIn('user_uuid', $userUuids)
             ->get();
 
@@ -459,9 +461,6 @@ class UserRepository extends BaseRepository
     public function findOrCreateFromLdap(array $userData): ?array
     {
         try {
-            $connection = new \Glueful\Database\Connection();
-            $queryBuilder = new \Glueful\Database\QueryBuilder($connection->getPDO(), $connection->getDriver());
-
             // Email is required to identify the user
             if (empty($userData['email'])) {
                 return null;
@@ -533,8 +532,8 @@ class UserRepository extends BaseRepository
                 'last_login_at' => date('Y-m-d H:i:s')
             ];
 
-            // Create the new user
-            $queryBuilder->insert('users', array_filter($newUser, function ($value) {
+            // Create the new user using fluent interface
+            $this->db->table('users')->insert(array_filter($newUser, function ($value) {
                 return $value !== null;
             }));
 

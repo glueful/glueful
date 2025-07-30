@@ -43,9 +43,10 @@ class StatusCommand extends BaseCommand
             $this->info('Migration Status');
             $this->line('');
 
-            // Get migration status
-            $pendingMigrations = $this->migrationManager->getPendingMigrations();
-            $appliedMigrations = $this->migrationManager->getAppliedMigrationsList();
+            // Get migration status efficiently (single query)
+            $status = $this->migrationManager->getMigrationStatus();
+            $pendingMigrations = $status['pending'];
+            $appliedMigrations = $status['applied'];
 
             if (empty($pendingMigrations) && empty($appliedMigrations)) {
                 $this->warning('No migration files found.');

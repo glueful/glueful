@@ -5,36 +5,55 @@ namespace Tests\Unit\Repository\Mocks;
 use PDO;
 use Glueful\Database\Connection;
 use Glueful\Database\Driver\SQLiteDriver;
-use Glueful\Database\Schema\SQLiteSchemaManager;
+use Glueful\Database\Schema\Builders\SchemaBuilder;
+use Glueful\Database\Schema\Generators\SQLiteSqlGenerator;
 
 /**
  * Mock SQLite Connection for User Repository Tests
  *
- * Provides an in-memory SQLite database for testing user repository
- * operations without affecting actual databases.
+ * Provides an isolated SQLite database for testing user repository
+ * operations without affecting actual databases or other tests.
  */
 class MockUserConnection extends Connection
 {
+    /** @var string Path to temporary database file */
+    private string $tempFile;
     /**
      * Create an in-memory SQLite database connection for testing
      */
     public function __construct()
     {
-        // Create in-memory SQLite connection
-        $this->pdo = new PDO('sqlite::memory:', null, null, [
+        // Create completely isolated temporary file SQLite database
+        // This ensures zero interference with other test database connections
+        $tempFile = tempnam(sys_get_temp_dir(), 'user_repo_test_') . '.sqlite';
+        $this->pdo = new PDO("sqlite:$tempFile", null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false
         ]);
+        
+        // Store temp file path for cleanup
+        $this->tempFile = $tempFile;
 
         // Set SQLite driver
         $this->driver = new SQLiteDriver($this->pdo);
 
-        // Set SQLite schema manager
-        $this->schemaManager = new SQLiteSchemaManager($this->pdo);
+        // Set SQLite schema builder
+        $sqlGenerator = new SQLiteSqlGenerator();
+        $this->schemaBuilder = new SchemaBuilder($this, $sqlGenerator);
 
         // Create the user tables
         $this->createUserTables();
+    }
+
+    /**
+     * Clean up temporary database file
+     */
+    public function __destruct()
+    {
+        if (isset($this->tempFile) && file_exists($this->tempFile)) {
+            unlink($this->tempFile);
+        }
     }
 
     /**
@@ -42,8 +61,13 @@ class MockUserConnection extends Connection
      */
     public function createUserTables(): void
     {
+        // Drop existing users table first to avoid conflicts with other tests
+        $this->pdo->exec("DROP TABLE IF EXISTS users");
+        $this->pdo->exec("DROP TABLE IF EXISTS user_roles");
+        $this->pdo->exec("DROP TABLE IF EXISTS roles");
+        
         // Create users table
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS users (
+        $this->pdo->exec("CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uuid TEXT NOT NULL UNIQUE,
             username TEXT NOT NULL UNIQUE,
@@ -58,7 +82,7 @@ class MockUserConnection extends Connection
         )");
 
         // Create user_roles table
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS user_roles (
+        $this->pdo->exec("CREATE TABLE user_roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             role_id INTEGER NOT NULL,
@@ -67,7 +91,7 @@ class MockUserConnection extends Connection
         )");
 
         // Create roles table for user role tests
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS roles (
+        $this->pdo->exec("CREATE TABLE roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uuid TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL UNIQUE,

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.28.0 (July 23, 2025)  
+**Latest Release:** v0.29.0 (July 30, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -14,43 +14,44 @@
 - ✅ Symfony component integration
 - ✅ Production deployment fixes
 
-### 🚀 **v0.29.0** - Production Readiness
-**Focus: Cloud deployment and enterprise features**
+### 🏁 **v0.29.0** - Query Builder Redesign & Performance ✅ **RELEASED**
+**Major architectural improvements to database layer**
 
-- [ ] **Cloud Deployment Templates**
-  - Docker containerization with multi-stage builds
-  - Kubernetes deployment manifests  
-  - AWS/Azure/GCP deployment configs
-- [ ] **Zero-Downtime Deployments**
-  - Database migration strategies for live systems
-  - Health check endpoints for load balancers
-  - Blue-green deployment documentation
-- [ ] **Security Hardening**
-  - Security best practices documentation
-  - Vulnerability disclosure process
-  - Automated dependency scanning
-- [ ] **Performance Optimization**
-  - Performance profiling and monitoring tools
-  - Database query optimization guides
-  - Memory usage optimization documentation
+- ✅ **Complete Query Builder Redesign**
+  - Modular architecture with orchestrator pattern
+  - Separated concerns into focused components
+  - Enhanced type safety with interfaces and DTOs
+  - Improved extensibility and maintainability
+- ✅ **Advanced Schema Builder System**
+  - Fluent API for database-agnostic operations
+  - Database-specific SQL generators
+  - Comprehensive column and constraint support
+  - Transaction-safe schema operations
+- ✅ **Performance Optimizations**
+  - RBAC query deduplication and caching
+  - Request-scoped static caches
+  - Batch fetching to prevent N+1 queries
+  - 50% reduction in permission-heavy requests
 
-### 📚 **v0.30.0** - Developer Experience
-**Focus: Documentation and adoption readiness**
+### 🎯 **v0.30.0** - Final Pre-Release
+**Focus: Complete preparation for v1.0.0 stable release**
 
-- [ ] **Complete Documentation**
-  - Getting started guides for all environments
-  - Comprehensive API reference
-  - Extension development tutorials
-  - Best practices and patterns guide
-- [ ] **Developer Tools**
-  - CLI scaffolding improvements
-  - IDE integration packages
-  - Development environment setup automation
-- [ ] **Community Infrastructure**
-  - GitHub issue templates and automation
-  - Community forum and support channels
-  - Video tutorial series
-  - Migration guides from other frameworks
+- [ ] **API Stability Finalization**
+  - API stability review and final breaking changes
+  - Deprecation policy documentation
+  - Semantic versioning commitment
+  - Breaking change management process
+- [ ] **Release Engineering**
+  - 90%+ test coverage validation
+  - Integration test suite completion
+  - Security test automation
+  - Performance regression prevention
+- [ ] **Community & Release Readiness**
+  - ✅ Add missing CODE_OF_CONDUCT.md file
+  - ✅ Release notes (CHANGELOG.md serves as comprehensive release notes)
+  - Announcement preparation  
+  - Community forum setup
+  - Framework showcase and case studies
 
 ### 🎉 **v1.0.0** - Stable Release
 **The production-ready framework with API stability guarantees**
@@ -67,34 +68,61 @@
 - ✅ Comprehensive error handling and logging
 
 #### Production Ready Features
-- [ ] Enterprise deployment templates
-- [ ] Security best practices and vulnerability reporting
-- [ ] Performance monitoring and optimization guides
 - [ ] API stability guarantees and deprecation policy
+- [ ] Long-term support (LTS) commitment
+- [ ] Enterprise support options
+- [ ] Migration path from 0.x versions
 
 ---
 
 ## Beyond v1.0.0
 
-### **v1.1.0** - Scalability
+### **v1.1.0** - Production Infrastructure
+**Focus: Cloud deployment and enterprise operations**
+
+- **Cloud Deployment Templates**
+  - Docker containerization with multi-stage builds
+  - Kubernetes deployment manifests
+  - AWS/Azure/GCP deployment configs
+  - Infrastructure as Code templates
+- **Zero-Downtime Deployments**
+  - Database migration strategies for live systems
+  - Health check endpoints for load balancers
+  - Blue-green deployment documentation
+  - Canary deployment patterns
+- **Enterprise Operations**
+  - Security hardening guides
+  - Performance monitoring integration
+  - Automated backup strategies
+  - Disaster recovery procedures
+
+### **v1.2.0** - Scalability
 - Horizontal scaling and load balancing
-- Database connection pooling
 - Distributed caching coordination
 - High availability deployment patterns
+- Multi-region database replication
 
-### **v1.2.0** - Advanced APIs  
+### **v1.3.0** - Advanced APIs & Ecosystem Growth
 - GraphQL support with schema generation
 - Advanced webhook system with retry logic
 - API gateway functionality
 - Enhanced rate limiting and analytics
+- Migration guides from Laravel, Symfony, and other frameworks
+- Framework comparison documentation
+- Automated migration tools
+- **Documentation Enhancement**
+  - Interactive documentation examples
+  - Video tutorial series
+  - Visual architecture diagrams
+  - Multi-language code samples
 
-### **v1.3.0** - Enterprise Integration
+### **v1.4.0** - Enterprise Integration
 - Message queue adapters (RabbitMQ, Kafka, SQS)
 - ETL pipeline toolkit
 - Event-driven architecture patterns
 - Enterprise service bus integration
 
-### **v1.5.0** - Glueful Go
+### **v1.6.0** - Glueful Go
 Complete Go implementation for:
 - Cloud-native deployments
 - High-performance microservices  

@@ -7,14 +7,17 @@ namespace Glueful\Extensions\EmailNotification;
 use Glueful\Logging\LogManager;
 use Glueful\Notifications\Contracts\Notifiable;
 use Glueful\Notifications\Contracts\NotificationChannel;
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
+use Symfony\Component\Mailer\Mailer;
+use Symfony\Component\Mailer\Transport;
+use Symfony\Component\Mime\Email;
+use Symfony\Component\Mime\Address;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
  * Email Notification Channel
  *
  * Implementation of the NotificationChannel interface for sending
- * notifications via email using PHPMailer.
+ * notifications via email using Symfony Mailer.
  *
  * @package Glueful\Extensions\EmailNotification
  */
@@ -86,58 +89,14 @@ class EmailChannel implements NotificationChannel
         $emailData = $this->format($data, $notifiable);
 
         try {
-            $mail = $this->createMailer();
-
-            // Set recipients
-            $mail->addAddress($recipientEmail);
-
-            // Set CC if provided in the data
-            if (!empty($emailData['cc'])) {
-                foreach ((array)$emailData['cc'] as $cc) {
-                    $mail->addCC($cc);
-                }
-            }
-
-            // Set BCC if provided in the data
-            if (!empty($emailData['bcc'])) {
-                foreach ((array)$emailData['bcc'] as $bcc) {
-                    $mail->addBCC($bcc);
-                }
-            }
-
-            // Set email content
-            $mail->Subject = $emailData['subject'];
-
-            // Check if HTML content is provided
-            if (!empty($emailData['html_content'])) {
-                $mail->isHTML(true);
-                $mail->Body = $emailData['html_content'];
-
-                // Set plain text alternative if available
-                if (!empty($emailData['text_content'])) {
-                    $mail->AltBody = $emailData['text_content'];
-                }
-            } else {
-                // Text-only email
-                $mail->Body = $emailData['text_content'];
-            }
-
-            // Add attachments if any
-            if (!empty($emailData['attachments'])) {
-                foreach ($emailData['attachments'] as $attachment) {
-                    if (is_array($attachment) && isset($attachment['path'])) {
-                        $filename = $attachment['name'] ?? '';
-                        $mail->addAttachment($attachment['path'], $filename);
-                    } elseif (is_string($attachment)) {
-                        $mail->addAttachment($attachment);
-                    }
-                }
-            }
+            $mailer = $this->createMailer();
+            $email = $this->createEmail($emailData, $recipientEmail);
 
             // Send the email
-            return $mail->send();
-        } catch (Exception $e) {
-            // Log the error using LogManager instead of undefined log_error function
+            $mailer->send($email);
+            return true;
+        } catch (TransportExceptionInterface $e) {
+            // Log the error using LogManager
             $this->logger->error('Email notification failed: ' . $e->getMessage(), [
                 'notifiable_id' => $notifiable->getNotifiableId(),
                 'notification_data' => $data,
@@ -186,8 +145,27 @@ class EmailChannel implements NotificationChannel
         }
 
         // Check if required configuration is set
-        return !empty($this->config['host']) &&
-               !empty($this->config['from']['address']);
+        $hasHost = false;
+        $hasFromAddress = false;
+
+        // Check for new configuration structure
+        if (isset($this->config['mailers']) && isset($this->config['default'])) {
+            $defaultMailer = $this->config['default'];
+            if (isset($this->config['mailers'][$defaultMailer])) {
+                $mailerConfig = $this->config['mailers'][$defaultMailer];
+                $hasHost = !empty($mailerConfig['host']) ||
+                          !empty($mailerConfig['key']) ||
+                          !empty($mailerConfig['token']);
+            }
+        } else {
+            // Legacy configuration structure
+            $hasHost = !empty($this->config['host']);
+        }
+
+        // Check from address (same in both structures)
+        $hasFromAddress = !empty($this->config['from']['address']);
+
+        return $hasHost && $hasFromAddress;
     }
 
     /**
@@ -213,50 +191,208 @@ class EmailChannel implements NotificationChannel
     }
 
     /**
-     * Create and configure a PHPMailer instance
+     * Create and configure a Symfony Mailer instance
      *
-     * @return PHPMailer Configured mailer instance
-     * @throws Exception If mailer cannot be configured
+     * @return Mailer Configured mailer instance
+     * @throws \Exception If mailer cannot be configured
      */
-    private function createMailer(): PHPMailer
+    private function createMailer(): Mailer
     {
-        $mail = new PHPMailer(true);
+        // Get the default mailer configuration
+        $defaultMailer = $this->config['default'] ?? 'smtp';
 
-        // Server settings
-        $mail->isSMTP();
-        $mail->Host = $this->config['host'];
-        $mail->SMTPAuth = $this->config['smtp_auth'] ?? true;
-
-        if ($mail->SMTPAuth) {
-            $mail->Username = $this->config['username'];
-            $mail->Password = $this->config['password'];
+        // We expect the new multi-mailer configuration
+        if (!isset($this->config['mailers'][$defaultMailer])) {
+            throw new \Exception("Mailer configuration not found for: {$defaultMailer}");
         }
 
-        // Set encryption type
-        if (!empty($this->config['encryption'])) {
-            $mail->SMTPSecure = $this->config['encryption'];
+        $mailerConfig = $this->config['mailers'][$defaultMailer];
+
+        // Check if this is a provider bridge (doesn't need host validation)
+        $transport = $mailerConfig['transport'] ?? 'smtp';
+        $isProviderBridge = strpos($transport, '+') !== false; // e.g., brevo+api, sendgrid+api
+
+        // Validate configuration based on transport type
+        if (!$isProviderBridge && empty($mailerConfig['host'])) {
+            // Fallback to null transport for development environments
+            $transport = Transport::fromDsn('null://null');
+            return new Mailer($transport);
         }
 
-        // Set port
-        if (!empty($this->config['port'])) {
-            $mail->Port = $this->config['port'];
+        // For provider bridges, validate they have required credentials
+        if ($isProviderBridge) {
+            $hasCredentials = !empty($mailerConfig['key']) ||
+                             (!empty($mailerConfig['username']) && !empty($mailerConfig['password']));
+            if (!$hasCredentials) {
+                // Fallback to null transport if credentials missing
+                $transport = Transport::fromDsn('null://null');
+                return new Mailer($transport);
+            }
         }
 
-        // Set sender
-        $mail->setFrom(
+        try {
+            // Check if failover is properly configured (non-empty mailers array)
+            $failoverMailers = $this->config['failover']['mailers'] ?? [];
+            $hasValidFailover = !empty($failoverMailers) && !empty(array_filter($failoverMailers));
+
+            if ($hasValidFailover) {
+                // Use failover transport if configured
+                $transport = \Glueful\Extensions\EmailNotification\TransportFactory::createFailover($this->config);
+            } else {
+                // Use the default transport with enhanced provider bridge support
+                $transport = \Glueful\Extensions\EmailNotification\TransportFactory::create($this->config);
+            }
+
+            return new Mailer($transport);
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            $this->logger->error('Failed to create email transport: ' . $e->getMessage(), [
+                'exception' => $e,
+                'config_keys' => array_keys($this->config)
+            ]);
+
+            // Fallback to null transport for development
+            $transport = Transport::fromDsn('null://null');
+            return new Mailer($transport);
+        }
+    }
+
+    /**
+     * Create a Symfony Email object from email data
+     *
+     * @param array $data The email data
+     * @param string $recipientEmail The primary recipient email
+     * @return Email Configured email object
+     */
+    private function createEmail(array $data, string $recipientEmail): Email
+    {
+        // Check if we're using EnhancedEmailFormatter
+        if (
+            $this->formatter instanceof \Glueful\Extensions\EmailNotification\EnhancedEmailFormatter
+            && isset($data['template'])
+        ) {
+            // Use enhanced formatter to build email with advanced features
+            $email = $this->formatter->buildEmailFromTemplate($data['template'], $data);
+
+            // Override recipient
+            $email->to($recipientEmail);
+
+            // Set from address if not already set
+            if (empty($email->getFrom())) {
+                $fromAddress = new Address(
+                    $this->config['from']['address'],
+                    $this->config['from']['name'] ?? ''
+                );
+                $email->from($fromAddress);
+            }
+
+            return $email;
+        }
+
+        // Standard email creation
+        $email = new Email();
+
+        // Set from address
+        $fromAddress = new Address(
             $this->config['from']['address'],
             $this->config['from']['name'] ?? ''
         );
+        $email->from($fromAddress);
 
-        // Set reply-to
+        // Set primary recipient
+        $email->to($recipientEmail);
+
+        // Set CC if provided
+        if (!empty($data['cc'])) {
+            foreach ((array)$data['cc'] as $cc) {
+                $email->addCc($cc);
+            }
+        }
+
+        // Set BCC if provided
+        if (!empty($data['bcc'])) {
+            foreach ((array)$data['bcc'] as $bcc) {
+                $email->addBcc($bcc);
+            }
+        }
+
+        // Set reply-to if configured
         if (!empty($this->config['reply_to']['address'])) {
-            $mail->addReplyTo(
+            $replyToAddress = new Address(
                 $this->config['reply_to']['address'],
                 $this->config['reply_to']['name'] ?? ''
             );
+            $email->replyTo($replyToAddress);
         }
 
-        return $mail;
+        // Set subject
+        $email->subject($data['subject'] ?? '');
+
+        // Enhanced features with Symfony Mailer
+
+        // Set priority if specified
+        if (isset($data['priority'])) {
+            $priority = match ($data['priority']) {
+                'highest' => Email::PRIORITY_HIGHEST,
+                'high' => Email::PRIORITY_HIGH,
+                'normal' => Email::PRIORITY_NORMAL,
+                'low' => Email::PRIORITY_LOW,
+                'lowest' => Email::PRIORITY_LOWEST,
+                default => Email::PRIORITY_NORMAL,
+            };
+            $email->priority($priority);
+        }
+
+        // Embed images if specified
+        if (isset($data['embedImages']) && is_array($data['embedImages'])) {
+            foreach ($data['embedImages'] as $cid => $path) {
+                if (file_exists($path)) {
+                    $email->embedFromPath($path, $cid);
+                }
+            }
+        }
+
+        // Add custom headers if specified
+        if (isset($data['headers']) && is_array($data['headers'])) {
+            foreach ($data['headers'] as $name => $value) {
+                $email->getHeaders()->addTextHeader($name, $value);
+            }
+        }
+
+        // Set return path if specified
+        if (isset($data['returnPath'])) {
+            $email->returnPath($data['returnPath']);
+        }
+
+        // Set content
+        if (!empty($data['html_content'])) {
+            $email->html($data['html_content']);
+
+            // Set plain text alternative if available
+            if (!empty($data['text_content'])) {
+                $email->text($data['text_content']);
+            }
+        } else {
+            // Text-only email
+            $email->text($data['text_content'] ?? '');
+        }
+
+        // Add attachments if any
+        if (!empty($data['attachments'])) {
+            foreach ($data['attachments'] as $attachment) {
+                if (is_array($attachment) && isset($attachment['path'])) {
+                    $email->attachFromPath(
+                        $attachment['path'],
+                        $attachment['name'] ?? null,
+                        $attachment['contentType'] ?? null
+                    );
+                } elseif (is_string($attachment)) {
+                    $email->attachFromPath($attachment);
+                }
+            }
+        }
+
+        return $email;
     }
 
     /**
@@ -284,31 +420,28 @@ class EmailChannel implements NotificationChannel
     /**
      * Get the current size of the email queue
      *
-     * Returns the number of emails currently pending in the queue.
-     * This method checks the queue directory for pending emails.
+     * Returns the number of emails currently pending in the framework's queue system.
+     * Uses the built-in QueueManager to get accurate queue statistics.
      *
      * @return int|null Number of emails in queue, or null if queue system not available
      */
     public function getQueueSize(): ?int
     {
         try {
-            // Check if queue feature is enabled
-            if (empty($this->config['queue']['enabled'])) {
+            // Check if queue feature is enabled in framework config
+            $queueConfig = config('queue');
+            if (empty($queueConfig) || !($queueConfig['enabled'] ?? true)) {
                 return 0;
             }
 
-            // Get queue directory from config or use default
-            $queueDir = $this->config['queue']['directory'] ??
-                (__DIR__ . '/../../storage/queue/emails');
-
-            // If queue directory doesn't exist, return 0
-            if (!is_dir($queueDir)) {
+            // Use the framework's QueueManager to get queue size
+            $container = app();
+            if (!$container->has('Glueful\\Queue\\QueueManager')) {
                 return 0;
             }
 
-            // Count email files in the queue directory
-            $queueFiles = glob($queueDir . '/*.json');
-            return count($queueFiles);
+            $queueManager = $container->get('Glueful\\Queue\\QueueManager');
+            return $queueManager->size('emails'); // Get size of emails queue
         } catch (\Exception $e) {
             $this->logger->error('Failed to get email queue size: ' . $e->getMessage());
             return null;

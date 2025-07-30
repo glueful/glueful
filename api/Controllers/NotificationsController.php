@@ -150,14 +150,15 @@ class NotificationsController extends BaseController
             md5(serialize($filters))
         );
 
-        $notifications = $this->cacheResponse(
+        // Use the new paginated method - no need for separate count query
+        $paginatedResults = $this->cacheResponse(
             $cacheKey,
-            function () use ($userNotifiable, $onlyUnread, $perPage, $page, $filters) {
-                return $this->notificationService->getNotifications(
+            function () use ($userNotifiable, $onlyUnread, $page, $perPage, $filters) {
+                return $this->notificationService->getNotificationsWithPagination(
                     $userNotifiable,
                     $onlyUnread,
+                    $page,
                     $perPage,
-                    ($page - 1) * $perPage,
                     $filters
                 );
             },
@@ -165,36 +166,20 @@ class NotificationsController extends BaseController
             ['user:' . $user->uuid, 'notifications']
         );
 
-        // Cache total count
-        $countCacheKey = sprintf(
-            'notifications:count:user:%s:filters:%s',
-            $user->uuid,
-            md5(serialize($filters))
-        );
+        // Separate data from meta using the same pattern as UsersController
+        $data = $paginatedResults['data'] ?? [];
+        $meta = $paginatedResults;
+        unset($meta['data']); // Remove data from meta to avoid duplication
 
-        $totalCount = $this->cacheResponse($countCacheKey, function () use ($userNotifiable, $onlyUnread, $filters) {
-            return $this->notificationService->countNotifications(
-                $userNotifiable,
-                $onlyUnread,
-                $filters
-            );
-        }, 300, ['user:' . $user->uuid, 'notifications']);
+        // Add filters to meta
+        $meta['filters'] = [
+            'applied' => !empty($filters['type'])
+                || !empty($filters['priority'])
+                || !empty($filters['created_at'] ?? []),
+            'parameters' => $filters
+        ];
 
-        return Response::success([
-            'data' => $notifications,
-            'pagination' => [
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'total' => $totalCount,
-                'last_page' => ceil($totalCount / $perPage)
-            ],
-            'filters' => [
-                'applied' => !empty($filters['type'])
-                    || !empty($filters['priority'])
-                    || !empty($filters['created_at'] ?? []),
-                'parameters' => $filters
-            ]
-        ], 'Notifications retrieved successfully');
+        return Response::successWithMeta($data, $meta, 'Notifications retrieved successfully');
     }
 
     /**
@@ -210,7 +195,7 @@ class NotificationsController extends BaseController
 
         $user = $this->getCurrentUser();
         // Use UUID-based lookup instead of ID-based
-        $notification = $this->notificationService->getNotificationByUuid($params['id']);
+        $notification = $this->notificationService->getNotificationByUuid($params['uuid']);
 
         // Check if notification exists
         if (!$notification) {
@@ -222,7 +207,11 @@ class NotificationsController extends BaseController
             return Response::error('Forbidden', ErrorCodes::FORBIDDEN);
         }
 
-        return Response::success($notification, 'Notification retrieved successfully');
+        // Convert to array and remove internal database ID
+        $notificationArray = $notification->toArray();
+        unset($notificationArray['id']);
+
+        return Response::success($notificationArray, 'Notification retrieved successfully');
     }
 
     /**
@@ -238,7 +227,7 @@ class NotificationsController extends BaseController
 
         $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
-        $notification = $this->notificationService->getNotificationByUuid($params['id']);
+        $notification = $this->notificationService->getNotificationByUuid($params['uuid']);
 
         // Check if notification exists
         if (!$notification) {
@@ -258,7 +247,11 @@ class NotificationsController extends BaseController
 
         // Audit log
 
-        return Response::success($notification, 'Notification marked as read');
+        // Convert to array and remove internal database ID
+        $notificationArray = $notification->toArray();
+        unset($notificationArray['id']);
+
+        return Response::success($notificationArray, 'Notification marked as read');
     }
 
     /**
@@ -274,7 +267,7 @@ class NotificationsController extends BaseController
 
         $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
-        $notification = $this->notificationService->getNotificationByUuid($params['id']);
+        $notification = $this->notificationService->getNotificationByUuid($params['uuid']);
 
         // Check if notification exists
         if (!$notification) {
@@ -292,7 +285,11 @@ class NotificationsController extends BaseController
         // Invalidate user's notifications cache
         $this->invalidateCache(['user:' . $user->uuid, 'notifications']);
 
-        return Response::success($notification, 'Notification marked as unread');
+        // Convert to array and remove internal database ID
+        $notificationArray = $notification->toArray();
+        unset($notificationArray['id']);
+
+        return Response::success($notificationArray, 'Notification marked as unread');
     }
 
     /**
@@ -393,7 +390,7 @@ class NotificationsController extends BaseController
 
         $user = $this->getCurrentUser();
         // Get notification using UUID-based lookup
-        $notification = $this->notificationService->getNotificationByUuid($params['id']);
+        $notification = $this->notificationService->getNotificationByUuid($params['uuid']);
 
         // Check if notification exists
         if (!$notification) {

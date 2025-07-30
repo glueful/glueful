@@ -272,9 +272,15 @@ class PerformanceTrackingTest extends TestCase
 
         // Setup test request
         $request = (object)[
-            'getMethod' => function() { return 'GET'; },
-            'getUri' => function() { return '/api/test'; },
-            'headers' => (object)['get' => function() { return 'PHPUnit'; }]
+            'getMethod' => function () {
+                return 'GET';
+            },
+            'getUri' => function () {
+                return '/api/test';
+            },
+            'headers' => (object)['get' => function () {
+                return 'PHPUnit';
+            }]
         ];
 
         // Simulate a response
@@ -293,8 +299,12 @@ class PerformanceTrackingTest extends TestCase
 
         // Also test that the API request handles closure methods correctly
         $request2 = (object)[
-            'getMethod' => function() { return 'POST'; },
-            'getUri' => function() { return '/api/create'; }
+            'getMethod' => function () {
+                return 'POST';
+            },
+            'getUri' => function () {
+                return '/api/create';
+            }
         ];
 
         try {

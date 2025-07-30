@@ -4,7 +4,7 @@ namespace Glueful\Console\Commands\Database;
 
 use Glueful\Console\BaseCommand;
 use Glueful\Database\Connection;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -28,7 +28,7 @@ use PDO;
 )]
 class StatusCommand extends BaseCommand
 {
-    private SchemaManager $schema;
+    private SchemaBuilderInterface $schema;
     private Connection $connection;
 
     public function __construct()
@@ -62,7 +62,7 @@ class StatusCommand extends BaseCommand
 
         try {
             $this->connection = new Connection();
-            $this->schema = $this->connection->getSchemaManager();
+            $this->schema = $this->connection->getSchemaBuilder();
 
             $this->displayConnectionStatus();
             $this->displayServerInfo();

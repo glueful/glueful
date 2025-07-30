@@ -4,6 +4,7 @@ namespace Tests\Unit\Repository\Mocks;
 
 use Glueful\Repository\NotificationRepository;
 use Glueful\Database\QueryBuilder;
+use Glueful\Database\Connection;
 use Tests\Unit\Database\Mocks\MockSQLiteConnection;
 
 /**
@@ -17,9 +18,9 @@ class TestNotificationRepository extends NotificationRepository
     /**
      * Constructor with dependency injection support
      *
-     * @param QueryBuilder|null $queryBuilder Optional query builder to inject
+     * @param Connection|null $connection Optional connection to inject
      */
-    public function __construct(?QueryBuilder $queryBuilder = null)
+    public function __construct(?Connection $connection = null)
     {
         // Skip parent constructor to avoid real database connection
 
@@ -28,27 +29,15 @@ class TestNotificationRepository extends NotificationRepository
         $this->primaryKey = 'uuid';
         $this->defaultFields = ['*'];
 
-        // Set the db property (which was previously set to queryBuilder)
-        $this->db = $queryBuilder;
-
-        if ($queryBuilder) {
-            // Use reflection to set the private property in the parent class
-            $reflection = new \ReflectionClass(NotificationRepository::class);
-            $queryBuilderProperty = $reflection->getProperty('db');
-            $queryBuilderProperty->setAccessible(true);
-            $queryBuilderProperty->setValue($this, $queryBuilder);
+        // Set the db property to connection
+        if ($connection) {
+            $this->db = $connection;
         } else {
             $connection = new MockSQLiteConnection();
-            $queryBuilder = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-
-            // Use reflection to set the private property in the parent class
-            $reflection = new \ReflectionClass(NotificationRepository::class);
-            $queryBuilderProperty = $reflection->getProperty('db');
-            $queryBuilderProperty->setAccessible(true);
-            $queryBuilderProperty->setValue($this, $queryBuilder);
-
+            $this->db = $connection;
+            
             // Create necessary tables for notification testing
-            $this->setupNotificationTables($connection->getPDO());
+            $connection->createNotificationTables();
         }
     }
 
@@ -110,7 +99,9 @@ class TestNotificationRepository extends NotificationRepository
     {
         // For testing purposes, just proxy to the db update method
         if (isset($this->db)) {
-            $result = $this->db->update($this->table, $data, [$this->primaryKey => $id]);
+            $result = $this->db->table($this->table)
+                ->where($this->primaryKey, '=', $id)
+                ->update($data);
             return $result > 0;
         }
         return false;
@@ -265,11 +256,11 @@ class TestNotificationRepository extends NotificationRepository
             $data['uuid'] = 'mock-uuid-' . mt_rand(1000, 9999);
         }
 
-        // If we have a configured db mock, use it
+        // If we have a configured db connection, use it
         if (isset($this->db)) {
-            // Find existing by UUID using array-based lookup to avoid circular dependencies
-            $result = $this->db->select($this->table, ['*'])
-                ->where([$this->primaryKey => $data['uuid']])
+            // Find existing by UUID using QueryBuilder
+            $result = $this->db->table($this->table)
+                ->where($this->primaryKey, '=', $data['uuid'])
                 ->get();
 
             $existing = !empty($result);
@@ -277,10 +268,12 @@ class TestNotificationRepository extends NotificationRepository
             if ($existing) {
                 // Update existing
                 unset($data['id']); // Remove ID to avoid issues
-                $this->db->update($this->table, $data, [$this->primaryKey => $data['uuid']]);
+                $this->db->table($this->table)
+                    ->where($this->primaryKey, '=', $data['uuid'])
+                    ->update($data);
             } else {
                 // Insert new
-                $this->db->insert($this->table, $data);
+                $this->db->table($this->table)->insert($data);
             }
         }
 
@@ -296,13 +289,99 @@ class TestNotificationRepository extends NotificationRepository
         // Cast $olderThanDays to int to avoid type issues
         $cutoff = date('Y-m-d H:i:s', strtotime('-' . (int)$olderThanDays . ' days'));
 
-        $this->db->where(['created_at' => ['<', $cutoff]]);
+        // First find the old notifications to delete
+        $oldNotifications = $this->db->table($this->table)
+            ->where('created_at', '<', $cutoff)
+            ->get();
 
-        // Explicitly cast to int to avoid issues in the mock
-        $this->db->limit($limit !== null ? (int)$limit : (int)5000);
+        if (empty($oldNotifications)) {
+            return true; // Nothing to delete is success
+        }
 
-        $deleted = $this->db->delete($this->table, []);
+        // Delete old notifications using PDO directly
+        $deletedCount = 0;
+        foreach ($oldNotifications as $notification) {
+            $stmt = $this->db->getPDO()->prepare("DELETE FROM {$this->table} WHERE uuid = ?");
+            $success = $stmt->execute([$notification['uuid']]);
+            if ($success && $stmt->rowCount() > 0) {
+                $deletedCount++;
+            }
+        }
 
-        return $deleted ? true : false;
+        return $deletedCount > 0;
+    }
+
+    /**
+     * Override countForNotifiable to handle null values correctly
+     */
+    public function countForNotifiable(
+        string $notifiableType,
+        string $notifiableId,
+        bool $onlyUnread = false,
+        array $filters = []
+    ): int {
+        $query = $this->db->table($this->table)
+            ->where('notifiable_type', '=', $notifiableType)
+            ->where('notifiable_id', '=', $notifiableId);
+
+        if ($onlyUnread) {
+            $query->whereNull('read_at');
+        }
+
+        return $query->count();
+    }
+
+    /**
+     * Override markAllAsRead to handle null values correctly
+     */
+    public function markAllAsRead(string $notifiableType, string $notifiableId, ?string $userId = null): int
+    {
+        // First find the unread notifications
+        $unreadNotifications = $this->db->table($this->table)
+            ->where('notifiable_type', '=', $notifiableType)
+            ->where('notifiable_id', '=', $notifiableId)
+            ->whereNull('read_at')
+            ->get();
+
+        if (empty($unreadNotifications)) {
+            return 0;
+        }
+
+        // Update each notification individually to avoid complex WHERE clause issues
+        $updatedCount = 0;
+        foreach ($unreadNotifications as $notification) {
+            $success = $this->db->table($this->table)
+                ->where('uuid', '=', $notification['uuid'])
+                ->update([
+                    'read_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s')
+                ]);
+            if ($success) {
+                $updatedCount++;
+            }
+        }
+
+        return $updatedCount;
+    }
+
+    /**
+     * Override delete method for testing
+     */
+    public function delete(string $uuid): bool
+    {
+        // Check if notification exists
+        $existing = $this->db->table($this->table)
+            ->where('uuid', '=', $uuid)
+            ->get();
+
+        if (empty($existing)) {
+            return false;
+        }
+
+        // Use PDO directly to delete for testing reliability
+        $stmt = $this->db->getPDO()->prepare("DELETE FROM {$this->table} WHERE uuid = ?");
+        $success = $stmt->execute([$uuid]);
+        
+        return $success && $stmt->rowCount() > 0;
     }
 }

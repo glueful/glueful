@@ -31,6 +31,13 @@ class PermissionAssignmentService
     private UserRoleRepository $userRoleRepository;
     private RolePermissionRepository $rolePermissionRepository;
 
+    // Cache to prevent duplicate queries within a single request
+    private array $cache = [
+        'user_roles' => [],
+        'user_permissions' => [],
+        'role_permissions' => []
+    ];
+
     public function __construct(
         PermissionRepository $permissionRepository,
         UserPermissionRepository $userPermissionRepository,
@@ -196,6 +203,12 @@ class PermissionAssignmentService
      */
     public function getUserDirectPermissions(string $userUuid, array $filters = []): array
     {
+        // Create cache key based on user UUID and filters
+        $cacheKey = $userUuid . '_' . md5(serialize($filters));
+
+        if (isset($this->cache['user_permissions'][$cacheKey])) {
+            return $this->cache['user_permissions'][$cacheKey];
+        }
         $userPermissions = $this->userPermissionRepository->findByUser($userUuid, $filters);
 
         if (empty($userPermissions)) {
@@ -234,6 +247,9 @@ class PermissionAssignmentService
                 ];
             }
         }
+
+        // Cache the result
+        $this->cache['user_permissions'][$cacheKey] = $permissions;
 
         return $permissions;
     }
@@ -488,8 +504,14 @@ class PermissionAssignmentService
     {
         $rolePermissions = [];
 
-        // Get user's active roles
-        $userRoles = $this->userRoleRepository->getUserRoles($userUuid, $scope);
+        // Get user's active roles (with caching)
+        $cacheKey = $userUuid . '_' . md5(serialize($scope));
+        if (isset($this->cache['user_roles'][$cacheKey])) {
+            $userRoles = $this->cache['user_roles'][$cacheKey];
+        } else {
+            $userRoles = $this->userRoleRepository->getUserRoles($userUuid, $scope);
+            $this->cache['user_roles'][$cacheKey] = $userRoles;
+        }
 
         foreach ($userRoles as $userRole) {
             $role = $this->roleRepository->findRoleByUuid($userRole->getRoleUuid());
@@ -563,15 +585,37 @@ class PermissionAssignmentService
      */
     private function getRolePermissions(string $roleUuid): array
     {
+        // Check cache first
+        if (isset($this->cache['role_permissions'][$roleUuid])) {
+            return $this->cache['role_permissions'][$roleUuid];
+        }
         $rolePermissions = $this->rolePermissionRepository->getRolePermissions(
             $roleUuid,
             ['active_only' => true]
         );
 
+        if (empty($rolePermissions)) {
+            return [];
+        }
+
+        // Extract all permission UUIDs and fetch permissions in bulk
+        $permissionUuids = array_map(
+            fn($rolePermission) => $rolePermission->getPermissionUuid(),
+            $rolePermissions
+        );
+
+        $bulkPermissions = $this->permissionRepository->findByUuids(array_unique($permissionUuids));
+        // Create a map for quick lookup
+        $permissionMap = [];
+        foreach ($bulkPermissions as $permission) {
+            $permissionMap[$permission->getUuid()] = $permission;
+        }
+
         $permissions = [];
         foreach ($rolePermissions as $rolePermission) {
-            $permission = $this->permissionRepository->findPermissionByUuid($rolePermission->getPermissionUuid());
-            if ($permission) {
+            $permissionUuid = $rolePermission->getPermissionUuid();
+            if (isset($permissionMap[$permissionUuid])) {
+                $permission = $permissionMap[$permissionUuid];
                 $permissions[] = [
                     'permission_slug' => $permission->getSlug(),
                     'permission_name' => $permission->getName(),
@@ -580,6 +624,71 @@ class PermissionAssignmentService
             }
         }
 
+        // Cache the result
+        $this->cache['role_permissions'][$roleUuid] = $permissions;
+
         return $permissions;
+    }
+
+    /**
+     * Get user's effective permissions using pre-fetched data to avoid duplicate queries
+     *
+     * @param string $userUuid
+     * @param array $directPermissions Already fetched direct permissions
+     * @param array $roles Already fetched user roles
+     * @param array $scope Optional scope filter
+     * @return array
+     */
+    public function getUserEffectivePermissionsOptimized(
+        string $userUuid,
+        array $directPermissions = [],
+        array $roles = [],
+        array $scope = []
+    ): array {
+        $effectivePermissions = [];
+
+        // Process direct permissions
+        foreach ($directPermissions as $permData) {
+            $slug = $permData['permission']->getSlug();
+            $resourceFilter = $permData['resource_filter'];
+            $resource = $resourceFilter['resource'] ?? '*';
+
+            if (!isset($effectivePermissions[$resource])) {
+                $effectivePermissions[$resource] = [];
+            }
+
+            $effectivePermissions[$resource][] = [
+                'permission' => $slug,
+                'source' => 'direct',
+                'expires_at' => $permData['expires_at'],
+                'constraints' => $permData['constraints']
+            ];
+        }
+
+        // Process role-based permissions using pre-fetched roles
+        foreach ($roles as $roleData) {
+            $role = $roleData['role'] ?? null;
+            if (!$role || !isset($role->uuid)) {
+                continue;
+            }
+
+            $rolePermissions = $this->getRolePermissions($role->uuid);
+            foreach ($rolePermissions as $permission) {
+                $resource = $permission['resource_filter'] ?? '*';
+
+                if (!isset($effectivePermissions[$resource])) {
+                    $effectivePermissions[$resource] = [];
+                }
+
+                $effectivePermissions[$resource][] = [
+                    'permission' => $permission['permission_slug'],
+                    'source' => 'role',
+                    'role' => $role->name ?? 'Unknown',
+                    'expires_at' => null // Role permissions don't expire individually
+                ];
+            }
+        }
+
+        return $effectivePermissions;
     }
 }

@@ -27,6 +27,19 @@ Router::get('/swagger.json', function () {
     ], 404);
 });
 
+// Serve logo_full.svg at docs level for documentation compatibility
+Router::get('/logo_full.svg', function () {
+    $logoPath = dirname(__DIR__) . '/docs/logo_full.svg';
+    if (file_exists($logoPath)) {
+        $content = file_get_contents($logoPath);
+        return new \Symfony\Component\HttpFoundation\Response($content, 200, [
+            'Content-Type' => 'image/svg+xml',
+            'Cache-Control' => 'public, max-age=3600'
+        ]);
+    }
+    return new \Symfony\Component\HttpFoundation\Response('Logo not found', 404);
+});
+
 // Serve static documentation files
 Router::static('/docs', dirname(__DIR__) . '/docs', false, [
     'indexFile' => 'index.html',

@@ -242,7 +242,7 @@ class DocGenerator
             ],
             'servers' => [
                 [
-                    'url' => rtrim(config('app.paths.api_base_url'), '/') . '/' . config('app.api_version'),
+                    'url' => rtrim(config('app.paths.api_base_url'), '/'),
                     'description' => 'API Server ' . config('app.api_version')
                 ]
             ],

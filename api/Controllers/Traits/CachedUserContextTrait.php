@@ -50,7 +50,8 @@ trait CachedUserContextTrait
     protected function getUserContext(): RequestUserContext
     {
         if ($this->cachedUserContext === null) {
-            $this->cachedUserContext = RequestUserContext::getInstance()->initialize();
+            $this->cachedUserContext = RequestUserContext::getInstance();
+            // Don't call initialize() here - it should already be initialized in BaseController
         }
 
         return $this->cachedUserContext;

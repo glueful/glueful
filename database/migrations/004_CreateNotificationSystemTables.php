@@ -1,8 +1,9 @@
 <?php
-declare(strict_types=1);
+
+namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * Notification System Tables Migration
@@ -44,73 +45,77 @@ class CreateNotificationSystemTables implements MigrationInterface
      * - notification_preferences: User channel preferences
      * - notification_templates: Templates for different channels
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Notifications Table
-        $schema->createTable('notifications', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'type' => 'VARCHAR(100) NOT NULL',
-            'subject' => 'VARCHAR(255) NOT NULL',
-            'data' => 'JSON NULL',
-            'priority' => "VARCHAR(20) DEFAULT 'normal'",
-            'notifiable_type' => 'VARCHAR(100) NOT NULL',
-            'notifiable_id' => 'VARCHAR(255) NOT NULL',
-            'read_at' => 'TIMESTAMP NULL DEFAULT NULL',
-            'scheduled_at' => 'TIMESTAMP NULL DEFAULT NULL',
-            'sent_at' => 'TIMESTAMP NULL DEFAULT NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notifications'],
-            ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notifications'],
-            ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notifications'],
-            ['type' => 'INDEX', 'column' => 'type', 'table' => 'notifications'],
-            ['type' => 'INDEX', 'column' => 'read_at', 'table' => 'notifications'],
-            ['type' => 'INDEX', 'column' => 'scheduled_at', 'table' => 'notifications']
-        ]);
+        $schema->createTable('notifications', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('type', 100);
+            $table->string('subject', 255);
+            $table->json('data')->nullable();
+            $table->string('priority', 20)->default('normal');
+            $table->string('notifiable_type', 100);
+            $table->string('notifiable_id', 255);
+            $table->timestamp('read_at')->nullable();
+            $table->timestamp('scheduled_at')->nullable();
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('notifiable_type');
+            $table->index('notifiable_id');
+            $table->index('type');
+            $table->index('read_at');
+            $table->index('scheduled_at');
+        });
 
         // Create Notification Preferences Table
-        $schema->createTable('notification_preferences', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'notifiable_type' => 'VARCHAR(100) NOT NULL',
-            'notifiable_id' => 'VARCHAR(255) NOT NULL',
-            'notification_type' => 'VARCHAR(100) NOT NULL',
-            'channels' => 'JSON NULL',
-            'enabled' => 'BOOLEAN DEFAULT 1',
-            'settings' => 'JSON NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notification_preferences'],
-            ['type' => 'INDEX', 'column' => 'notifiable_type', 'table' => 'notification_preferences'],
-            ['type' => 'INDEX', 'column' => 'notifiable_id', 'table' => 'notification_preferences'],
-            ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_preferences'],
-            ['type' => 'UNIQUE', 'column' => ['notifiable_type', 'notifiable_id', 'notification_type'],
-             'name' => 'unique_notification_pref', 'table' => 'notification_preferences']
-        ]);
+        $schema->createTable('notification_preferences', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('notifiable_type', 100);
+            $table->string('notifiable_id', 255);
+            $table->string('notification_type', 100);
+            $table->json('channels')->nullable();
+            $table->boolean('enabled')->default(true);
+            $table->json('settings')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('notifiable_type');
+            $table->index('notifiable_id');
+            $table->index('notification_type');
+            $table->unique(
+                ['notifiable_type', 'notifiable_id', 'notification_type'],
+                'unique_notification_pref'
+            );
+        });
 
         // Create Notification Templates Table
-        $schema->createTable('notification_templates', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(255) NOT NULL',
-            'notification_type' => 'VARCHAR(100) NOT NULL',
-            'channel' => 'VARCHAR(100) NOT NULL',
-            'content' => 'TEXT NOT NULL',
-            'parameters' => 'JSON NULL',
-            'created_at' => 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid', 'table' => 'notification_templates'],
-            ['type' => 'INDEX', 'column' => 'notification_type', 'table' => 'notification_templates'],
-            ['type' => 'INDEX', 'column' => 'channel', 'table' => 'notification_templates'],
-            ['type' => 'UNIQUE', 'column' => ['notification_type', 'channel', 'name'],
-             'name' => 'unique_notification_template', 'table' => 'notification_templates']
-        ]);
+        $schema->createTable('notification_templates', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('name', 255);
+            $table->string('notification_type', 100);
+            $table->string('channel', 100);
+            $table->text('content');
+            $table->json('parameters')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('notification_type');
+            $table->index('channel');
+            $table->unique(['notification_type', 'channel', 'name'], 'unique_notification_template');
+        });
     }
 
     /**
@@ -121,13 +126,13 @@ class CreateNotificationSystemTables implements MigrationInterface
      * - Preferences next
      * - Notifications last
      *
-     * @param SchemaManager $schema Database schema manager
+     * @param SchemaBuilderInterface $schema Database schema manager
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('notification_templates');
-        $schema->dropTable('notification_preferences');
-        $schema->dropTable('notifications');
+        $schema->dropTableIfExists('notification_templates');
+        $schema->dropTableIfExists('notification_preferences');
+        $schema->dropTableIfExists('notifications');
     }
 
     /**

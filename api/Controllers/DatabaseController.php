@@ -6,8 +6,8 @@ namespace Glueful\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Helpers\RequestHelper;
-use Glueful\Database\Schema\SchemaManager;
-use Glueful\Database\{QueryBuilder};
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
+use Glueful\Database\Connection;
 
 /**
  * Database Controller
@@ -25,8 +25,8 @@ use Glueful\Database\{QueryBuilder};
  */
 class DatabaseController extends BaseController
 {
-    private SchemaManager $schemaManager;
-    private QueryBuilder $queryBuilder;
+    private SchemaBuilderInterface $schemaManager;
+    private Connection $db;
 
     /**
      * Initialize Database Controller
@@ -38,9 +38,8 @@ class DatabaseController extends BaseController
     ) {
         parent::__construct($repositoryFactory, $authManager, $request);
 
-        $connection = $this->getConnection();
-        $this->schemaManager = $connection->getSchemaManager();
-        $this->queryBuilder = $this->getQueryBuilder();
+        $this->db = $this->getConnection();
+        $this->schemaManager = $this->db->getSchemaBuilder();
     }
 
     /**
@@ -65,8 +64,8 @@ class DatabaseController extends BaseController
             $tableName = $data['table_name'];
             $columnsData = $data['columns'];
 
-            // Convert columns array to the format expected by SchemaManager
-            $columns = [];
+        // Convert columns to the format expected by old SchemaManager but use new SchemaBuilder
+        $columns = [];
         foreach ($columnsData as $column) {
             if (!isset($column['name']) || !isset($column['type'])) {
                 continue;
@@ -76,7 +75,7 @@ class DatabaseController extends BaseController
             $columnType = $column['type'];
             $options = $column['options'] ?? [];
 
-            // Build column definition using the type directly from frontend
+            // Build column definition using the type directly from frontend (like old SchemaManager)
             $columnDef = $columnType;
 
             // Add PRIMARY KEY if specified
@@ -102,6 +101,7 @@ class DatabaseController extends BaseController
                     $columnDef .= $options['nullable'] ? " NULL" : " NOT NULL";
                 }
             }
+
             // Add DEFAULT if provided
             if (isset($options['default']) && $options['default'] !== null && $options['default'] !== '') {
                 // Handle special DEFAULT value CURRENT_TIMESTAMP
@@ -118,10 +118,16 @@ class DatabaseController extends BaseController
             $columns[$columnName] = $columnDef;
         }
 
-            // Build the schema operation with proper method chaining
-            $schemaManager = $this->schemaManager->createTable($tableName, $columns);
+        // Build and execute SQL like the old SchemaManager did, but use new SchemaBuilder's connection
+        $columnDefinitions = [];
+        foreach ($columns as $name => $definition) {
+            $columnDefinitions[] = "`$name` $definition";
+        }
 
-            // Add indexes if provided
+        $sql = "CREATE TABLE `$tableName` (" . implode(", ", $columnDefinitions) . ") ENGINE=InnoDB";
+        $this->schemaManager->getConnection()->getPDO()->exec($sql);
+
+        // Add indexes if provided
         if (isset($data['indexes']) && !empty($data['indexes'])) {
             // Make sure each index has the table property set
             $indexes = array_map(function ($index) use ($tableName) {
@@ -131,10 +137,10 @@ class DatabaseController extends BaseController
                 return $index;
             }, $data['indexes']);
 
-            $schemaManager = $schemaManager->addIndex($indexes);
+            $this->schemaManager->addIndex($indexes);
         }
 
-            // Add foreign keys if provided
+        // Add foreign keys if provided
         if (isset($data['foreign_keys']) && !empty($data['foreign_keys'])) {
             // Make sure each foreign key has the table property set
             $foreignKeys = array_map(function ($fk) use ($tableName) {
@@ -144,7 +150,7 @@ class DatabaseController extends BaseController
                 return $fk;
             }, $data['foreign_keys']);
 
-            $schemaManager->addForeignKey($foreignKeys);
+            $this->schemaManager->addForeignKey($foreignKeys);
         }
 
 
@@ -271,15 +277,15 @@ class DatabaseController extends BaseController
             $columns = $this->schemaManager->getTableColumns($tableName);
 
             // Get indexes using raw query
-            $indexes = $this->queryBuilder->rawQuery(
-                "SHOW INDEX FROM `{$tableName}`"
-            );
+            $pdo = $this->db->getPDO();
+            $stmt = $pdo->prepare("SHOW INDEX FROM `{$tableName}`");
+            $stmt->execute();
+            $indexes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
             // Get table status information (engine, creation time, etc.)
-            $tableStatus = $this->queryBuilder->rawQuery(
-                "SHOW TABLE STATUS WHERE Name = ?",
-                [$tableName]
-            );
+            $stmt = $pdo->prepare("SHOW TABLE STATUS WHERE Name = ?");
+            $stmt->execute([$tableName]);
+            $tableStatus = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
             $status = !empty($tableStatus) ? $tableStatus[0] : [];
 
@@ -373,15 +379,19 @@ class DatabaseController extends BaseController
             $searchFields = $this->detectSearchableColumns($columns);
         }
 
-            // Build the query using QueryBuilder
-            $query = $this->queryBuilder->select($table['name'], ['*']);
+            // Build the query using fluent interface
+            $query = $this->db->table($table['name'])->select(['*']);
 
             // Apply search if provided
         if ($searchTerm && !empty($searchFields)) {
             // Validate search fields exist in table
             $validSearchFields = $this->validateSearchFields($searchFields, $columns);
             if (!empty($validSearchFields)) {
-                $query->search($validSearchFields, $searchTerm);
+                $query = $query->where(function ($q) use ($validSearchFields, $searchTerm) {
+                    foreach ($validSearchFields as $field) {
+                        $q->orWhere($field, 'LIKE', '%' . $searchTerm . '%');
+                    }
+                });
             }
         }
 
@@ -390,12 +400,17 @@ class DatabaseController extends BaseController
             // Validate filter fields exist in table
             $validFilters = $this->validateFilters($filters, $columns);
             if (!empty($validFilters)) {
-                $query->advancedWhere($validFilters);
+                foreach ($validFilters as $filter) {
+                    $column = $filter['column'];
+                    $operator = $filter['operator'] ?? '=';
+                    $value = $filter['value'];
+                    $query = $query->where($column, $operator, $value);
+                }
             }
         }
 
             // Apply sorting
-            $query->orderBy([$orderBy => $orderDir]);
+            $query = $query->orderBy($orderBy, $orderDir);
 
             // Execute query with pagination
             $results = $query->paginate($page, $perPage);
@@ -1030,7 +1045,10 @@ class DatabaseController extends BaseController
         }
 
         // Execute the query and get results
-        $results = $this->queryBuilder->rawQuery($sql, $params);
+        $pdo = $this->db->getPDO();
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
         // For write operations, get the affected rows count
         $isReadOperation = in_array($firstWord, ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN']);
@@ -1361,7 +1379,7 @@ class DatabaseController extends BaseController
         $skipFirstRow = $options['skipFirstRow'] ?? false;
 
         // Check if table exists
-        if (!$this->schemaManager->tableExists($tableName)) {
+        if (!$this->schemaManager->hasTable($tableName)) {
             return Response::notFound("Table '{$tableName}' does not exist");
         }
 
@@ -1405,30 +1423,30 @@ class DatabaseController extends BaseController
         $totalBatches = count($batches);
 
         foreach ($batches as $batchIndex => $batch) {
-            // Start transaction for this batch
-            $this->queryBuilder->beginTransaction();
-
             $batchImported = 0;
 
-            foreach ($batch as $globalIndex => $row) {
-                $filteredRow = $this->validateAndFilterRow($row, $columnNames);
-                if ($filteredRow === null) {
-                    $failed++;
-                    continue;
+            // Use transaction for this batch
+            $this->db->query()->transaction(
+                function () use ($batch, $columnNames, $updateExisting, $tableName, &$batchImported, &$failed) {
+                    foreach ($batch as $globalIndex => $row) {
+                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
+                        if ($filteredRow === null) {
+                            $failed++;
+                            continue;
+                        }
+
+                        // Handle update existing records
+                        if ($updateExisting && isset($filteredRow['id'])) {
+                            $this->upsertRecord($tableName, $filteredRow);
+                        } else {
+                            $this->db->table($tableName)->insert($filteredRow);
+                        }
+
+                        $batchImported++;
+                    }
                 }
+            );
 
-                // Handle update existing records
-                if ($updateExisting && isset($filteredRow['id'])) {
-                    $this->upsertRecord($tableName, $filteredRow);
-                } else {
-                    $this->queryBuilder->insert($tableName, $filteredRow);
-                }
-
-                $batchImported++;
-            }
-
-            // Commit transaction for this batch
-            $this->queryBuilder->commit();
             $imported += $batchImported;
         }
 
@@ -1475,36 +1493,37 @@ class DatabaseController extends BaseController
         $totalRecords = count($importData);
 
         foreach ($batches as $batch) {
-            $this->queryBuilder->beginTransaction();
+            // Use transaction for this batch
+            $this->db->query()->transaction(
+                function () use ($batch, $columnNames, $updateExisting, $tableName, &$imported, &$failed) {
+                // Build bulk insert for better performance
+                    $validRows = [];
+                    foreach ($batch as $row) {
+                        $filteredRow = $this->validateAndFilterRow($row, $columnNames);
 
-            // Build bulk insert for better performance
-            $validRows = [];
-            foreach ($batch as $row) {
-                $filteredRow = $this->validateAndFilterRow($row, $columnNames);
-
-                if ($filteredRow !== null) {
-                    if ($updateExisting && isset($filteredRow['id'])) {
-                        // Handle updates individually for now
-                        $this->upsertRecord($tableName, $filteredRow);
-                        $imported++;
-                    } else {
-                        $validRows[] = $filteredRow;
+                        if ($filteredRow !== null) {
+                            if ($updateExisting && isset($filteredRow['id'])) {
+                                // Handle updates individually for now
+                                $this->upsertRecord($tableName, $filteredRow);
+                                $imported++;
+                            } else {
+                                $validRows[] = $filteredRow;
+                            }
+                        } else {
+                            $failed++;
+                        }
                     }
-                } else {
-                    $failed++;
+
+                // Bulk insert valid rows
+                    if (!empty($validRows)) {
+                        $this->bulkInsert($tableName, $validRows);
+                        $imported += count($validRows);
+                    }
                 }
-            }
-
-            // Bulk insert valid rows
-            if (!empty($validRows)) {
-                $this->bulkInsert($tableName, $validRows);
-                $imported += count($validRows);
-            }
-
-            $this->queryBuilder->commit();
+            );
 
             // Memory cleanup
-            unset($batch, $validRows);
+            unset($batch);
             if (function_exists('gc_collect_cycles')) {
                 gc_collect_cycles();
             }
@@ -1566,7 +1585,7 @@ class DatabaseController extends BaseController
             return $column !== 'id';
         });
 
-        $this->queryBuilder->upsert($tableName, [$data], $updateColumns);
+        $this->db->table($tableName)->upsert([$data], $updateColumns);
     }
 
     /**
@@ -1582,7 +1601,7 @@ class DatabaseController extends BaseController
             return;
         }
 
-        $this->queryBuilder->insertBatch($tableName, $rows);
+        $this->db->table($tableName)->insertBatch($rows);
     }
 
     /**
@@ -1646,7 +1665,7 @@ class DatabaseController extends BaseController
         }
 
         // Check if table exists
-        if (!$this->schemaManager->tableExists($tableName)) {
+        if (!$this->schemaManager->hasTable($tableName)) {
             return Response::notFound("Table '{$tableName}' does not exist");
         }
 
@@ -1664,18 +1683,19 @@ class DatabaseController extends BaseController
         }
 
         // Perform bulk delete/update using transaction
-        $this->queryBuilder->beginTransaction();
-
         $placeholders = implode(', ', array_fill(0, count($ids), '?'));
 
         if ($softDelete) {
             // Perform soft delete by updating status column
             $sql = $this->buildBulkSoftDeleteQuery($tableName, $statusColumn, $placeholders);
             $values = array_merge([$deletedValue], $ids);
-            $stmt = $this->queryBuilder->executeQuery($sql, $values);
-            $affectedCount = $stmt->rowCount();
 
-            $this->queryBuilder->commit();
+            $affectedCount = $this->db->query()->transaction(function () use ($sql, $values) {
+                $pdo = $this->db->getPDO();
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($values);
+                return $stmt->rowCount();
+            });
 
             return Response::success([
             'soft_deleted' => $affectedCount,
@@ -1686,10 +1706,13 @@ class DatabaseController extends BaseController
         } else {
             // Perform hard delete
             $sql = $this->buildBulkDeleteQuery($tableName, $placeholders);
-            $stmt = $this->queryBuilder->executeQuery($sql, $ids);
-            $deletedCount = $stmt->rowCount();
 
-            $this->queryBuilder->commit();
+            $deletedCount = $this->db->query()->transaction(function () use ($sql, $ids) {
+                $pdo = $this->db->getPDO();
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($ids);
+                return $stmt->rowCount();
+            });
 
             return Response::success([
             'deleted' => $deletedCount,
@@ -1762,7 +1785,7 @@ class DatabaseController extends BaseController
         }
 
         // Check if table exists
-        if (!$this->schemaManager->tableExists($tableName)) {
+        if (!$this->schemaManager->hasTable($tableName)) {
             return Response::notFound("Table '{$tableName}' does not exist");
         }
 
@@ -1786,8 +1809,6 @@ class DatabaseController extends BaseController
         }
 
         // Perform bulk update using transaction
-        $this->queryBuilder->beginTransaction();
-
         // Build SET clause and WHERE IN clause using database-agnostic identifiers
         $setClauses = [];
         $values = [];
@@ -1802,10 +1823,12 @@ class DatabaseController extends BaseController
         // Combine values and ids for the query
         $allValues = array_merge($values, $ids);
 
-        $stmt = $this->queryBuilder->executeQuery($sql, $allValues);
-        $updatedCount = $stmt->rowCount();
-
-        $this->queryBuilder->commit();
+        $updatedCount = $this->db->query()->transaction(function () use ($sql, $allValues) {
+            $pdo = $this->db->getPDO();
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($allValues);
+            return $stmt->rowCount();
+        });
 
         return Response::success([
         'updated' => $updatedCount,
@@ -1929,12 +1952,12 @@ class DatabaseController extends BaseController
         $changes = $data['changes'];
 
         // Validate table exists
-        if (!$this->schemaManager->tableExists($tableName)) {
+        if (!$this->schemaManager->hasTable($tableName)) {
             return Response::notFound("Table '{$tableName}' does not exist");
         }
 
         // Get current schema for comparison
-        $currentSchema = $this->schemaManager->getTableSchema($tableName);
+        $currentSchema = $this->schemaManager->getTableColumns($tableName);
 
         // Generate preview of changes
         $preview = $this->schemaManager->generateChangePreview($tableName, $changes);
@@ -1973,7 +1996,7 @@ class DatabaseController extends BaseController
         }
 
         // Validate table exists
-        if (!$this->schemaManager->tableExists($tableName)) {
+        if (!$this->schemaManager->hasTable($tableName)) {
             return Response::notFound("Table '{$tableName}' does not exist");
         }
 
@@ -2171,26 +2194,24 @@ class DatabaseController extends BaseController
      */
     private function getSchemaAuditLogs(string $tableName, int $limit, int $offset): array
     {
-        // Use database-agnostic approach - fetch schema-related logs and filter in PHP
-        // This avoids database-specific JSON functions like JSON_EXTRACT (MySQL) or jsonb operators (PostgreSQL)
-        $sql = "SELECT * FROM audit_logs 
-                WHERE category = ? 
-                AND (action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ?)
-                ORDER BY created_at DESC 
-                LIMIT ? OFFSET ?";
+        // Use QueryBuilder for cleaner, more maintainable code
+        $query = $this->db->table('audit_logs')
+            ->where('category', '=', 'admin')
+            ->where('entity_type', '=', 'schema')
+            ->where(function ($q) {
+                $q->where('action', 'LIKE', 'schema_%')
+                  ->orWhere('action', 'LIKE', '%_column')
+                  ->orWhere('action', 'LIKE', '%_index')
+                  ->orWhere('action', 'LIKE', '%_foreign_key')
+                  ->orWhere('action', '=', 'create_table')
+                  ->orWhere('action', '=', 'drop_table')
+                  ->orWhere('action', '=', 'alter_table');
+            })
+            ->orderBy('created_at', 'DESC')
+            ->limit($limit)
+            ->offset($offset);
 
-        $params = [
-        'admin',
-        'schema_%',
-        '%_column',
-        '%_index',
-        '%_foreign_key',
-        $limit,
-        $offset
-        ];
-
-        $stmt = $this->queryBuilder->executeQuery($sql, $params);
-        $allLogs = $stmt->fetchAll();
+        $allLogs = $query->get();
 
         // Filter logs by table name using PHP JSON parsing (database-agnostic)
         $filteredLogs = [];
@@ -2199,10 +2220,30 @@ class DatabaseController extends BaseController
                 $context = json_decode($log['context'], true);
                 if (
                     is_array($context) &&
-                    isset($context['table']) &&
-                    $context['table'] === $tableName
+                    (isset($context['table']) && $context['table'] === $tableName ||
+                     isset($context['table_name']) && $context['table_name'] === $tableName)
                 ) {
-                    $filteredLogs[] = $log;
+                    // Include all relevant fields from the enhanced audit log structure
+                    $filteredLogs[] = [
+                        'id' => $log['id'],
+                        'uuid' => $log['uuid'],
+                        'user_id' => $log['user_id'],
+                        'action' => $log['action'],
+                        'category' => $log['category'],
+                        'severity' => $log['severity'],
+                        'status' => $log['status'],
+                        'old_values' => json_decode($log['old_values'] ?? '{}', true),
+                        'new_values' => json_decode($log['new_values'] ?? '{}', true),
+                        'context' => $context,
+                        'metadata' => json_decode($log['metadata'] ?? '{}', true),
+                        'session_id' => $log['session_id'],
+                        'request_id' => $log['request_id'],
+                        'parent_audit_id' => $log['parent_audit_id'],
+                        'source' => $log['source'],
+                        'duration_ms' => $log['duration_ms'],
+                        'ip_address' => $log['ip_address'],
+                        'created_at' => $log['created_at']
+                    ];
                 }
             }
         }
@@ -2218,16 +2259,15 @@ class DatabaseController extends BaseController
      */
     private function getMigrationHistory(string $tableName): array
     {
-        // Use QueryBuilder's fluent interface instead of raw SQL
+        // Use fluent interface instead of raw SQL
         // Build OR condition using whereRaw - LIKE operator is database agnostic
-        return $this->queryBuilder
-            ->withPurpose("Retrieve migration history for table: {$tableName}")
-            ->select('migrations', ['*'])
+        return $this->db->table('migrations')
+            ->select(['*'])
             ->whereRaw('(migration LIKE ? OR migration LIKE ?)', [
                 "%{$tableName}%",
                 "%create_{$tableName}%"
             ])
-            ->orderBy(['applied_at' => 'DESC'])
+            ->orderBy('applied_at', 'DESC')
             ->get();
     }
 
@@ -2239,11 +2279,10 @@ class DatabaseController extends BaseController
      */
     private function getAuditLogById(string $changeId): ?array
     {
-        // Use QueryBuilder's fluent interface instead of raw SQL
-        return $this->queryBuilder
-            ->withPurpose("Retrieve audit log entry by ID: {$changeId}")
-            ->select('audit_logs', ['*'])
-            ->where(['id' => $changeId])
+        // Use fluent interface instead of raw SQL
+        return $this->db->table('audit_logs')
+            ->select(['*'])
+            ->where('id', $changeId)
             ->first(); // Use first() instead of limit(1) + get() + array access
     }
 
@@ -2429,9 +2468,10 @@ class DatabaseController extends BaseController
                 $placeholders = implode(',', array_fill(0, count($group['values']), '?'));
                 $referencedColumn = $group['columns'][0]['referenced_column'];
 
-                $sql = "SELECT * FROM `{$referencedTable}` WHERE `{$referencedColumn}` IN ({$placeholders})";
-                $stmt = $this->queryBuilder->executeQuery($sql, $group['values']);
-                $referencedRecords = $stmt->fetchAll();
+                $referencedRecords = $this->db->table($referencedTable)
+                    ->select(['*'])
+                    ->whereIn($referencedColumn, $group['values'])
+                    ->get();
 
                 // Generate smart labels for each record
                 foreach ($referencedRecords as $referencedRecord) {

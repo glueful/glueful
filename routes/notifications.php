@@ -47,12 +47,12 @@ Router::group('/notifications', function () use ($container) {
     });
 
     /**
-     * @route GET /notifications/{id}
+     * @route GET /notifications/{uuid}
      * @summary Get Notification
      * @description Retrieve a single notification by its UUID
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification UUID"
+     * @param uuid path string true "Notification UUID"
      * @response 200 application/json "Notification retrieved successfully" {
      *   success:boolean="true",
      *   message:string="Success message",
@@ -68,18 +68,18 @@ Router::group('/notifications', function () use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::get('/{id}', function (array $params) use ($container) {
+    Router::get('/{uuid}', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->getNotification($params);
     });
 
     /**
-     * @route POST /notifications/{id}/read
+     * @route POST /notifications/{uuid}/read
      * @summary Mark Notification as Read
      * @description Mark a specific notification as read
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification UUID"
+     * @param uuid path string true "Notification UUID"
      * @response 200 application/json "Notification marked as read" {
      *   success:boolean="true",
      *   message:string="Success message",
@@ -92,18 +92,18 @@ Router::group('/notifications', function () use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/read', function (array $params) use ($container) {
+    Router::post('/{uuid}/read', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsRead($params);
     });
 
     /**
-     * @route POST /notifications/{id}/unread
+     * @route POST /notifications/{uuid}/unread
      * @summary Mark Notification as Unread
      * @description Mark a specific notification as unread
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification UUID"
+     * @param uuid path string true "Notification UUID"
      * @response 200 application/json "Notification marked as unread" {
      *   success:boolean="true",
      *   message:string="Success message",
@@ -116,7 +116,7 @@ Router::group('/notifications', function () use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::post('/{id}/unread', function (array $params) use ($container) {
+    Router::post('/{uuid}/unread', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->markAsUnread($params);
     });
@@ -205,12 +205,12 @@ Router::group('/notifications', function () use ($container) {
     });
 
     /**
-     * @route DELETE /notifications/{id}
+     * @route DELETE /notifications/{uuid}
      * @summary Delete Notification
      * @description Delete a specific notification by UUID
      * @tag Notifications
      * @requiresAuth true
-     * @param id path string true "Notification UUID"
+     * @param uuid path string true "Notification UUID"
      * @response 200 application/json "Notification deleted successfully" {
      *   success:boolean="true",
      *   message:string="Success message",
@@ -221,7 +221,7 @@ Router::group('/notifications', function () use ($container) {
      * @response 404 "Notification not found"
      * @response 401 "Unauthorized access"
      */
-    Router::delete('/{id}', function (array $params) use ($container) {
+    Router::delete('/{uuid}', function (array $params) use ($container) {
         $notificationsController = $container->get(NotificationsController::class);
         return $notificationsController->deleteNotification($params);
     });

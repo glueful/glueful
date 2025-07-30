@@ -65,7 +65,8 @@ class RBACServiceProvider extends BaseExtensionServiceProvider
             \Glueful\Extensions\RBAC\Controllers\PermissionController::class,
             [
                 $this->ref('rbac.permission_service'),
-                $this->ref('rbac.repository.permission')
+                $this->ref('rbac.repository.permission'),
+                $this->ref('rbac.repository.user_permission')
             ]
         );
 

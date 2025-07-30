@@ -394,7 +394,7 @@ Or modify the configuration in `extensions/RBAC/src/config.php`.
 ## Requirements
 
 - PHP 8.2 or higher
-- Glueful Framework 0.27.0 or higher
+- Glueful Framework 0.29.0 or higher
 - MySQL, PostgreSQL, or SQLite database
 - Redis or Memcached (optional, for distributed caching)
 

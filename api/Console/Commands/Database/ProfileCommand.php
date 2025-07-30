@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Glueful\Console\Commands\Database;
 
 use Glueful\Database\Connection;
-use Glueful\Database\QueryBuilder;
 use Glueful\Database\Tools\QueryProfilerService;
 use Glueful\Database\Tools\ExecutionPlanAnalyzer;
 use Glueful\Database\Tools\QueryPatternRecognizer;
@@ -37,7 +36,6 @@ class ProfileCommand extends BaseCommand
     private QueryProfilerService $profilerService;
     private ExecutionPlanAnalyzer $planAnalyzer;
     private QueryPatternRecognizer $patternRecognizer;
-    private QueryBuilder $queryBuilder;
 
     public function __construct()
     {
@@ -157,7 +155,6 @@ class ProfileCommand extends BaseCommand
         $this->profilerService = new QueryProfilerService();
         $this->planAnalyzer = new ExecutionPlanAnalyzer($this->connection);
         $this->patternRecognizer = new QueryPatternRecognizer();
-        $this->queryBuilder = new QueryBuilder($this->connection->getPDO(), $this->connection->getDriver());
     }
 
     private function getQuery(InputInterface $input): string
@@ -225,7 +222,10 @@ class ProfileCommand extends BaseCommand
 
         for ($i = 0; $i < $benchmark; $i++) {
             $result = $this->profilerService->profile($query, $params, function () use ($query, $params) {
-                return $this->queryBuilder->select($query, $params);
+                // Execute raw query directly using Connection
+                $stmt = $this->connection->getPDO()->prepare($query);
+                $stmt->execute($params);
+                return $stmt->fetchAll(\PDO::FETCH_ASSOC);
             });
 
             $recentProfiles = $this->profilerService->getRecentProfiles(1);

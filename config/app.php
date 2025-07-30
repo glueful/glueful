@@ -50,7 +50,7 @@ return [
         'cache' => dirname(__DIR__) . '/storage/cache/',
         'backups' => dirname(__DIR__) . '/storage/backups/',
         'storage' => dirname(__DIR__) . '/storage/',
-        'json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
+        'database_json_definitions' => dirname(__DIR__) . '/api/api-json-definitions/',
         'project_extensions' => dirname(__DIR__) . '/extensions/',
         'archives' => dirname(__DIR__) . '/storage/archives/',
         'migrations' => dirname(__DIR__) . '/database/migrations',

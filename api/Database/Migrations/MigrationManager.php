@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
-use Glueful\Database\QueryBuilder;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 use Glueful\Database\Connection;
 use Glueful\Extensions\ExtensionManager;
 use Glueful\Exceptions\DatabaseException;
@@ -44,11 +43,11 @@ use Glueful\Services\FileFinder;
  */
 class MigrationManager
 {
-    /** @var SchemaManager Database schema manager for table operations */
-    private SchemaManager $schema;
+    /** @var SchemaBuilderInterface Database schema builder for table operations */
+    private SchemaBuilderInterface $schema;
 
-    /** @var QueryBuilder Query builder for database operations */
-    private QueryBuilder $db;
+    /** @var Connection Database connection for fluent query operations */
+    private Connection $db;
 
     /** @var string Directory containing migration files */
     private string $migrationsPath;
@@ -78,8 +77,8 @@ class MigrationManager
         ?FileFinder $fileFinder = null
     ) {
         $connection = new Connection();
-        $this->db = new QueryBuilder($connection->getPDO(), $connection->getDriver());
-        $this->schema = $connection->getSchemaManager();
+        $this->db = $connection;
+        $this->schema = $connection->getSchemaBuilder();
 
         $this->migrationsPath = $migrationsPath ?? config(('app.paths.migrations'));
         $this->extensionsManager = $extensionsManager ?? container()->get(ExtensionManager::class);
@@ -103,20 +102,24 @@ class MigrationManager
      */
     private function ensureVersionTable(): void
     {
-        $this->schema
-        ->createTable(self::VERSION_TABLE, [
-            'id' => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
-            'migration' => 'VARCHAR(255) NOT NULL',
-            'batch' => 'INTEGER NOT NULL',
-            'applied_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'checksum' => 'VARCHAR(64) NOT NULL',
-            'description' => 'TEXT',
-            'extension' => 'VARCHAR(100) DEFAULT NULL'
-        ])->addIndex([
-            'type' => 'UNIQUE',
-            'column' => 'migration',
-            'table' => self::VERSION_TABLE
-        ]);
+        if (!$this->schema->hasTable(self::VERSION_TABLE)) {
+            $table = $this->schema->table(self::VERSION_TABLE);
+
+            // Add columns
+            $table->id();
+            $table->string('migration', 255);
+            $table->integer('batch');
+            $table->timestamp('applied_at')->default('CURRENT_TIMESTAMP');
+            $table->string('checksum', 64);
+            $table->text('description')->nullable();
+            $table->string('extension', 100)->nullable();
+
+            // Add unique constraint
+            $table->unique('migration');
+
+            // Create the table
+            $table->create()->execute();
+        }
     }
 
     /**
@@ -171,8 +174,8 @@ class MigrationManager
     private function getAppliedMigrations(): array
     {
         $result = $this->db
-        ->select(self::VERSION_TABLE, ['migration'])
-        ->where([])
+        ->table(self::VERSION_TABLE)
+        ->select(['migration'])
         ->get();
 
         return array_column($result, 'migration');
@@ -189,23 +192,72 @@ class MigrationManager
     }
 
     /**
+     * Get both pending and applied migrations efficiently
+     *
+     * @return array{
+     *     pending: array<string>,
+     *     applied: array<string>
+     * } Migration status
+     */
+    public function getMigrationStatus(): array
+    {
+        // Get applied migrations once
+        $applied = $this->getAppliedMigrations();
+
+        // Get all migration files
+        $files = [];
+        $mainMigrations = $this->fileFinder->findMigrations($this->migrationsPath);
+        foreach ($mainMigrations as $file) {
+            $files[] = $file->getPathname();
+        }
+
+        // Get migrations from enabled extensions only
+        $enabledExtensions = $this->extensionsManager->listEnabled();
+        foreach ($enabledExtensions as $extensionName) {
+            $extensionPath = $this->extensionsManager->getExtensionPath($extensionName);
+            if ($extensionPath) {
+                $migrationDir = $extensionPath . '/migrations';
+                $extensionMigrations = $this->fileFinder->findMigrations($migrationDir);
+                foreach ($extensionMigrations as $file) {
+                    $files[] = $file->getPathname();
+                }
+            }
+        }
+
+        // Filter pending migrations
+        $pendingFiles = array_filter($files, fn($file) => !in_array(basename($file), $applied));
+
+        // Sort files by filename to ensure proper execution order
+        usort($pendingFiles, fn($a, $b) => basename($a) <=> basename($b));
+
+        return [
+            'pending' => $pendingFiles,
+            'applied' => $applied
+        ];
+    }
+
+    /**
      * Run migrations
      *
      * Executes pending migrations in order. Can run either:
      * - All pending migrations
      * - Specific migration file
+     * - Provided list of pending migrations (to avoid duplicate queries)
      *
-     * @param string|null $specificFile Optional specific migration to run
+     * @param string|array|null $specificFileOrPendingMigrations Optional specific migration file or array of pending
+     *                                                            migrations
      * @return array{
      *     applied: array<string>,
      *     failed: array<string>
      * } Migration results
      */
-    public function migrate(?string $specificFile = null): array
+    public function migrate($specificFileOrPendingMigrations = null): array
     {
         $results = ['applied' => [], 'failed' => []];
-        if ($specificFile) {
-            $status = $this->runMigration($specificFile);
+        // Handle specific file migration
+        if (is_string($specificFileOrPendingMigrations)) {
+            $batch = $this->getNextBatchNumber();
+            $status = $this->runMigration($specificFileOrPendingMigrations, $batch);
             if ($status['success']) {
                 $results['applied'][] = $status['file'];
             } else {
@@ -214,9 +266,22 @@ class MigrationManager
             return $results;
         }
 
+        // Handle provided pending migrations array or get pending migrations
+        if (is_array($specificFileOrPendingMigrations)) {
+            $pendingMigrations = $specificFileOrPendingMigrations;
+        } else {
+            $pendingMigrations = $this->getPendingMigrations();
+        }
+
+        // If no pending migrations, return early
+        if (empty($pendingMigrations)) {
+            return $results;
+        }
+
+        // For batch migration, get the batch number once and reuse it
         $batch = $this->getNextBatchNumber();
 
-        foreach ($this->getPendingMigrations() as $file) {
+        foreach ($pendingMigrations as $file) {
             $status = $this->runMigration($file, $batch);
             if ($status['success']) {
                 $results['applied'][] = $status['file'];
@@ -297,29 +362,22 @@ class MigrationManager
         }
 
         try {
-            // Make sure no transaction is active before starting a new one
-            if ($this->db->rollBack()) {
-                error_log("Rolling back existing transaction");
-            }
-
-            // Run migration
+            // Run the migration schema operations - these will execute immediately
             $migration->up($this->schema);
 
-            $this->db->insert(
-                self::VERSION_TABLE,
-                [
+            // Insert migration record after schema operations complete
+            $this->db
+                ->table(self::VERSION_TABLE)
+                ->insert([
                     'migration' => $filename,
-                    'batch' => $batch ?? $this->getNextBatchNumber(),
+                    'batch' => $batch,
                     'checksum' => $checksum,
                     'description' => $migration->getDescription(),
                     'extension' => $extensionName
-                ]
-            );
+                ]);
 
-            $this->db->commit();
             return ['success' => true, 'file' => $filename];
         } catch (\Exception $e) {
-            $this->db->rollBack();
             error_log("Migration failed: " . $e->getMessage());
             return ['success' => false, 'file' => $filename, 'error' => $e->getMessage()];
         }
@@ -333,9 +391,8 @@ class MigrationManager
     private function getNextBatchNumber(): int
     {
         $result = $this->db
-        ->select(self::VERSION_TABLE, [
-            $this->db->raw("MAX(batch) AS max_batch")
-        ])
+        ->table(self::VERSION_TABLE)
+        ->selectRaw("MAX(batch) AS max_batch")
         ->get();
 
         return (int)($result[0]['max_batch'] ?? 0) + 1;
@@ -387,11 +444,10 @@ class MigrationManager
         // Use schema manager for getting migrations to rollback
 
         $result = $this->db
-        ->select(self::VERSION_TABLE, ['migration'])
-        ->orderBy([
-            'batch' => 'DESC',
-            'id' => 'DESC'
-        ])
+        ->table(self::VERSION_TABLE)
+        ->select(['migration'])
+        ->orderBy('batch', 'DESC')
+        ->orderBy('id', 'DESC')
         ->limit($steps)
         ->get();
 
@@ -472,15 +528,14 @@ class MigrationManager
         }
 
         try {
+            // Run migration rollback - operations will execute immediately
             $migration->down($this->schema);
 
-            // Delete using schema manager
-            $this->db->delete(self::VERSION_TABLE, ['migration' => $filename]);
+            // Delete migration record after schema operations complete
+            $this->db->table(self::VERSION_TABLE)->where('migration', $filename)->delete();
 
-            $this->db->commit();
             return ['success' => true, 'file' => $filename];
         } catch (\Exception $e) {
-            $this->db->rollBack();
             error_log("Rollback failed: " . $e->getMessage());
             return ['success' => false, 'file' => $filename, 'error' => $e->getMessage()];
         }
@@ -493,13 +548,8 @@ class MigrationManager
      */
     public function executeMigration(MigrationInterface $migration): void
     {
-        try {
-            $migration->up($this->schema);
-            $this->db->commit();
-        } catch (\Exception $e) {
-            $this->db->rollBack();
-            throw $e;
-        }
+        // Run migration - operations execute immediately
+        $migration->up($this->schema);
     }
 
     /**
@@ -509,12 +559,7 @@ class MigrationManager
      */
     public function executeRollback(MigrationInterface $migration): void
     {
-        try {
-            $migration->down($this->schema);
-            $this->db->commit();
-        } catch (\Exception $e) {
-            $this->db->rollBack();
-            throw $e;
-        }
+        // Run migration rollback - operations execute immediately
+        $migration->down($this->schema);
     }
 }

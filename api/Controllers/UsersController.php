@@ -10,7 +10,7 @@ use Glueful\Repository\Interfaces\RepositoryInterface;
 use Glueful\Exceptions\NotFoundException;
 use Glueful\Exceptions\BusinessLogicException;
 use Glueful\Auth\TokenStorageService;
-use Glueful\Database\RawExpression;
+use Glueful\Database\Connection;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Constants\ErrorCodes;
 use Glueful\Helpers\ValidationHelper;
@@ -33,19 +33,22 @@ class UsersController extends BaseController
     private RepositoryInterface $userRepository;
     // Note: Role functionality migrated to RBAC extension
     private TokenStorageService $tokenStorage;
+    private Connection $db;
 
     public function __construct(
         ?\Glueful\Repository\RepositoryFactory $repositoryFactory = null,
         ?\Glueful\Auth\AuthenticationManager $authManager = null,
         ?Request $request = null,
         ?UserRepository $userRepository = null,
-        ?TokenStorageService $tokenStorage = null
+        ?TokenStorageService $tokenStorage = null,
+        ?Connection $connection = null
     ) {
         parent::__construct($repositoryFactory, $authManager, $request);
 
         // Initialize user-specific dependencies
         $this->userRepository = $userRepository ?? $this->repositoryFactory->getRepository('users');
         $this->tokenStorage = $tokenStorage ?? new TokenStorageService();
+        $this->db = $connection ?? new Connection();
     }
 
     /**
@@ -93,13 +96,21 @@ class UsersController extends BaseController
         $orderBy = [$sortBy => $sortOrder];
 
         // Use the query builder directly to handle soft deletes properly
-        $query = $this->getQueryBuilder()->select('users', [
+        $query = $this->db->table('users')->select([
             'uuid', 'username', 'email', 'status', 'created_at', 'last_login_date'
         ]);
 
         // Add standard WHERE conditions
-        if (!empty($conditions)) {
-            $query->where($conditions);
+        foreach ($conditions as $field => $value) {
+            if ($field === 'search') {
+                // Handle search across username and email
+                $query->where(function ($q) use ($value) {
+                    $q->orWhere('username', 'LIKE', '%' . $value . '%')
+                      ->orWhere('email', 'LIKE', '%' . $value . '%');
+                });
+            } else {
+                $query->where($field, $value);
+            }
         }
 
         // Handle soft deletes with proper NULL checking
@@ -108,8 +119,8 @@ class UsersController extends BaseController
         }
 
         // Add ordering
-        if (count($orderBy) > 0) {
-            $query->orderBy($orderBy);
+        foreach ($orderBy as $column => $direction) {
+            $query->orderBy($column, $direction);
         }
 
         $paginatedResult = $query->paginate($page, $perPage);
@@ -177,12 +188,12 @@ class UsersController extends BaseController
      * Get a single user with roles and detailed information
      *
      * @route GET /api/users/{uuid}
-     * @param array $params
+     * @param Request $request
      * @return Response
      */
-    public function show(array $params): Response
+    public function show(Request $request): Response
     {
-        $uuid = $params['uuid'] ?? '';
+        $uuid = $request->attributes->get('uuid', '');
 
         // Permission check with self-access logic
         if ($uuid !== $this->getCurrentUserUuid()) {
@@ -639,21 +650,26 @@ class UsersController extends BaseController
         $stats = [];
 
         // Total users
-        $totalUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-            ->where(['deleted_at' => null])
-            ->get();
-        $stats['total_users'] = $totalUsers[0]['total'] ?? 0;
+        $totalUsers = $this->db->table('users')
+            ->selectRaw('COUNT(*) as total')
+            ->whereNull('deleted_at')
+            ->first();
+        $stats['total_users'] = $totalUsers['total'] ?? 0;
 
         // Active users
-        $activeUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-            ->where(['status' => 'active', 'deleted_at' => null])
-            ->get();
-        $stats['active_users'] = $activeUsers[0]['total'] ?? 0;
+        $activeUsers = $this->db->table('users')
+            ->selectRaw('COUNT(*) as total')
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->first();
+        $stats['active_users'] = $activeUsers['total'] ?? 0;
 
         // Users by status
-        $statusStats = $this->getQueryBuilder()->select('users', ['status', new RawExpression('COUNT(*) as count')])
-            ->where(['deleted_at' => null])
-            ->groupBy(['status'])
+        $statusStats = $this->db->table('users')
+            ->select(['status'])
+            ->selectRaw('COUNT(*) as count')
+            ->whereNull('deleted_at')
+            ->groupBy('status')
             ->get();
         $stats['by_status'] = [];
         foreach ($statusStats as $stat) {
@@ -670,11 +686,12 @@ class UsersController extends BaseController
         };
         $dateThreshold = date('Y-m-d H:i:s', strtotime("-{$daysBack} days"));
 
-        $newUsers = $this->getQueryBuilder()->select('users', [new RawExpression('COUNT(*) as total')])
-            ->where(['deleted_at' => null])
-            ->whereGreaterThanOrEqual('created_at', $dateThreshold)
-            ->get();
-        $stats['new_users_' . $period] = $newUsers[0]['total'] ?? 0;
+        $newUsers = $this->db->table('users')
+            ->selectRaw('COUNT(*) as total')
+            ->whereNull('deleted_at')
+            ->where('created_at', '>=', $dateThreshold)
+            ->first();
+        $stats['new_users_' . $period] = $newUsers['total'] ?? 0;
 
         $userStats = $this->cacheResponse(
             'user_stats_' . $period,
@@ -718,7 +735,7 @@ class UsersController extends BaseController
         $perPage = (int) $request->query->get('per_page', 25);
 
         // Build search query using QueryBuilder
-        $searchQuery = $this->getQueryBuilder()->select('users', [
+        $searchQuery = $this->db->table('users')->select([
             'users.uuid',
             'users.username',
             'users.email',
@@ -729,28 +746,29 @@ class UsersController extends BaseController
 
         // Apply text search
         if ($query) {
-            $searchQuery->search(['users.username', 'users.email'], $query, 'OR');
+            $searchQuery->where(function ($q) use ($query) {
+                $q->orWhere('users.username', 'LIKE', '%' . $query . '%')
+                  ->orWhere('users.email', 'LIKE', '%' . $query . '%');
+            });
         }
 
         // Apply filters
-        $whereConditions = ['deleted_at' => null];
+        $searchQuery->whereNull('deleted_at');
         if ($filters['status']) {
-            $whereConditions['status'] = $filters['status'];
+            $searchQuery->where('status', $filters['status']);
         }
         if ($filters['created_after']) {
-            $searchQuery->whereGreaterThanOrEqual('users.created_at', $filters['created_after']);
+            $searchQuery->where('users.created_at', '>=', $filters['created_after']);
         }
         if ($filters['created_before']) {
-            $searchQuery->whereLessThanOrEqual('users.created_at', $filters['created_before']);
+            $searchQuery->where('users.created_at', '<=', $filters['created_before']);
         }
         if ($filters['last_login_after']) {
-            $searchQuery->whereGreaterThanOrEqual('users.last_login_date', $filters['last_login_after']);
+            $searchQuery->where('users.last_login_date', '>=', $filters['last_login_after']);
         }
         if ($filters['last_login_before']) {
-            $searchQuery->whereLessThanOrEqual('users.last_login_date', $filters['last_login_before']);
+            $searchQuery->where('users.last_login_date', '<=', $filters['last_login_before']);
         }
-
-        $searchQuery->where($whereConditions);
 
         // Note: Role filtering disabled - implement with RBAC extension
         if ($filters['role']) {
@@ -808,7 +826,7 @@ class UsersController extends BaseController
         ];
 
         // Get users for export using QueryBuilder
-        $exportQuery = $this->getQueryBuilder()->select('users', [
+        $exportQuery = $this->db->table('users')->select([
             'users.uuid',
             'users.username',
             'users.email',
@@ -817,16 +835,11 @@ class UsersController extends BaseController
             'users.last_login_date'
         ]);
 
-        $whereConditions = [];
         if (!$filters['include_deleted']) {
-            $whereConditions['deleted_at'] = null;
+            $exportQuery->whereNull('deleted_at');
         }
         if ($filters['status']) {
-            $whereConditions['status'] = $filters['status'];
-        }
-
-        if (!empty($whereConditions)) {
-            $exportQuery->where($whereConditions);
+            $exportQuery->where('status', $filters['status']);
         }
 
         // Note: Role filtering disabled - implement with RBAC extension
@@ -930,18 +943,19 @@ class UsersController extends BaseController
         }
 
         // Get user activity from audit logs using QueryBuilder with proper pagination
-        $activities = $this->getQueryBuilder()->select('audit_logs', [
-            'action',
-            'entity_type',
-            'entity_id',
-            'old_values',
-            'new_values',
-            'created_at',
-            'user_id'
-        ])
-        ->where(['user_id' => $user['uuid']])
-        ->orderBy(['created_at' => 'DESC'])
-        ->paginate($page, $perPage);
+        $activities = $this->db->table('audit_logs')
+            ->select([
+                'action',
+                'entity_type',
+                'entity_id',
+                'old_values',
+                'new_values',
+                'created_at',
+                'user_id'
+            ])
+            ->where('user_id', $user['uuid'])
+            ->orderBy('created_at', 'DESC')
+            ->paginate($page, $perPage);
 
         $activityRes = $this->cacheResponse(
             'user_activity_' . $uuid . '_' . $page . '_' . $perPage,
@@ -986,22 +1000,23 @@ class UsersController extends BaseController
         }
 
         // Get user sessions directly from auth_sessions table
-        $sessions = $this->getQueryBuilder()->select('auth_sessions', [
-            'session_id',
-            'access_token',
-            'status',
-            'provider',
-            'ip_address',
-            'user_agent',
-            'created_at',
-            'last_activity',
-            'last_token_refresh',
-            'access_expires_at',
-            'refresh_expires_at'
-        ])
-        ->where(['user_uuid' => $user['uuid'], 'status' => 'active'])
-        ->orderBy(['last_activity' => 'DESC'])
-        ->get();
+        $sessions = $this->db->table('auth_sessions')
+            ->select([
+                'uuid',
+                'access_token',
+                'status',
+                'provider',
+                'ip_address',
+                'user_agent',
+                'created_at',
+                'last_token_refresh',
+                'access_expires_at',
+                'refresh_expires_at'
+            ])
+            ->where('user_uuid', $user['uuid'])
+            ->where('status', 'active')
+            ->orderBy('updated_at', 'DESC')
+            ->get();
 
         // Mask sensitive token data
         foreach ($sessions as &$session) {
@@ -1052,8 +1067,10 @@ class UsersController extends BaseController
         $terminatedSessions = 0;
         if ($sessionId) {
             // Get the session token to revoke
-            $session = $this->getQueryBuilder()->select('auth_sessions', ['access_token'])
-                ->where(['session_id' => $sessionId, 'user_uuid' => $user['uuid']])
+            $session = $this->db->table('auth_sessions')
+                ->select(['access_token'])
+                ->where('session_id', $sessionId)
+                ->where('user_uuid', $user['uuid'])
                 ->limit(1)
                 ->get();
 
@@ -1063,10 +1080,11 @@ class UsersController extends BaseController
             }
         } else {
             // Revoke all user sessions
-            $activeSessions = $this->getQueryBuilder()->select('auth_sessions', ['session_id'])
-                ->where(['user_uuid' => $user['uuid'], 'status' => 'active'])
+            $activeSessions = $this->db->table('auth_sessions')
+                ->select(['session_id'])
+                ->where('user_uuid', $user['uuid'])
+                ->where('status', 'active')
                 ->get();
-            $terminatedSessions = count($activeSessions);
             $this->tokenStorage->revokeAllUserSessions($user['uuid']);
         }
 

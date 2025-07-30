@@ -3,7 +3,7 @@
 namespace Glueful\Extensions\RBAC\Database\Migrations;
 
 use Glueful\Database\Migrations\MigrationInterface;
-use Glueful\Database\Schema\SchemaManager;
+use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
 
 /**
  * RBAC Roles Tables Migration
@@ -24,84 +24,82 @@ class CreateRolesTables implements MigrationInterface
     /**
      * Execute the migration
      */
-    public function up(SchemaManager $schema): void
+    public function up(SchemaBuilderInterface $schema): void
     {
         // Create Roles Table
-        $schema->createTable('roles', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'name' => 'VARCHAR(100) NOT NULL',
-            'slug' => 'VARCHAR(100) NOT NULL',
-            'description' => 'TEXT',
-            'parent_uuid' => 'CHAR(12) NULL',
-            'level' => 'INT DEFAULT 0',
-            'is_system' => 'BOOLEAN DEFAULT FALSE',
-            'metadata' => 'JSON',
-            'status' => "ENUM('active', 'inactive') DEFAULT 'active'",
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-            'updated_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-            'deleted_at' => 'TIMESTAMP NULL'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'UNIQUE', 'column' => 'name'],
-            ['type' => 'UNIQUE', 'column' => 'slug'],
-            ['type' => 'INDEX', 'column' => 'parent_uuid'],
-            ['type' => 'INDEX', 'column' => 'status'],
-            ['type' => 'INDEX', 'column' => 'level']
-        ])->addForeignKey([
-            [
-                'column' => 'parent_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-                'onDelete' => 'SET NULL'
-            ]
-        ]);
+        $schema->createTable('roles', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('name', 100);
+            $table->string('slug', 100);
+            $table->text('description')->nullable();
+            $table->string('parent_uuid', 12)->nullable();
+            $table->integer('level')->default(0);
+            $table->boolean('is_system')->default(false);
+            $table->json('metadata')->nullable();
+            $table->enum('status', ['active', 'inactive'], 'active');
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->unique('name');
+            $table->unique('slug');
+            $table->index('parent_uuid');
+            $table->index('status');
+            $table->index('level');
+
+            // Add self-referencing foreign key
+            $table->foreign('parent_uuid')
+                ->references('uuid')
+                ->on('roles')
+                ->nullOnDelete();
+        });
 
         // Create User Roles Table
-        $schema->createTable('user_roles', [
-            'id' => 'BIGINT PRIMARY KEY AUTO_INCREMENT',
-            'uuid' => 'CHAR(12) NOT NULL',
-            'user_uuid' => 'CHAR(12) NOT NULL',
-            'role_uuid' => 'CHAR(12) NOT NULL',
-            'scope' => 'JSON',
-            'granted_by' => 'CHAR(12)',
-            'expires_at' => 'TIMESTAMP NULL',
-            'created_at' => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-        ])->addIndex([
-            ['type' => 'UNIQUE', 'column' => 'uuid'],
-            ['type' => 'INDEX', 'column' => 'user_uuid'],
-            ['type' => 'INDEX', 'column' => 'role_uuid'],
-            ['type' => 'INDEX', 'column' => 'expires_at'],
-            ['type' => 'INDEX', 'column' => 'granted_by']
-        ])->addForeignKey([
-            [
-                'column' => 'user_uuid',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'role_uuid',
-                'references' => 'uuid',
-                'on' => 'roles',
-                'onDelete' => 'CASCADE'
-            ],
-            [
-                'column' => 'granted_by',
-                'references' => 'uuid',
-                'on' => 'users',
-                'onDelete' => 'SET NULL'
-            ]
-        ]);
+        $schema->createTable('user_roles', function ($table) {
+            $table->bigInteger('id')->primary()->autoIncrement();
+            $table->string('uuid', 12);
+            $table->string('user_uuid', 12);
+            $table->string('role_uuid', 12);
+            $table->json('scope')->nullable();
+            $table->string('granted_by', 12)->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+
+            // Add indexes
+            $table->unique('uuid');
+            $table->index('user_uuid');
+            $table->index('role_uuid');
+            $table->index('expires_at');
+            $table->index('granted_by');
+
+            // Add foreign keys
+            $table->foreign('user_uuid')
+                ->references('uuid')
+                ->on('users')
+                ->cascadeOnDelete();
+
+            $table->foreign('role_uuid')
+                ->references('uuid')
+                ->on('roles')
+                ->cascadeOnDelete();
+
+            $table->foreign('granted_by')
+                ->references('uuid')
+                ->on('users')
+                ->nullOnDelete();
+        });
     }
 
     /**
      * Reverse the migration
      */
-    public function down(SchemaManager $schema): void
+    public function down(SchemaBuilderInterface $schema): void
     {
-        $schema->dropTable('user_roles');
-        $schema->dropTable('roles');
+        $schema->dropTableIfExists('user_roles');
+        $schema->dropTableIfExists('roles');
     }
 
     /**

@@ -7,8 +7,8 @@ namespace Glueful\Extensions\RBAC\Controllers;
 use Glueful\Http\Response;
 use Glueful\Extensions\RBAC\Services\PermissionAssignmentService;
 use Glueful\Extensions\RBAC\Repositories\PermissionRepository;
+use Glueful\Extensions\RBAC\Repositories\UserPermissionRepository;
 use Glueful\Exceptions\NotFoundException;
-use Glueful\Helpers\DatabaseConnectionTrait;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -22,17 +22,18 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class PermissionController
 {
-    use DatabaseConnectionTrait;
-
     private PermissionAssignmentService $permissionService;
     private PermissionRepository $permissionRepository;
+    private UserPermissionRepository $userPermissionRepository;
 
     public function __construct(
         PermissionAssignmentService $permissionService,
-        PermissionRepository $permissionRepository
+        PermissionRepository $permissionRepository,
+        UserPermissionRepository $userPermissionRepository
     ) {
         $this->permissionService = $permissionService;
         $this->permissionRepository = $permissionRepository;
+        $this->userPermissionRepository = $userPermissionRepository;
     }
 
     /**
@@ -388,9 +389,11 @@ class PermissionController
     {
         try {
             $userUuid = $params['user_uuid'] ?? '';
-            $scope = $request->query->get('scope', []);
-            if (is_string($scope)) {
+            $scope = $request->query->get('scope', '');
+            if (is_string($scope) && !empty($scope)) {
                 $scope = json_decode($scope, true) ?? [];
+            } else {
+                $scope = [];
             }
 
             $permissions = $this->permissionService->getUserEffectivePermissions($userUuid, $scope);
@@ -450,34 +453,33 @@ class PermissionController
         try {
             $stats = [];
 
-            $stats['total_permissions'] = $this->getQueryBuilder()->count('permissions');
-            $stats['system_permissions'] = $this->getQueryBuilder()->count('permissions', ['is_system' => true]);
+            // Use repository methods for permission counts
+            $stats['total_permissions'] = $this->permissionRepository->countPermissions();
+            $stats['system_permissions'] = $this->permissionRepository->countPermissions(['is_system' => 1]);
 
-            // Get permissions by category using QueryBuilder methods
-            $permissionsByCategory = $this->getQueryBuilder()
-                ->select('permissions', ['category'])
-                ->groupBy(['category'])
-                ->get();
+            // Get all permissions to calculate category and resource type statistics
+            $allPermissions = $this->permissionRepository->findAllPermissions();
+
             $stats['by_category'] = [];
-            foreach ($permissionsByCategory as $stat) {
-                $categoryName = $stat['category'] ?? 'uncategorized';
-                $stats['by_category'][$categoryName] = $this->getQueryBuilder()
-                    ->count('permissions', ['category' => $stat['category']]);
-            }
-
-            // Get permissions by resource type using QueryBuilder methods
-            $permissionsByResource = $this->getQueryBuilder()
-                ->select('permissions', ['resource_type'])
-                ->groupBy(['resource_type'])
-                ->get();
             $stats['by_resource_type'] = [];
-            foreach ($permissionsByResource as $stat) {
-                $resourceType = $stat['resource_type'] ?? 'general';
-                $stats['by_resource_type'][$resourceType] = $this->getQueryBuilder()
-                    ->count('permissions', ['resource_type' => $stat['resource_type']]);
+
+            foreach ($allPermissions as $permission) {
+                $category = $permission->getCategory() ?? 'uncategorized';
+                $resourceType = $permission->getResourceType() ?? 'general';
+
+                if (!isset($stats['by_category'][$category])) {
+                    $stats['by_category'][$category] = 0;
+                }
+                $stats['by_category'][$category]++;
+
+                if (!isset($stats['by_resource_type'][$resourceType])) {
+                    $stats['by_resource_type'][$resourceType] = 0;
+                }
+                $stats['by_resource_type'][$resourceType]++;
             }
 
-            $stats['direct_assignments'] = $this->getQueryBuilder()->count('user_permissions');
+            // Count direct permission assignments (permissions assigned directly to users, not through roles)
+            $stats['direct_assignments'] = $this->userPermissionRepository->countAllUserPermissions();
 
             return Response::success($stats, 'Permission statistics retrieved successfully');
         } catch (\Exception $e) {
@@ -513,14 +515,9 @@ class PermissionController
     public function getCategories(Request $request): Response
     {
         try {
-            $categories = $this->getQueryBuilder()->select('permissions', ['DISTINCT category'])
-                ->get();
+            $categories = $this->permissionRepository->getCategories();
 
-            $categoryList = array_map(function ($row) {
-                return $row['category'] ?? 'uncategorized';
-            }, $categories);
-
-            return Response::success($categoryList, 'Permission categories retrieved successfully');
+            return Response::success($categories, 'Permission categories retrieved successfully');
         } catch (\Exception $e) {
             return Response::serverError($e->getMessage());
         }
@@ -536,14 +533,9 @@ class PermissionController
     public function getResourceTypes(Request $request): Response
     {
         try {
-            $resourceTypes = $this->getQueryBuilder()->select('permissions', ['DISTINCT resource_type'])
-                ->get();
+            $resourceTypes = $this->permissionRepository->getResourceTypes();
 
-            $typeList = array_map(function ($row) {
-                return $row['resource_type'] ?? 'general';
-            }, $resourceTypes);
-
-            return Response::success($typeList, 'Resource types retrieved successfully');
+            return Response::success($resourceTypes, 'Resource types retrieved successfully');
         } catch (\Exception $e) {
             return Response::serverError($e->getMessage());
         }
