@@ -66,7 +66,7 @@ php glueful generate:key
 
 ## Database Setup
 
-### Fresh Installation
+### MySQL Setup
 ```bash
 # Create database and user
 mysql -u root -p
@@ -74,8 +74,49 @@ CREATE DATABASE glueful CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'glueful_user'@'localhost' IDENTIFIED BY 'strong_password';
 GRANT ALL PRIVILEGES ON glueful.* TO 'glueful_user'@'localhost';
 FLUSH PRIVILEGES;
+EXIT;
 
-# Run migrations
+# Update .env configuration
+DB_DRIVER=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=glueful
+DB_USER=glueful_user
+DB_PASSWORD=strong_password
+```
+
+### PostgreSQL Setup
+```bash
+# Create database and user
+sudo -u postgres psql
+CREATE DATABASE glueful;
+CREATE USER glueful_user WITH PASSWORD 'strong_password';
+GRANT ALL PRIVILEGES ON DATABASE glueful TO glueful_user;
+\q
+
+# Update .env configuration
+DB_DRIVER=pgsql
+DB_HOST=localhost
+DB_PORT=5432
+DB_DATABASE=glueful
+DB_USER=glueful_user
+DB_PASSWORD=strong_password
+```
+
+### SQLite Setup
+```bash
+# SQLite requires no database server setup
+# Update .env configuration
+DB_DRIVER=sqlite
+DB_DATABASE=database/primary.sqlite
+
+# Create database directory if it doesn't exist
+mkdir -p database
+```
+
+### Run Migrations
+```bash
+# After configuring your preferred database
 php glueful migrate:run
 ```
 

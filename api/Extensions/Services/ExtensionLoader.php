@@ -6,21 +6,72 @@ namespace Glueful\Extensions\Services;
 
 use Glueful\Extensions\Services\Interfaces\ExtensionLoaderInterface;
 use Glueful\Extensions\Services\Interfaces\ExtensionConfigInterface;
-use Glueful\Extensions\Enums\ExtensionStatus;
-use Glueful\Extensions\ExtensionEventRegistry;
 use Composer\Autoload\ClassLoader;
 use Glueful\Services\FileFinder;
 use Glueful\Services\FileManager;
 use Glueful\DI\ContainerBootstrap;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Extension Loading Service
+ *
+ * Provides high-performance extension loading with advanced features:
+ * - Dynamic namespace registration via Composer autoloader
+ * - Extension validation and structure verification
+ * - Service provider registration and dependency injection
+ * - Route loading with fallback mechanisms
+ * - Debug logging and error handling
+ * - Extension lifecycle management
+ *
+ * **Performance Features:**
+ * - Lazy initialization of services
+ * - Efficient namespace caching
+ * - Batch extension discovery
+ * - Minimal memory footprint during loading
+ *
+ * **Extension Structure Requirements:**
+ * ```
+ * extensions/ExtensionName/
+ * ├── manifest.json          # Extension metadata and configuration
+ * ├── ExtensionName.php      # Main extension class
+ * ├── src/                   # Source code with PSR-4 autoloading
+ * ├── routes.php             # Route definitions (optional)
+ * └── config/                # Extension-specific configuration
+ * ```
+ */
 class ExtensionLoader implements ExtensionLoaderInterface
 {
+    /** @var array<string, array> Loaded extensions registry with metadata */
     private array $loadedExtensions = [];
+
+    /** @var array<string, string> PSR-4 namespace mappings for extensions */
     private array $registeredNamespaces = [];
+
+    /** @var ClassLoader|null Composer autoloader instance for namespace registration */
     private ?ClassLoader $classLoader = null;
+
+    /** @var bool Debug mode flag for verbose logging */
     private bool $debug = false;
 
+    /**
+     * Initialize ExtensionLoader with dependency injection
+     *
+     * Creates a new extension loader with optional service dependencies.
+     * Services are resolved from the DI container if not provided, with
+     * graceful fallback to direct instantiation.
+     *
+     * **Service Dependencies:**
+     * - FileFinder: Locates extension files and directories
+     * - FileManager: Handles file operations and validation
+     * - LoggerInterface: Provides structured logging for debugging
+     * - ExtensionConfigInterface: Manages extension configuration data
+     *
+     * @param FileFinder|null $fileFinder File discovery service for extension scanning
+     * @param FileManager|null $fileManager File operation service for extension management
+     * @param LoggerInterface|null $logger Logging service for debug and error messages
+     * @param ExtensionConfigInterface|null $extensionConfig Configuration service for extension metadata
+     * @throws \RuntimeException If required services cannot be initialized
+     */
     public function __construct(
         private ?FileFinder $fileFinder = null,
         private ?FileManager $fileManager = null,
@@ -39,7 +90,7 @@ class ExtensionLoader implements ExtensionLoaderInterface
                 $this->fileManager ??= $container->get(FileManager::class);
                 $this->logger ??= $container->get(LoggerInterface::class);
                 $this->extensionConfig ??= $container->get(ExtensionConfigInterface::class);
-            } catch (\Exception $e) {
+            } catch (\Exception) {
                 // Fallback to creating directly if container not available
                 $this->fileFinder ??= new FileFinder();
                 $this->fileManager ??= new FileManager();
@@ -50,16 +101,42 @@ class ExtensionLoader implements ExtensionLoaderInterface
         }
     }
 
+    /**
+     * Enable or disable debug logging
+     *
+     * Controls verbose logging output for extension loading operations.
+     * When enabled, logs detailed information about extension discovery,
+     * validation, namespace registration, and loading processes.
+     *
+     * @param bool $enable Whether to enable debug mode (default: true)
+     */
     public function setDebugMode(bool $enable = true): void
     {
         $this->debug = $enable;
     }
 
+    /**
+     * Set the Composer ClassLoader for namespace registration
+     *
+     * Allows manual injection of the Composer autoloader instance.
+     * Typically used for testing or when automatic detection fails.
+     *
+     * @param ClassLoader $classLoader Composer autoloader instance
+     */
     public function setClassLoader(ClassLoader $classLoader): void
     {
         $this->classLoader = $classLoader;
     }
 
+    /**
+     * Get the active Composer ClassLoader instance
+     *
+     * Retrieves the Composer autoloader, either from manual injection or
+     * by scanning registered autoload functions. Required for PSR-4 namespace
+     * registration during extension loading.
+     *
+     * @return ClassLoader|null The Composer autoloader instance, or null if not found
+     */
     public function getClassLoader(): ?ClassLoader
     {
         if ($this->classLoader === null) {
@@ -74,6 +151,44 @@ class ExtensionLoader implements ExtensionLoaderInterface
         return $this->classLoader;
     }
 
+    /**
+     * Load extension with comprehensive validation and registration
+     *
+     * Performs complete extension loading including structure validation,
+     * namespace registration, class loading, and dependency resolution.
+     * Extensions are loaded once and cached for subsequent requests.
+     *
+     * **Loading Process:**
+     * 1. Check if extension is already loaded (quick return)
+     * 2. Locate extension directory and validate structure
+     * 3. Register PSR-4 namespace with Composer autoloader
+     * 4. Load main extension class and validate interface compliance
+     * 5. Register extension in loaded registry with metadata
+     *
+     * **Extension Requirements:**
+     * - Valid manifest.json with metadata
+     * - Main extension class file
+     * - PSR-4 compliant directory structure
+     * - Implementation of ExtensionInterface (recommended)
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Load single extension
+     * $success = $loader->loadExtension('UserManagement');
+     *
+     * // Load with error handling
+     * if (!$loader->loadExtension('PaymentGateway')) {
+     *     throw new ExtensionException('Failed to load payment extension');
+     * }
+     * ```
+     *
+     * @param string $name Extension name (must match directory name)
+     * @return bool True if extension loaded successfully, false on failure
+     * @throws \InvalidArgumentException If extension name is empty or contains invalid characters
+     * @throws \Glueful\Exceptions\ExtensionException If extension structure is invalid
+     * @throws \RuntimeException If Composer autoloader is not available
+     * @throws \Exception If extension class loading or initialization fails
+     */
     public function loadExtension(string $name): bool
     {
         if ($this->isLoaded($name)) {
@@ -145,6 +260,15 @@ class ExtensionLoader implements ExtensionLoaderInterface
         }
     }
 
+    /**
+     * Check if extension is currently loaded
+     *
+     * Verifies whether an extension has been successfully loaded and
+     * is available in the loaded extensions registry.
+     *
+     * @param string $name Extension name to check
+     * @return bool True if extension is loaded, false otherwise
+     */
     public function isLoaded(string $name): bool
     {
         return isset($this->loadedExtensions[$name]);
@@ -328,6 +452,41 @@ class ExtensionLoader implements ExtensionLoaderInterface
         }
     }
 
+    /**
+     * Discover available extensions in filesystem
+     *
+     * Scans the extensions directory to find all valid extensions with proper
+     * structure and manifest files. Filters out system directories and validates
+     * each extension before including it in results.
+     *
+     * **Discovery Process:**
+     * 1. Scan extensions directory for subdirectories
+     * 2. Filter out hidden and system directories
+     * 3. Validate extension structure for each candidate
+     * 4. Return array of valid extension names
+     *
+     * **Excluded Directories:**
+     * - Hidden directories (starting with '.')
+     * - System directories: vendor, node_modules, tests
+     * - Extensions with invalid structure or missing manifest
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Discover all extensions
+     * $extensions = $loader->discoverExtensions();
+     * foreach ($extensions as $name) {
+     *     $loader->loadExtension($name);
+     * }
+     *
+     * // Discover from custom path
+     * $customExtensions = $loader->discoverExtensions('/custom/extensions');
+     * ```
+     *
+     * @param string|null $extensionsPath Custom extensions directory path (optional)
+     * @return array Array of valid extension names found in directory
+     * @throws \InvalidArgumentException If provided path is not a valid directory
+     * @throws \RuntimeException If directory scanning fails due to permissions
+     */
     public function discoverExtensions(?string $extensionsPath = null): array
     {
         $extensionsPath = $extensionsPath ?: $this->getDefaultExtensionsPath();
@@ -481,22 +640,6 @@ class ExtensionLoader implements ExtensionLoaderInterface
             $this->debugLog("Failed to register service provider: " . $e->getMessage());
         }
     }
-
-    private function registerServiceProvider(string $name, string $providerPath): void
-    {
-        try {
-            $container = ContainerBootstrap::getContainer();
-            if (!$container) {
-                return;
-            }
-            // Service provider registration logic would go here
-            // This is framework-specific implementation
-        } catch (\Exception $e) {
-            // Container not available or registration failed
-            $this->debugLog("Could not register service provider for {$name}: " . $e->getMessage());
-        }
-    }
-
 
     private function debugLog(string $message): void
     {

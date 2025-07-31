@@ -13,6 +13,34 @@ use Glueful\Exceptions\AuthenticationException;
 use Glueful\Exceptions\ValidationException;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
+/**
+ * Authentication Controller
+ *
+ * Handles all authentication-related HTTP endpoints for the Glueful framework.
+ * Provides secure user authentication, session management, and token operations
+ * with support for multiple authentication providers.
+ *
+ * **Core Functionality:**
+ * - User login/logout with multi-provider support
+ * - Email verification and OTP management
+ * - Password reset and recovery flows
+ * - Token refresh and validation
+ * - Permission management and session control
+ *
+ * **Security Features:**
+ * - CSRF protection integration
+ * - Rate limiting and brute force protection
+ * - Secure token generation and validation
+ * - Multi-provider authentication support
+ * - Session analytics and audit logging
+ *
+ * **Supported Authentication Providers:**
+ * - JWT (default)
+ * - LDAP directory services
+ * - SAML identity providers
+ * - OAuth2/OpenID Connect
+ * - API key authentication
+ */
 class AuthController
 {
     private EmailVerification $verifier;
@@ -28,12 +56,53 @@ class AuthController
     }
 
     /**
-     * User login
+     * Authenticate user with credentials and establish session
      *
-     * Authenticates user with credentials and returns tokens.
-     * Supports different authentication providers.
+     * Performs user authentication using provided credentials and returns
+     * JWT access tokens with session information. Supports multiple authentication
+     * providers and implements comprehensive security measures.
      *
-     * @return mixed HTTP response
+     * **Authentication Process:**
+     * 1. Extract credentials and client information from request
+     * 2. Determine authentication provider (JWT, LDAP, SAML, OAuth2)
+     * 3. Validate credentials using appropriate provider
+     * 4. Generate access and refresh tokens
+     * 5. Create user session with analytics tracking
+     * 6. Return OIDC-compliant authentication response
+     *
+     * **Security Features:**
+     * - CSRF token generation for session protection
+     * - Client IP and User-Agent tracking
+     * - Remember-me functionality with extended sessions
+     * - Provider-specific authentication flows
+     * - Session analytics and audit logging
+     *
+     * **Request Format:**
+     * ```json
+     * {
+     *   "username": "user@example.com",
+     *   "password": "secure_password",
+     *   "remember": true,
+     *   "provider": "ldap"
+     * }
+     * ```
+     *
+     * **Response Format:**
+     * ```json
+     * {
+     *   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+     *   "refresh_token": "abc123...",
+     *   "token_type": "Bearer",
+     *   "expires_in": 3600,
+     *   "user": {...},
+     *   "csrf_token": {...}
+     * }
+     * ```
+     *
+     * @return mixed HTTP response with authentication tokens and user data
+     * @throws \Glueful\Exceptions\AuthenticationException If credentials are invalid
+     * @throws \Glueful\Exceptions\ValidationException If request data is malformed
+     * @throws \RuntimeException If authentication system initialization fails
      */
     public function login()
     {
@@ -86,11 +155,29 @@ class AuthController
     }
 
     /**
-     * User logout
+     * Terminate user session and invalidate authentication tokens
      *
-     * Terminates user session and invalidates tokens.
+     * Securely logs out the user by invalidating their access token and
+     * terminating their active session. Clears session data from cache
+     * and database for complete logout.
      *
-     * @return mixed HTTP response
+     * **Logout Process:**
+     * 1. Extract access token from Authorization header
+     * 2. Validate token format and presence
+     * 3. Invalidate token in session cache
+     * 4. Remove session from database
+     * 5. Clear any associated refresh tokens
+     * 6. Log logout event for security audit
+     *
+     * **Security Features:**
+     * - Complete token invalidation
+     * - Session cleanup across all storage layers
+     * - Audit logging for security monitoring
+     * - Prevention of token reuse after logout
+     *
+     * @return mixed HTTP response confirming successful logout
+     * @throws \Glueful\Exceptions\ValidationException If no token provided in request
+     * @throws \Glueful\Exceptions\AuthenticationException If logout operation fails
      */
     public function logout()
     {
@@ -264,6 +351,45 @@ class AuthController
         ], 'Token is valid');
     }
 
+    /**
+     * Initiate password reset process with email verification
+     *
+     * Starts the password recovery flow by sending a secure OTP code to the
+     * user's registered email address. Implements security measures to prevent
+     * account enumeration and abuse.
+     *
+     * **Password Reset Process:**
+     * 1. Validate email address format and presence
+     * 2. Verify user account exists in system
+     * 3. Generate secure OTP code with expiration
+     * 4. Send password reset email with OTP
+     * 5. Return confirmation without revealing account status
+     *
+     * **Security Features:**
+     * - Account existence verification before email sending
+     * - Time-limited OTP codes (default 15 minutes)
+     * - Rate limiting to prevent abuse
+     * - Secure email templates with anti-phishing measures
+     *
+     * **Request Format:**
+     * ```json
+     * {
+     *   "email": "user@example.com"
+     * }
+     * ```
+     *
+     * **Response Format:**
+     * ```json
+     * {
+     *   "email": "user@example.com",
+     *   "expires_in": 900
+     * }
+     * ```
+     *
+     * @return mixed HTTP response confirming reset email sent
+     * @throws \Glueful\Exceptions\ValidationException If email is missing or user not found
+     * @throws \RuntimeException If email sending fails due to system issues
+     */
     public function forgotPassword()
     {
         $postData = RequestHelper::getRequestData();
@@ -290,11 +416,36 @@ class AuthController
     }
 
     /**
-     * Reset user password
+     * Complete password reset with new secure password
      *
-     * Securely changes a user's password after verification.
+     * Finalizes the password recovery process by updating the user's password
+     * with proper security validation and session invalidation.
      *
-     * @return mixed HTTP response
+     * **Password Reset Process:**
+     * 1. Validate email and new password presence
+     * 2. Verify user account exists
+     * 3. Hash new password using secure algorithm
+     * 4. Update password in database
+     * 5. Invalidate all existing user sessions
+     * 6. Log security event for audit trail
+     *
+     * **Security Features:**
+     * - Secure password hashing (bcrypt/argon2)
+     * - Session invalidation to prevent unauthorized access
+     * - Password strength validation
+     * - Audit logging for security monitoring
+     *
+     * **Request Format:**
+     * ```json
+     * {
+     *   "email": "user@example.com",
+     *   "password": "new_secure_password123!"
+     * }
+     * ```
+     *
+     * @return mixed HTTP response confirming password reset
+     * @throws \Glueful\Exceptions\ValidationException If email/password missing or user not found
+     * @throws \Glueful\Exceptions\AuthenticationException If password update fails
      */
     public function resetPassword()
     {
@@ -325,11 +476,46 @@ class AuthController
     }
 
     /**
-     * Refresh authentication token
+     * Generate new access token using refresh token
      *
-     * Generates a new access token using a valid refresh token.
+     * Exchanges a valid refresh token for a new access token, maintaining
+     * user session continuity without requiring re-authentication.
      *
-     * @return mixed HTTP response
+     * **Token Refresh Process:**
+     * 1. Extract refresh token from request
+     * 2. Validate refresh token and associated session
+     * 3. Generate new access and refresh token pair
+     * 4. Update session with new tokens
+     * 5. Invalidate old tokens for security
+     * 6. Return new token pair with user data
+     *
+     * **Security Features:**
+     * - Refresh token rotation for enhanced security
+     * - Session validation and consistency checks
+     * - Request context update for seamless operation
+     * - Audit logging for token operations
+     *
+     * **Request Format:**
+     * ```json
+     * {
+     *   "refresh_token": "abc123..."
+     * }
+     * ```
+     *
+     * **Response Format:**
+     * ```json
+     * {
+     *   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+     *   "refresh_token": "def456...",
+     *   "token_type": "Bearer",
+     *   "expires_in": 3600,
+     *   "user": {...}
+     * }
+     * ```
+     *
+     * @return mixed HTTP response with new authentication tokens
+     * @throws \Glueful\Exceptions\ValidationException If refresh token missing from request
+     * @throws \Glueful\Exceptions\AuthenticationException If refresh token invalid or expired
      */
     public function refreshToken()
     {

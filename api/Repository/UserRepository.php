@@ -375,10 +375,44 @@ class UserRepository extends BaseRepository
     }
 
     /**
-     * Find or create a user from SAML authentication data
+     * Find or create user from SAML authentication with transaction safety
      *
-     * @param array $userData User data extracted from SAML attributes
-     * @return array|null User data array or null on failure
+     * Locates existing users by email or creates new accounts from SAML authentication
+     * data. Performs atomic operations within a database transaction to ensure data
+     * consistency during user provisioning.
+     *
+     * **SAML Integration Process:**
+     * 1. Validate required SAML attributes (email is mandatory)
+     * 2. Search for existing user by email address
+     * 3. Update existing user with SAML provider information
+     * 4. Create new user account if not found, with pre-verified email
+     * 5. Generate secure random password for SAML-only accounts
+     * 6. Update login timestamps and provider metadata
+     *
+     * **Security Features:**
+     * - Email verification automatically granted for SAML users
+     * - Random password generation for security (SAML handles authentication)
+     * - Transaction-based operations for data consistency
+     * - Provider tracking for audit and security purposes
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Process SAML login response
+     * $samlData = [
+     *     'email' => 'john.doe@company.com',
+     *     'name' => 'John Doe',
+     *     'first_name' => 'John',
+     *     'last_name' => 'Doe',
+     *     'saml_idp' => 'company-idp'
+     * ];
+     * $user = $repository->findOrCreateFromSaml($samlData);
+     * ```
+     *
+     * @param array $userData User data extracted from SAML attributes (email required)
+     * @return array|null User data array with updated provider info, or null on failure
+     * @throws \Glueful\Exceptions\DatabaseException If user creation or update fails
+     * @throws \InvalidArgumentException If required SAML attributes are missing
+     * @throws \RuntimeException If transaction operations fail
      */
     public function findOrCreateFromSaml(array $userData): ?array
     {
@@ -453,10 +487,51 @@ class UserRepository extends BaseRepository
 
 
     /**
-     * Find or create a user from LDAP authentication data
+     * Find or create user from LDAP authentication with comprehensive attribute mapping
      *
-     * @param array $userData User data extracted from LDAP attributes
-     * @return array|null User data array or null on failure
+     * Integrates with LDAP directory services to provision user accounts automatically.
+     * Maps LDAP attributes to user fields and maintains synchronization with directory
+     * data on each authentication.
+     *
+     * **LDAP Integration Process:**
+     * 1. Validate required LDAP attributes (email is mandatory)
+     * 2. Search for existing user by email address
+     * 3. Update user with current LDAP directory information
+     * 4. Create new user account if not found in database
+     * 5. Map enterprise attributes (department, title, employee_id)
+     * 6. Generate secure random password (LDAP handles authentication)
+     * 7. Set email as pre-verified (trusted directory source)
+     *
+     * **Enterprise Attribute Mapping:**
+     * - Basic: name, first_name, last_name, email, phone
+     * - Organizational: department, title, company, employee_id
+     * - Authentication: provider tracking and login timestamps
+     *
+     * **Security Features:**
+     * - Directory-verified email addresses
+     * - Secure password generation for backup authentication
+     * - Provider metadata for security auditing
+     * - Automatic account status management
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Process LDAP authentication
+     * $ldapData = [
+     *     'email' => 'jane.smith@corp.com',
+     *     'name' => 'Jane Smith',
+     *     'department' => 'Engineering',
+     *     'title' => 'Senior Developer',
+     *     'employee_id' => 'EMP12345',
+     *     'ldap_server' => 'corp-ldap'
+     * ];
+     * $user = $repository->findOrCreateFromLdap($ldapData);
+     * ```
+     *
+     * @param array $userData User data extracted from LDAP directory attributes
+     * @return array|null User data array with directory information, or null on failure
+     * @throws \InvalidArgumentException If required LDAP attributes are missing
+     * @throws \RuntimeException If user creation fails or LDAP data is corrupted
+     * @throws \Exception If database operations fail during user provisioning
      */
     public function findOrCreateFromLdap(array $userData): ?array
     {

@@ -39,6 +39,28 @@ class QueryBuilder implements QueryBuilderInterface
     private bool $optimizeEnabled = false;
     private bool $debugEnabled = false;
 
+    /**
+     * Create a new QueryBuilder instance with all required dependencies
+     *
+     * The QueryBuilder is constructed with all necessary components through dependency injection,
+     * enabling database-agnostic query building, execution, and result processing.
+     *
+     * @param QueryStateInterface $state Manages query state and metadata
+     * @param WhereClauseInterface $whereClause Handles WHERE clause construction
+     * @param SelectBuilderInterface $selectBuilder Builds SELECT queries and handles field selection
+     * @param InsertBuilderInterface $insertBuilder Builds INSERT queries with data validation
+     * @param UpdateBuilderInterface $updateBuilder Builds UPDATE queries with optimistic locking
+     * @param DeleteBuilderInterface $deleteBuilder Builds DELETE queries with soft delete support
+     * @param JoinClauseInterface $joinClause Handles table joins and relationship queries
+     * @param QueryModifiersInterface $queryModifiers Manages ORDER BY, GROUP BY, HAVING, LIMIT
+     * @param TransactionManagerInterface $transactionManager Handles database transactions and savepoints
+     * @param QueryExecutorInterface $queryExecutor Executes queries and manages database connections
+     * @param ResultProcessorInterface $resultProcessor Processes and transforms query results
+     * @param PaginationBuilderInterface $paginationBuilder Handles query pagination and counting
+     * @param SoftDeleteHandlerInterface $softDeleteHandler Manages soft delete functionality
+     * @param QueryValidatorInterface $queryValidator Validates table names, fields, and SQL safety
+     * @param QueryPurposeInterface $queryPurpose Tracks query purpose for logging and optimization
+     */
     public function __construct(
         private QueryStateInterface $state,
         private WhereClauseInterface $whereClause,
@@ -82,7 +104,25 @@ class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
-     * Add raw SELECT expression
+     * Add raw SELECT expression to the query
+     *
+     * ⚠️ **SECURITY WARNING**: This method accepts raw SQL expressions that are NOT escaped
+     * or validated for SQL injection. Only use this method with trusted input or properly
+     * escaped values.
+     *
+     * Use parameter bindings for any user input:
+     * ```php
+     * // UNSAFE - Don't do this with user input
+     * $query->selectRaw("CONCAT(first_name, ' ', last_name) as full_name");
+     *
+     * // SAFE - Use bindings for dynamic values
+     * $query->selectRaw("CASE WHEN age > ? THEN 'adult' ELSE 'minor' END as category")
+     *       ->addBinding($ageLimit);
+     * ```
+     *
+     * @param string $expression Raw SQL expression to add to SELECT clause
+     * @return static Returns this QueryBuilder instance for method chaining
+     * @throws \InvalidArgumentException If expression is empty or contains dangerous patterns
      */
     public function selectRaw(string $expression): static
     {
@@ -218,6 +258,32 @@ class QueryBuilder implements QueryBuilderInterface
 
     /**
      * Add JSON contains WHERE condition (database-agnostic)
+     *
+     * Searches for a value within a JSON column using database-specific JSON functions.
+     * The implementation varies by database engine:
+     * - MySQL: Uses JSON_CONTAINS() function
+     * - PostgreSQL: Uses @> (contains) operators
+     * - SQLite: Uses JSON_EXTRACT() and LIKE operations
+     *
+     * **Usage examples:**
+     * ```php
+     * // Search for exact value in JSON array
+     * $query->whereJsonContains('tags', 'php');
+     *
+     * // Search within nested JSON path
+     * $query->whereJsonContains('metadata', 'active', '$.status');
+     *
+     * // Search for object in JSON array
+     * $query->whereJsonContains('settings', '{"theme": "dark"}');
+     * ```
+     *
+     * @param string $column Name of the JSON column to search
+     * @param string $searchValue Value to search for within the JSON
+     * @param string|null $path Optional JSON path to search within (e.g., '$.address.city')
+     * @return static Returns this QueryBuilder instance for method chaining
+     * @throws \InvalidArgumentException If column name is invalid or path syntax is malformed
+     * @throws \Glueful\Exceptions\DatabaseException If JSON operations are not supported by database
+     * @throws \RuntimeException If the JSON search query cannot be constructed
      */
     public function whereJsonContains(string $column, string $searchValue, ?string $path = null): static
     {
@@ -456,7 +522,40 @@ class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
-     * Insert or update on duplicate key
+     * Insert or update on duplicate key (database-agnostic upsert)
+     *
+     * Performs an "upsert" operation - attempts to insert a record, but updates
+     * it if a duplicate key conflict occurs. The implementation varies by database:
+     * - MySQL: Uses INSERT ... ON DUPLICATE KEY UPDATE
+     * - PostgreSQL: Uses INSERT ... ON CONFLICT DO UPDATE
+     * - SQLite: Uses INSERT OR REPLACE INTO (with limitations)
+     *
+     * **Database compatibility notes:**
+     * - MySQL: Requires PRIMARY KEY or UNIQUE index for conflict detection
+     * - PostgreSQL: Can specify exact conflict columns for more control
+     * - SQLite: Updates ALL columns on conflict, may not preserve some data
+     *
+     * **Usage examples:**
+     * ```php
+     * // Insert new user or update email if username exists
+     * $affected = $query->from('users')->upsert(
+     *     ['username' => 'john', 'email' => 'john@example.com', 'age' => 30],
+     *     ['email', 'age']  // Only update these columns on conflict
+     * );
+     *
+     * // Upsert with increment counter
+     * $affected = $query->from('page_views')->upsert(
+     *     ['page' => '/home', 'views' => 1],
+     *     ['views' => 'views + 1']  // Custom update expression
+     * );
+     * ```
+     *
+     * @param array $data Associative array of column => value pairs to insert
+     * @param array $updateColumns Columns to update on duplicate key conflict
+     * @return int Number of affected rows (1 for insert, 2 for update in MySQL)
+     * @throws \InvalidArgumentException If data array is empty or contains invalid columns
+     * @throws \Glueful\Exceptions\DatabaseException If no table is set or database operation fails
+     * @throws \RuntimeException If upsert is not supported by the current database driver
      */
     public function upsert(array $data, array $updateColumns): int
     {
@@ -606,7 +705,44 @@ class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
-     * Execute a raw SQL query and return results
+     * Execute a raw SQL query and return all results
+     *
+     * ⚠️ **CRITICAL SECURITY WARNING**: This method executes raw SQL directly against
+     * the database with NO input validation or escaping. This creates a HIGH RISK of
+     * SQL injection attacks if used with untrusted input.
+     *
+     * **ONLY use this method when:**
+     * - You have complete control over the SQL string
+     * - All user input is properly bound via $bindings parameter
+     * - The SQL is static/hardcoded in your application
+     *
+     * **Example - SAFE usage:**
+     * ```php
+     * // Safe: Static SQL with parameter bindings
+     * $results = $query->executeRaw(
+     *     'SELECT * FROM users WHERE status = ? AND created_at > ?',
+     *     ['active', '2024-01-01']
+     * );
+     *
+     * // Safe: Using named bindings
+     * $results = $query->executeRaw(
+     *     'SELECT COUNT(*) as total FROM orders WHERE user_id = :userId',
+     *     ['userId' => $userId]
+     * );
+     * ```
+     *
+     * **Example - DANGEROUS usage:**
+     * ```php
+     * // NEVER DO THIS - SQL injection vulnerability
+     * $results = $query->executeRaw("SELECT * FROM users WHERE name = '$userName'");
+     * ```
+     *
+     * @param string $sql Raw SQL query to execute
+     * @param array $bindings Parameter bindings for placeholders in the SQL
+     * @return array Array of result rows as associative arrays
+     * @throws \Glueful\Exceptions\DatabaseException If query execution fails
+     * @throws \PDOException If database connection or SQL syntax errors occur
+     * @throws \InvalidArgumentException If SQL is empty or bindings are malformed
      */
     public function executeRaw(string $sql, array $bindings = []): array
     {
@@ -614,7 +750,22 @@ class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
-     * Execute a raw SQL query and return first result
+     * Execute a raw SQL query and return the first result row
+     *
+     * ⚠️ **CRITICAL SECURITY WARNING**: This method executes raw SQL directly against
+     * the database with NO input validation or escaping. See executeRaw() for detailed
+     * security considerations and safe usage examples.
+     *
+     * This is a convenience method that executes the query and returns only the first
+     * row, or null if no results are found.
+     *
+     * @param string $sql Raw SQL query to execute
+     * @param array $bindings Parameter bindings for placeholders in the SQL
+     * @return array|null First result row as associative array, or null if no results
+     * @throws \Glueful\Exceptions\DatabaseException If query execution fails
+     * @throws \PDOException If database connection or SQL syntax errors occur
+     * @throws \InvalidArgumentException If SQL is empty or bindings are malformed
+     * @see executeRaw() For detailed security warnings and usage examples
      */
     public function executeRawFirst(string $sql, array $bindings = []): ?array
     {
@@ -624,6 +775,36 @@ class QueryBuilder implements QueryBuilderInterface
 
     /**
      * Execute a raw modification query (INSERT, UPDATE, DELETE, DDL)
+     *
+     * ⚠️ **CRITICAL SECURITY WARNING**: This method executes raw SQL directly against
+     * the database with NO input validation or escaping. This creates a HIGH RISK of
+     * SQL injection attacks if used with untrusted input.
+     *
+     * Use this method for INSERT, UPDATE, DELETE, or DDL operations that return
+     * an affected row count rather than result data.
+     *
+     * **Example - SAFE usage:**
+     * ```php
+     * // Safe: UPDATE with parameter bindings
+     * $affected = $query->executeModification(
+     *     'UPDATE users SET last_login = ? WHERE id = ?',
+     *     [now(), $userId]
+     * );
+     *
+     * // Safe: DELETE with named bindings
+     * $deleted = $query->executeModification(
+     *     'DELETE FROM sessions WHERE expires_at < :now',
+     *     ['now' => time()]
+     * );
+     * ```
+     *
+     * @param string $sql Raw SQL modification query to execute
+     * @param array $bindings Parameter bindings for placeholders in the SQL
+     * @return int Number of affected rows
+     * @throws \Glueful\Exceptions\DatabaseException If query execution fails
+     * @throws \PDOException If database connection or SQL syntax errors occur
+     * @throws \InvalidArgumentException If SQL is empty or bindings are malformed
+     * @see executeRaw() For detailed security warnings and more examples
      */
     public function executeModification(string $sql, array $bindings = []): int
     {

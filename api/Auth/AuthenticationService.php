@@ -35,9 +35,29 @@ class AuthenticationService
     private SessionCacheManager $sessionCacheManager;
 
     /**
-     * Constructor
+     * Initialize AuthenticationService with dependency injection
      *
-     * Initializes service dependencies using dependency injection with optional fallbacks.
+     * Creates a new authentication service instance with optional dependency injection.
+     * If dependencies are not provided, the service will use default implementations
+     * or resolve them from the service container.
+     *
+     * The service automatically initializes the authentication system and configures
+     * the authentication manager for multi-provider support (LDAP, SAML, OAuth2, etc.).
+     *
+     * **Dependency Resolution:**
+     * - TokenStorage: Handles JWT token persistence and validation
+     * - SessionCacheManager: Manages user session data and caching
+     * - UserRepository: Provides user data access and persistence
+     * - Validator: Validates input credentials and authentication data
+     * - PasswordHasher: Handles secure password hashing and verification
+     *
+     * @param TokenStorageInterface|null $tokenStorage Token storage implementation for JWT handling
+     * @param SessionCacheManager|null $sessionCacheManager Session management and caching service
+     * @param UserRepository|null $userRepository User data repository for authentication
+     * @param Validator|null $validator Input validation service for credentials
+     * @param PasswordHasher|null $passwordHasher Password hashing and verification service
+     * @throws \RuntimeException If authentication system initialization fails
+     * @throws \InvalidArgumentException If any provided dependency has incorrect interface
      */
     public function __construct(
         ?TokenStorageInterface $tokenStorage = null,
@@ -486,17 +506,33 @@ class AuthenticationService
     /**
      * Get user data from refresh token
      *
-     * Retrieves user information associated with a refresh token.
+     * Retrieves user information associated with a refresh token by querying
+     * the auth_sessions table for an active session, then fetching the full
+     * user profile from the users table.
      *
-     * @param string $refreshToken Refresh token
-     * @return array|null User data or null if token is invalid
+     * **Security considerations:**
+     * - Only active sessions are considered valid
+     * - Refresh tokens are unique and securely generated
+     * - User data is sanitized before return
+     *
+     * **Process:**
+     * 1. Query auth_sessions for active session with refresh token
+     * 2. Extract user_uuid from session record
+     * 3. Fetch complete user profile from users table
+     * 4. Return sanitized user data
+     *
+     * @param string $refreshToken The refresh token to look up
+     * @return array|null User data array with profile information, or null if token is invalid/expired
+     * @throws \Glueful\Exceptions\DatabaseException If database query fails
+     * @throws \PDOException If database connection fails
+     * @throws \InvalidArgumentException If refresh token format is invalid
      */
     private function getUserDataFromRefreshToken(string $refreshToken): ?array
     {
         // Use existing database connection with fluent interface
         $db = new \Glueful\Database\Connection();
 
-        $result = $$db->table('auth_sessions')
+        $result = $db->table('auth_sessions')
             ->select(['user_uuid'])
             ->where(['refresh_token' => $refreshToken, 'status' => 'active'])
             ->limit(1)

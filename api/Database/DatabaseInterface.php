@@ -24,24 +24,10 @@ interface DatabaseInterface
      *
      * @return PDO The active database connection
      */
-    public function getConnection(): PDO;
-
-    /**
-     * Get the PDO connection instance
-     *
-     * @return PDO The active database connection
-     */
     public function getPDO(): PDO;
 
     /**
      * Get the schema builder for the current database
-     *
-     * @return SchemaBuilderInterface The schema builder instance
-     */
-    public function getSchemaManager(): SchemaBuilderInterface;
-
-    /**
-     * Get the fluent schema builder for the current database
      *
      * @return SchemaBuilderInterface The schema builder instance
      */
