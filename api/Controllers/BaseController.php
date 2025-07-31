@@ -189,7 +189,32 @@ abstract class BaseController
      */
 
     /**
-     * Create serialized response with groups
+     * Create serialized response with serialization groups
+     *
+     * Generates a JSON response using the framework's serialization system
+     * with optional serialization groups for controlling field visibility.
+     *
+     * **Serialization Groups:**
+     * - Control which fields are included in JSON output
+     * - Support nested object serialization
+     * - Enable different views for same data (public vs admin)
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Basic serialization
+     * return $this->serializeResponse($userData);
+     *
+     * // With groups for public API
+     * return $this->serializeResponse($userData, ['public']);
+     *
+     * // With multiple groups
+     * return $this->serializeResponse($userData, ['public', 'profile']);
+     * ```
+     *
+     * @param mixed $data Data to serialize (array, object, or primitive)
+     * @param array $groups Serialization groups to control field visibility
+     * @param string $message Response message for client
+     * @return Response JSON response with serialized data
      */
     protected function serializeResponse(mixed $data, array $groups = [], string $message = 'Success'): Response
     {
@@ -358,7 +383,34 @@ abstract class BaseController
     }
 
     /**
-     * Validate request data and return validation errors response if invalid
+     * Validate request data with built-in validation rules
+     *
+     * Performs basic validation on request data and returns validation error
+     * response if any rules fail. Provides common validation patterns for
+     * quick field validation without external validator dependencies.
+     *
+     * **Supported Validation Rules:**
+     * - `required`: Field must be present and non-empty
+     * - `email`: Field must be valid email format
+     * - `max:N`: Field length must not exceed N characters
+     *
+     * **Usage Examples:**
+     * ```php
+     * $rules = [
+     *     'email' => 'required|email',
+     *     'name' => 'required|max:100',
+     *     'phone' => 'max:20'
+     * ];
+     *
+     * $validationError = $this->validateRequest($requestData, $rules);
+     * if ($validationError) {
+     *     return $validationError; // Return 422 validation error response
+     * }
+     * ```
+     *
+     * @param array $data Request data to validate
+     * @param array $rules Validation rules keyed by field name
+     * @return Response|null Validation error response if validation fails, null if valid
      */
     protected function validateRequest(array $data, array $rules): ?Response
     {
@@ -389,7 +441,24 @@ abstract class BaseController
     }
 
     /**
-     * Handle exceptions and return appropriate error response
+     * Handle exceptions and return appropriate HTTP error response
+     *
+     * Centralizes exception handling across all controllers with proper
+     * error logging and user-friendly error responses. Converts framework
+     * exceptions to appropriate HTTP status codes.
+     *
+     * **Exception Handling:**
+     * - ValidationException: Returns 422 with field-specific errors
+     * - Other exceptions: Returns 500 with generic error message
+     * - All exceptions logged for debugging and monitoring
+     *
+     * **Security Features:**
+     * - Prevents sensitive error details from leaking to clients
+     * - Comprehensive error logging for troubleshooting
+     * - Consistent error response format across application
+     *
+     * @param \Exception $e Exception to handle and convert to HTTP response
+     * @return Response Appropriate HTTP error response based on exception type
      */
     protected function handleException(\Exception $e): Response
     {
@@ -404,9 +473,29 @@ abstract class BaseController
     }
 
     /**
-     * Get request data (POST/PUT/PATCH) with automatic JSON parsing
+     * Extract request data with automatic content-type detection
      *
-     * Replacement for custom Request::getPostData() method
+     * Intelligently parses request body based on Content-Type header,
+     * supporting both JSON and form-encoded data formats. Provides
+     * unified access to request data regardless of encoding.
+     *
+     * **Supported Content Types:**
+     * - `application/json`: Parses JSON body to associative array
+     * - `application/x-www-form-urlencoded`: Uses standard form data
+     * - `multipart/form-data`: Uses standard form data
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Works with JSON requests
+     * $data = $this->getRequestData();
+     * $email = $data['email'] ?? null;
+     *
+     * // Works with form requests
+     * $data = $this->getRequestData();
+     * $name = $data['name'] ?? null;
+     * ```
+     *
+     * @return array Parsed request data as associative array
      */
     protected function getRequestData(): array
     {
@@ -421,9 +510,23 @@ abstract class BaseController
     }
 
     /**
-     * Get PUT/PATCH data with automatic JSON parsing
+     * Extract PUT/PATCH request data with format detection
      *
-     * Replacement for custom Request::getPutData() method
+     * Handles PUT and PATCH request data parsing for both JSON and
+     * form-encoded content. Essential for RESTful API endpoints that
+     * update resources using HTTP PUT/PATCH methods.
+     *
+     * **Content Type Handling:**
+     * - JSON: Decodes JSON body to associative array
+     * - Form-encoded: Parses URL-encoded body data
+     * - Raw data: Handles custom content formats
+     *
+     * **HTTP Method Support:**
+     * - PUT: Complete resource updates
+     * - PATCH: Partial resource updates
+     * - Works with browsers that don't natively support PUT/PATCH
+     *
+     * @return array Parsed request data for PUT/PATCH operations
      */
     protected function getPutData(): array
     {

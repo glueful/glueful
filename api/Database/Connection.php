@@ -290,19 +290,6 @@ class Connection implements DatabaseInterface
     }
 
     /**
-     * Access active schema manager instance (legacy compatibility)
-     *
-     * @deprecated Use getSchemaBuilder() for the new fluent API
-     * @return SchemaBuilderInterface Current schema builder
-     * @throws \Glueful\Exceptions\DatabaseException If schema builder initialization fails
-     */
-    public function getSchemaManager(): SchemaBuilderInterface
-    {
-        return $this->getSchemaBuilder();
-    }
-
-
-    /**
      * Access active PDO connection
      *
      * Returns the underlying PDO instance from pooled connection if available,
@@ -333,17 +320,6 @@ class Connection implements DatabaseInterface
         }
 
         return $this->pdo;
-    }
-
-    /**
-     * Get the database connection (alias for getPDO)
-     *
-     * @return PDO Active database connection
-     * @throws \Glueful\Exceptions\DatabaseException If connection lost
-     */
-    public function getConnection(): PDO
-    {
-        return $this->getPDO();
     }
 
     /**
@@ -384,8 +360,15 @@ class Connection implements DatabaseInterface
     /**
      * Create a new QueryBuilder instance for the specified table
      *
+     * Creates and configures a new QueryBuilder instance with all required dependencies
+     * and sets the primary table for the query. This is the main entry point for
+     * fluent database operations.
+     *
      * @param string $table The table name to query
-     * @return QueryBuilder Configured QueryBuilder instance
+     * @return QueryBuilder Configured QueryBuilder instance ready for query building
+     * @throws \InvalidArgumentException If table name is empty, contains invalid characters, or SQL injection patterns
+     * @throws \Glueful\Exceptions\DatabaseException If connection or QueryBuilder initialization fails
+     * @throws \RuntimeException If any required QueryBuilder component cannot be instantiated
      */
     public function table(string $table): QueryBuilder
     {
@@ -405,7 +388,20 @@ class Connection implements DatabaseInterface
     /**
      * Create a properly configured QueryBuilder with all dependencies
      *
-     * @return QueryBuilder Fully configured QueryBuilder instance
+     * Instantiates and wires together all QueryBuilder components using the current
+     * database connection and driver. Each QueryBuilder instance gets its own set
+     * of component dependencies to ensure thread safety and isolation.
+     *
+     * Component initialization:
+     * - Uses connection pooling via getPDO() for optimal performance
+     * - Configures database-specific driver for SQL generation
+     * - Sets up transaction management with savepoint support
+     * - Enables query logging and parameter binding
+     * - Configures soft delete functionality
+     *
+     * @return QueryBuilder Fully configured QueryBuilder instance ready for use
+     * @throws \Glueful\Exceptions\DatabaseException If connection or driver initialization fails
+     * @throws \RuntimeException If any required component cannot be instantiated
      */
     private function createQueryBuilder(): QueryBuilder
     {

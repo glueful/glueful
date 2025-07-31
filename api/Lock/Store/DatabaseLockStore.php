@@ -22,7 +22,7 @@ class DatabaseLockStore extends PdoStore
             'expiration_col' => 'expiration'
         ], $options);
 
-        $pdo = $database->getConnection();
+        $pdo = $database->getPDO();
 
         parent::__construct($pdo, $this->options);
     }

@@ -170,7 +170,29 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * {@inheritdoc}
+     * Create a new record with automatic UUID generation and timestamps
+     *
+     * Creates a new database record with automatic UUID generation, timestamp
+     * management, and event dispatching. Ensures data integrity and provides
+     * comprehensive error handling.
+     *
+     * **Process:**
+     * 1. Generate UUID if not provided (using NanoID for uniqueness)
+     * 2. Add created_at and updated_at timestamps automatically
+     * 3. Execute database insert operation
+     * 4. Dispatch EntityCreatedEvent for downstream processing
+     * 5. Return the generated or provided UUID
+     *
+     * **Automatic Field Management:**
+     * - UUID: Generated using Utils::generateNanoID() if not provided
+     * - created_at: Set to current timestamp if not provided
+     * - updated_at: Set to current timestamp if table supports it
+     *
+     * @param array $data Record data to insert (UUID optional, will be generated)
+     * @return string The UUID of the created record
+     * @throws \Glueful\Exceptions\DatabaseException If database insert fails
+     * @throws \InvalidArgumentException If required data fields are missing
+     * @throws \RuntimeException If UUID generation fails
      */
     public function create(array $data): string
     {
@@ -195,7 +217,6 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         $uuid = $data[$this->primaryKey];
-
 
         // Dispatch entity created event
         Event::dispatch(new EntityCreatedEvent($data, $this->table, [
@@ -358,7 +379,42 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * {@inheritdoc}
+     * Create multiple records in a single optimized transaction
+     *
+     * Performs bulk record creation with automatic UUID generation, timestamp
+     * management, and transactional safety. Optimized for large datasets with
+     * rollback protection on failure.
+     *
+     * **Performance Features:**
+     * - Single database transaction for atomicity
+     * - Batch insert for optimal database performance
+     * - Automatic rollback on any failure
+     * - Memory-efficient processing for large datasets
+     *
+     * **Process:**
+     * 1. Validate input data array
+     * 2. Generate UUIDs and timestamps for all records
+     * 3. Begin database transaction
+     * 4. Execute batch insert operation
+     * 5. Commit transaction or rollback on failure
+     * 6. Return array of generated UUIDs
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Create multiple users
+     * $userData = [
+     *     ['name' => 'John Doe', 'email' => 'john@example.com'],
+     *     ['name' => 'Jane Smith', 'email' => 'jane@example.com']
+     * ];
+     * $uuids = $repository->bulkCreate($userData);
+     * ```
+     *
+     * @param array $records Array of record data arrays to insert
+     * @return array Array of UUIDs for the created records
+     * @throws \InvalidArgumentException If records array is malformed
+     * @throws \RuntimeException If bulk insert operation fails
+     * @throws \Glueful\Exceptions\DatabaseException If transaction fails
+     * @throws \Exception If any database operation fails (triggers rollback)
      */
     public function bulkCreate(array $records): array
     {
@@ -514,6 +570,11 @@ abstract class BaseRepository implements RepositoryInterface
 
     /**
      * Begin a database transaction
+     *
+     * Starts a new database transaction for atomic operations.
+     * Must be paired with commit() or rollBack() to complete the transaction.
+     *
+     * @throws \PDOException If transaction cannot be started
      */
     public function beginTransaction(): void
     {
@@ -523,6 +584,11 @@ abstract class BaseRepository implements RepositoryInterface
 
     /**
      * Commit a database transaction
+     *
+     * Commits all operations performed within the current transaction,
+     * making changes permanent in the database.
+     *
+     * @throws \PDOException If transaction commit fails
      */
     public function commit(): void
     {
@@ -532,6 +598,12 @@ abstract class BaseRepository implements RepositoryInterface
 
     /**
      * Roll back a database transaction
+     *
+     * Reverts all operations performed within the current transaction,
+     * restoring the database to its state before the transaction began.
+     *
+     * @return bool True if rollback succeeded, false otherwise
+     * @throws \PDOException If rollback operation fails
      */
     public function rollBack(): bool
     {

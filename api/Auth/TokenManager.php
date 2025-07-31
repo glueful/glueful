@@ -65,16 +65,41 @@ class TokenManager
         return app(SessionCacheManager::class);
     }
 
-   /**
- * Generate token pair with custom lifetimes
- *
- * Creates access and refresh tokens for authentication.
- *
- * @param array $userData User data to encode in tokens
- * @param int $accessTokenLifetime Access token lifetime in seconds
- * @param int $refreshTokenLifetime Refresh token lifetime in seconds
- * @return array Token pair with access_token and refresh_token
- */
+    /**
+     * Generate JWT token pair with custom lifetimes
+     *
+     * Creates a matched pair of access and refresh tokens for user authentication.
+     * Access tokens are short-lived and used for API requests, while refresh tokens
+     * are long-lived and used to generate new access tokens.
+     *
+     * **Token Structure:**
+     * - Access Token: Contains user data, expires quickly (default 15 minutes)
+     * - Refresh Token: Contains session reference, expires slowly (default 7 days)
+     * - Both tokens are JWT format with HS256 signing
+     *
+     * **Security Features:**
+     * - Tokens include issued time (iat) and expiration (exp) claims
+     * - Refresh tokens are tied to specific sessions for revocation
+     * - Token lifetime defaults from configuration with security best practices
+     *
+     * **Usage Example:**
+     * ```php
+     * $tokens = TokenManager::generateTokenPair(
+     *     ['uuid' => $user['uuid'], 'email' => $user['email']],
+     *     900,  // 15 minutes access token
+     *     604800 // 7 days refresh token
+     * );
+     * // Returns: ['access_token' => '...', 'refresh_token' => '...']
+     * ```
+     *
+     * @param array $userData User data to encode in tokens (must include 'uuid')
+     * @param int|null $accessTokenLifetime Access token lifetime in seconds (default from config)
+     * @param int|null $refreshTokenLifetime Refresh token lifetime in seconds (default from config)
+     * @return array Token pair with 'access_token' and 'refresh_token' keys
+     * @throws \InvalidArgumentException If userData is empty or missing required fields
+     * @throws \RuntimeException If JWT key is not configured or token generation fails
+     * @throws \Glueful\Exceptions\AuthenticationException If token encoding fails
+     */
     public static function generateTokenPair(
         array $userData,
         ?int $accessTokenLifetime = null,
@@ -155,14 +180,54 @@ class TokenManager
     }
 
     /**
-     * Refresh authentication tokens
+     * Refresh authentication tokens with multi-provider support
      *
-     * Generates new token pair using refresh token.
-     * Supports multiple authentication providers.
+     * Generates a new access/refresh token pair using an existing refresh token.
+     * Supports multiple authentication providers and maintains session continuity
+     * across different authentication methods.
      *
-     * @param string $refreshToken Current refresh token
-     * @param string|null $provider Optional provider name to use
-     * @return array|null New token pair or null if invalid
+     * **Provider Resolution Flow:**
+     * 1. If provider specified, use that provider's refresh mechanism
+     * 2. If no provider, lookup stored provider from session database
+     * 3. Fallback to standard JWT token refresh for backward compatibility
+     * 4. Update database session with new tokens atomically
+     *
+     * **Security Features:**
+     * - Validates refresh token before generating new tokens
+     * - Maintains session audit trail and analytics
+     * - Respects remember-me settings for token lifetimes
+     * - Revokes old refresh token to prevent replay attacks
+     *
+     * **Provider Support:**
+     * - JWT: Standard token refresh with signature validation
+     * - LDAP: Re-validates against LDAP server if configured
+     * - SAML: Uses SAML assertion refresh if available
+     * - OAuth2: Uses OAuth2 refresh token flow
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Standard JWT token refresh
+     * $newTokens = TokenManager::refreshTokens($oldRefreshToken);
+     *
+     * // LDAP provider refresh
+     * $newTokens = TokenManager::refreshTokens($refreshToken, 'ldap');
+     *
+     * // With request context for analytics
+     * $newTokens = TokenManager::refreshTokens(
+     *     $refreshToken,
+     *     'saml',
+     *     RequestContext::fromGlobals()
+     * );
+     * ```
+     *
+     * @param string $refreshToken The current refresh token to exchange
+     * @param string|null $provider Authentication provider name to use for refresh
+     * @param RequestContext|null $requestContext Request context for session tracking
+     * @return array|null New token pair with 'access_token' and 'refresh_token', or null if invalid
+     * @throws \InvalidArgumentException If refresh token format is invalid
+     * @throws \Glueful\Exceptions\DatabaseException If session lookup or update fails
+     * @throws \Glueful\Exceptions\AuthenticationException If token refresh fails
+     * @throws \RuntimeException If specified authentication provider is unavailable
      */
     public static function refreshTokens(
         string $refreshToken,
@@ -319,14 +384,49 @@ class TokenManager
         return $normalizedUser;
     }
 
-     /**
-     * Create user session with provider support
+    /**
+     * Create user session with multi-provider authentication support
      *
-     * Handles user authentication and session creation with support for different authentication providers.
+     * Creates a new user session with JWT tokens and database persistence.
+     * Supports multiple authentication providers (LDAP, SAML, OAuth2, JWT)
+     * and implements OIDC-compliant session management.
      *
-     * @param array $user User data
-     * @param string|null $provider Optional authentication provider to use
-     * @return array Session data or error
+     * **Authentication Provider Flow:**
+     * 1. If provider specified, delegate to provider-specific token generation
+     * 2. If no provider, use default JWT token generation
+     * 3. Store session in database with atomic cache updates
+     * 4. Return OIDC-compliant session data
+     *
+     * **OIDC Compliance Features:**
+     * - Standard token response format
+     * - Proper token lifetime handling
+     * - Session tracking and analytics
+     * - Remember-me functionality
+     * - Provider-specific claims
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Standard JWT authentication
+     * $session = TokenManager::createUserSession([
+     *     'uuid' => $user['uuid'],
+     *     'email' => $user['email'],
+     *     'remember_me' => true
+     * ]);
+     *
+     * // LDAP authentication
+     * $session = TokenManager::createUserSession($userData, 'ldap');
+     *
+     * // SAML authentication with custom claims
+     * $session = TokenManager::createUserSession($samlUserData, 'saml');
+     * ```
+     *
+     * @param array $user User data array (must include 'uuid' field)
+     * @param string|null $provider Authentication provider name ('ldap', 'saml', 'oauth2', etc.)
+     * @return array OIDC-compliant session data with tokens and user info, or empty array on failure
+     * @throws \InvalidArgumentException If user data is invalid or missing required fields
+     * @throws \Glueful\Exceptions\DatabaseException If session storage fails
+     * @throws \Glueful\Exceptions\AuthenticationException If token generation fails
+     * @throws \RuntimeException If authentication provider is not available
      */
     public static function createUserSession(array $user, ?string $provider = null): array
     {

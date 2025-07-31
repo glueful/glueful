@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.29.0 (July 30, 2025)  
+**Latest Release:** v0.30.0 (July 31, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -33,14 +33,28 @@
   - Batch fetching to prevent N+1 queries
   - 50% reduction in permission-heavy requests
 
-### 🎯 **v0.30.0** - Final Pre-Release
+### 🏁 **v0.30.0** - Documentation & API Stability ✅ **RELEASED**
+**Major documentation improvements and API governance framework**
+
+- ✅ **Comprehensive PHPDoc Coverage**
+  - Complete documentation for 127+ methods across core components
+  - Database Layer, Authentication System, Extension System documentation
+  - Repository Classes and Controllers API documentation
+  - Enhanced security warnings for SQL injection prevention
+- ✅ **API Stability Finalization**
+  - ✅ API stability review and final breaking changes
+  - ✅ Deprecation policy documentation
+  - ✅ Semantic versioning commitment
+  - ✅ Breaking change management process
+- ✅ **Performance & Bug Fixes**
+  - Fixed critical authentication syntax error
+  - Eliminated duplicate database queries in system health checks
+  - Database interface cleanup and optimization
+  - Multi-database setup documentation (MySQL, PostgreSQL, SQLite)
+
+### 🎯 **v0.31.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**
 
-- [ ] **API Stability Finalization**
-  - API stability review and final breaking changes
-  - Deprecation policy documentation
-  - Semantic versioning commitment
-  - Breaking change management process
 - [ ] **Release Engineering**
   - 90%+ test coverage validation
   - Integration test suite completion
@@ -110,6 +124,13 @@
 - Migration guides from Laravel, Symfony, and other frameworks
 - Framework comparison documentation
 - Automated migration tools
+- **API Stability Tooling**
+  - Breaking change detection: `php glueful breaking-change:detect`
+  - Deprecation scanning: `php glueful deprecation:scan`
+  - API compatibility checking: `php glueful api:diff`
+  - Automated migration utilities: `php glueful migrate:v1-to-v2`
+  - Upgrade validation: `php glueful upgrade:validate`
+  - Usage analysis: `php glueful usage:scan`
 - **Documentation Enhancement**
   - Interactive documentation examples
   - Video tutorial series

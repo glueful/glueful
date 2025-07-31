@@ -42,11 +42,55 @@ class ExtensionManager
     // ============================================================================
 
     /**
-     * Install an extension from various sources
+     * Install extension from multiple sources with comprehensive validation
      *
-     * @param string $source Source path, URL, or extension name
-     * @param array $options Installation options
-     * @return array Installation result
+     * Installs extensions from various sources including remote URLs, local packages,
+     * or extension catalog names. Performs complete validation, dependency resolution,
+     * and secure installation with rollback on failure.
+     *
+     * **Installation Process:**
+     * 1. Determine source type (URL, local file, or catalog name)
+     * 2. Download or locate package file
+     * 3. Verify package integrity and security
+     * 4. Extract to temporary location for validation
+     * 5. Validate extension structure and dependencies
+     * 6. Check for name conflicts with existing extensions
+     * 7. Install to extensions directory
+     * 8. Resolve and install Composer dependencies
+     * 9. Update extension configuration
+     * 10. Cleanup temporary files
+     *
+     * **Supported Sources:**
+     * - Remote URL: `https://github.com/user/extension/archive/main.zip`
+     * - Local package: `/path/to/extension.zip`
+     * - Catalog name: `UserManagement` (downloads from official catalog)
+     *
+     * **Installation Options:**
+     * - `auto_enable`: Automatically enable extension after installation
+     * - `skip_dependencies`: Skip Composer dependency installation
+     * - `force`: Overwrite existing extension if present
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Install from catalog
+     * $result = $manager->install('UserManagement', ['auto_enable' => true]);
+     *
+     * // Install from URL
+     * $result = $manager->install(
+     *     'https://github.com/glueful/payment-gateway/archive/v1.0.zip'
+     * );
+     *
+     * // Install local package
+     * $result = $manager->install('/tmp/custom-extension.zip', ['force' => true]);
+     * ```
+     *
+     * @param string $source Source path, URL, or extension name from catalog
+     * @param array $options Installation options (auto_enable, skip_dependencies, force)
+     * @return array Installation result with success status, extension info, and errors
+     * @throws \InvalidArgumentException If source parameter is empty or invalid
+     * @throws \Glueful\Exceptions\ExtensionException If installation fails due to validation errors
+     * @throws \RuntimeException If filesystem operations fail or dependencies cannot be resolved
+     * @throws \Exception If package download, extraction, or verification fails
      */
     public function install(string $source, array $options = []): array
     {
@@ -205,10 +249,37 @@ class ExtensionManager
     }
 
     /**
-     * Run composer install in extension directory
+     * Execute Composer dependency installation for extension
      *
-     * @param string $path Extension directory path
-     * @return bool Success status
+     * Runs `composer install` in the extension directory to resolve and install
+     * PHP dependencies defined in the extension's composer.json file.
+     * Uses production-optimized settings for performance and security.
+     *
+     * **Composer Options Used:**
+     * - `--no-dev`: Skip development dependencies for production deployment
+     * - `--optimize-autoloader`: Generate optimized autoloader for better performance
+     * - Captures both stdout and stderr for comprehensive error reporting
+     *
+     * **Process:**
+     * 1. Change to extension directory
+     * 2. Execute composer install with production options
+     * 3. Capture output and return code
+     * 4. Restore original working directory
+     * 5. Return success/failure status with detailed logging
+     *
+     * **Usage Examples:**
+     * ```php
+     * // Install dependencies for extension
+     * $success = $this->runComposerInstall('/path/to/extension');
+     * if (!$success) {
+     *     throw new ExtensionException('Dependency installation failed');
+     * }
+     * ```
+     *
+     * @param string $path Extension directory path containing composer.json
+     * @return bool True if installation succeeded, false on failure
+     * @throws \RuntimeException If directory change fails or composer is not available
+     * @throws \InvalidArgumentException If path does not exist or is not a directory
      */
     private function runComposerInstall(string $path): bool
     {

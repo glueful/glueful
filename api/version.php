@@ -9,8 +9,8 @@
  */
 
 return [
-    'version' => '0.29.0',
-    'name' => 'Query Builder Redesign & Performance',
-    'release_date' => '2025-07-30',
+    'version' => '0.30.0',
+    'name' => 'Documentation & API Stability',
+    'release_date' => '2025-07-31',
     'min_php_version' => '8.2.0'
 ];

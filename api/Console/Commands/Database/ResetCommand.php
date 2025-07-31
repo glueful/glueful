@@ -58,7 +58,7 @@ class ResetCommand extends BaseCommand
 
         try {
             $this->connection = new Connection();
-            $schema = $this->connection->getSchemaManager();
+            $schema = $this->connection->getSchemaBuilder();
 
             // Get all tables
             $tables = $schema->getTables();
@@ -173,7 +173,7 @@ class ResetCommand extends BaseCommand
 
     private function executeReset(array $tables): void
     {
-        $schema = $this->connection->getSchemaManager();
+        $schema = $this->connection->getSchemaBuilder();
         $tableCount = count($tables);
 
         $this->info(sprintf('Dropping %d tables...', $tableCount));

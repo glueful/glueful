@@ -2,6 +2,67 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.30.0] - 2025-07-31
+
+### Added
+- **Comprehensive PHPDoc Documentation Coverage**
+  - Added extensive documentation to 127+ methods across core framework components
+  - Database Layer: Complete documentation for QueryBuilder, Connection, and DatabaseInterface (22 methods)
+  - Authentication System: Documented AuthenticationService and TokenManager with examples (12 methods)
+  - Extension System: Complete documentation for extension loading, validation, and management (35+ methods)
+  - Repository Classes: Added PHPDoc to all repository methods with usage examples (8 methods)
+  - Controllers: Comprehensive API endpoint documentation with parameter details (50+ methods)
+- **Formal API Stability Governance**
+  - Created comprehensive Deprecation Policy (DEPRECATION_POLICY.md) with 2-major-version lifecycle
+  - Established Breaking Change Management Process (BREAKING_CHANGE_PROCESS.md) with 5-phase workflow
+  - Defined change classification system (Major/Minor/Micro breaking changes)
+  - Added emergency procedures for security-critical changes
+- **Multi-Database Setup Documentation**
+  - Enhanced README.md with setup instructions for MySQL, PostgreSQL, and SQLite
+  - Added database-specific configuration examples and setup commands
+  - Improved installation documentation with multiple installation methods
+
+### Improved
+- **Security Documentation**
+  - Enhanced QueryBuilder methods with critical SQL injection warnings
+  - Added comprehensive security notes for raw SQL execution methods
+  - Improved database compatibility documentation for driver-specific features
+- **CLI Command Consistency**
+  - Standardized all CLI commands from "./glueful" to "php glueful" format across documentation
+  - Updated BREAKING_CHANGE_PROCESS.md, ROADMAP.md, and README.md for consistency
+- **Database Query Optimization**
+  - Eliminated duplicate database queries between bootstrap validation and CLI commands
+  - Enhanced ConnectionValidator caching mechanism to prevent redundant health checks
+  - Improved system startup performance by reducing duplicate connectivity tests
+
+### Fixed
+- **Critical Authentication Bug**
+  - Fixed syntax error in AuthenticationService.php (line 499) that prevented user data retrieval
+  - Corrected variable reference that was blocking authentication functionality
+- **Database Interface Cleanup**
+  - Removed duplicate interface methods (getConnection/getPDO duplication)
+  - Cleaned up deprecated getSchemaManager() method references
+  - Streamlined database connection handling for better performance
+- **Query Execution Performance**
+  - Fixed duplicate query execution in HealthService between startup validation and system checks
+  - Reduced redundant database connectivity tests during framework initialization
+  - Optimized system health check performance
+
+### Documentation
+- **API Stability Documentation**
+  - Complete governance framework for managing API changes and deprecations
+  - Clear guidelines for breaking change communication and migration support
+  - Established timeline and process for major version releases
+- **Enhanced Code Documentation**
+  - JWT token structure documentation with OIDC compliance details
+  - Multi-provider authentication flow documentation
+  - Extension system architecture documentation with dependency management
+  - Database query builder security best practices
+- **Installation and Setup**
+  - Multi-database configuration examples (MySQL, PostgreSQL, SQLite)
+  - Improved setup documentation with alternative installation methods
+  - Enhanced CLI command reference with consistent formatting
+
 ## [0.29.0] - 2025-07-30
 
 ### Added

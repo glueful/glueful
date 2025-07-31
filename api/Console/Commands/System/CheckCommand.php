@@ -256,10 +256,10 @@ class CheckCommand extends BaseCommand
     private function checkDatabase(): array
     {
         try {
-            // Get HealthService from DI container
+            // Use ConnectionValidator to avoid duplicate queries with bootstrap validation
+            $healthResult = \Glueful\Database\ConnectionValidator::performHealthCheck();
             $healthService = $this->getService(HealthService::class);
-            $healthResult = $healthService->checkDatabase();
-            return $healthService->convertToSystemCheckFormat($healthResult);
+            return $healthService->convertToSystemCheckFormat($healthResult['details'] ?? $healthResult);
         } catch (\Exception $e) {
             return [
                 'passed' => false,
