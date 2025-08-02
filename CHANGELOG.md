@@ -2,6 +2,64 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.31.0] - 2025-08-02
+
+### Added
+- **Web Setup Wizard**
+  - Browser-based installation interface as an alternative to CLI installation
+  - Complete setup package in new `/setup` directory with MVC structure
+  - SetupController for handling web-based installation flow
+  - Interactive system requirements checker with visual pass/fail indicators
+  - Database configuration form with connection testing capability
+  - Admin user creation with real-time password validation
+  - Professional UI with Glueful branding (shark and boulder color scheme)
+  - Mobile-responsive design using CSS Grid and Flexbox
+  - Client-side form validation and data persistence with localStorage
+  - Integration with existing CLI install command for backend processing
+- **Permission System Enhancements**
+  - Added `assignRole()` and `revokeRole()` methods to PermissionManagerInterface
+  - Added role assignment methods to PermissionProviderInterface
+  - Implemented role management facade methods in PermissionManager
+  - Enhanced permission system with direct role assignment capabilities
+- **CLI Command Improvements**
+  - Added `--skip-cache` option to InstallCommand for skipping cache initialization
+  - Added `--skip-db` as an alias for `--skip-database` option
+  - Enhanced InstallCommand with better environment variable handling for web setup
+  - Improved admin user creation flow in quiet mode
+
+### Improved
+- **Database Configuration**
+  - Changed database engine configuration from `DB_ENGINE` to `DB_DRIVER` for consistency
+  - Fixed SQLite database paths to use `/storage/database/` directory
+  - Simplified database driver configuration by removing redundant env() calls
+- **Web Setup Experience**
+  - Added visual feedback for system requirement checks
+  - Implemented step-by-step navigation with progress tracking
+  - Added form data persistence between setup steps
+  - Enhanced error handling with user-friendly messages
+- **API Definitions Command**
+  - Enhanced error handling and validation in ApiDefinitionsCommand
+  - Improved OpenAPI schema generation process
+
+### Fixed
+- **Routing Configuration**
+  - Added setup-specific routes for CSS, JavaScript, and SVG assets
+  - Fixed static file serving with proper MIME types
+  - Resolved navigation between setup wizard steps
+- **Autoloading**
+  - Added PSR-4 autoloading for setup namespace in composer.json
+  - Fixed namespace resolution for SetupController
+
+### Technical Details
+- Created new setup module structure:
+  - `/setup/Controllers/SetupController.php` - Main controller
+  - `/setup/index.php` - View template
+  - `/setup/setup.css` - Styling with custom properties
+  - `/setup/setup.js` - Client-side interactions
+- Modified composer.json to include: `"Glueful\\Setup\\": "setup/"`
+- Enhanced public routes to handle both `/setup` and `/api/v1/setup` paths
+- Integrated web setup with CLI install command using environment variables
+
 ## [0.30.0] - 2025-07-31
 
 ### Added

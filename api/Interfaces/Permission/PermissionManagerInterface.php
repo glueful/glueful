@@ -112,6 +112,33 @@ interface PermissionManagerInterface
     public function revokePermission(string $userUuid, string $permission, string $resource): bool;
 
     /**
+     * Assign role to user
+     *
+     * Facade method for role assignment. Delegates to the active provider's
+     * assignRole method for role-based permission systems, or translates
+     * to appropriate permission grants for other systems.
+     *
+     * @param string $userUuid User UUID
+     * @param string $roleSlug Role identifier/slug
+     * @param array $options Assignment options
+     * @return bool Success status
+     * @throws \Exception If no provider is registered
+     */
+    public function assignRole(string $userUuid, string $roleSlug, array $options = []): bool;
+
+    /**
+     * Revoke role from user
+     *
+     * Facade method for role revocation.
+     *
+     * @param string $userUuid User UUID
+     * @param string $roleSlug Role identifier/slug
+     * @return bool Success status
+     * @throws \Exception If no provider is registered
+     */
+    public function revokeRole(string $userUuid, string $roleSlug): bool;
+
+    /**
      * Check if the permission system is available
      *
      * Returns true if a permission provider is registered and functional.

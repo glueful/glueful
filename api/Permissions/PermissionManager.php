@@ -278,6 +278,80 @@ class PermissionManager implements PermissionManagerInterface
     }
 
     /**
+     * Assign role to user
+     *
+     * Facade method for role assignment. Delegates to the active provider's
+     * assignRole method for role-based permission systems.
+     *
+     * @param string $userUuid User UUID
+     * @param string $roleSlug Role identifier/slug
+     * @param array $options Assignment options
+     * @return bool Success status
+     * @throws ProviderNotFoundException If no provider is registered
+     */
+    public function assignRole(string $userUuid, string $roleSlug, array $options = []): bool
+    {
+        if (!self::$activeProvider) {
+            throw new ProviderNotFoundException("No permission provider is registered");
+        }
+
+        try {
+            $result = self::$activeProvider->assignRole($userUuid, $roleSlug, $options);
+
+            if (self::$debugMode) {
+                self::$debugInfo[] = [
+                    'action' => 'role_assigned',
+                    'user' => $userUuid,
+                    'role' => $roleSlug,
+                    'options' => $options,
+                    'result' => $result,
+                    'timestamp' => time()
+                ];
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            throw new PermissionException("Failed to assign role: " . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Revoke role from user
+     *
+     * Facade method for role revocation. Delegates to the active provider's
+     * revokeRole method.
+     *
+     * @param string $userUuid User UUID
+     * @param string $roleSlug Role identifier/slug
+     * @return bool Success status
+     * @throws ProviderNotFoundException If no provider is registered
+     */
+    public function revokeRole(string $userUuid, string $roleSlug): bool
+    {
+        if (!self::$activeProvider) {
+            throw new ProviderNotFoundException("No permission provider is registered");
+        }
+
+        try {
+            $result = self::$activeProvider->revokeRole($userUuid, $roleSlug);
+
+            if (self::$debugMode) {
+                self::$debugInfo[] = [
+                    'action' => 'role_revoked',
+                    'user' => $userUuid,
+                    'role' => $roleSlug,
+                    'result' => $result,
+                    'timestamp' => time()
+                ];
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            throw new PermissionException("Failed to revoke role: " . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
      * Check if the permission system is available
      *
      * @return bool True if permission system is available
