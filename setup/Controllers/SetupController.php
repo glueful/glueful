@@ -27,10 +27,6 @@ class SetupController
         $validSteps = ['welcome', 'database', 'admin', 'complete'];
         $currentStep = $step && in_array($step, $validSteps) ? $step : 'welcome';
 
-        // Debug: Add step parameter to response headers for debugging
-        error_log("Setup Controller - Step parameter: " . ($step ?? 'null'));
-        error_log("Setup Controller - Current step: " . $currentStep);
-
         // Perform system check
         $systemCheck = $this->performSystemCheck();
 

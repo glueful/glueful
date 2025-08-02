@@ -221,7 +221,7 @@
             currentStep: '<?= $currentStep ?>',
             validSteps: <?= json_encode($validSteps) ?>
         };
-        console.log('Setup Config:', window.setupConfig);
+        // console.log('Setup Config:', window.setupConfig);
     </script>
     <script src="/api/v1/setup/setup.js"></script>
 </body>
