@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.30.0 (July 31, 2025)  
+**Latest Release:** v0.31.0 (August 2, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -52,7 +52,27 @@
   - Database interface cleanup and optimization
   - Multi-database setup documentation (MySQL, PostgreSQL, SQLite)
 
-### 🎯 **v0.31.0** - Final Pre-Release
+### 🏁 **v0.31.0** - Web Setup & Developer Experience ✅ **RELEASED**
+**Enhanced installation experience and permission system improvements**
+
+- ✅ **Web Setup Wizard**
+  - Browser-based installation interface
+  - Interactive system requirements checker
+  - Database configuration with connection testing
+  - Admin user creation with validation
+  - Professional UI with Glueful branding
+  - Mobile-responsive design
+- ✅ **Permission System Enhancements**
+  - Direct role assignment methods
+  - Enhanced PermissionManager with role management
+  - Improved permission provider interface
+- ✅ **Developer Experience**
+  - CLI command improvements for installation
+  - Database configuration consistency (DB_DRIVER)
+  - Enhanced error handling and validation
+  - Better integration between web and CLI setup
+
+### 🎯 **v0.32.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**
 
 - [ ] **Release Engineering**
@@ -185,4 +205,4 @@ Every feature prioritizes production reliability, security, and performance over
 
 ---
 
-*Last updated: July 23, 2025*
+*Last updated: August 2, 2025*

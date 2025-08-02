@@ -9,11 +9,11 @@
 
 return [
     // Default database engine (mysql, sqlite, pgsql)
-    'engine' => env('DB_ENGINE', 'mysql'),
+    'engine' => env('DB_DRIVER', 'mysql'),
 
     // MySQL database connection
     'mysql' => [
-        'driver' => env('DB_DRIVER', 'mysql'),
+        'driver' => 'mysql',
         'host' => env('DB_HOST', '127.0.0.1'),
         'port' => env('DB_PORT', 3306),
         'db' => env('DB_DATABASE', 'glueful'),
@@ -41,7 +41,7 @@ return [
 
     // PostgreSQL configuration
     'pgsql' => [
-        'driver' => env('DB_PGSQL_DRIVER', 'pgsql'),
+        'driver' => 'pgsql',
         'host' => env('DB_PGSQL_HOST', '127.0.0.1'),
         'port' => env('DB_PGSQL_PORT', 5432),
         'db' => env('DB_PGSQL_DATABASE', 'glueful'),
@@ -57,8 +57,9 @@ return [
 
     // SQLite configuration
     'sqlite' => [
-        'primary' => env('DB_SQLITE_DATABASE', dirname(__DIR__) . '/database/primary.sqlite'),
-        'testing' => env('DB_SQLITE_TESTING', dirname(__DIR__) . '/database/testing.sqlite'),
+        'driver' => 'sqlite',
+        'primary' => env('DB_SQLITE_DATABASE', dirname(__DIR__) . '/storage/database/primary.sqlite'),
+        'testing' => env('DB_SQLITE_TESTING', dirname(__DIR__) . '/storage/database/testing.sqlite'),
         'role' => env('DB_SQLITE_ROLE', 'backup')
     ],
 

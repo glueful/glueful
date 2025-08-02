@@ -111,4 +111,18 @@ class MockPermissionProvider implements PermissionProviderInterface
     {
         return ['status' => 'ok'];
     }
+
+    public function assignRole(string $userUuid, string $roleSlug, array $options = []): bool
+    {
+        // Mock implementation - for testing purposes
+        // In a real implementation, this would assign the role to the user
+        return true;
+    }
+
+    public function revokeRole(string $userUuid, string $roleSlug): bool
+    {
+        // Mock implementation - for testing purposes
+        // In a real implementation, this would revoke the role from the user
+        return true;
+    }
 }

@@ -168,6 +168,32 @@ interface PermissionProviderInterface
     public function batchRevokePermissions(string $userUuid, array $permissions): bool;
 
     /**
+     * Assign a role to a user
+     *
+     * Assigns a specific role to a user. For role-based permission systems,
+     * this is the primary way to grant permissions through role membership.
+     * For non-role-based systems, this may translate to equivalent permission grants.
+     *
+     * @param string $userUuid User UUID to assign role to
+     * @param string $roleSlug Role identifier/slug to assign
+     * @param array $options Additional options (expiry, scope, constraints, etc.)
+     * @return bool True if role assignment successful, false otherwise
+     */
+    public function assignRole(string $userUuid, string $roleSlug, array $options = []): bool;
+
+    /**
+     * Revoke a role from a user
+     *
+     * Removes a specific role from a user. This will typically revoke
+     * all permissions associated with that role.
+     *
+     * @param string $userUuid User UUID to revoke role from
+     * @param string $roleSlug Role identifier/slug to revoke
+     * @return bool True if role revocation successful, false otherwise
+     */
+    public function revokeRole(string $userUuid, string $roleSlug): bool;
+
+    /**
      * Invalidate cached permissions for a user
      *
      * Clear any cached permission data for the specified user.
