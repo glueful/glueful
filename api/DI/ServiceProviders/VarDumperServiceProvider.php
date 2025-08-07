@@ -51,7 +51,9 @@ class VarDumperServiceProvider implements ServiceProviderInterface
             ->setPublic(true);
 
         // Register appropriate dumper based on SAPI
-        $container->register('var_dumper.dumper')
+        // We need to specify a class even though we're using a factory
+        $dumperClass = ('cli' === PHP_SAPI) ? CliDumper::class : HtmlDumper::class;
+        $container->register('var_dumper.dumper', $dumperClass)
             ->setFactory([$this, 'createDumper'])
             ->setArguments([new Reference('service_container')])
             ->setPublic(true);

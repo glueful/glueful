@@ -27,10 +27,6 @@ class SetupController
         $validSteps = ['welcome', 'database', 'admin', 'complete'];
         $currentStep = $step && in_array($step, $validSteps) ? $step : 'welcome';
 
-        // Debug: Add step parameter to response headers for debugging
-        error_log("Setup Controller - Step parameter: " . ($step ?? 'null'));
-        error_log("Setup Controller - Current step: " . $currentStep);
-
         // Perform system check
         $systemCheck = $this->performSystemCheck();
 
@@ -48,8 +44,13 @@ class SetupController
         $dbConfig = $request->request->get('database', []);
         $adminConfig = $request->request->get('admin', []);
 
+        // Set SQLite as default if no driver specified (zero-configuration)
+        if (empty($dbConfig['driver'])) {
+            $dbConfig['driver'] = 'sqlite';
+        }
+
         // Validate required fields
-        if (empty($dbConfig['driver']) || empty($adminConfig['username'])) {
+        if (empty($adminConfig['username'])) {
             return $this->redirect('/setup/admin?error=missing_fields');
         }
 

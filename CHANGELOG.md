@@ -2,6 +2,52 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.32.0] - 2025-08-07
+
+### Fixed
+- **Critical Installation Failure**
+  - Fixed "Unable to read any of the environment file(s)" error that prevented fresh installations
+  - Resolved chicken-and-egg problem where install command required database before .env existed
+  - Changed default database to SQLite for zero-configuration installation
+  - Installation now works immediately without any database setup required
+  - Fixed glueful CLI script to create .env from .env.example before bootstrap
+  - Temporarily disables extensions during installation to prevent initialization errors
+- **Security Key Generation**
+  - Fixed missing APP_KEY configuration that wasn't wired up in `config/app.php`
+  - InstallCommand now properly generates all three security keys (APP_KEY, JWT_KEY, TOKEN_SALT)
+  - Fixed validation bug where "TOKEN_SALT is too short" warning appeared with valid 32-character salts
+  - Security health check now reads directly from .env file to avoid config caching issues
+- **Installation Error Handling**
+  - Fixed misleading "Installation failed" message for simple user input errors
+  - Password mismatch and input cancellation now show as warnings, not failures
+  - Added proper validation for empty passwords and minimum length requirements
+  - Installation correctly continues even if optional admin user creation fails
+- **SQLite Path Resolution**
+  - Fixed duplicate database creation in public/storage directory
+  - Database paths now resolve correctly from project root in all contexts
+  - Added intelligent path resolution - relative paths use project root, absolute paths unchanged
+
+### Improved
+- **Installation Experience**
+  - Better error messages that distinguish between actual failures and user input issues
+  - Clear indication that installation succeeded when only admin creation failed
+  - Helpful recovery options provided for partial installations
+  - More informative password validation messages
+- **Web Setup Wizard**
+  - Updated to reflect SQLite as the default zero-configuration option
+  - Simplified database step - no configuration needed by default
+  - MySQL/PostgreSQL options moved to advanced collapsible section
+- **Database Configuration**
+  - Added PostgreSQL configuration template to .env.example
+  - Improved path handling for Windows compatibility
+  - Database pooling disabled by default for SQLite
+
+### Changed
+- **Default Database Driver**
+  - Changed from MySQL to SQLite to enable zero-configuration installation
+  - This is a breaking change but necessary to fix the installation blocker
+  - Users can still switch to MySQL/PostgreSQL by updating .env after installation
+
 ## [0.31.0] - 2025-08-02
 
 ### Added

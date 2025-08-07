@@ -8,8 +8,8 @@
  */
 
 return [
-    // Default database engine (mysql, sqlite, pgsql)
-    'engine' => env('DB_DRIVER', 'mysql'),
+    // Default database engine (sqlite, mysql, pgsql)
+    'engine' => env('DB_DRIVER', 'sqlite'),
 
     // MySQL database connection
     'mysql' => [
@@ -58,7 +58,17 @@ return [
     // SQLite configuration
     'sqlite' => [
         'driver' => 'sqlite',
-        'primary' => env('DB_SQLITE_DATABASE', dirname(__DIR__) . '/storage/database/primary.sqlite'),
+        'primary' => (function () {
+            $path = env('DB_SQLITE_DATABASE', 'storage/database/glueful.sqlite');
+            // If path is absolute, use as-is. Otherwise, resolve from project root
+            if (
+                str_starts_with($path, '/') || str_starts_with($path, DIRECTORY_SEPARATOR) ||
+                (PHP_OS_FAMILY === 'Windows' && preg_match('/^[a-zA-Z]:/', $path))
+            ) {
+                return $path;
+            }
+            return dirname(__DIR__) . '/' . $path;
+        })(),
         'testing' => env('DB_SQLITE_TESTING', dirname(__DIR__) . '/storage/database/testing.sqlite'),
         'role' => env('DB_SQLITE_ROLE', 'backup')
     ],

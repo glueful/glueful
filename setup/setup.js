@@ -130,7 +130,7 @@ class SetupWizard {
             'db-host': '',
             'db-username': '',
             'db-password': '',
-            'db-database': 'storage/database.sqlite'
+            'db-database': 'storage/database/glueful.sqlite'
         };
 
         Object.entries(defaults).forEach(([id, value]) => {
@@ -333,11 +333,17 @@ class SetupWizard {
         const continueBtn = document.getElementById('continue-admin');
         if (!continueBtn) return;
 
-        const driver = document.getElementById('db-driver')?.value;
-        const requiredFields = driver === 'sqlite' 
-            ? ['db-driver'] 
-            : ['db-driver', 'db-host', 'db-database', 'db-username'];
+        const driver = document.getElementById('db-driver')?.value || 'sqlite';
+        
+        // SQLite is always ready (zero-configuration)
+        if (driver === 'sqlite') {
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue with SQLite (Recommended)';
+            return;
+        }
 
+        // For MySQL/PostgreSQL, check required fields
+        const requiredFields = ['db-host', 'db-database', 'db-username'];
         const allValid = requiredFields.every(fieldId => {
             const field = document.getElementById(fieldId);
             return field && field.value.trim();
@@ -451,12 +457,14 @@ class SetupWizard {
     }
 
     validateDatabaseStep() {
-        const driver = document.getElementById('db-driver')?.value;
-        if (!driver) {
-            alert('Please select a database driver');
-            return false;
+        const driver = document.getElementById('db-driver')?.value || 'sqlite';
+        
+        // SQLite is always valid (zero-configuration)
+        if (driver === 'sqlite') {
+            return true;
         }
 
+        // For MySQL/PostgreSQL, check required fields
         if (driver !== 'sqlite') {
             const host = document.getElementById('db-host')?.value;
             const database = document.getElementById('db-database')?.value;
@@ -483,8 +491,13 @@ class SetupWizard {
             const hiddenField = document.getElementById(hiddenId);
             const sourceField = document.getElementById(sourceId);
             
-            if (hiddenField && sourceField) {
-                hiddenField.value = sourceField.value;
+            if (hiddenField) {
+                if (sourceField) {
+                    hiddenField.value = sourceField.value;
+                } else if (sourceId === 'db-driver') {
+                    // Default to SQLite if no driver field (zero-configuration)
+                    hiddenField.value = 'sqlite';
+                }
             }
         });
     }

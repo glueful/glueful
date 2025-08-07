@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.31.0 (August 2, 2025)  
+**Latest Release:** v0.32.0 (August 7, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -72,7 +72,24 @@
   - Enhanced error handling and validation
   - Better integration between web and CLI setup
 
-### 🎯 **v0.32.0** - Final Pre-Release
+### 🏁 **v0.32.0** - Installation & Stability Fixes ✅ **RELEASED**
+**Critical fixes for installation and developer experience**
+
+- ✅ **Fixed Critical Installation Failure**
+  - Resolved "Unable to read any of the environment file(s)" blocker
+  - Changed default database to SQLite for zero-configuration setup
+  - Installation now works immediately without database configuration
+  - Fixed security key generation and validation issues
+- ✅ **Improved Error Handling**
+  - Better differentiation between failures and user input errors
+  - Clear recovery options for partial installations
+  - Enhanced password validation messages
+- ✅ **Web Setup Wizard Updates**
+  - Simplified database configuration with SQLite defaults
+  - MySQL/PostgreSQL as optional advanced configuration
+  - Fixed database path resolution issues
+
+### 🎯 **v0.33.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**
 
 - [ ] **Release Engineering**
@@ -205,4 +222,4 @@ Every feature prioritizes production reliability, security, and performance over
 
 ---
 
-*Last updated: August 2, 2025*
+*Last updated: August 7, 2025*

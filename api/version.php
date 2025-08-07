@@ -9,8 +9,8 @@
  */
 
 return [
-    'version' => '0.31.0',
-    'name' => 'Web Setup & Developer Experience',
-    'release_date' => '2025-08-02',
+    'version' => '0.32.0',
+    'name' => 'Installation & Stability Fixes',
+    'release_date' => '2025-08-07',
     'min_php_version' => '8.2.0'
 ];

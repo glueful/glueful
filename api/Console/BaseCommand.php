@@ -265,7 +265,14 @@ abstract class BaseCommand extends Command
      */
     protected function secret(string $question): string
     {
-        return $this->io->askHidden($question);
+        $input = $this->io->askHidden($question);
+
+        // Handle null input (user cancelled, no input, etc.)
+        if ($input === null) {
+            throw new \RuntimeException('Input cancelled or no input provided', 400);
+        }
+
+        return $input;
     }
 
     /**

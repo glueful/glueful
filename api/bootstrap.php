@@ -54,8 +54,8 @@ if (env('APP_ENV') === 'development' && env('APP_DEBUG', false)) {
     }
 }
 
-// Validate database connection on startup (if enabled)
-if (env('DB_STARTUP_VALIDATION', true) && !env('SKIP_DB_VALIDATION', false)) {
+// Validate database connection on startup (if enabled and not running CLI)
+if (PHP_SAPI !== 'cli' && env('DB_STARTUP_VALIDATION', true) && !env('SKIP_DB_VALIDATION', false)) {
     \Glueful\Database\ConnectionValidator::validateOnStartup(
         throwOnFailure: env('DB_STARTUP_STRICT', false)
     );

@@ -28,6 +28,65 @@ if (PHP_SAPI !== 'cli') {
 // Load composer autoloader
 require dirname(__FILE__) . '/vendor/autoload.php';
 
+// Check if this is an install command and handle setup
+$isInstallCommand = in_array('install', $argv ?? []);
+
+// For install command, check if .env exists first
+if ($isInstallCommand && !file_exists(dirname(__FILE__) . '/.env')) {
+    error_log("DEBUG: Install command detected, .env does not exist");
+    
+    // Create storage/database directory if needed
+    $databaseDir = dirname(__FILE__) . '/storage/database';
+    if (!is_dir($databaseDir)) {
+        mkdir($databaseDir, 0755, true);
+    }
+    
+    // Create .env from .env.example
+    $envPath = dirname(__FILE__) . '/.env';
+    $examplePath = dirname(__FILE__) . '/.env.example';
+    
+    if (file_exists($examplePath)) {
+        copy($examplePath, $envPath);
+        error_log("DEBUG: Created .env from .env.example with SQLite config");
+    } else {
+        // Fallback: create minimal .env with SQLite
+        $envContent = "APP_ENV=development\n";
+        $envContent .= "APP_DEBUG=true\n";
+        $envContent .= "DB_DRIVER=sqlite\n";
+        $envContent .= "DB_SQLITE_DATABASE=storage/database/glueful.sqlite\n";
+        $envContent .= "CACHE_DRIVER=file\n";
+        $envContent .= "QUEUE_CONNECTION=database\n";
+        $envContent .= "LOG_TO_DB=true\n";
+        $envContent .= "ENABLE_PERMISSIONS=true\n";
+        $envContent .= "DB_POOLING_ENABLED=false\n";
+        file_put_contents($envPath, $envContent);
+    }
+    
+    // Note: With SQLite database available, we might not need to disable extensions
+    // However, keeping this for safety since database tables don't exist yet (migrations haven't run)
+    // This prevents extensions from querying non-existent tables during bootstrap
+    
+    // Temporarily disable all extensions during installation
+    $extensionsJsonPath = dirname(__FILE__) . '/extensions/extensions.json';
+    if (file_exists($extensionsJsonPath)) {
+        $extensionsData = json_decode(file_get_contents($extensionsJsonPath), true);
+        
+        // Create backup
+        copy($extensionsJsonPath, $extensionsJsonPath . '.backup');
+        
+        // Disable all extensions
+        if (isset($extensionsData['extensions'])) {
+            foreach ($extensionsData['extensions'] as $extensionName => &$config) {
+                $config['enabled'] = false;
+                error_log("DEBUG: Disabling extension: $extensionName");
+            }
+        }
+        
+        // Write modified extensions.json
+        file_put_contents($extensionsJsonPath, json_encode($extensionsData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+}
+
 // Initialize bootstrap (includes DI container setup)
 require_once dirname(__FILE__) . '/api/bootstrap.php';
 

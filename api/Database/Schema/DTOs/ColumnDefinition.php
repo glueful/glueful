@@ -180,7 +180,7 @@ readonly class ColumnDefinition
      */
     public function supportsAutoIncrement(): bool
     {
-        return in_array($this->type, ['integer', 'bigInteger', 'smallInteger', 'tinyInteger']);
+        return in_array($this->type, ['id', 'foreignId', 'integer', 'bigInteger', 'smallInteger', 'tinyInteger']);
     }
 
     /**
