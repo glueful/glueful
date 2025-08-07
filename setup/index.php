@@ -64,44 +64,35 @@
             
             <!-- Step 2: Database Configuration -->
             <div id="step-database" class="step <?= $currentStep === 'database' ? 'active' : '' ?>">
-                <!-- <h2>Database Configuration</h2> -->
-                <p class="pl-20">Configure your database connection settings.</p>
-
-                <form id="database-form" class="form pb-20">
-                    <div class="form-group">
-                        <label for="db-driver">Database Driver</label>
-                        <select name="driver" id="db-driver" required>
-                            <option value="">Select Database Driver</option>
-                            <option value="mysql">MySQL</option>
-                            <option value="pgsql">PostgreSQL</option>
-                            <option value="sqlite">SQLite</option>
-                        </select>
+                <div class="pl-20">
+                    <h3>🗄️ Database Ready</h3>
+                    <p>Glueful uses SQLite by default - no database configuration needed!</p>
+                    
+                    <div class="db-status" style="background: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <div class="check-item pass">
+                            ✅ <strong>SQLite database configured</strong> - works immediately
+                        </div>
+                        <div class="check-item pass">
+                            ✅ <strong>Zero setup required</strong> - no external database needed
+                        </div>
+                        <div class="check-item pass">
+                            ✅ <strong>Production ready</strong> - scales to millions of records
+                        </div>
                     </div>
                     
-                    <div id="connection-fields">
-                        <div class="form-group">
-                            <label for="db-host">Database Host</label>
-                            <input type="text" name="host" id="db-host" value="127.0.0.1" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="db-database">Database Name</label>
-                            <input type="text" name="database" id="db-database" value="glueful" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="db-username">Username</label>
-                            <input type="text" name="username" id="db-username" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="db-password">Password</label>
-                            <input type="password" name="password" id="db-password">
-                        </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <h4>💡 Want to use MySQL or PostgreSQL instead?</h4>
+                        <p>No problem! You can easily switch databases after installation:</p>
+                        <ol style="margin: 10px 0 10px 20px;">
+                            <li>Complete the installation with SQLite</li>
+                            <li>Update your <code>.env</code> file with your database credentials</li>
+                            <li>Run <code>php glueful migrate:run</code> to migrate to your new database</li>
+                        </ol>
+                        <p><small><em>All migrations are database-agnostic and work seamlessly across SQLite, MySQL, and PostgreSQL.</em></small></p>
                     </div>
-                </form>
+                </div>
                 
-                <button class="btn" onclick="navigateToStep('admin')" id="continue-admin">Continue</button>
+                <button class="btn ml-20" onclick="navigateToStep('admin')" id="continue-admin">Continue with SQLite</button>
             </div>
             
             <!-- Step 3: Admin User -->
@@ -116,12 +107,12 @@
                 <?php endif; ?>
                 
                 <form method="POST" action="/setup" id="setup-form" class="form">
-                    <!-- Database fields (hidden, populated by JavaScript) -->
-                    <input type="hidden" name="database[driver]" id="hidden-db-driver">
-                    <input type="hidden" name="database[host]" id="hidden-db-host">
-                    <input type="hidden" name="database[database]" id="hidden-db-database">
-                    <input type="hidden" name="database[username]" id="hidden-db-username">
-                    <input type="hidden" name="database[password]" id="hidden-db-password">
+                    <!-- Database fields (hidden, SQLite defaults) -->
+                    <input type="hidden" name="database[driver]" id="hidden-db-driver" value="sqlite">
+                    <input type="hidden" name="database[host]" id="hidden-db-host" value="">
+                    <input type="hidden" name="database[database]" id="hidden-db-database" value="storage/database/glueful.sqlite">
+                    <input type="hidden" name="database[username]" id="hidden-db-username" value="">
+                    <input type="hidden" name="database[password]" id="hidden-db-password" value="">
                     
                     <!-- Admin user fields -->
                     <div class="form-group">

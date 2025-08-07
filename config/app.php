@@ -23,6 +23,9 @@ return [
     // Smart environment-aware HTTPS enforcement
     'force_https' => env('FORCE_HTTPS', env('APP_ENV') === 'production'),
 
+    // Application Encryption Key
+    'key' => env('APP_KEY'),
+
     // API Information
     'name' => env('APP_NAME', 'Glueful'),
     'version_full' => env('API_VERSION_FULL', '1.0.0'),

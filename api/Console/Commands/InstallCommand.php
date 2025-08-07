@@ -113,8 +113,30 @@ class InstallCommand extends BaseCommand
                 $quiet
             );
 
+            // Restore extensions after successful installation
+            $this->restoreExtensionsJson();
+
             $this->showCompletionMessage();
             return self::SUCCESS;
+        } catch (\RuntimeException $e) {
+            // Handle user input validation errors differently
+            if ($e->getCode() === 400) {
+                $this->warning('');
+                $this->warning('⚠ Admin user creation error: ' . $e->getMessage());
+                $this->line('');
+                $this->info('Your installation is ready, but admin user was not created.');
+                $this->line('');
+                $this->line('Options:');
+                $this->line('1. Run "php glueful install --skip-database --skip-keys --skip-cache"' .
+                           ' to retry admin creation');
+                $this->line('2. Start using Glueful without an admin user and create users via your API');
+                $this->line('');
+                return self::INVALID;
+            }
+            // For other runtime exceptions, treat as installation failure
+            $this->error('Installation failed: ' . $e->getMessage());
+            $this->displayTroubleshootingInfo();
+            return self::FAILURE;
         } catch (\Exception $e) {
             $this->error('Installation failed: ' . $e->getMessage());
             $this->displayTroubleshootingInfo();
@@ -233,14 +255,14 @@ class InstallCommand extends BaseCommand
     private function validateEnvironment(bool $force, bool $quiet): void
     {
         // Check for .env file
-        $envPath = dirname(__DIR__, 5) . '/.env';
+        $envPath = dirname(__DIR__, 3) . '/.env';
 
         if (!file_exists($envPath)) {
             if (!$quiet) {
                 $this->warning('.env file not found. Creating from .env.example...');
             }
 
-            $examplePath = dirname(__DIR__, 5) . '/.env.example';
+            $examplePath = dirname(__DIR__, 3) . '/.env.example';
             if (file_exists($examplePath)) {
                 copy($examplePath, $envPath);
                 $this->success('Created .env file from .env.example');
@@ -262,9 +284,33 @@ class InstallCommand extends BaseCommand
     {
         $generator = new RandomStringGenerator();
 
-        // Generate TOKEN_SALT if not exists or force
+        // Generate APP_KEY if not exists, is placeholder, or force
+        $appKey = config('app.key');
+        $isAppKeyPlaceholder = in_array($appKey, [
+            'generate-secure-32-char-key-here',
+            'your-secure-app-key-here',
+            null,
+            ''
+        ]);
+
+        if (empty($appKey) || $isAppKeyPlaceholder || $force) {
+            $newAppKey = $generator->generate(32);
+            $this->updateEnvFile('APP_KEY', $newAppKey);
+            $this->line('✓ Generated APP_KEY');
+        } else {
+            $this->line('• APP_KEY already exists (use --force to regenerate)');
+        }
+
+        // Generate TOKEN_SALT if not exists, is placeholder, or force
         $tokenSalt = config('session.token_salt');
-        if (empty($tokenSalt) || $force) {
+        $isTokenSaltPlaceholder = in_array($tokenSalt, [
+            'your-secure-salt-here',
+            'generate-secure-32-char-key-here',
+            null,
+            ''
+        ]);
+
+        if (empty($tokenSalt) || $isTokenSaltPlaceholder || $force) {
             $newTokenSalt = $generator->generate(32);
             $this->updateEnvFile('TOKEN_SALT', $newTokenSalt);
             $this->line('✓ Generated TOKEN_SALT');
@@ -272,9 +318,16 @@ class InstallCommand extends BaseCommand
             $this->line('• TOKEN_SALT already exists (use --force to regenerate)');
         }
 
-        // Generate JWT_KEY if not exists or force
+        // Generate JWT_KEY if not exists, is placeholder, or force
         $jwtKey = config('session.jwt_key');
-        if (empty($jwtKey) || $force) {
+        $isJwtKeyPlaceholder = in_array($jwtKey, [
+            'your-secure-jwt-key-here',
+            'generate-secure-32-char-key-here',
+            null,
+            ''
+        ]);
+
+        if (empty($jwtKey) || $isJwtKeyPlaceholder || $force) {
             $newJwtKey = $generator->generate(64);
             $this->updateEnvFile('JWT_KEY', $newJwtKey);
             $this->line('✓ Generated JWT_KEY');
@@ -285,6 +338,24 @@ class InstallCommand extends BaseCommand
 
     private function setupDatabase(bool $force, bool $quiet): void
     {
+        // Create SQLite database file if it doesn't exist
+        $dbDriver = config('database.engine');
+        if ($dbDriver === 'sqlite') {
+            $dbPath = config('database.sqlite.primary');
+            if (!file_exists($dbPath)) {
+                $dbDir = dirname($dbPath);
+                if (!is_dir($dbDir)) {
+                    mkdir($dbDir, 0755, true);
+                }
+
+                // Create empty SQLite database
+                $pdo = new \PDO("sqlite:$dbPath");
+                $pdo = null; // Close connection
+
+                $this->line('✓ Created SQLite database');
+            }
+        }
+
         // Test database connection
         try {
             $healthService = $this->installContainer->get(HealthService::class);
@@ -400,8 +471,17 @@ class InstallCommand extends BaseCommand
             $password = $this->secret('Admin password');
             $confirmPassword = $this->secret('Confirm password');
 
+            // Validate password
+            if (empty($password)) {
+                throw new \RuntimeException('Password cannot be empty', 400);
+            }
+
+            if (strlen($password) < 8) {
+                throw new \RuntimeException('Password must be at least 8 characters long', 400);
+            }
+
             if ($password !== $confirmPassword) {
-                throw new \Exception('Passwords do not match');
+                throw new \RuntimeException('Passwords do not match', 400);
             }
         }
 
@@ -481,6 +561,18 @@ class InstallCommand extends BaseCommand
         $this->line('✓ Admin environment variables cleaned up for security');
     }
 
+    private function restoreExtensionsJson(): void
+    {
+        $extensionsJsonPath = dirname(__DIR__, 3) . '/extensions/extensions.json';
+        $backupPath = $extensionsJsonPath . '.backup';
+
+        if (file_exists($backupPath)) {
+            copy($backupPath, $extensionsJsonPath);
+            unlink($backupPath);
+            $this->line('✓ Extensions configuration restored');
+        }
+    }
+
     private function performFinalValidation(bool $force, bool $quiet): void
     {
         $this->line('Performing final system validation...');
@@ -515,6 +607,17 @@ class InstallCommand extends BaseCommand
         $this->line('2. Visit your application in a web browser');
         $this->line('3. Review the API documentation: ' . $docsUrl);
         $this->line('4. Begin building your application!');
+        $this->line('');
+
+        $this->line('Database Configuration:');
+        $dbDriver = config('database.engine');
+        if ($dbDriver === 'sqlite') {
+            $this->line('• Currently using: SQLite (storage/database/glueful.sqlite)');
+            $this->line('• To switch to MySQL/PostgreSQL, update your .env file');
+            $this->line('• Then run: php glueful migrate:run');
+        } else {
+            $this->line("• Currently using: {$dbDriver}");
+        }
         $this->line('');
 
         $this->table(['Component', 'Status'], [
@@ -581,7 +684,7 @@ HELP;
     private function validateDirectoryPermissions(): void
     {
         $directories = [
-            dirname(__DIR__, 5) . '/storage',
+            dirname(__DIR__, 3) . '/storage',
         ];
 
         foreach ($directories as $dir) {
@@ -599,7 +702,7 @@ HELP;
 
     private function updateEnvFile(string $key, string $value): void
     {
-        $envPath = dirname(__DIR__, 5) . '/.env';
+        $envPath = dirname(__DIR__, 3) . '/.env';
 
         if (!file_exists($envPath)) {
             throw new \Exception('.env file not found');
@@ -720,9 +823,22 @@ HELP;
 
     private function checkSecurityHealth(): void
     {
-        // Check if security keys are set
-        $tokenSalt = config('session.token_salt');
-        $jwtKey = config('session.jwt_key');
+        // Read keys directly from .env file to avoid caching issues
+        $envPath = dirname(__DIR__, 3) . '/.env';
+        if (file_exists($envPath)) {
+            $envContent = file_get_contents($envPath);
+
+            // Extract TOKEN_SALT and JWT_KEY from .env file
+            preg_match('/^TOKEN_SALT=(.*)$/m', $envContent, $tokenSaltMatches);
+            preg_match('/^JWT_KEY=(.*)$/m', $envContent, $jwtKeyMatches);
+
+            $tokenSalt = $tokenSaltMatches[1] ?? '';
+            $jwtKey = $jwtKeyMatches[1] ?? '';
+        } else {
+            // Fallback to config/env if .env file not found
+            $tokenSalt = config('session.token_salt') ?: env('TOKEN_SALT', '');
+            $jwtKey = config('session.jwt_key') ?: env('JWT_KEY', '');
+        }
 
         if (empty($tokenSalt)) {
             throw new \Exception('TOKEN_SALT is not set');
