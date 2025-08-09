@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.32.0 (August 7, 2025)  
+**Latest Release:** v0.32.1 (August 9, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -88,6 +88,19 @@
   - Simplified database configuration with SQLite defaults
   - MySQL/PostgreSQL as optional advanced configuration
   - Fixed database path resolution issues
+
+### 🏁 **v0.32.1** - Cache Compatibility & Extension Migrations ✅ **RELEASED**
+**Stability improvements for cache and extension systems**
+
+- ✅ **CSRF Token Cache Compatibility**
+  - Fixed "Cache key contains invalid characters" error with file-based cache
+  - Changed CSRF token cache key prefix for universal compatibility
+  - Ensures CSRF protection works with all cache drivers
+- ✅ **Extension Migration Support**
+  - Installation process now runs extension-specific migrations
+  - Extensions.json restored before running extension migrations
+  - Ensures RBAC and other extension database tables are created
+  - Added graceful error handling for extension migration failures
 
 ### 🎯 **v0.33.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**

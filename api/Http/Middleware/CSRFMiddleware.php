@@ -45,7 +45,7 @@ class CSRFMiddleware implements MiddlewareInterface
     private const CSRF_COOKIE = 'csrf_token';
 
     /** @var string Cache key prefix for CSRF tokens */
-    private const CACHE_PREFIX = 'csrf_token:';
+    private const CACHE_PREFIX = 'csrf_token_';
 
     /** @var int Default token lifetime in seconds (1 hour) */
     private const DEFAULT_TOKEN_LIFETIME = 3600;

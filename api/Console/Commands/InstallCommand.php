@@ -116,6 +116,9 @@ class InstallCommand extends BaseCommand
             // Restore extensions after successful installation
             $this->restoreExtensionsJson();
 
+            // Run migrations again to include extension migrations
+            $this->runExtensionMigrations();
+
             $this->showCompletionMessage();
             return self::SUCCESS;
         } catch (\RuntimeException $e) {
@@ -570,6 +573,26 @@ class InstallCommand extends BaseCommand
             copy($backupPath, $extensionsJsonPath);
             unlink($backupPath);
             $this->line('✓ Extensions configuration restored');
+        }
+    }
+
+    private function runExtensionMigrations(): void
+    {
+        $this->line('Running extension migrations...');
+        try {
+            $command = $this->getApplication()->find('migrate:run');
+            $arguments = new ArrayInput([]);
+            $returnCode = $command->run($arguments, $this->output);
+
+            if ($returnCode === 0) {
+                $this->line('✓ Extension migrations completed');
+            } else {
+                throw new \Exception('Extension migration command failed');
+            }
+        } catch (\Exception $e) {
+            // Don't fail the entire installation if extension migrations fail
+            $this->warning('Failed to run extension migrations: ' . $e->getMessage());
+            $this->line('• You can run "php glueful migrate:run" manually to complete extension setup');
         }
     }
 
