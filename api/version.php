@@ -9,8 +9,8 @@
  */
 
 return [
-    'version' => '0.32.0',
-    'name' => 'Installation & Stability Fixes',
-    'release_date' => '2025-08-07',
+    'version' => '0.32.1',
+    'name' => 'Cache Compatibility & Extension Migrations',
+    'release_date' => '2025-08-09',
     'min_php_version' => '8.2.0'
 ];

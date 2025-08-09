@@ -2,6 +2,22 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.32.1] - 2025-08-09
+
+### Fixed
+- **CSRF Token Cache Compatibility**
+  - Fixed "Cache key contains invalid characters" error when using file-based cache driver
+  - Changed CSRF token cache key prefix from `csrf_token:` to `csrf_token_` for compatibility
+  - Ensures CSRF protection works correctly with all cache drivers (file, Redis, Memcached)
+  - Resolves issue where colon character was rejected by file and Memcached cache drivers
+
+### Improved
+- **Extension Migration Support**
+  - Installation process now runs migrations twice to include extension-specific migrations
+  - Extensions.json is restored before running extension migrations during installation
+  - Ensures RBAC and other extension database tables are properly created
+  - Added graceful error handling if extension migrations fail
+
 ## [0.32.0] - 2025-08-07
 
 ### Fixed
