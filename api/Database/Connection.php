@@ -149,12 +149,20 @@ class Connection implements DatabaseInterface
             $options[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET sql_mode='STRICT_ALL_TABLES'";
         }
 
-        return new PDO(
+        $pdo = new PDO(
             $this->buildDSN($engine, $dbConfig),
             $dbConfig['user'] ?? null,
             $dbConfig['pass'] ?? null,
             $options
         );
+
+        // Set PostgreSQL search_path after connection
+        if ($engine === 'pgsql' && isset($dbConfig['schema'])) {
+            $schema = $dbConfig['schema'] ?? 'public';
+            $pdo->exec("SET search_path TO " . $pdo->quote($schema));
+        }
+
+        return $pdo;
     }
 
     /**
@@ -192,12 +200,11 @@ class Connection implements DatabaseInterface
                 $config['charset'] ?? 'utf8mb4'
             ),
             'pgsql' => sprintf(
-                'pgsql:host=%s;dbname=%s;port=%d;sslmode=%s;search_path=%s',
+                'pgsql:host=%s;dbname=%s;port=%d;sslmode=%s',
                 $config['host'] ?? '127.0.0.1',
                 $config['db'] ?? '',
                 $config['port'] ?? 5432,
-                $config['sslmode'] ?? 'prefer',
-                $config['schema'] ?? 'public'
+                $config['sslmode'] ?? 'prefer'
             ),
             'sqlite' => $this->prepareSQLiteDSN($config['primary']),
             default => throw BusinessLogicException::operationNotAllowed(

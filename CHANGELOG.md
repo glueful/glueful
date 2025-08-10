@@ -2,6 +2,16 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.32.2] - 2025-08-10
+
+### Fixed
+- **PostgreSQL Connection Error**
+  - Fixed "invalid connection option 'search_path'" error preventing PostgreSQL connections
+  - Removed `search_path` from PostgreSQL DSN string where it's not a valid connection parameter
+  - Properly set search_path using SQL command after connection is established
+  - Applied fix to both Connection.php and ConnectionPool.php for consistency
+  - Ensures PostgreSQL schema configuration works correctly across all connection types
+
 ## [0.32.1] - 2025-08-09
 
 ### Fixed

@@ -9,8 +9,8 @@
  */
 
 return [
-    'version' => '0.32.1',
-    'name' => 'Cache Compatibility & Extension Migrations',
-    'release_date' => '2025-08-09',
+    'version' => '0.32.2',
+    'name' => 'PostgreSQL Connection Fix',
+    'release_date' => '2025-08-10',
     'min_php_version' => '8.2.0'
 ];
