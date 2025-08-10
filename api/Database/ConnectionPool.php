@@ -59,6 +59,9 @@ class ConnectionPool
     /** @var DatabaseDriver Database driver */
     private DatabaseDriver $driver;
 
+    /** @var array Database configuration */
+    private array $dbConfig;
+
     /** @var mixed Maintenance timer handle (ReactPHP/Swoole) */
     private $maintenanceTimer = null;
 
@@ -88,6 +91,7 @@ class ConnectionPool
      * @param string|null $password Database password
      * @param array $options PDO options
      * @param DatabaseDriver $driver Database driver
+     * @param array $dbConfig Database configuration
      */
     public function __construct(
         array $config,
@@ -95,7 +99,8 @@ class ConnectionPool
         ?string $username,
         ?string $password,
         array $options,
-        DatabaseDriver $driver
+        DatabaseDriver $driver,
+        array $dbConfig = []
     ) {
         $this->config = [
             'min_connections' => $config['min_connections'] ?? 2,
@@ -115,6 +120,7 @@ class ConnectionPool
         $this->password = $password;
         $this->options = $options;
         $this->driver = $driver;
+        $this->dbConfig = $dbConfig;
 
         // Initialize minimum connections
         $this->initializePool();
@@ -242,6 +248,12 @@ class ConnectionPool
         try {
             $pdo = new PDO($this->dsn, $this->username, $this->password, $this->options);
             $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+            // Set PostgreSQL search_path after connection
+            if (str_starts_with($this->dsn, 'pgsql:') && isset($this->dbConfig['schema'])) {
+                $schema = $this->dbConfig['schema'] ?? 'public';
+                $pdo->exec("SET search_path TO " . $pdo->quote($schema));
+            }
         } catch (\PDOException $e) {
             // Add debugging information for connection failures
             $debugInfo = sprintf(

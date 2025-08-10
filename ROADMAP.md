@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.32.1 (August 9, 2025)  
+**Latest Release:** v0.32.2 (August 10, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -101,6 +101,15 @@
   - Extensions.json restored before running extension migrations
   - Ensures RBAC and other extension database tables are created
   - Added graceful error handling for extension migration failures
+
+### 🏁 **v0.32.2** - PostgreSQL Connection Fix ✅ **RELEASED**
+**Critical database connectivity fix**
+
+- ✅ **PostgreSQL Connection Error**
+  - Fixed "invalid connection option 'search_path'" error
+  - Removed search_path from DSN string where it's not valid
+  - Properly set search_path using SQL command after connection
+  - Ensures PostgreSQL schema configuration works correctly
 
 ### 🎯 **v0.33.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**

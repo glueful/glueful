@@ -84,7 +84,15 @@ class ConnectionPoolManager
             $username = $engine !== 'sqlite' ? ($dbConfig['user'] ?? null) : null;
             $password = $engine !== 'sqlite' ? ($dbConfig['pass'] ?? null) : null;
 
-            $this->pools[$engine] = new ConnectionPool($config, $dsn, $username, $password, $options, $driver);
+            $this->pools[$engine] = new ConnectionPool(
+                $config,
+                $dsn,
+                $username,
+                $password,
+                $options,
+                $driver,
+                $dbConfig
+            );
         }
 
         return $this->pools[$engine];
@@ -195,12 +203,11 @@ class ConnectionPoolManager
                 $config['charset'] ?? 'utf8mb4'
             ),
             'pgsql' => sprintf(
-                'pgsql:host=%s;dbname=%s;port=%d;sslmode=%s;search_path=%s',
+                'pgsql:host=%s;dbname=%s;port=%d;sslmode=%s',
                 $config['host'] ?? '127.0.0.1',
                 $config['db'] ?? '',
                 $config['port'] ?? 5432,
-                $config['sslmode'] ?? 'prefer',
-                $config['schema'] ?? 'public'
+                $config['sslmode'] ?? 'prefer'
             ),
             'sqlite' => $this->prepareSQLiteDSN($config['primary'] ?? ':memory:'),
             default => throw new \Exception("Unsupported database engine: {$engine}"),
