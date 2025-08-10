@@ -390,12 +390,11 @@ class MigrationManager
      */
     private function getNextBatchNumber(): int
     {
-        $result = $this->db
+        $maxBatch = $this->db
         ->table(self::VERSION_TABLE)
-        ->selectRaw("MAX(batch) AS max_batch")
-        ->get();
+        ->max('batch');
 
-        return (int)($result[0]['max_batch'] ?? 0) + 1;
+        return (int)($maxBatch ?? 0) + 1;
     }
 
     /**

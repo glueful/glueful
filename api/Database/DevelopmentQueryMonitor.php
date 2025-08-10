@@ -64,6 +64,7 @@ class DevelopmentQueryMonitor
         $queryHash = md5($sql . serialize($params));
         $normalizedSql = self::normalizeQuery($sql);
 
+
         $logEntry = [
             'sql' => $sql,
             'normalized_sql' => $normalizedSql,
@@ -78,7 +79,7 @@ class DevelopmentQueryMonitor
 
         self::$queryLog[] = $logEntry;
         self::updateRequestStats($logEntry);
-        self::detectQueryPatterns($normalizedSql, $logEntry);
+        self::detectQueryPatterns($sql, $logEntry);
 
         // Check for slow query
         if ($executionTime > self::$slowQueryThreshold) {
@@ -114,9 +115,9 @@ class DevelopmentQueryMonitor
     /**
      * Detect query patterns for N+1 detection
      */
-    private static function detectQueryPatterns(string $normalizedSql, array $logEntry): void
+    private static function detectQueryPatterns(string $originalSql, array $logEntry): void
     {
-        $pattern = self::extractQueryPattern($normalizedSql);
+        $pattern = self::extractQueryPattern($originalSql);
 
         if (!isset(self::$queryPatterns[$pattern])) {
             self::$queryPatterns[$pattern] = [
@@ -243,19 +244,47 @@ class DevelopmentQueryMonitor
         $normalized = preg_replace('/"[^"]*"/', '?', $normalized);
         $normalized = preg_replace('/\s+/', ' ', $normalized);
 
+
         return trim(strtoupper($normalized));
     }
 
     /**
      * Extract query pattern for N+1 detection
      */
-    private static function extractQueryPattern(string $normalizedSql): string
+    private static function extractQueryPattern(string $originalSql): string
     {
-        // Extract table and operation pattern
-        // Handle queries with backticks around table names
-        $pattern = '/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+[`"]?(\w+)[`"]?/i';
-        if (preg_match($pattern, $normalizedSql, $matches)) {
-            return $matches[1] . ' ' . $matches[3];
+        // Extract table and operation pattern from original SQL (before normalization)
+        // Handle queries with backticks, quotes around table names
+        $pattern = '/^(SELECT|INSERT|UPDATE|DELETE).*?(FROM|INTO|UPDATE)\s+[`"\'"]?(\w+)[`"\'"]?/i';
+        if (preg_match($pattern, $originalSql, $matches)) {
+            $operation = $matches[1];
+            $table = $matches[3];
+
+            // Add more specificity for SELECT queries to avoid false N+1 detection
+            if ($operation === 'SELECT') {
+                // Check for WHERE IN clauses (batch operations)
+                if (preg_match('/WHERE.*?IN\s*\(/i', $originalSql)) {
+                    return $operation . ' ' . $table . ' BATCH_IN';
+                }
+                // Check for specific column selections vs SELECT *
+                if (preg_match('/SELECT\s+\*/i', $originalSql)) {
+                    return $operation . ' ' . $table . ' ALL_COLUMNS';
+                } else {
+                    return $operation . ' ' . $table . ' SPECIFIC_COLUMNS';
+                }
+            }
+
+            // For INSERT, check if it's batch insert
+            if ($operation === 'INSERT' && preg_match('/VALUES\s*\([^)]+\)\s*,/i', $originalSql)) {
+                return $operation . ' ' . $table . ' BATCH';
+            }
+
+            return $operation . ' ' . $table;
+        }
+
+        // Try to extract at least the operation type
+        if (preg_match('/^(SELECT|INSERT|UPDATE|DELETE)\s+/i', $originalSql, $matches)) {
+            return $matches[1] . ' UNKNOWN_TABLE';
         }
 
         return 'UNKNOWN';

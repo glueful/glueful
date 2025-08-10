@@ -458,6 +458,25 @@ class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
+     * Get the maximum value of a column
+     *
+     * @param string $column The column to get max value from
+     * @return mixed The maximum value or null if no records
+     */
+    public function max(string $column): mixed
+    {
+        $this->queryValidator->validateColumnNames([$column]);
+        $this->applySoftDeleteFilters();
+
+        // Build max query
+        $maxSql = $this->buildMaxQuery($column);
+        $bindings = $this->getWhereBindings();
+
+        $result = $this->queryExecutor->executeQuery($maxSql, $bindings);
+        return $result[0]['max_value'] ?? null;
+    }
+
+    /**
      * Get a flat array of column values
      */
     public function pluck(string $column, ?string $key = null): array
@@ -895,6 +914,19 @@ class QueryBuilder implements QueryBuilderInterface
     {
         $table = $this->state->getTableOrFail();
         $sql = "SELECT COUNT(*) as count FROM {$table}";
+        $sql .= $this->joinClause->toSql();
+        $sql .= $this->whereClause->toSql();
+
+        return $sql;
+    }
+
+    /**
+     * Build MAX query
+     */
+    private function buildMaxQuery(string $column): string
+    {
+        $table = $this->state->getTableOrFail();
+        $sql = "SELECT MAX({$column}) as max_value FROM {$table}";
         $sql .= $this->joinClause->toSql();
         $sql .= $this->whereClause->toSql();
 

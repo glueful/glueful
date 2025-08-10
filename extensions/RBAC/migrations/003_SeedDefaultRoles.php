@@ -80,21 +80,35 @@ class SeedDefaultRoles implements MigrationInterface
             ]
         ];
 
-        // Insert or get existing roles and store their UUIDs
+        // Batch check for existing roles
+        $roleSlugs = array_keys($roleData);
+        $existingRoles = $this->db->table('roles')
+            ->select(['uuid', 'slug'])
+            ->whereIn('slug', $roleSlugs)
+            ->get();
+
+        // Map existing roles by slug for quick lookup
+        $existingRoleMap = [];
+        foreach ($existingRoles as $role) {
+            $existingRoleMap[$role['slug']] = $role['uuid'];
+        }
+
+        // Prepare new roles for batch insert and collect UUIDs
         $roleUuids = [];
+        $newRoles = [];
         foreach ($roleData as $slug => $role) {
-            // Check if role already exists using WHERE clause
-            $existingRole = $this->db->table('roles')->select(['uuid'])->where('slug', $role['slug'])->get();
-            if (!empty($existingRole)) {
-                $roleUuids[$slug] = $existingRole[0]['uuid'];
+            if (isset($existingRoleMap[$slug])) {
+                $roleUuids[$slug] = $existingRoleMap[$slug];
             } else {
                 $role['uuid'] = Utils::generateNanoID();
                 $roleUuids[$slug] = $role['uuid'];
-                $roleId = $this->db->table('roles')->insert($role);
-                if (!$roleId) {
-                    throw new \RuntimeException('Failed to create role: ' . $role['name']);
-                }
+                $newRoles[] = $role;
             }
+        }
+
+        // Batch insert new roles
+        if (!empty($newRoles)) {
+            $this->db->table('roles')->insertBatch($newRoles);
         }
 
         // Define permission data
@@ -191,25 +205,40 @@ class SeedDefaultRoles implements MigrationInterface
             ]
         ];
 
-        // Insert or get existing permissions and store their UUIDs
+        // Batch check for existing permissions
+        $permissionSlugs = [];
+        foreach ($permissionData as $permission) {
+            $permissionSlugs[] = $permission['slug'];
+        }
+
+        $existingPermissions = $this->db->table('permissions')
+            ->select(['uuid', 'slug'])
+            ->whereIn('slug', $permissionSlugs)
+            ->get();
+
+        // Map existing permissions by slug for quick lookup
+        $existingPermissionMap = [];
+        foreach ($existingPermissions as $permission) {
+            $existingPermissionMap[$permission['slug']] = $permission['uuid'];
+        }
+
+        // Prepare new permissions for batch insert and collect UUIDs
         $permissionUuids = [];
+        $newPermissions = [];
         foreach ($permissionData as $key => $permission) {
-            // Check if permission already exists using WHERE clause
-            $existingPermission = $this->db->table('permissions')
-                ->select(['uuid'])
-                ->where('slug', $permission['slug'])
-                ->get();
-            if (!empty($existingPermission)) {
-                $permissionUuids[$key] = $existingPermission[0]['uuid'];
+            if (isset($existingPermissionMap[$permission['slug']])) {
+                $permissionUuids[$key] = $existingPermissionMap[$permission['slug']];
             } else {
                 $permission['uuid'] = Utils::generateNanoID();
                 $permission['is_system'] = 1;
                 $permissionUuids[$key] = $permission['uuid'];
-                $permissionId = $this->db->table('permissions')->insert($permission);
-                if (!$permissionId) {
-                    throw new \RuntimeException('Failed to create permission: ' . $permission['name']);
-                }
+                $newPermissions[] = $permission;
             }
+        }
+
+        // Batch insert new permissions
+        if (!empty($newPermissions)) {
+            $this->db->table('permissions')->insertBatch($newPermissions);
         }
 
         // Verify all core permissions are created
@@ -309,19 +338,22 @@ class SeedDefaultRoles implements MigrationInterface
      */
     private function verifyCorePermissions(): void
     {
-        foreach (PermissionStandards::CORE_PERMISSIONS as $corePermission) {
-            $results = $this->db->table('permissions')
-                ->select(['uuid'])
-                ->where('slug', $corePermission)
-                ->where('is_system', 1)
-                ->get();
+        // Batch check all core permissions in a single query
+        $existingCorePermissions = $this->db->table('permissions')
+            ->select(['slug'])
+            ->whereIn('slug', PermissionStandards::CORE_PERMISSIONS)
+            ->where('is_system', 1)
+            ->get();
 
-            if (empty($results)) {
-                throw new \RuntimeException(
-                    "Core permission '{$corePermission}' was not created. " .
-                    "RBAC extension must implement all core permissions defined in PermissionStandards."
-                );
-            }
+        $existingSlugs = array_column($existingCorePermissions, 'slug');
+        $missingPermissions = array_diff(PermissionStandards::CORE_PERMISSIONS, $existingSlugs);
+
+        if (!empty($missingPermissions)) {
+            $missingList = implode(', ', $missingPermissions);
+            throw new \RuntimeException(
+                "Core permissions '{$missingList}' were not created. " .
+                "RBAC extension must implement all core permissions defined in PermissionStandards."
+            );
         }
 
         // Log successful verification
