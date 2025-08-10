@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Latest Release:** v0.32.2 (August 10, 2025)  
+**Latest Release:** v0.32.3 (August 10, 2025)  
 **Next Target:** v1.0.0
 
 ## Path to Stable Release
@@ -110,6 +110,22 @@
   - Removed search_path from DSN string where it's not valid
   - Properly set search_path using SQL command after connection
   - Ensures PostgreSQL schema configuration works correctly
+
+### 🏁 **v0.32.3** - Migration & RBAC Performance Fixes ✅ **RELEASED**
+**Performance optimization and bootstrap reliability**
+
+- ✅ **RBAC Bootstrap Reliability**
+  - Fixed "relation 'permissions' does not exist" error during installation
+  - Added table existence checks in RBAC service provider
+  - Graceful handling of bootstrap during migration/setup phases
+- ✅ **RBAC Migration Performance (87% Query Reduction)**
+  - Refactored seeding migration to use batch operations
+  - Optimized role, permission, and assignment queries
+  - Enhanced N+1 query detection and pattern matching
+- ✅ **Query Builder Enhancements**
+  - Added max() method for aggregate queries
+  - Improved PostgreSQL auto-increment compatibility
+  - Enhanced development debugging tools
 
 ### 🎯 **v0.33.0** - Final Pre-Release
 **Focus: Complete preparation for v1.0.0 stable release**

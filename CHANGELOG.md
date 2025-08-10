@@ -2,6 +2,32 @@
 
 All notable changes to the Glueful framework will be documented in this file.
 
+## [0.32.3] - 2025-08-10
+
+### Fixed
+- **RBAC Bootstrap Errors**
+  - Fixed "relation 'permissions' does not exist" error during framework bootstrap when RBAC tables don't exist yet
+  - Added table existence checks in RBAC service provider to gracefully handle migration/installation scenarios
+  - RBAC extension now skips initialization during setup phase when tables are not yet available
+
+### Performance Improvements
+- **RBAC Migration Optimization (87% Database Query Reduction)**
+  - Refactored RBAC seeding migration to use batch operations instead of individual queries
+  - Roles: 4 individual existence checks → 1 batch `whereIn()` query
+  - Permissions: 15 individual existence checks → 1 batch `whereIn()` query  
+  - Core permission verification: 5 individual queries → 1 batch `whereIn()` query
+  - All inserts now use proper `insertBatch()` operations for maximum efficiency
+- **Development Query Monitoring**
+  - Fixed query pattern detection to properly identify table names with quoted identifiers
+  - Improved N+1 query detection accuracy by using original SQL instead of normalized SQL
+  - Enhanced pattern matching to distinguish batch operations from individual queries
+
+### Technical Improvements
+- **Query Builder Enhancements**
+  - Added `max()` method to QueryBuilder for database-agnostic aggregate queries
+  - Improved PostgreSQL compatibility for auto-increment fields using BIGSERIAL
+  - Enhanced query pattern extraction for better development debugging
+
 ## [0.32.2] - 2025-08-10
 
 ### Fixed

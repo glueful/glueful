@@ -9,8 +9,8 @@
  */
 
 return [
-    'version' => '0.32.2',
-    'name' => 'PostgreSQL Connection Fix',
+    'version' => '0.32.3',
+    'name' => 'Migration & RBAC Performance Fixes',
     'release_date' => '2025-08-10',
     'min_php_version' => '8.2.0'
 ];

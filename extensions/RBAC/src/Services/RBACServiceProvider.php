@@ -96,6 +96,13 @@ class RBACServiceProvider extends BaseExtensionServiceProvider
     public function boot(Container $container): void
     {
         try {
+            // Check if required RBAC tables exist before initializing
+            if (!$this->tablesExist()) {
+                // Tables don't exist yet (probably during migration/installation)
+                // This is normal during setup - just skip initialization for now
+                return;
+            }
+
             // Get permission provider
             $permissionProvider = $container->get('rbac.permission_provider');
 
@@ -117,6 +124,27 @@ class RBACServiceProvider extends BaseExtensionServiceProvider
             }
         } catch (\Exception $e) {
             error_log("RBAC: Failed to initialize permission provider: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if required RBAC tables exist
+     */
+    private function tablesExist(): bool
+    {
+        try {
+            // Import the Connection class
+            $connection = new \Glueful\Database\Connection();
+
+            // Check if the core RBAC tables exist
+            $schemaBuilder = $connection->getSchemaBuilder();
+
+            return $schemaBuilder->hasTable('roles') &&
+                   $schemaBuilder->hasTable('permissions') &&
+                   $schemaBuilder->hasTable('role_permissions');
+        } catch (\Exception $e) {
+            // If we can't check tables (e.g., DB connection issues), assume they don't exist
+            return false;
         }
     }
 

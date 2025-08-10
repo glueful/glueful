@@ -437,9 +437,9 @@ class PostgreSQLSqlGenerator implements SqlGeneratorInterface
             'longText' => 'TEXT',
             'mediumText' => 'TEXT',
             'tinyText' => 'TEXT',
-            'integer' => 'INTEGER',
-            'bigInteger' => 'BIGINT',
-            'smallInteger' => 'SMALLINT',
+            'integer' => ($options['autoIncrement'] ?? false) ? 'SERIAL' : 'INTEGER',
+            'bigInteger' => ($options['autoIncrement'] ?? false) ? 'BIGSERIAL' : 'BIGINT',
+            'smallInteger' => ($options['autoIncrement'] ?? false) ? 'SMALLSERIAL' : 'SMALLINT',
             'tinyInteger' => 'SMALLINT',
             'decimal', 'numeric' => 'DECIMAL(' . ($options['precision'] ?? 8) . ',' . ($options['scale'] ?? 2) . ')',
             'float' => isset($options['precision']) && isset($options['scale'])
@@ -629,6 +629,7 @@ class PostgreSQLSqlGenerator implements SqlGeneratorInterface
             'length' => $column->length,
             'precision' => $column->precision,
             'scale' => $column->scale,
+            'autoIncrement' => $column->autoIncrement,
             'values' => $column->options['values'] ?? [],
             ...$column->options
         ]);
@@ -681,6 +682,7 @@ class PostgreSQLSqlGenerator implements SqlGeneratorInterface
             'length' => $column->length,
             'precision' => $column->precision,
             'scale' => $column->scale,
+            'autoIncrement' => $column->autoIncrement,
             'values' => $column->options['values'] ?? [],
             ...$column->options
         ]);
